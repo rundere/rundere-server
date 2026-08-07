@@ -3,8 +3,8 @@
 Turns "open a booking email in Gmail" into a stored, content-addressed batch
 on the travel-extractor `/ingest` endpoint. This is **capture only** — it does
 not parse anything. It sends the raw RFC 2822 message source (D-15: keep the
-original artifact forever) so the extractor stage (not built yet) has the
-real thing to work from, and reprocessing later never loses information.
+original artifact forever) so the extractor stage has the real thing to work
+from, and reprocessing later never loses information.
 
 Why an add-on and not a background script: D-02 explicitly removed polling
 from the architecture. This only runs when you click the button while reading
@@ -178,12 +178,14 @@ either path.
   segments does this PNR have" (`declared_segment_count` / RULE-16) — the
   capturing human rarely knows reliably. Left null; a future enhancement if
   dropped legs turn out to be a real problem in practice.
-- **Not yet processed.** `/ingest` stores the batch and returns 202. Nothing
-  parses it until the extractor stage (`extract/jsonld.py` etc.) exists.
+- **Not auto-processed.** `/ingest` stores the batch and returns 202
+  immediately; it never parses inline. Run `python -m app.cli process` (or click
+  **Process new captures** in the review queue) to extract it into a reviewable
+  `TravelItem`.
 
-## Verifying it end-to-end right now
+## Verifying it end-to-end
 
-Even before extractors exist, you can confirm the plumbing:
+You can confirm capture landed even before running the processing stage:
 
 ```bash
 docker exec travel_extractor-travel-extractor-db-1 psql -U travel -d travel \
@@ -191,4 +193,5 @@ docker exec travel_extractor-travel-extractor-db-1 psql -U travel -d travel \
 ```
 
 A row appearing right after you click Capture is the whole add-on working
-correctly — capture → stored, exactly per the pipeline diagram in HANDOFF.md.
+correctly — capture → stored. Then `process → resolve → commit` (or the review
+queue) turns it into a logged item.

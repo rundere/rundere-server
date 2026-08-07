@@ -1,6 +1,6 @@
 """AirTrail target adapter.
 
-Facts confirmed by the A4 probe (A4-PROBE-NOTES.md), not assumptions:
+Facts confirmed by probing the live API, not assumptions:
   - auth is Authorization: Bearer
   - the flight list is /api/flight/list (NOT /api/flights, which 404s)
   - envelope is {"success": true, "flights": [...]}

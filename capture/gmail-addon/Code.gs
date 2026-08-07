@@ -6,7 +6,7 @@
  * Google verification/CASA is required for personal use (D-03).
  *
  * Sends the RAW message source (D-15: keep the original forever; nothing is
- * parsed here — that is the server's job, not built yet). Config (API key,
+ * parsed here — that is the server's job). Config (API key,
  * ingest URL) lives in User Properties, never in code.
  */
 

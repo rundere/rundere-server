@@ -1,6 +1,6 @@
 """AdventureLog target adapter.
 
-Facts confirmed by the A4 probe (see A4-PROBE-NOTES.md), not assumptions:
+Facts confirmed by probing the live API, not assumptions:
   - auth header is X-API-Key (Bearer returns 400)
   - DRF-style paths WITH trailing slashes
   - country is ISO alpha-2 uppercase

@@ -45,3 +45,9 @@ home-profiles*.json
 
 # raw fixture originals stay local until the redactor exists (D-21)
 tests/fixtures/raw/
+
+# internal working notes — local only, never in the public repo
+HANDOFF.md
+DECISIONS.md
+OPEN_QUESTIONS.md
+A4-PROBE-NOTES.md

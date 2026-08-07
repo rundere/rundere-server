@@ -303,8 +303,12 @@ docs/           A5/A6 specs, home-profiles.example.json
 scripts/        extract_eval.py — run the chain over dumped real payloads
 ```
 
-For deeper context: `HANDOFF.md` (status + tasks), `DECISIONS.md` (locked
-decisions — read before changing anything), `RULES.md` (generated).
+The design specs in `docs/` (A5 canonical keys, A6 collection resolution) and
+the generated `RULES.md` explain the resolution and rule behaviour in depth.
+
+Inline `D-NN` / `RULE-NN` / `OQ-NN` codes throughout the code and capture docs
+are provenance markers for decisions, rules, and open questions tracked in the
+author's local working notes (not part of this repo).
 
 ---
 
