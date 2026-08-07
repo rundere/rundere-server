@@ -1,0 +1,35 @@
+[
+  {
+    "_comment": "EXAMPLE ONLY — generic values, not anyone's real home. Copy this file, edit it, and bootstrap a new stack with: python -m app.cli import-home myfile.json. After that, manage profiles in the admin UI (/admin -> Home Profiles), which is the intended surface. Keep your real file OUT of git — .gitignore already excludes home-profiles*.json.",
+
+    "kind": "home_airport",
+    "label": "Example Home Airport (XXX)",
+    "iata": "XXX",
+    "lat": 0.0,
+    "lon": 0.0,
+    "radius_km": 50.0,
+    "country": "US",
+    "effective_from": "2020-01-01",
+    "effective_to": null
+  },
+  {
+    "kind": "residence",
+    "label": "Example Current City",
+    "lat": 0.0,
+    "lon": 0.0,
+    "radius_km": 50.0,
+    "country": "US",
+    "effective_from": "2020-01-01",
+    "effective_to": null
+  },
+  {
+    "kind": "residence",
+    "label": "Example Previous City (moved away in 2020)",
+    "lat": 0.0,
+    "lon": 0.0,
+    "radius_km": 50.0,
+    "country": "US",
+    "effective_from": null,
+    "effective_to": "2020-01-01"
+  }
+]

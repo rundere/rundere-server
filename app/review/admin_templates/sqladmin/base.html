@@ -1,0 +1,20 @@
+{# Theme SQLAdmin to match the review queue (D-30). We do NOT fork their
+   templates: we extend the packaged base via the "_sqladmin" prefix loader
+   registered in app/admin.py, and inject our stylesheet into the head_tail
+   block so it lands AFTER Tabler's and wins without !important. #}
+{% extends "_sqladmin/sqladmin/base.html" %}
+{% block head_tail %}
+  {{ super() }}
+  {# Shared palette FIRST (defines the vars), then the admin's Tabler mapping. #}
+  <link rel="stylesheet" href="/review/static/theme.css">
+  <link rel="stylesheet" href="/review/static/admin-theme.css">
+  <script>
+  // Carry the header's light/dark choice into the admin, before paint.
+  (function(){try{var t=localStorage.getItem('tx-theme');
+    if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+  function txToggleTheme(){var r=document.documentElement,c=r.getAttribute('data-theme');
+    var n=c==='dark'?'light':(c==='light'?'dark':
+      (window.matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark'));
+    r.setAttribute('data-theme',n);try{localStorage.setItem('tx-theme',n);}catch(e){}}
+  </script>
+{% endblock %}

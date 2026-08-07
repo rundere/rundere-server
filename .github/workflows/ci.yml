@@ -1,0 +1,24 @@
+# CI (D-21): pytest against the fixture corpus, with an ACCURACY NUMBER in the
+# log so a change fixing one airline while breaking another is visible in the
+# diff. Ready for when this folder becomes a git repo with a GitHub remote.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install .[dev]
+      - name: pytest
+        run: pytest -q
+      - name: accuracy metric
+        run: |
+          python tests/validate.py | tail -1
+          # e.g. "35/35 cases behaved as expected" — the regression contract.

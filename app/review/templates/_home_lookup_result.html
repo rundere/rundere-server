@@ -1,0 +1,26 @@
+{% if error %}
+  <div class="lookup err">{{ error }}</div>
+{% elif found %}
+  <div class="lookup ok">
+    &#10003; {{ found.label }}{% if found.country %} · {{ found.country }}{% endif %}
+    · <span class="mono">{{ found.lat }}, {{ found.lon }}</span>
+    <span class="src">from {{ found.source }}</span>
+  </div>
+  {# HTMX executes scripts in swapped content: fill the form fields so the
+     operator confirms rather than transcribes. Document values are only
+     overwritten by an explicit lookup, and the name is left alone if set. #}
+  <script>
+    (function () {
+      function set(id, v) {
+        var e = document.getElementById(id);
+        if (e && v !== null && v !== undefined && v !== '') e.value = v;
+      }
+      set('hp-lat', {{ found.lat|tojson }});
+      set('hp-lon', {{ found.lon|tojson }});
+      set('hp-country', {{ (found.country or '')|tojson }});
+      {% if found.iata %}set('hp-iata', {{ found.iata|tojson }});{% endif %}
+      var lbl = document.getElementById('hp-label');
+      if (lbl && !lbl.value) lbl.value = {{ found.label|tojson }};
+    })();
+  </script>
+{% endif %}

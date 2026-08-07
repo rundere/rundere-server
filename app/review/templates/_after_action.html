@@ -1,0 +1,6 @@
+{# Response to approve/ignore: re-render the CURRENT bucket's list (the item
+   just left it) and update the counts out-of-band, so the user stays exactly
+   where they were instead of being bounced to the first queue. #}
+{% include "queue_body.html" %}
+{% include "_funnel.html" %}
+{% include "_rail.html" %}

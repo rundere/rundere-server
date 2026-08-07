@@ -1,0 +1,55 @@
+{# Step 1 of logging: a dry-run PREVIEW. Shows exactly what each approved item
+   would write to AirTrail + AdventureLog, so the irreversible confirm is made
+   with eyes open (D-44). Nothing has been written at this point. #}
+<div class="cpanel">
+  {% if error %}
+    <div class="cbar err">Couldn’t build a preview — {{ error }}</div>
+    <div class="cactions">
+      <button class="act quiet" hx-get="/review/commit/cancel"
+              hx-target="#job-panel" hx-swap="innerHTML">Close</button>
+    </div>
+  {% elif summary['items'] == 0 %}
+    <div class="cbar">Nothing approved is waiting to be logged.</div>
+    <div class="cactions">
+      <button class="act quiet" hx-get="/review/commit/cancel"
+              hx-target="#job-panel" hx-swap="innerHTML">Close</button>
+    </div>
+  {% else %}
+    <div class="cbar warn">About to log <b>{{ summary['items'] }}</b> approved
+      item(s) to AirTrail + AdventureLog. This writes to live systems and
+      <b>cannot be undone</b> — review, then confirm.</div>
+    {% for plan in summary.plans %}
+      <div class="cplan">
+        <div class="chead">{{ plan.headline }}</div>
+        <ul>
+          {% for r in plan.results %}
+            <li class="{{ 'skip' if r.skipped else ('fail' if not r.ok else 'good') }}">
+              {% set _verb = {'update':'Update','cancel':'Cancel'}.get(r.operation) %}
+              {% if _verb %}<b class="op op-{{ r.operation }}">{{ _verb }}</b>{% endif %}
+              <code>{{ r.target }}</code>
+              {% if r.get('place') %} <span class="cx">{{ r.place }}</span>{% endif %}
+              {% if r.skipped %}— {{ r.skipped }}
+              {% elif not r.ok %}— will fail: {{ r.error }}
+              {% elif r.operation == 'update' %}— revise in place
+              {% elif r.operation == 'cancel' and r.get('deleted_id') %}— remove (never flown)
+              {% elif r.operation == 'cancel' %}— mark cancelled, keep record
+              {% elif r.get('synthesized_time') %}— time unknown, logs as date only
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endfor %}
+    <div class="cactions">
+      <button class="act primary" hx-post="/review/commit"
+              hx-vals='{"confirm":"1","bucket":"{{ bucket }}"}'
+              hx-target="#job-panel" hx-swap="innerHTML"
+              hx-disabled-elt="this" hx-indicator="this">
+        <span class="lbl">Confirm &amp; log {{ summary['items'] }}</span>
+        <span class="spin">Writing…</span>
+      </button>
+      <button class="act quiet" hx-get="/review/commit/cancel"
+              hx-target="#job-panel" hx-swap="innerHTML">Cancel</button>
+    </div>
+  {% endif %}
+</div>

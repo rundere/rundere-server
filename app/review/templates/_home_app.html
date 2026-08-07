@@ -1,0 +1,108 @@
+<div class="app" id="home-app">
+  <div class="ops"><div class="ops-row"><h1 class="pagetitle">Home profiles</h1></div></div>
+
+  <div class="home-wrap">
+    <section class="home-list">
+      <h3>Your homes over time</h3>
+      <p class="why">Home decides which places are never logged as “visited,”
+        and which local trips don’t count. Each move is a new row with dates,
+        so old trips stay judged against the home you had then.</p>
+      {% if not profiles %}
+        <p class="empty">No home profiles yet. Add your current home on the right.</p>
+      {% else %}
+      <table class="htab">
+        <thead><tr><th>Kind</th><th>Name</th><th>Where</th><th>In force</th><th></th></tr></thead>
+        <tbody>
+        {% for p in profiles %}
+          <tr>
+            <td>{{ p.kind.replace('_',' ') }}</td>
+            <td>{{ p.label }}</td>
+            <td class="mono">
+              {% if p.iata %}{{ p.iata }}{% endif %}
+              {% if p.lat is not none %}{{ '%.3f'|format(p.lat) }}, {{ '%.3f'|format(p.lon) }}{% endif %}
+              {% if p.country %} · {{ p.country }}{% endif %}
+              {% if p.radius_km %} · r{{ p.radius_km|int }}km{% endif %}
+            </td>
+            <td class="mono">{{ p.effective_from or 'start' }} → {{ p.effective_to or 'current' }}</td>
+            <td class="rowacts">
+              <a class="act tiny" href="/review/home?edit={{ p.id }}">Edit</a>
+              <button class="act tiny quiet" hx-post="/review/home/delete/{{ p.id }}"
+                      hx-target="#home-app" hx-swap="outerHTML"
+                      hx-confirm="Delete “{{ p.label }}”?">Delete</button>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </section>
+
+    <section class="home-form">
+      <h3>{% if edit_id %}Edit home{% else %}Add a home{% endif %}</h3>
+      {% if error %}<div class="violations">{{ error }}</div>{% endif %}
+      <form hx-post="/review/home" hx-target="#home-app" hx-swap="outerHTML">
+        {% if edit_id %}<input type="hidden" name="edit_id" value="{{ edit_id }}">{% endif %}
+
+        <div class="field">
+          <label for="hp-label">Name</label>
+          <input id="hp-label" name="label" type="text" value="{{ form.label or '' }}"
+                 placeholder="e.g. Toronto Pearson, or Home in Toronto">
+        </div>
+
+        <div class="field">
+          <label for="hp-kind">Kind</label>
+          <select id="hp-kind" name="kind" hx-get="/review/home/kind-fields"
+                  hx-target="#kind-fields" hx-swap="innerHTML" hx-trigger="change">
+            {% for value, text in kinds %}
+              <option value="{{ value }}" {% if form.kind==value %}selected{% endif %}>{{ text }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div id="kind-fields">
+          {% include "_home_kind_fields.html" %}
+        </div>
+
+        <div id="lookup-result"></div>
+
+        <div class="field">
+          <label for="hp-lat">Latitude</label>
+          <input id="hp-lat" name="lat" type="text" inputmode="decimal"
+                 value="{{ form.lat or '' }}" placeholder="filled by lookup">
+        </div>
+        <div class="field">
+          <label for="hp-lon">Longitude</label>
+          <input id="hp-lon" name="lon" type="text" inputmode="decimal"
+                 value="{{ form.lon or '' }}" placeholder="filled by lookup">
+        </div>
+        <div class="field">
+          <label for="hp-country">Country</label>
+          <input id="hp-country" name="country" type="text" maxlength="2"
+                 value="{{ form.country or '' }}" placeholder="ISO-2, e.g. CA">
+        </div>
+
+        <div class="field">
+          <label for="hp-from">In force from</label>
+          <input id="hp-from" name="effective_from" type="text"
+                 value="{{ form.effective_from or '' }}"
+                 placeholder="YYYY-MM-DD (empty = since forever)">
+        </div>
+        <div class="field">
+          <label for="hp-to">In force until</label>
+          <input id="hp-to" name="effective_to" type="text"
+                 value="{{ form.effective_to or '' }}"
+                 placeholder="YYYY-MM-DD (empty = still current)">
+        </div>
+        <div class="field">
+          <label for="hp-notes">Notes</label>
+          <input id="hp-notes" name="notes" type="text" value="{{ form.notes or '' }}">
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="act primary">{% if edit_id %}Save changes{% else %}Add home{% endif %}</button>
+          {% if edit_id %}<a class="act quiet" href="/review/home">Cancel</a>{% endif %}
+        </div>
+      </form>
+    </section>
+  </div>
+</div>

@@ -1,0 +1,28 @@
+[project]
+name = "travel-extractor"
+version = "0.1.0"
+description = "Travel documents -> AirTrail + AdventureLog. Phase 0 scaffold."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "sqladmin>=0.16",
+    "jsonschema>=4.21",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.2",
+    "pypdf>=4.0",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[tool.setuptools]
+packages = ["app", "app.review", "resolve", "extract", "adapters", "adapters.targets"]
+py-modules = ["rules", "validation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

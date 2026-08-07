@@ -1,0 +1,192 @@
+{
+  "name": "Travel Extractor \u2014 Maps directions capture",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Capture a drive",
+        "formDescription": "Paste a Google Maps directions link and the travel date. It logs as a road-trip in AdventureLog.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Google Maps URL",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "https://maps.app.goo.gl/\u2026  or  https://www.google.com/maps/dir/\u2026"
+            },
+            {
+              "fieldLabel": "Travel date",
+              "fieldType": "date",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Travel time (HH:MM)",
+              "fieldType": "text",
+              "requiredField": false,
+              "placeholder": "optional, e.g. 09:30"
+            },
+            {
+              "fieldLabel": "End date (multi-day)",
+              "fieldType": "date",
+              "requiredField": false
+            },
+            {
+              "fieldLabel": "Trip title",
+              "fieldType": "text",
+              "requiredField": false,
+              "placeholder": "optional"
+            },
+            {
+              "fieldLabel": "Collection ID",
+              "fieldType": "text",
+              "requiredField": false,
+              "placeholder": "optional advanced override"
+            },
+            {
+              "fieldLabel": "Timezone",
+              "fieldType": "text",
+              "requiredField": false,
+              "placeholder": "America/Toronto"
+            },
+            {
+              "fieldLabel": "Notes",
+              "fieldType": "textarea",
+              "requiredField": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trip-form",
+      "name": "Trip form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "maps-capture-form"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "apiKey",
+              "type": "string",
+              "value": "REPLACE_WITH_maps-n8n_KEY"
+            },
+            {
+              "id": "a2",
+              "name": "ingestUrl",
+              "type": "string",
+              "value": "http://travel-extractor:8000/ingest"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Travel Extractor \u2014 Google Maps directions capture (n8n Code node).\n *\n * The thin capture client for the maps_url channel (D-61). n8n gives us a hosted\n * form for free; this node turns the submission into a SIGNED POST to the same\n * public /ingest the Apps Script add-ons use. It parses nothing \u2014 the server's\n * extract/maps_url.py does that. n8n is only a capture surface here, NOT the\n * extraction/parsing role D-01/D-02 removed.\n *\n * Signs EXACTLY like app/auth.py sign():  hex(HMAC_SHA256(key, ts + \".\" + body)).\n * The body string signed here is the exact string the HTTP node must send \u2014 set\n * that node's body to \"Raw\" so nothing re-serializes it (the byte-mismatch bug\n * the Gmail add-on hit with non-ASCII content).\n *\n * Upstream nodes (rename to match, or edit the two $() calls below):\n *   \"Trip form\"  \u2014 the Form Trigger (its fields become form[...] keys)\n *   \"Config\"     \u2014 a Set/Edit-Fields node holding { apiKey, ingestUrl }\n */\nconst crypto = require('crypto');\n\nconst form = $('Trip form').first().json;\nconst cfg = $('Config').first().json;\n\nconst apiKey = String(cfg.apiKey || '').trim();\nconst ingestUrl = String(cfg.ingestUrl || '').trim();\nif (!apiKey || apiKey.startsWith('REPLACE')) {\n  throw new Error('Set your API key in the Config node \u2014 create one with '\n    + '\"python -m app.cli create-key maps-n8n\".');\n}\n\nconst get = (label) => {\n  const v = form[label];\n  return v === undefined || v === null || v === '' ? null : v;\n};\nconst asDate = (v) => (v ? String(v).slice(0, 10) : null);   // 'YYYY-MM-DD'\n\nconst url = get('Google Maps URL');\nconst travelDate = asDate(get('Travel date'));\nif (!url) throw new Error('Google Maps URL is required.');\nif (!travelDate) {\n  throw new Error('Travel date is required \u2014 a directions URL carries no date (RULE-31).');\n}\n\n// capture_context: the human-supplied metadata a directions URL cannot carry.\n// Empty fields are dropped so the server sees clean nulls, not \"\".\nconst cc = {\n  travel_date: travelDate,\n  travel_time: get('Travel time (HH:MM)'),      // optional\n  end_date: asDate(get('End date (multi-day)')), // optional\n  timezone: get('Timezone') || 'America/Toronto',\n  collection_id: get('Collection ID'),           // optional override (D-05)\n  title: get('Trip title'),                      // optional\n  notes: get('Notes'),                           // optional\n  submitted_by: 'maps-n8n',\n};\nfor (const k of Object.keys(cc)) if (cc[k] === null) delete cc[k];\n\nconst payload = { capture_channel: 'maps_url', url, capture_context: cc };\n\n// Sign the SAME string we send. Never JSON.stringify again downstream.\nconst bodyString = JSON.stringify(payload);\nconst timestamp = Math.floor(Date.now() / 1000).toString();\nconst signature = crypto\n  .createHmac('sha256', apiKey)\n  .update(timestamp + '.' + bodyString, 'utf8')\n  .digest('hex');\n\nreturn [{\n  json: {\n    ingestUrl,\n    bodyString,\n    xApiKey: apiKey,\n    xTimestamp: timestamp,\n    xSignature: signature,\n  },\n}];\n"
+      },
+      "id": "sign-build",
+      "name": "Sign & build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.ingestUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $json.xApiKey }}"
+            },
+            {
+              "name": "X-Timestamp",
+              "value": "={{ $json.xTimestamp }}"
+            },
+            {
+              "name": "X-Signature",
+              "value": "={{ $json.xSignature }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.bodyString }}",
+        "options": {}
+      },
+      "id": "post-ingest",
+      "name": "POST to /ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Trip form": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Sign & build",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign & build": {
+      "main": [
+        [
+          {
+            "node": "POST to /ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

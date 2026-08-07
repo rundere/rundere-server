@@ -1,0 +1,18 @@
+{# Bucket filters. Rendered inline in the frame, and re-rendered out-of-band
+   after every action so the per-queue counts and the active highlight stay
+   current without a refresh. #}
+<nav class="rail" id="rail" aria-label="Filter by state"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <div class="rail-label">Queue</div>
+  <a class="filter {% if bucket=='attention' %}on{% endif %}" href="/review?bucket=attention">
+    Needs you <span class="count">{{ counts.attention }}</span></a>
+  <a class="filter {% if bucket=='waiting' %}on{% endif %}" href="/review?bucket=waiting">
+    Waiting for a trip <span class="count">{{ counts.waiting }}</span></a>
+  <a class="filter {% if bucket=='ready' %}on{% endif %}" href="/review?bucket=ready">
+    Ready to Approve <span class="count">{{ counts.ready }}</span></a>
+  <a class="filter {% if bucket=='staged' %}on{% endif %}" href="/review?bucket=staged">
+    Approved <span class="count">{{ counts.staged }}</span></a>
+  <a class="filter {% if bucket=='logged' %}on{% endif %}" href="/review?bucket=logged">
+    Logged <span class="count">{{ counts.logged }}</span></a>
+  <a class="filter {% if bucket=='all' %}on{% endif %}" href="/review?bucket=all">
+    Everything <span class="count">{{ counts.all }}</span></a>
+</nav>

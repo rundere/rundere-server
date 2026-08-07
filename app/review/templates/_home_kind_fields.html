@@ -1,0 +1,37 @@
+{% if form.kind == 'home_airport' %}
+  <div class="field">
+    <label for="hp-iata">Airport code</label>
+    <div class="lookup-row">
+      <input id="hp-iata" name="iata" type="text" maxlength="4"
+             value="{{ form.iata or '' }}" placeholder="e.g. YYZ"
+             style="text-transform:uppercase">
+      <button type="button" class="act"
+              hx-post="/review/home/lookup-airport" hx-include="#hp-iata"
+              hx-target="#lookup-result" hx-swap="innerHTML">
+        {% if have_airtrail %}Verify against AirTrail{% else %}Look up{% endif %}</button>
+    </div>
+    <p class="hint quiet">Required for a home airport. Verifying pulls the exact
+      coordinates{% if have_airtrail %} from AirTrail{% endif %} — no need to
+      type them.</p>
+  </div>
+{% else %}
+  <div class="field">
+    <label for="hp-address">Address or city</label>
+    <div class="lookup-row">
+      <input id="hp-address" name="address" type="text"
+             placeholder="e.g. 123 Main St, Toronto — or just Toronto">
+      <button type="button" class="act"
+              hx-post="/review/home/lookup-address" hx-include="#hp-address"
+              hx-target="#lookup-result" hx-swap="innerHTML">Look up</button>
+    </div>
+    <p class="hint quiet">Fills the coordinates below via Photon; edit them by
+      hand if the pin is off.</p>
+  </div>
+  <div class="field">
+    <label for="hp-radius">Home radius (km)</label>
+    <input id="hp-radius" name="radius_km" type="text" inputmode="numeric"
+           value="{{ form.radius_km or '50' }}">
+    <p class="hint quiet">Anything within this distance counts as home and won’t
+      become a trip. Default 50.</p>
+  </div>
+{% endif %}

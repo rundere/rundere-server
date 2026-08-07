@@ -1,0 +1,35 @@
+{
+  "timeZone": "America/Toronto",
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Calendar",
+        "serviceId": "calendar",
+        "version": "v3"
+      }
+    ]
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/calendar.addons.execute",
+    "https://www.googleapis.com/auth/calendar.addons.current.event.read",
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/script.external_request"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Travel Extractor Capture (Calendar)",
+      "logoUrl": "https://www.gstatic.com/images/icons/material/system/1x/event_googblue_48dp.png",
+      "homepageTrigger": {
+        "runFunction": "buildHomepageCard"
+      }
+    },
+    "calendar": {
+      "currentEventAccess": "READ",
+      "eventOpenTrigger": {
+        "runFunction": "buildEventCard"
+      }
+    }
+  }
+}

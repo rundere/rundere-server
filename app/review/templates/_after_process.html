@@ -1,0 +1,8 @@
+{# Response to the "Process new captures" button: re-render the current bucket
+   (newly-resolved items may have entered it) and refresh counts, rail, and the
+   result toast out-of-band, so the operator stays where they were. #}
+{% include "queue_body.html" %}
+{% include "_funnel.html" %}
+{% include "_rail.html" %}
+<div id="toast" class="toast {{ 'err' if toast_error else 'ok' }} show"
+     hx-swap-oob="true">{{ toast }}</div>

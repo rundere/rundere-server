@@ -1,0 +1,2095 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/OWNER/travel-extractor/schemas/travel-item.schema.json",
+  "title": "TravelItem",
+  "description": "Canonical contract between capture, extraction, resolution and commit stages. Field ownership is declared with x-owner: extractor | resolver | committer | ingest. A stage MUST NOT write fields it does not own.",
+  "x-schema-version": "1.4.0",
+  "$ref": "#/$defs/TravelItem",
+  "$defs": {
+    "TravelItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "schema_version",
+        "source",
+        "artifact",
+        "item_type",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "x-owner": "ingest"
+        },
+        "schema_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "x-owner": "ingest"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "artifact": {
+          "$ref": "#/$defs/Artifact"
+        },
+        "booking_group_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ties segments originating from one booking document. All legs of a PNR share this.",
+          "x-owner": "extractor"
+        },
+        "canonical_key": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Dedup primitive. See A5. Unique index in DB. Null until resolution.",
+          "x-owner": "resolver"
+        },
+        "item_type": {
+          "$ref": "#/$defs/ItemType",
+          "x-owner": "extractor"
+        },
+        "extraction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Extraction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Resolution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Commit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/StatusBlock"
+        },
+        "review": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Review"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-owner": "ingest"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-owner": "ingest"
+        },
+        "batch_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid",
+          "x-owner": "ingest"
+        },
+        "segment_index": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "x-owner": "extractor",
+          "description": "Position within the batch. Stable across reprocessing."
+        },
+        "segment_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "x-owner": "extractor"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ItemType": {
+      "type": "string",
+      "enum": [
+        "flight",
+        "ground_transport",
+        "lodging",
+        "event",
+        "note",
+        "unknown"
+      ]
+    },
+    "Source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "ref",
+        "received_at"
+      ],
+      "x-owner": "ingest",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "gmail",
+            "gcal",
+            "web",
+            "maps",
+            "file",
+            "manual"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "description": "Gmail message id, GCal event id, sha256 of URL, or upload filename."
+        },
+        "thread_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "api_key_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Which capture client submitted this."
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When we ingested it."
+        },
+        "document_timestamp": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Date header of the email / page capture time. Used to order competing versions of the same canonical_key. Newer wins."
+        },
+        "rule_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "source_rules row that admitted this item."
+        },
+        "capture_context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaptureContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "media_type",
+        "bytes"
+      ],
+      "x-owner": "ingest",
+      "description": "Immutable original. Never mutated. Enables reprocessing and fixture promotion.",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "media_type": {
+          "type": "string",
+          "enum": [
+            "message/rfc822",
+            "text/html",
+            "text/calendar",
+            "application/pdf",
+            "application/json",
+            "application/octet-stream"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Content-addressed path, relative to artifact root."
+        },
+        "children": {
+          "type": "array",
+          "description": "Attachments extracted from the parent (e.g. .ics inside an .eml).",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "fixture_promoted": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "Extraction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "extractor",
+        "ran_at",
+        "confidence",
+        "payload"
+      ],
+      "x-owner": "extractor",
+      "properties": {
+        "extractor": {
+          "type": "string",
+          "enum": [
+            "jsonld",
+            "ical",
+            "maps_url",
+            "llm",
+            "manual",
+            "heuristic"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "e.g. qwen2.5:14b-instruct. Null for deterministic extractors."
+        },
+        "prompt_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ran_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "payload": {
+          "$ref": "#/$defs/Payload"
+        }
+      }
+    },
+    "Payload": {
+      "type": "object",
+      "description": "THE LLM-CONSTRAINED OBJECT. This subtree, and only this subtree, is what an extractor emits.",
+      "required": [
+        "item_type",
+        "booking_status"
+      ],
+      "properties": {
+        "item_type": {
+          "$ref": "#/$defs/ItemType"
+        },
+        "booking_status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "confirmed",
+            "changed",
+            "cancelled",
+            "pending",
+            "unknown"
+          ],
+          "description": "A cancellation email is NOT a new item. It is this field set to cancelled on an existing canonical_key."
+        },
+        "booking_reference": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "PNR / confirmation code."
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provider"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "travelers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Traveler"
+          },
+          "default": []
+        },
+        "cost": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "flight": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FlightDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ground_transport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GroundDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lodging": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LodgingDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "event": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capture_required_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "x-owner": "extractor",
+          "description": "Fields the extractor could NOT obtain from the document and which the capture client must supply. Non-empty + unsatisfied => needs_review."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "item_type": {
+                "const": "flight"
+              }
+            },
+            "required": [
+              "item_type"
+            ]
+          },
+          "then": {
+            "required": [
+              "flight"
+            ],
+            "properties": {
+              "flight": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "item_type": {
+                "const": "ground_transport"
+              }
+            },
+            "required": [
+              "item_type"
+            ]
+          },
+          "then": {
+            "required": [
+              "ground_transport"
+            ],
+            "properties": {
+              "ground_transport": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "item_type": {
+                "const": "lodging"
+              }
+            },
+            "required": [
+              "item_type"
+            ]
+          },
+          "then": {
+            "required": [
+              "lodging"
+            ],
+            "properties": {
+              "lodging": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "item_type": {
+                "const": "event"
+              }
+            },
+            "required": [
+              "item_type"
+            ]
+          },
+          "then": {
+            "required": [
+              "event"
+            ],
+            "properties": {
+              "event": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "DateTimeLocal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local",
+        "precision"
+      ],
+      "description": "Never a bare ISO string. AirTrail rejects the whole batch when a midnight default collides; forcing precision to be explicit makes that failure impossible to produce accidentally.",
+      "properties": {
+        "local": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$",
+          "description": "Wall-clock time at the place. No offset. Date-only permitted when precision=date."
+        },
+        "precision": {
+          "type": "string",
+          "enum": [
+            "datetime",
+            "date",
+            "unknown"
+          ],
+          "description": "date => time was genuinely absent from the source. NEVER synthesise 00:00 to satisfy a target."
+        },
+        "tz": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z_]+/[A-Za-z_+-]+$",
+          "description": "IANA, single slash only. Two-slash zones (America/Argentina/Buenos_Aires) must be mapped to backward aliases before this field is set. Extractor sets if stated; resolver fills from place lookup."
+        },
+        "utc": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "x-owner": "resolver",
+          "description": "Computed from local+tz. Null while tz unknown or precision != datetime."
+        },
+        "origin": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "document",
+            "capture_context",
+            "collection_default",
+            "inferred",
+            null
+          ],
+          "x-owner": "extractor",
+          "description": "Where the date came from. capture_context = the human typed it. NEVER 'inferred' for a stored commit."
+        }
+      }
+    },
+    "Place": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw"
+      ],
+      "properties": {
+        "raw": {
+          "type": "string",
+          "description": "Verbatim from source. Always retained."
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "iata": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z]{3}$"
+        },
+        "icao": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z]{4}$"
+        },
+        "address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "city": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "country": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z]{2}$",
+          "description": "ISO 3166-1 alpha-2."
+        },
+        "lat": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": -90,
+          "maximum": 90,
+          "x-owner": "resolver"
+        },
+        "lon": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": -180,
+          "maximum": 180,
+          "x-owner": "resolver"
+        },
+        "tz": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-owner": "resolver"
+        },
+        "geocode_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "photon",
+            "airport_db",
+            "source",
+            "manual",
+            null
+          ],
+          "x-owner": "resolver"
+        },
+        "adventurelog_location_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-owner": "committer"
+        },
+        "is_home": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "x-owner": "resolver",
+          "description": "Matched a HomeProfile in force at the time of travel."
+        },
+        "home_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-owner": "resolver",
+          "description": "HomeProfile.id that matched."
+        },
+        "suppressed": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "x-owner": "resolver",
+          "description": "True => no AdventureLog Location is written. The place data is STILL retained in the payload; suppression is a write decision, not deletion."
+        },
+        "suppression_reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "home",
+            "home_radius",
+            "duplicate_location",
+            "out_of_scope",
+            "user_ignored",
+            null
+          ],
+          "x-owner": "resolver"
+        },
+        "distance_from_home_km": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "x-owner": "resolver"
+        }
+      }
+    },
+    "Provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "iata": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z0-9]{2}$"
+        },
+        "icao": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z]{3}$"
+        },
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "airline",
+            "rail",
+            "bus",
+            "ferry",
+            "car_rental",
+            "hotel",
+            "ota",
+            "ticketing",
+            "other",
+            null
+          ]
+        }
+      }
+    },
+    "Traveler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_name"
+      ],
+      "properties": {
+        "raw_name": {
+          "type": "string",
+          "description": "Verbatim, e.g. MEHTA/DANIELMR. Never normalised in place."
+        },
+        "given": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-owner": "extractor"
+        },
+        "family": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-owner": "extractor"
+        },
+        "role": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "self",
+            "guest",
+            "unknown",
+            null
+          ],
+          "x-owner": "resolver",
+          "description": "Resolver assigns via alias table. Extractor MUST leave null."
+        },
+        "match_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "alias_exact",
+            "alias_fuzzy",
+            "inferred_absent",
+            "manual",
+            null
+          ],
+          "x-owner": "resolver",
+          "description": "inferred_absent = no passenger list in source; self assumed per policy. Audit trail for the notify-on-inference rule."
+        },
+        "match_confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1,
+          "x-owner": "resolver"
+        }
+      }
+    },
+    "Money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "properties": {
+        "amount": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      }
+    },
+    "FlightDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "flight_number",
+        "departure",
+        "arrival"
+      ],
+      "description": "ONE SEGMENT. A multi-leg PNR fans out to N TravelItems sharing booking_group_id.",
+      "properties": {
+        "marketing_carrier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provider"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operating_carrier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provider"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flight_number": {
+          "type": "string",
+          "pattern": "^[0-9]{1,4}[A-Z]?$",
+          "description": "Digits only. Carrier lives in marketing_carrier."
+        },
+        "leg_index": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "departure": {
+          "$ref": "#/$defs/Movement"
+        },
+        "arrival": {
+          "$ref": "#/$defs/Movement"
+        },
+        "aircraft": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "registration": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cabin_class": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "economy",
+            "premium_economy",
+            "business",
+            "first",
+            null
+          ]
+        },
+        "seats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "ticket_numbers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "Movement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "place",
+        "time"
+      ],
+      "properties": {
+        "place": {
+          "$ref": "#/$defs/Place"
+        },
+        "time": {
+          "$ref": "#/$defs/DateTimeLocal"
+        },
+        "terminal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Full value. AirTrail adapter clamps to 10 chars; schema does not."
+        },
+        "gate": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "GroundDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "departure",
+        "arrival"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "train",
+            "bus",
+            "ferry",
+            "car",
+            "car_rental",
+            "rideshare",
+            "transfer",
+            "other"
+          ]
+        },
+        "service_number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "departure": {
+          "$ref": "#/$defs/Movement"
+        },
+        "arrival": {
+          "$ref": "#/$defs/Movement"
+        },
+        "coach": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "waypoints": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Movement"
+          },
+          "description": "Intermediate stops, in travel order. Each MAY become its own Location; home-radius waypoints are suppressed like any other."
+        },
+        "route": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RouteDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round_trip": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Origin and destination are the same place (typical home-out-and-back drive)."
+        }
+      }
+    },
+    "LodgingDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "property_name",
+        "place",
+        "check_in",
+        "check_out"
+      ],
+      "properties": {
+        "property_name": {
+          "type": "string"
+        },
+        "lodging_kind": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "hotel",
+            "hostel",
+            "apartment",
+            "house",
+            "bnb",
+            "camping",
+            "cabin",
+            "other",
+            null
+          ]
+        },
+        "place": {
+          "$ref": "#/$defs/Place"
+        },
+        "check_in": {
+          "$ref": "#/$defs/DateTimeLocal"
+        },
+        "check_out": {
+          "$ref": "#/$defs/DateTimeLocal"
+        },
+        "room_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "guest_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      }
+    },
+    "EventDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "start"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "category": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "concert",
+            "sport",
+            "theatre",
+            "dining",
+            "tour",
+            "museum",
+            "conference",
+            "meeting",
+            "other",
+            null
+          ]
+        },
+        "venue": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Place"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start": {
+          "$ref": "#/$defs/DateTimeLocal"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateTimeLocal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "all_day": {
+          "type": "boolean",
+          "default": false
+        },
+        "organizer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attendees": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "seats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "gcal_event_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gcal_recurring": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "Resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-owner": "resolver",
+      "required": [
+        "ran_at",
+        "outcome"
+      ],
+      "properties": {
+        "ran_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "resolved",
+            "deferred",
+            "needs_review",
+            "ignored"
+          ]
+        },
+        "collection_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "AdventureLog collection UUID."
+        },
+        "collection_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "collection_action": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "matched_exact",
+            "matched_fuzzy",
+            "matched_hint",
+            "user_selected",
+            "created",
+            "none",
+            null
+          ],
+          "description": "Only a FLIGHT may yield 'created', and only when no existing collection matches. 'user_selected' = supplied via capture_context; the ladder is skipped by design. Everything else attaches or defers."
+        },
+        "candidate_collections": {
+          "type": "array",
+          "description": "Populated when >1 match. Drives the review UI choice list.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name",
+              "score"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "start": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "end": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "default": []
+        },
+        "self_on_booking": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "False => AirTrail commit is skipped entirely (guest-only rule)."
+        },
+        "duplicate_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "TravelItem id this superseded or was superseded by."
+        },
+        "supersedes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deferred_until": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "deferred_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "description": "What SHOULD be written. Computed here, executed by commit.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "airtrail.flight",
+              "adventurelog.collection",
+              "adventurelog.location",
+              "adventurelog.transportation",
+              "adventurelog.lodging",
+              "adventurelog.note"
+            ]
+          },
+          "default": []
+        },
+        "anchor_eligible": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "x-owner": "resolver",
+          "description": "Item may mint a collection. TRUE ONLY FOR FLIGHTS that leave the home radius. Ground transport is never anchor-eligible regardless of distance."
+        },
+        "within_home_radius": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "x-owner": "resolver",
+          "description": "Entire item never left home radius => outcome should be ignored."
+        },
+        "match_attempted": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "x-owner": "resolver",
+          "description": "Resolver ran the full match ladder before minting. 'created' without this is an unproven claim that nothing matched."
+        }
+      }
+    },
+    "Commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-owner": "committer",
+      "properties": {
+        "airtrail": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TargetResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "adventurelog": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/AdventureLogResult"
+          },
+          "description": "Per-record results. Replaces the old fixed object."
+        },
+        "target_versions": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Version probe result at commit time. Guards against silent schema drift.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "TargetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "skipped",
+            "ok",
+            "failed"
+          ]
+        },
+        "record_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "last_attempt_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "last_status_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "skip_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "StatusBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "extract",
+        "resolve",
+        "airtrail",
+        "adventurelog"
+      ],
+      "description": "Four INDEPENDENT states. A single status column cannot express 'extracted fine, AirTrail ok, AdventureLog failed'.",
+      "properties": {
+        "extract": {
+          "$ref": "#/$defs/StageState"
+        },
+        "resolve": {
+          "$ref": "#/$defs/StageState"
+        },
+        "airtrail": {
+          "$ref": "#/$defs/StageState"
+        },
+        "adventurelog": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Per-type rollup, derived from commit.adventurelog. Worst state wins within a type.",
+          "properties": {
+            "collection": {
+              "$ref": "#/$defs/StageState"
+            },
+            "location": {
+              "$ref": "#/$defs/StageState"
+            },
+            "transportation": {
+              "$ref": "#/$defs/StageState"
+            },
+            "lodging": {
+              "$ref": "#/$defs/StageState"
+            },
+            "note": {
+              "$ref": "#/$defs/StageState"
+            },
+            "visit": {
+              "$ref": "#/$defs/StageState"
+            }
+          }
+        }
+      }
+    },
+    "StageState": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "ok",
+        "skipped",
+        "deferred",
+        "needs_review",
+        "failed"
+      ]
+    },
+    "Review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "low_confidence",
+              "ambiguous_collection",
+              "no_collection_match",
+              "missing_passenger_list",
+              "missing_time",
+              "missing_timezone",
+              "unknown_type",
+              "geocode_failed",
+              "commit_failed",
+              "conflicting_version",
+              "cancellation_no_match",
+              "stale_document",
+              "locked_field_conflict",
+              "segment_count_mismatch",
+              "partial_commit",
+              "home_only_movement",
+              "route_unparsed",
+              "waypoint_ambiguous",
+              "missing_capture_context",
+              "missing_travel_date",
+              "collection_not_selected"
+            ]
+          },
+          "default": []
+        },
+        "notified_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "resolved_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolved_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "action_taken": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "approved",
+            "edited",
+            "reassigned",
+            "ignored",
+            "escalated_cloud",
+            "reprocessed",
+            null
+          ]
+        },
+        "escalation": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "description": "Cloud escalation is user-initiated only. Redaction is mandatory and audited.",
+          "properties": {
+            "requested_by": {
+              "type": "string"
+            },
+            "requested_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "redaction_version": {
+              "type": "string"
+            },
+            "redaction_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "model": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "IngestBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "batch_id",
+        "source",
+        "artifact",
+        "items"
+      ],
+      "description": "A single push. One artifact (email / SingleFile capture / .ics) fans out to N TravelItems. This is the unit the /ingest endpoint accepts and the unit the extractor emits.",
+      "properties": {
+        "batch_id": {
+          "type": "string",
+          "format": "uuid",
+          "x-owner": "ingest"
+        },
+        "schema_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "artifact": {
+          "$ref": "#/$defs/Artifact"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/TravelItem"
+          }
+        },
+        "declared_segment_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "What the source claimed it contained, if stated. Mismatch vs len(items) is RULE-16 — a silently dropped leg is the worst failure mode here because nothing errors."
+        },
+        "batch_status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "partial",
+            "complete",
+            "failed"
+          ],
+          "description": "partial = some items committed, some did not. Never roll up to complete."
+        }
+      }
+    },
+    "PayloadBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items"
+      ],
+      "description": "THE LLM-CONSTRAINED ROOT. One document may contain many segments; the extractor MUST return an array even for a single item.",
+      "properties": {
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Payload"
+          }
+        },
+        "declared_segment_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      }
+    },
+    "UpdateAction": {
+      "type": "string",
+      "enum": [
+        "create",
+        "update",
+        "no_change",
+        "supersede",
+        "conflict",
+        "ignore"
+      ],
+      "description": "Explicit decision point. create = no prior item for this canonical_key. update = prior exists, newer document, fields changed. no_change = prior exists, content_hash identical (the common case for check-in reminders and boarding passes). supersede = prior exists and this cancels/replaces it. conflict = prior exists, this document is OLDER or contradicts a user-edited field -> always needs_review, never auto-applied. ignore = matched a suppression rule."
+    },
+    "Revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "content_hash"
+      ],
+      "x-owner": "resolver",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/UpdateAction"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Monotonic per canonical_key."
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "sha256 of the normalised payload. Equality => no_change."
+        },
+        "prior_item_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "prior_content_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "prior_document_timestamp": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "changed_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "JSON pointers into payload. Drives the review-UI diff view."
+        },
+        "field_locks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "JSON pointers a human edited in the review UI. An incoming update MUST NOT overwrite these; it becomes conflict instead. RULE-15."
+        },
+        "stale": {
+          "type": "boolean",
+          "default": false,
+          "description": "document_timestamp older than prior. Out-of-order delivery."
+        }
+      }
+    },
+    "AdventureLogTargetType": {
+      "type": "string",
+      "enum": [
+        "collection",
+        "location",
+        "transportation",
+        "lodging",
+        "note",
+        "visit"
+      ]
+    },
+    "AdventureLogResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "key",
+        "state"
+      ],
+      "x-owner": "committer",
+      "description": "One row per WRITTEN RECORD, not per type. A single flight yields two location rows (departure + arrival airport), which a per-type status cannot represent.",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/AdventureLogTargetType"
+        },
+        "key": {
+          "type": "string",
+          "description": "Stable discriminator within type, e.g. location:YYZ, location:LHR."
+        },
+        "state": {
+          "$ref": "#/$defs/StageState"
+        },
+        "operation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "create",
+            "update",
+            "delete",
+            "noop",
+            null
+          ]
+        },
+        "record_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "last_attempt_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "last_status_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "skip_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Keys that must reach ok first. transportation/lodging/note always depend on collection."
+        }
+      }
+    },
+    "HomeProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "effective_from"
+      ],
+      "description": "Config, not per-item. Effective-dated because home changes and historical backfill must be judged against the home in force AT THE TIME of travel.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "residence",
+            "home_airport",
+            "home_region"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "iata": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z]{3}$"
+        },
+        "icao": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z]{4}$"
+        },
+        "lat": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": -180,
+          "maximum": 180
+        },
+        "radius_km": {
+          "type": "number",
+          "minimum": 0,
+          "default": 50,
+          "description": "Anything wholly inside this radius is not a trip. Primary guard against road-trip noise: a 12km drive to dinner must never mint a collection."
+        },
+        "country": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z]{2}$"
+        },
+        "effective_from": {
+          "type": "string",
+          "format": "date"
+        },
+        "effective_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "suppress_location": {
+          "type": "boolean",
+          "default": true,
+          "description": "Never create an AdventureLog Location for this place."
+        },
+        "suppress_visit": {
+          "type": "boolean",
+          "default": true
+        },
+        "can_anchor_collection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Departing from / returning to here is what makes a round trip legible. Suppressed as a Location, still usable as a trip anchor."
+        }
+      }
+    },
+    "RouteDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Planning-time estimate from a directions provider. NOT actuals — Dawarich owns the raw GPS timeline. This is the intended route only.",
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "google_maps",
+            "apple_maps",
+            "osrm",
+            "manual",
+            null
+          ]
+        },
+        "source_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "distance_km": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "duration_minutes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "polyline": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Encoded polyline. Optional; large."
+        },
+        "is_estimate": {
+          "type": "boolean",
+          "default": true
+        },
+        "captured_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "CaptureContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-owner": "ingest",
+      "description": "Metadata supplied BY THE HUMAN at submission time, not derived from the document. Required for sources that carry no date — a Google Maps directions URL has an origin, waypoints and destination and nothing else. The capture client must collect this before POSTing.",
+      "properties": {
+        "travel_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Date of travel. Mandatory for maps captures."
+        },
+        "travel_time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{2}:[0-9]{2}$",
+          "description": "Optional. Absent => DateTimeLocal.precision=date, never defaulted to 00:00."
+        },
+        "end_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "For multi-day drives."
+        },
+        "collection_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "User-selected AdventureLog collection. When present the resolver SKIPS the match ladder — the human already decided. This is the normal path for road trips: collection created in advance to book time off, drive plan attached later."
+        },
+        "timezone": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z_]+/[A-Za-z_+-]+$"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "traveler_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Alias ids chosen from a picker. Drives have no passenger manifest."
+        },
+        "item_type_hint": {
+          "$ref": "#/$defs/ItemType"
+        },
+        "submitted_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

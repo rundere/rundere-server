@@ -1,0 +1,62 @@
+/* Shared palette — the ONE source of truth for the app's colours (D-52),
+   linked by the review/home base template AND the SQLAdmin override so all
+   three surfaces are one visual system. The header's theme toggle stamps
+   data-theme on <html>; it must beat the OS media query in BOTH directions, so
+   light is re-declared explicitly under [data-theme="light"]. */
+:root {
+  --ground:#eef1f5; --surface:#fff; --surface-sunk:#f7f9fb;
+  --ink:#0d1520; --ink-2:#43505f; --ink-3:#6b7889;
+  --line:#d5dce5; --line-strong:#b9c4d1;
+  --accent:#2b5cd9; --accent-ink:#fff;
+  --ok:#0f7b6c; --ok-bg:#e2f2ef;
+  --warn:#b45309; --warn-bg:#fdf0e3;
+  --wait:#5a6b7d; --wait-bg:#eceff3;
+  --crit:#b42318; --crit-bg:#fdecea;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --r:3px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ground:#0d1117;--surface:#161b22;--surface-sunk:#10151b;
+  --ink:#e6edf3;--ink-2:#a9b6c4;--ink-3:#7b8794;
+  --line:#262d36;--line-strong:#38414d;
+  --accent:#6b93ff;--accent-ink:#08111f;
+  --ok:#4ec9b0;--ok-bg:#10281f;--warn:#e0a458;--warn-bg:#2c2013;
+  --wait:#8b9bad;--wait-bg:#1a2029;--crit:#f0685c;--crit-bg:#2d1614;}}
+:root[data-theme="dark"]{
+  --ground:#0d1117;--surface:#161b22;--surface-sunk:#10151b;
+  --ink:#e6edf3;--ink-2:#a9b6c4;--ink-3:#7b8794;
+  --line:#262d36;--line-strong:#38414d;
+  --accent:#6b93ff;--accent-ink:#08111f;
+  --ok:#4ec9b0;--ok-bg:#10281f;--warn:#e0a458;--warn-bg:#2c2013;
+  --wait:#8b9bad;--wait-bg:#1a2029;--crit:#f0685c;--crit-bg:#2d1614;}
+:root[data-theme="light"]{
+  --ground:#eef1f5;--surface:#fff;--surface-sunk:#f7f9fb;
+  --ink:#0d1520;--ink-2:#43505f;--ink-3:#6b7889;
+  --line:#d5dce5;--line-strong:#b9c4d1;
+  --accent:#2b5cd9;--accent-ink:#fff;
+  --ok:#0f7b6c;--ok-bg:#e2f2ef;--warn:#b45309;--warn-bg:#fdf0e3;
+  --wait:#5a6b7d;--wait-bg:#eceff3;--crit:#b42318;--crit-bg:#fdecea;}
+
+/* ---- global app header (shared across Review / Home / Admin) ---- */
+.appbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;
+  padding:0 18px;height:46px;background:var(--surface);
+  border-bottom:1px solid var(--line-strong);font-family:var(--ui)}
+.appbar .wordmark{display:flex;align-items:baseline;gap:8px;font-weight:600;
+  letter-spacing:-.01em;color:var(--ink);white-space:nowrap}
+.appbar .wordmark span{font-family:var(--mono);font-size:10px;color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.08em}
+.appnav{display:flex;align-items:stretch;gap:2px;height:100%}
+.appnav a{display:flex;align-items:center;padding:0 11px;text-decoration:none;
+  color:var(--ink-2);border-bottom:2px solid transparent;font-size:13.5px}
+.appnav a:hover{color:var(--ink)}
+.appnav a.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.appnav .grouplbl{display:flex;align-items:center;font-size:10px;
+  text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:0 2px 0 8px}
+.appnav .sep{width:1px;background:var(--line);margin:9px 6px}
+.appbar .grow{flex:1}
+.appbar .theme{border:1px solid var(--line);background:var(--surface-sunk);
+  color:var(--ink-2);border-radius:var(--r);font:inherit;font-size:14px;
+  line-height:1;padding:5px 9px;cursor:pointer}
+.appbar .theme:hover{color:var(--ink);border-color:var(--line-strong)}
+@media (max-width:720px){.appnav .grouplbl{display:none}.appbar{gap:10px;padding:0 10px}}

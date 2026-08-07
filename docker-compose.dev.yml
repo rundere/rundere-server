@@ -1,0 +1,28 @@
+# Dev/verification stack ONLY — production is portainer-stack.yml in Portainer.
+# Throwaway ports and password; brings the app up on http://localhost:8100.
+#   docker compose -f docker-compose.dev.yml up -d --build
+#   docker compose -f docker-compose.dev.yml down -v
+
+services:
+  travel-extractor-dev:
+    build: .
+    ports:
+      - "8100:8000"
+    environment:
+      TX_DATABASE_URL: postgresql+psycopg://travel:devonly@travel-extractor-dev-db:5432/travel
+      TX_INGEST_RATE_LIMIT: "30"
+    depends_on:
+      travel-extractor-dev-db:
+        condition: service_healthy
+
+  travel-extractor-dev-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: travel
+      POSTGRES_PASSWORD: devonly
+      POSTGRES_DB: travel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U travel"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

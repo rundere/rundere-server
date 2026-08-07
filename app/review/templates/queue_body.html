@@ -1,0 +1,40 @@
+{% if not items %}
+  <p class="empty">
+    {% if bucket == 'attention' %}Nothing needs you right now.
+    {% elif bucket == 'staged' %}Nothing approved yet.
+    {% elif bucket == 'waiting' %}Nothing waiting for a trip.
+    {% else %}Nothing here.{% endif %}
+  </p>
+{% else %}
+<div class="strips">
+  {% for i in items %}
+  <button class="strip {% if i.bucket == 'attention' %}s-warn{% elif i.bucket == 'staged' %}s-staged{% elif i.bucket == 'waiting' %}s-wait{% else %}s-ok{% endif %}"
+          hx-get="/review/item/{{ i.id }}?bucket={{ bucket }}"
+          hx-target="#d-{{ i.id }}"
+          hx-swap="innerHTML"
+          onclick="this.classList.toggle('open');
+                   var d=document.getElementById('d-{{ i.id }}');
+                   d.hidden=!d.hidden;">
+    <span class="stripe"></span>
+    <span class="kind">{{ i.kind }}</span>
+    <span class="body">
+      <span class="headline">
+        <span class="what">{{ i.headline }}</span>
+        {% if i.reference %}<span class="ref">{{ i.reference }}</span>{% endif %}
+      </span>
+      <span class="sub">{{ i.subline }}</span>
+      {% if i.note %}<span class="reason">{{ i.note }}</span>{% endif %}
+    </span>
+    <span class="meta">
+      <span class="pill {% if i.bucket=='attention' %}warn{% elif i.bucket=='staged' %}staged{% else %}ok{% endif %}">
+        {% if i.bucket=='attention' %}Needs you
+        {% elif i.bucket=='staged' %}Approved
+        {% else %}Ready{% endif %}
+      </span>
+      {% if i.collection_name %}<span class="age">{{ i.collection_name }}</span>{% endif %}
+    </span>
+  </button>
+  <div class="detail" id="d-{{ i.id }}" hidden></div>
+  {% endfor %}
+</div>
+{% endif %}

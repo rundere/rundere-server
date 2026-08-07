@@ -1,0 +1,43 @@
+{# Step 2 of logging: the RESULT of a real run. Logged items have moved to the
+   'Logged' bucket, so the current list, the counts and the rail are refreshed
+   out-of-band. #}
+<div class="cpanel">
+  {% if error %}
+    <div class="cbar err">Logging failed — {{ error }}</div>
+  {% else %}
+    <div class="cbar {{ 'err' if summary.writes_failed else 'ok' }}">
+      Logged <b>{{ summary.writes_ok }}</b> write(s) across
+      {{ summary['items'] }} item(s){% if summary.writes_failed %},
+      <b>{{ summary.writes_failed }}</b> failed{% endif %}{% if summary.skipped %},
+      {{ summary.skipped }} already present{% endif %}.
+    </div>
+    {% for plan in summary.plans %}
+      <div class="cplan">
+        <div class="chead">{{ plan.headline }}</div>
+        <ul>
+          {% for r in plan.results %}
+            <li class="{{ 'skip' if r.skipped else ('fail' if not r.ok else 'good') }}">
+              {% set _verb = {'update':'Update','cancel':'Cancel'}.get(r.operation) %}
+              {% if _verb %}<b class="op op-{{ r.operation }}">{{ _verb }}</b>{% endif %}
+              <code>{{ r.target }}</code>
+              {% if r.skipped %}— {{ r.skipped }}
+              {% elif not r.ok %}— {{ r.error }}
+              {% elif r.operation == 'update' %}→ revised{% if r.get('updated_id') %} ({{ r.updated_id }}){% endif %}
+              {% elif r.operation == 'cancel' and r.get('deleted_id') %}→ removed ({{ r.deleted_id }})
+              {% elif r.operation == 'cancel' %}→ marked cancelled{% if r.get('cancelled_id') %} ({{ r.cancelled_id }}){% endif %}
+              {% elif r.id %}→ logged ({{ r.id }})
+              {% else %}→ logged{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endfor %}
+  {% endif %}
+  <div class="cactions">
+    <button class="act quiet" hx-get="/review/commit/cancel"
+            hx-target="#commit-panel" hx-swap="innerHTML">Dismiss</button>
+  </div>
+</div>
+<div id="queue-body" hx-swap-oob="true">{% include "queue_body.html" %}</div>
+{% include "_funnel.html" %}
+{% include "_rail.html" %}

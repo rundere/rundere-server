@@ -1,0 +1,153 @@
+{% if i.stages.ignored %}
+  <div class="stagebar-off">Ignored — this won’t be logged.</div>
+{% elif i.stages.steps %}
+  <ol class="stagebar" aria-label="This item’s progress: currently at the highlighted stage">
+    {% for s in i.stages.steps %}
+      <li class="st {{ s.state }}"><span>{{ s.label }}</span></li>
+    {% endfor %}
+  </ol>
+{% endif %}
+
+{% if violations %}
+<div class="violations">
+  <b>Why this is held back</b>
+  <ul>{% for v in violations %}<li><code>{{ v }}</code></li>{% endfor %}</ul>
+</div>
+{% elif saved %}
+<div class="saved-note">Saved. {{ i.note or 'This is ready to approve.' }}</div>
+{% endif %}
+
+<form hx-post="/review/item/{{ i.id }}/save?bucket={{ bucket }}"
+      hx-target="#d-{{ i.id }}" hx-swap="innerHTML">
+<div class="detail-grid">
+  <div class="pane">
+    <h3>Where this came from</h3>
+    <div class="doc">
+      <dl>
+        {% if i.source.type %}<dt>Channel</dt><dd>{{ i.source.type }}</dd>{% endif %}
+        {% if i.source.document_timestamp %}
+          <dt>Document date</dt><dd>{{ i.source.document_timestamp }}</dd>{% endif %}
+        {% if i.source.ref %}<dt>Message</dt><dd>{{ i.source.ref }}</dd>{% endif %}
+        <dt>Read by</dt>
+        <dd>{{ i.extractor }}{% if i.confidence %} · confidence {{ i.confidence }}{% endif %}</dd>
+        {% if i.canonical_key %}<dt>Identity</dt><dd>{{ i.canonical_key }}</dd>{% endif %}
+        {% if i.revision_action %}<dt>Change</dt><dd>{{ i.revision_action }}</dd>{% endif %}
+        {% if i.locked_fields %}
+          <dt>Your edits</dt>
+          <dd>{{ i.locked_fields|join(', ') }}<br>
+            <span class="lockhint">protected from being overwritten</span></dd>
+        {% endif %}
+      </dl>
+    </div>
+  </div>
+
+  <div class="pane">
+    <h3>What we read from it — correct anything wrong</h3>
+    {% for f in i.payload | fields %}
+      <div class="field {% if f.missing %}missing{% endif %}">
+        <label for="{{ i.id }}-{{ loop.index }}">{{ f.label }}</label>
+        {% if not f.editable %}
+          <span class="v ro">{{ f.value or '—' }}</span>
+        {% elif f.kind == 'datetime' %}
+          <input id="{{ i.id }}-{{ loop.index }}" name="f:{{ f.path }}"
+                 type="text" inputmode="numeric"
+                 value="{{ f.value }}"
+                 placeholder="YYYY-MM-DD or YYYY-MM-DD 07:20"
+                 pattern="\d{4}-\d{2}-\d{2}([T ]\d{1,2}:?\d{2})?"
+                 title="Date, or date and time (07:20 or 0720). Leave the time off if the document doesn't give one.">
+        {% elif f.kind == 'select' %}
+          <select id="{{ i.id }}-{{ loop.index }}" name="f:{{ f.path }}">
+            {% for o in f.options %}
+              <option value="{{ o }}" {% if o == f.value %}selected{% endif %}>{{ o }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input id="{{ i.id }}-{{ loop.index }}" name="f:{{ f.path }}" type="text"
+                 value="{{ f.value }}" placeholder="not stated in the document">
+        {% endif %}
+        {% if f.missing %}
+          <p class="hint">{{ f.hint or 'Needed before this can be logged. Leave the time off if the document really doesn’t give one.' }}</p>
+        {% elif f.kind == 'datetime' and f.precision == 'date' and f.value %}
+          <p class="hint quiet">Date only — no time was given.</p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% if pax %}
+<div class="pax">
+  <h3>Who flew</h3>
+  <input type="hidden" name="pax_present" value="1">
+  {% if pax.have_identities %}
+    <p class="why">Choose from your travellers — self logs to AirTrail, guests don’t.</p>
+    <div class="pax-list">
+      {% for t in pax.identities %}
+        <label class="pax-opt {% if t.selected %}on{% endif %}">
+          <input type="checkbox" name="pax:{{ t.id }}" {% if t.selected %}checked{% endif %}>
+          <span>{{ t.name }}</span><span class="pax-kind">{{ t.kind }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="hint">No travellers are configured yet, so this can’t be logged.
+      <a href="/admin/traveler-identity/create" target="_blank" rel="noopener">Add a traveller</a>
+      (mark yourself “self”), then reopen this item.</p>
+  {% endif %}
+  {% if pax.unmatched %}
+    <p class="hint">The document lists <b>{{ pax.unmatched|join(', ') }}</b>, matching no
+      traveller. <a href="/admin/traveler-identity/create" target="_blank" rel="noopener">Create a
+      traveller</a> (self or guest) for anyone who should be logged, then tick them above.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="writes">
+  <h3>What logging this will write</h3>
+  {% if i.writes %}
+    <div class="write-list">
+      {% for w in i.writes %}
+        <div class="w {{ w.state }}">
+          <span class="sys">{{ w.system }}</span>
+          <span class="txt">{{ w.text }}</span>
+        </div>
+      {% endfor %}
+    </div>
+    {% for w in i.writes if w.why %}<p class="why">{{ w.why }}</p>{% endfor %}
+  {% else %}
+    <p class="why">Nothing — this writes no records.</p>
+  {% endif %}
+</div>
+
+<div class="actions">
+  <button type="submit" class="act">Save corrections</button>
+  {% if i.bucket == 'logged' %}
+    <span class="why">Logged — already written to AirTrail / AdventureLog.</span>
+  {% elif i.bucket == 'staged' %}
+    <button type="button" class="act"
+            hx-post="/review/item/{{ i.id }}/unapprove?bucket={{ bucket }}"
+            hx-target="#queue-body" hx-swap="innerHTML"
+            title="Undo approval and re-resolve so you can correct it">Un-approve</button>
+    <button type="button" class="act quiet"
+            hx-post="/review/item/{{ i.id }}/ignore?bucket={{ bucket }}"
+            hx-target="#queue-body" hx-swap="innerHTML"
+            hx-confirm="Ignore this item? It will never be logged.">Ignore this</button>
+  {% else %}
+    {% if i.blocked %}
+      <button type="button" class="act primary" disabled>{{ i.action_hint or 'Resolve the issue above to approve' }}</button>
+    {% else %}
+      {# A form SUBMIT, not a bare POST: it carries any edits you just made
+         (e.g. the passenger selection) and approves in one step, so approving
+         can never silently drop a correction. #}
+      <button type="submit" name="and_approve" value="1" class="act primary">Save &amp; approve</button>
+    {% endif %}
+    <button type="button" class="act quiet"
+            hx-post="/review/item/{{ i.id }}/ignore?bucket={{ bucket }}"
+            hx-target="#queue-body" hx-swap="innerHTML"
+            hx-confirm="Ignore this item? It will never be logged.">Ignore this</button>
+  {% endif %}
+  <span class="spacer"></span>
+  <span class="why">Saving re-checks it. Approving stages it — nothing is written
+    until you log the batch.</span>
+</div>
+</form>

@@ -1,0 +1,25 @@
+{# A running background job (Process / Reprocess / Log), polling itself. When
+   the job finishes, /review/jobs/{id} returns _job_done.html instead, which has
+   no `every` trigger — so polling stops on its own — and refreshes the queue,
+   counts and rail out-of-band. #}
+<div class="jobcard" hx-get="/review/jobs/{{ job.id }}?bucket={{ bucket }}"
+     hx-trigger="load delay:700ms, every 1300ms" hx-target="this" hx-swap="outerHTML">
+  <div class="job-head">
+    <span class="job-kind">{{ job.kind }}</span>
+    <span class="job-phase">{{ job.phase }}</span>
+    <span class="job-dot" aria-hidden="true"></span>
+  </div>
+  {% if job.total %}
+    <div class="job-bar">
+      <span style="width:{{ ((100 * job.done / job.total)|round(0, 'floor'))|int }}%"></span>
+    </div>
+    <div class="job-meta">
+      <b>{{ job.done }} / {{ job.total }}</b>
+      {% if job.current %}<span class="job-cur">{{ job.current }}</span>{% endif %}
+      {% if eta %}<span class="job-eta">{{ eta }}</span>{% endif %}
+    </div>
+  {% else %}
+    <div class="job-meta">Working…{% if job.current %}
+      <span class="job-cur">{{ job.current }}</span>{% endif %}</div>
+  {% endif %}
+</div>

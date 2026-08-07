@@ -1,0 +1,20 @@
+{# A finished job: no `every` trigger, so the panel stops polling itself. The
+   result line stays until dismissed; the queue, counts and rail refresh
+   out-of-band so the operator sees the effect of the run immediately. #}
+<div class="jobcard done {{ 'err' if job.toast_error else 'ok' }}">
+  <div class="job-head">
+    <span class="job-kind">{{ job.kind }}</span>
+    <span class="job-phase">done</span>
+  </div>
+  <div class="job-meta">{{ job.toast }}</div>
+  {% if job.details %}
+    <ul class="job-details">
+      {% for line in job.details %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+  <button class="act tiny" hx-get="/review/jobs/{{ job.id }}/dismiss"
+          hx-target="#job-panel" hx-swap="innerHTML">Dismiss</button>
+</div>
+{% include "_funnel.html" %}
+{% include "_rail.html" %}
+<div id="queue-body" hx-swap-oob="true">{% include "queue_body.html" %}</div>

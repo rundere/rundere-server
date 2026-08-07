@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="app">
+  {# Operations strip: status + the "run something over many items" controls,
+     visually a separate plane from the per-item work below. #}
+  <div class="ops">
+    <div class="ops-row">
+      <h1 class="pagetitle">Review</h1>
+      {% include "_funnel.html" %}
+      <div class="opsbtns">
+        <button class="act tiny proc"
+                hx-post="/review/process?bucket={{ bucket }}"
+                hx-target="#job-panel" hx-swap="innerHTML"
+                hx-disabled-elt="this" hx-indicator="this"
+                title="Extract and resolve any captured emails still waiting">
+          <span class="lbl">↻ Process new captures</span>
+          <span class="spin">Working…</span>
+        </button>
+        <button class="act tiny proc"
+                hx-post="/review/reprocess?bucket={{ bucket }}"
+                hx-target="#job-panel" hx-swap="innerHTML"
+                hx-disabled-elt="this" hx-indicator="this"
+                hx-confirm="Re-extract and re-resolve every item not yet logged, from the original emails? Any edits or approvals on those items will be redone. Logged items are untouched."
+                title="Re-run the current extractor and resolver over already-processed emails">
+          <span class="lbl">⟳ Reprocess</span>
+          <span class="spin">Reprocessing…</span>
+        </button>
+        <button class="act tiny proc primary"
+                hx-post="/review/commit"
+                hx-vals='{"bucket":"{{ bucket }}"}'
+                hx-target="#job-panel" hx-swap="innerHTML"
+                hx-disabled-elt="this" hx-indicator="this"
+                title="Preview, then log every approved item to AirTrail + AdventureLog">
+          <span class="lbl">📤 Log approved…</span>
+          <span class="spin">Checking…</span>
+        </button>
+      </div>
+    </div>
+    <div id="toast" class="toast"></div>
+    <div id="job-panel"></div>
+  </div>
+
+  {# Work area: the operator's per-item surface — bucket rail + queue + detail.
+     No global action buttons live here. #}
+  <div class="frame">
+    {% include "_rail.html" %}
+    <div id="queue-body">
+      {% include "queue_body.html" %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,8 @@
+{# Replace SQLAdmin's own top bar with the shared global app header, so /admin
+   sits under the same Action/Administer nav as the rest of the app (the D-52 UX
+   review). SQLAdmin's left sidebar stays — it is the table navigation within
+   the Administer section. #}
+{% extends "_sqladmin/sqladmin/layout.html" %}
+{% block topbar %}
+  {% include "_appheader.html" %}
+{% endblock %}
