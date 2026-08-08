@@ -29,6 +29,26 @@ def _reject(status: int, reason: str) -> Response:
                     media_type="application/json")
 
 
+def store_batch(session: Session, body: bytes, payload: dict,
+                api_key_id: str) -> IngestBatch:
+    """Content-address the raw submission (D-15) and queue it as a received
+    batch. Shared by the public /ingest route (HMAC-authed) and the internal
+    /capture/web route (proxy-authed): one storage path, two front doors. The
+    caller commits."""
+    sha = hashlib.sha256(body).hexdigest()
+    if session.get(Artifact, sha) is None:
+        session.add(Artifact(sha256=sha, content_type="application/json",
+                             size_bytes=len(body)))
+    batch = IngestBatch(
+        api_key_id=api_key_id,
+        declared_segment_count=payload.get("declared_segment_count"),
+        payload=payload,
+        artifact_sha256=sha,
+    )
+    session.add(batch)
+    return batch
+
+
 @router.post("/ingest", status_code=202)
 async def ingest(request: Request, session: Session = Depends(get_session)):
     body = await request.body()
@@ -57,18 +77,7 @@ async def ingest(request: Request, session: Session = Depends(get_session)):
     except Exception:
         return _reject(400, "body is not a JSON object")
 
-    # Content-address the raw submission (D-15) and queue it.
-    sha = hashlib.sha256(body).hexdigest()
-    if session.get(Artifact, sha) is None:
-        session.add(Artifact(sha256=sha, content_type="application/json",
-                             size_bytes=len(body)))
-    batch = IngestBatch(
-        api_key_id=key_row.id,
-        declared_segment_count=payload.get("declared_segment_count"),
-        payload=payload,
-        artifact_sha256=sha,
-    )
-    session.add(batch)
+    batch = store_batch(session, body, payload, key_row.id)
     key_row.last_used_at = datetime.now(timezone.utc)
     session.commit()
     return {"batch_id": batch.id, "status": "received"}

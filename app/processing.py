@@ -25,7 +25,8 @@ _CONFIDENCE = {"jsonld": 0.9, "ical": 0.9, "maps_url": 0.9, "llm": 0.6}
 def _source(batch: IngestBatch, payload: dict) -> dict:
     channel = payload.get("capture_channel") or "gmail"
     return {
-        "type": {"gmail": "gmail", "maps_url": "maps"}.get(channel, "manual"),
+        "type": {"gmail": "gmail", "maps_url": "maps",
+                 "gcal": "gcal", "web": "web"}.get(channel, "manual"),
         "ref": payload.get("message_id") or batch.artifact_sha256 or batch.id,
         "thread_ref": payload.get("thread_id"),
         "received_at": batch.received_at.isoformat(),

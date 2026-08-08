@@ -258,6 +258,30 @@ a{color:var(--accent)}
   word-break:break-word}
 .jobcard .act.tiny{margin-top:10px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* Web capture page (1.1) */
+.cap-wrap{display:grid;grid-template-columns:1fr 1fr;gap:0}
+@media (max-width:900px){.cap-wrap{grid-template-columns:1fr}}
+.cap-card{padding:16px}
+.cap-card+.cap-card{border-left:1px solid var(--line);background:var(--surface-sunk)}
+@media (max-width:900px){.cap-card+.cap-card{border-left:0;border-top:1px solid var(--line)}}
+.cap-card h3{font-size:13px;margin-bottom:8px}
+.cap-card .why{margin:0 0 12px}
+.bm{text-decoration:none;display:inline-block;cursor:grab}
+.cap-lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink-3);margin:12px 0 4px}
+.cap-input,.cap-area{width:100%;background:var(--surface);color:var(--ink);
+  border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font-size:12.5px}
+.cap-input.mono,.cap-area.mono{font-family:var(--mono)}
+.cap-area{resize:vertical;min-height:110px}
+.cap-input:focus-visible,.cap-area:focus-visible{outline:2px solid var(--accent);
+  outline-offset:-1px;border-color:var(--accent)}
+.cap-fields{margin:12px 0 0;display:flex;flex-direction:column;gap:2px}
+.cap-actions{margin-top:12px}
+.cap-msg{margin-top:12px;padding:9px 11px;border-radius:var(--r);font-size:13px}
+.cap-msg.ok{background:var(--ok-bg);color:var(--ok)}
+.cap-msg.err{background:var(--warn-bg);color:var(--warn)}
+.cap-go{display:inline-block;margin-left:8px;font-size:12.5px}
 </style>
 </head>
 <body>

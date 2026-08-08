@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from extract import gcal, ical, jsonld, maps_url, mime, pdf
+from extract import gcal, ical, jsonld, maps_url, mime, pdf, web
 from extract.normalize import normalize_batch, normalize_payload
 from extract.llm import ExtractionFailed, OllamaExtractor, load_extraction_schema
 from validation import validate_schema
@@ -78,6 +78,42 @@ def extract_ingest_payload(ingest_payload: dict,
         result.needs_review = True
         result.reasons.append("gcal event had no usable title/start")
         result.trace.append("gcal: empty extraction")
+        return result
+
+    # ---- web channel (1.1): a page the operator sent (bookmarklet outerHTML or
+    # pasted source). JSON-LD is the common case — hotels/restaurants/events all
+    # embed schema.org; the LLM reads the stripped text when a page carries none.
+    if channel == "web" or ingest_payload.get("html"):
+        html = ingest_payload.get("html") or ""
+        ld_items = web.extract_web(html)
+        if ld_items:
+            done = _validated(ld_items, "jsonld", result)
+            if done:
+                return done
+            result.trace.append("jsonld: page markup was schema-invalid")
+        else:
+            result.trace.append("jsonld: no reservation markup in page")
+        if llm is None:
+            result.needs_review = True
+            result.reasons.append(
+                "web page had no schema.org reservation markup and no LLM configured")
+            return result
+        doc = web.html_to_text(html)
+        url = ingest_payload.get("source_url") or ""
+        context = "Captured web page" + (f" — {url}" if url else "")
+        try:
+            batch, attempts = llm.extract(doc, context)
+        except ExtractionFailed as ex:
+            result.needs_review = True
+            result.llm_attempts = ex.attempts
+            result.reasons.append(str(ex))
+            result.trace.append("llm: failed validation gate")
+            return result
+        batch = normalize_batch(batch)
+        result.llm_attempts = attempts
+        result.extractor = "llm"
+        result.batch = batch
+        result.trace.append(f"llm: ok ({len(batch['items'])} item(s) from web page)")
         return result
 
     # ---- email channel (gmail add-on shape)

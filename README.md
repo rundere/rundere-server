@@ -31,13 +31,14 @@ capture  →  /ingest  →  process (extract)  →  resolve  →  review  →  c
   Maps)       signed)      TravelItems)        matching)   HTMX)      AdventureLog)
 ```
 
-**Capture surfaces (v1.0):**
+**Capture surfaces:**
 
 | Surface | Channel | Client | How |
 |---|---|---|---|
 | Gmail | `gmail` | Apps Script add-on | Click "Capture" on an open booking email |
 | Google Calendar | `gcal` | Apps Script add-on | Click "Capture" on an open event |
 | Google Maps directions | `maps_url` | n8n hosted form | Paste a directions link + travel date |
+| Web page | `web` | Built-in page + bookmarklet | Click a bookmarklet on any booking page, or paste its source/URL |
 
 **Extractor chain** (`extract/`, tried in order — D-10/D-27):
 `jsonld → ical → pdf → maps_url → llm`. Structured sources (schema.org JSON-LD
@@ -52,7 +53,7 @@ D-11) — nothing is sent to a cloud model.
 - **Canonical keys** (`resolve/keys.py`, spec [`docs/A5-canonical-keys.md`](docs/A5-canonical-keys.md)) dedupe re-captures of the same booking.
 - **Collection ladder** (`resolve/collections.py`, spec [`docs/A6-collection-resolution.md`](docs/A6-collection-resolution.md)) attaches items to the right AdventureLog trip.
 - **Home profiles** (effective-dated, D-07) decide which places never count as "visited" and which local drives aren't trips.
-- **148 rules** (`rules.py`) with per-rule `enforce` / `audit` / `off` toggles gate what commits and what goes to review.
+- **57 rules** (`rules.py`) with per-rule `enforce` / `audit` / `off` toggles gate what commits and what goes to review.
 - **Content-addressed originals** (D-15): the raw captured artifact is stored immutably so reprocessing never loses information.
 
 ---
@@ -207,6 +208,16 @@ Maps has no Apps Script surface, so capture is a small n8n hosted form.
 
 The `Sign & build` node mirrors [`capture/maps-n8n/code-node.js`](capture/maps-n8n/code-node.js); it signs the request identically to `app/auth.py` and sends the **raw** signed string — don't change the HTTP node's body type away from *Raw*, or the signature breaks. **Travel date is required** (a directions link has no date — RULE-31).
 
+### Web page (built-in, no external client)
+
+Yonder serves its own capture page at **`/capture`** on the private app — no add-on, no n8n, no API key or HMAC. Because this page lives on the private router, it is authenticated by whatever you put in front of that router (a reverse-proxy auth layer, SSO, mTLS, or a trusted LAN); if your proxy forwards an identity header (`X-authentik-username`, `X-Forwarded-User`, …) Yonder records it as the submitter.
+
+Two ways to use it:
+- **Bookmarklet** (primary) — the `/capture` page offers a bookmarklet to drag to your bookmarks bar. Click it on any booking page — including one behind a login — and it POSTs the page's rendered HTML to Yonder. This is the reliable path: your browser has already loaded and authenticated the page.
+- **Paste / URL** — paste a page's HTML source, or a **public** URL Yonder fetches itself (SSRF-guarded: only public hosts; login-walled pages can't be fetched, so use the bookmarklet for those).
+
+Extraction reuses the JSON-LD reader (most booking pages embed schema.org), falling back to the LLM for pages without markup. Keep the `/capture` route on the **private** router only — never expose it publicly.
+
 ---
 
 ## Daily workflow
@@ -287,13 +298,13 @@ python3 rules.py --docs > RULES.md
 ## Project layout
 
 ```
-app/            FastAPI service: /health, /ingest, /admin (SQLAdmin), review queue,
-                cli.py, processing.py (extract stage: batches -> TravelItems)
+app/            FastAPI service: /health, /ingest, /capture (web capture page),
+                /admin (SQLAdmin), review queue, cli.py, processing.py
 extract/        extractor chain, in try-order (D-10/D-27):
-                jsonld -> ical -> pdf -> maps_url -> llm (Ollama, D-11)
+                jsonld -> ical -> pdf -> maps_url -> web -> llm (Ollama, D-11)
 resolve/        keys.py (A5 canonical keys), collections.py (A6 ladder)
 adapters/       target writers: adventurelog.py, airtrail.py, airtrail_db.py
-rules.py        rule registry + engine (148 rules, tri-state toggles — D-25)
+rules.py        rule registry + engine (57 rules, tri-state toggles — D-25)
 validation.py   schema gate (real jsonschema)
 schemas/        travel-item (canonical) + travel-extraction (derived, D-09)
 alembic/        migrations (baseline 0001)

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Capture a web page{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops">
+    <div class="ops-row">
+      <h1 class="pagetitle">Capture a web page</h1>
+    </div>
+  </div>
+
+  <div class="cap-wrap">
+    {# --- Primary path: the bookmarklet --- #}
+    <section class="cap-card">
+      <h3>Bookmarklet — one click on any booking page</h3>
+      <p class="why">
+        Drag this to your bookmarks bar. When you’re looking at a confirmation
+        page (even one behind a login), click it — Yonder captures the page
+        you’re viewing and queues it. This is the reliable path: your browser has
+        already loaded and authenticated the page.
+      </p>
+      <p>
+        <a class="act primary bm" href="{{ bookmarklet|safe }}"
+           onclick="return false">➤ Capture to Yonder</a>
+      </p>
+      <label class="cap-lbl" for="bm">…or copy the bookmarklet source</label>
+      <input id="bm" class="cap-input mono" type="text" readonly
+             value="{{ bookmarklet }}" onclick="this.select()">
+    </section>
+
+    {# --- Fallback path: paste source or a public URL --- #}
+    <section class="cap-card">
+      <h3>Or paste a page — its source, or a public link</h3>
+      <p class="why">
+        Paste a page’s HTML source (View Source → copy), or a public URL Yonder
+        can fetch itself. Login-walled pages can’t be fetched from a URL — use
+        the bookmarklet or paste the source for those.
+      </p>
+      <form hx-post="/capture/web" hx-target="#cap-result" hx-swap="innerHTML"
+            hx-disabled-elt="button[type=submit]">
+        <textarea name="content" class="cap-area mono" rows="7"
+                  placeholder="Paste page source (<!doctype html>…) or a URL (https://…)"></textarea>
+        <div class="cap-fields">
+          <div class="field">
+            <label for="title">Title (optional)</label>
+            <input id="title" name="title" type="text" placeholder="override the page title">
+          </div>
+          <div class="field">
+            <label for="travel_date">Travel date (optional)</label>
+            <input id="travel_date" name="travel_date" type="text" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="field">
+            <label for="collection_id">Trip / collection id (optional)</label>
+            <input id="collection_id" name="collection_id" type="text"
+                   placeholder="force a specific AdventureLog collection">
+          </div>
+          <div class="field">
+            <label for="notes">Notes (optional)</label>
+            <input id="notes" name="notes" type="text" placeholder="anything to remember">
+          </div>
+        </div>
+        <div class="cap-actions">
+          <button class="act primary" type="submit">Capture</button>
+        </div>
+      </form>
+      <div id="cap-result"></div>
+    </section>
+  </div>
+</div>
+{% endblock %}

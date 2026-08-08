@@ -1,0 +1,7 @@
+{# HTMX result for the paste/URL form. #}
+<div class="cap-msg {{ 'ok' if ok else 'err' }}">
+  {{ message }}
+  {% if ok and batch_id %}
+  <a class="cap-go" href="/review?bucket=all">Open the review queue →</a>
+  {% endif %}
+</div>
