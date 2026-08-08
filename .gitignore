@@ -51,3 +51,7 @@ HANDOFF.md
 DECISIONS.md
 OPEN_QUESTIONS.md
 A4-PROBE-NOTES.md
+
+# operator deployment copy (real paths/secrets) — the repo keeps the generic
+# portainer-stack.yml reference instead
+yonder-stack.yml
