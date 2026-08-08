@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.models import CommitAttempt, TravelItem
+from resolve.geocode import tz_from_coords
 from resolve.targets import places_in_payload
 
 log = logging.getLogger("travel-extractor.commit")
@@ -272,8 +273,14 @@ def build_transportation(payload: dict, *, collection_id: str | None,
     # Same fix as the AirTrail flight: when the document carried no zone, fall
     # back to the resolved airport's tz so the transportation keeps its real
     # time instead of logging as date-only. Prefer any tz already on the place.
-    dep_tz = dep.get("tz") or _airport_tz(airports, dep.get("iata"))
-    arr_tz = arr.get("tz") or _airport_tz(airports, arr.get("iata"))
+    # tz fallback chain: document/reference tz -> airport IATA tz (flights) ->
+    # the place's own coordinates (trains/buses/ferries have no IATA, but the
+    # station was geocoded). Without the last hop a real train time degrades to
+    # date-only at commit, since _to_utc_z refuses to emit a naive local (D-06).
+    dep_tz = (dep.get("tz") or _airport_tz(airports, dep.get("iata"))
+              or tz_from_coords(dep.get("lat"), dep.get("lon")))
+    arr_tz = (arr.get("tz") or _airport_tz(airports, arr.get("iata"))
+              or tz_from_coords(arr.get("lat"), arr.get("lon")))
     date_val, dep_synth = _al_datetime(dep_dt, dep_tz)
     end_val, _ = _al_datetime(arr_dt, arr_tz)
     dep_code = (dep.get("iata") or "").upper() or None

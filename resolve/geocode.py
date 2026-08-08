@@ -204,6 +204,33 @@ class PhotonGeocoder:
         return None
 
 
+_TZF = None
+
+
+def tz_from_coords(lat, lon) -> str | None:
+    """IANA zone for a coordinate (offline, via timezonefinder), or None.
+
+    Lets a geocoded place the document never zoned — a train/bus station, a
+    coordinate-only stop, a hotel — recover its timezone so a real local time
+    survives commit instead of degrading to a date-only midnight stub. Flights
+    get their zone from the airport's IATA tz (committing._airport_tz); this is
+    the equivalent for everything else.
+
+    Lazy-imported and fault-tolerant: if timezonefinder is unavailable or the
+    lookup fails, returns None — identical to the prior behaviour, so a place
+    that can't be zoned degrades exactly as it did before, never worse."""
+    if lat is None or lon is None:
+        return None
+    try:
+        global _TZF
+        if _TZF is None:
+            from timezonefinder import TimezoneFinder
+            _TZF = TimezoneFinder()
+        return _TZF.timezone_at(lat=float(lat), lng=float(lon))
+    except Exception:
+        return None
+
+
 def apply_geocode(place: dict, result: GeocodeResult | None,
                   *, accept_unverified: bool = False) -> dict:
     """Merge a geocode into a Place. Document-stated values always win; the
@@ -224,4 +251,11 @@ def apply_geocode(place: dict, result: GeocodeResult | None,
         out["region"] = result.region
     if not out.get("address") and result.address:
         out["address"] = result.address
+    # A zone the document never stated, recovered from the resolved coordinates,
+    # so a non-airport place (station, venue) keeps its real local time at commit
+    # (RULE-04 / D-06). Document/reference tz always wins; this only fills a blank.
+    if not out.get("tz") and out.get("lat") is not None and out.get("lon") is not None:
+        tz = tz_from_coords(out["lat"], out["lon"])
+        if tz:
+            out["tz"] = tz
     return out

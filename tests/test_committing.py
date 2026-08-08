@@ -311,6 +311,43 @@ def test_transportation_carries_description_and_timezones():
     assert body["end_timezone"] == "America/New_York"
 
 
+def test_transportation_recovers_timezone_from_station_coordinates():
+    """A train station has no IATA, so the zone can't come from the airport
+    reference — but the station WAS geocoded, so its coordinates supply the tz.
+    Without this hop, a real departure time (15:35) silently degrades to
+    date-only at commit (_to_utc_z refuses a naive local — RULE-04/D-06).
+    Harar (31.63, -7.99) -> Africa/Casablanca."""
+    _skip()
+    if C.tz_from_coords(31.6258257, -7.9891608) is None:
+        import pytest
+        pytest.skip("timezonefinder not installed")
+    p = {
+        "item_type": "ground_transport",
+        "booking_reference": "TR123",
+        "ground_transport": {
+            "mode": "train",
+            "service_number": "82",
+            "departure": {
+                "place": {"raw": "HARAR", "name": "Harar", "city": "Harar",
+                          "country": "MA", "lat": 31.6258257, "lon": -7.9891608, "iata": None},
+                "time": {"local": "2026-09-13T15:35", "precision": "datetime", "tz": None},
+            },
+            "arrival": {
+                "place": {"raw": "Dire Dawa station", "name": "Dire Dawa station", "city": "Casablanca",
+                          "country": "MA", "lat": 33.5882819, "lon": -7.6113592, "iata": None},
+                "time": {"local": "2026-09-13T18:26", "precision": "datetime", "tz": None},
+            },
+        },
+    }
+    body, synth = C.build_transportation(p, collection_id="c1")
+    assert body["start_timezone"] == "Africa/Casablanca"
+    assert body["end_timezone"] == "Africa/Casablanca"
+    # The real time survives as a UTC 'Z' instant, NOT a bare date-only stub.
+    assert body["date"].startswith("2026-09-13T") and body["date"].endswith("Z")
+    assert body["end_date"].startswith("2026-09-13T") and body["end_date"].endswith("Z")
+    assert synth is False
+
+
 def test_coordinates_rounded_to_adventurelog_precision():
     """AdventureLog's DecimalField rejects (400) any latitude with >6 decimal
     places or longitude with >9 total digits. A raw geocode (35.5849387 /
