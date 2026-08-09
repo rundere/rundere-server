@@ -146,12 +146,41 @@ def mount_admin(app, engine) -> None:
         column_labels = {"display_name": "Name", "kind": "Kind",
                          "airtrail_user_id": "AirTrail user id",
                          "aliases": "Aliases"}
-        form_overrides = {"aliases": LinesField}
-        form_args = {"aliases": {"description":
-                     "One alias per line (name as printed on tickets)."}}
+        # `kind` is a closed vocabulary (self | guest, D-35) — a free-text box
+        # let a typo like "Self" or "geust" through, which then matches no
+        # identity logic. Force the choice with a dropdown, same override
+        # mechanism as aliases -> LinesField.
+        form_overrides = {"aliases": LinesField, "kind": wtforms.SelectField}
+        form_args = {
+            "aliases": {"description":
+                        "One alias per line (name as printed on tickets)."},
+            "kind": {"choices": [("self", "self — the AirTrail account holder"),
+                                 ("guest", "guest")],
+                     "default": "guest",
+                     "description": "Exactly one traveller is 'self' (the "
+                     "AirTrail account holder); everyone else is a guest."},
+        }
+
+    class TripAdmin(ModelView, model=models.Trip):
+        name = "Trip"
+        name_plural = "Trips"
+        # The Trips surface (/trips) is the real editor; this raw view is the
+        # D-18 table explorer, useful for spotting seeded rows by source.
+        column_list = [models.Trip.name, models.Trip.start_date,
+                       models.Trip.end_date, models.Trip.source,
+                       models.Trip.external_ref, models.Trip.updated_at]
+        column_labels = {"external_ref": "External ref"}
+        column_default_sort = ("start_date", True)
+
+    class TripActivityAdmin(ModelView, model=models.TripActivity):
+        name = "Trip Activity"
+        name_plural = "Trip Activities"
+        column_list = [models.TripActivity.trip_id, models.TripActivity.type,
+                       models.TripActivity.starts_at,
+                       models.TripActivity.updated_at]
 
     for view in (TravelItemAdmin, ItemKeyAdmin, IngestBatchAdmin,
                  CommitAttemptAdmin, SourceRuleAdmin, ApiKeyAdmin,
                  ArtifactAdmin, TravelerIdentityAdmin,
-                 RuleSettingAdmin):
+                 RuleSettingAdmin, TripAdmin, TripActivityAdmin):
         admin.add_view(view)

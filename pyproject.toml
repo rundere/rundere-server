@@ -1,6 +1,6 @@
 [project]
 name = "yonder"
-version = "1.2.0"
+version = "2.0.1"
 description = "Yonder — travel documents -> AirTrail + AdventureLog."
 requires-python = ">=3.12"
 dependencies = [
@@ -22,7 +22,7 @@ dependencies = [
 dev = ["pytest>=8.0", "httpx>=0.27"]
 
 [tool.setuptools]
-packages = ["app", "app.review", "resolve", "extract", "adapters", "adapters.targets"]
+packages = ["app", "app.review", "app.trips", "resolve", "extract", "adapters", "adapters.targets"]
 py-modules = ["rules", "validation"]
 
 [tool.pytest.ini_options]

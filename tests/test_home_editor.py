@@ -103,6 +103,33 @@ def test_save_edit_delete_roundtrip():
     _skip_or(run)
 
 
+def test_save_and_delete_return_fragment_not_full_page():
+    """Regression: the form/delete swap the response into #home-app
+    (hx-swap="outerHTML"). save()/delete() must answer with the _home_app.html
+    FRAGMENT, not the full home.html — the full page carries the global app
+    header (base.html), so returning it grafted a duplicate header into the DOM
+    on every save, stacking one per action."""
+    def run():
+        _clear()
+        for resp in (
+            client.post("/review/home", data={
+                "kind": "home_airport", "label": "Pearson", "iata": "YYZ",
+                "lat": "43.6759", "lon": "-79.6294", "country": "CA"}),
+            # error path is swapped into #home-app too — must also be a fragment
+            client.post("/review/home", data={"kind": "home_airport",
+                                              "label": "X", "iata": ""}),
+        ):
+            body = resp.text
+            assert 'id="home-app"' in body               # it IS the fragment
+            assert "<!doctype" not in body.lower()        # not a whole document
+            assert 'class="appbar"' not in body           # no second header
+        with SessionLocal() as s:
+            pid = s.query(HomeProfile).one().id
+        body = client.post(f"/review/home/delete/{pid}").text
+        assert 'id="home-app"' in body and 'class="appbar"' not in body
+    _skip_or(run)
+
+
 def test_residence_saves_with_looked_up_coordinates():
     def run():
         _clear()

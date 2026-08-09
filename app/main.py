@@ -28,13 +28,18 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from app.capture import router as capture_router  # noqa: E402
 from app.review.home import router as home_router  # noqa: E402
 from app.review.routes import router as review_router  # noqa: E402
+from app.trips.routes import router as trips_router  # noqa: E402
 
 app.include_router(review_router)
 app.include_router(home_router)
 app.include_router(capture_router)
+app.include_router(trips_router)
 app.mount("/review/static",
           StaticFiles(directory=str(Path(__file__).parent / "review" / "static")),
           name="review-static")
+app.mount("/trips/static",
+          StaticFiles(directory=str(Path(__file__).parent / "trips" / "static")),
+          name="trips-static")
 
 
 def seed_rule_settings(session) -> None:

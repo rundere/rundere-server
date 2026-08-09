@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}{{ trip.name }}{% endblock %}
+{% block content %}
+<a class="bp-back" href="/trips">← All trips</a>
+
+<div class="card blueprint bp-trip-header">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <div class="bp-trip-head-row">
+    <div>
+      <h1 class="bp-h1">{{ trip.name }}</h1>
+      <div class="bp-daterange">{{ trip.start_display }} – {{ trip.end_display }}</div>
+      {% if trip.has_notes %}<p class="bp-trip-notes">{{ trip.notes }}</p>{% endif %}
+    </div>
+    <div class="bp-trip-actions">
+      <button class="btn btn-secondary"
+              hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
+      <button class="btn btn-ghost"
+              hx-post="/trips/{{ trip.id }}/delete"
+              hx-confirm="Delete this trip and its activities?">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="bp-timeline-head">
+  <h2 class="bp-h2">Timeline</h2>
+  <button class="btn btn-primary"
+          hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
+</div>
+
+{% if has_activities %}
+  {% for day in day_groups %}
+  <section class="bp-group">
+    <div class="bp-group-label">{{ day.label }}</div>
+    <div class="card blueprint bp-daycard">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      {% for act in day.activities %}
+      <details class="bp-act">
+        <summary class="yn-actrow">
+          <span class="tag tag-outline bp-typetag">{{ act.type_label }}</span>
+          <div class="bp-act-main">
+            <div class="bp-act-title">{{ act.title }}</div>
+            {% if act.subtitle %}<div class="bp-act-sub">{{ act.subtitle }}</div>{% endif %}
+          </div>
+          {% if act.multi_day %}<span class="tag tag-neutral bp-span">{{ act.span_label }}</span>{% endif %}
+          {% if act.time_label %}<div class="bp-act-time">{{ act.time_label }}</div>{% endif %}
+          <span class="bp-chevron">▸</span>
+        </summary>
+        <div class="bp-act-body">
+          {% if act.fields %}
+          <div class="bp-field-grid">
+            {% for fl in act.fields %}
+            <div class="bp-field-item">
+              <div class="bp-field-label">{{ fl.label }}</div>
+              {% if fl.is_link %}
+                <a href="{{ fl.value }}" target="_blank" rel="noopener" class="bp-field-link">{{ fl.value }}</a>
+              {% else %}
+                <div class="bp-field-value">{{ fl.value }}</div>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <div class="bp-act-btns">
+            <button class="btn btn-secondary bp-sm"
+                    hx-get="/trips/{{ trip.id }}/activity/{{ act.id }}/edit" hx-target="#modal-root">Edit</button>
+            <button class="btn btn-ghost bp-sm"
+                    hx-post="/trips/{{ trip.id }}/activity/{{ act.id }}/delete"
+                    hx-confirm="Delete this activity?">Delete</button>
+          </div>
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+{% else %}
+  <div class="card blueprint bp-empty-card">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="bp-empty-msg">No activities yet. Add flights, lodging, tours and more to build the timeline.</div>
+    <button class="btn btn-primary"
+            hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
+  </div>
+{% endif %}
+{% endblock %}

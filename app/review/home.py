@@ -171,7 +171,11 @@ async def save(request: Request, session: Session = Depends(get_session)):
         error = ("A residence needs coordinates — look up an address, or enter "
                  "latitude and longitude.")
     if error:
-        return templates.TemplateResponse(request, "home.html",
+        # Fragment, not the full page: this response is swapped into #home-app
+        # (hx-swap="outerHTML"). Returning the whole home.html — which extends
+        # base.html and so carries the global app header — injected a second
+        # header into the body on every save/error (D-39 regression).
+        return templates.TemplateResponse(request, "_home_app.html",
                                           _page_ctx(session, error=error, form=form))
 
     target = (session.get(HomeProfile, int(edit_id))
@@ -188,8 +192,10 @@ async def save(request: Request, session: Session = Depends(get_session)):
     if target.id is None:
         session.add(target)
     session.commit()
-    # Full page render: list refreshed, form reset.
-    return templates.TemplateResponse(request, "home.html", _page_ctx(session))
+    # Fragment (#home-app): list refreshed, form reset. NOT the full page — the
+    # form targets #home-app with hx-swap="outerHTML", so a full-page response
+    # would graft a duplicate app header into the DOM each time.
+    return templates.TemplateResponse(request, "_home_app.html", _page_ctx(session))
 
 
 @router.post("/delete/{profile_id}", response_class=HTMLResponse)
@@ -199,4 +205,6 @@ def delete(profile_id: int, request: Request,
     if p is not None:
         session.delete(p)
         session.commit()
-    return templates.TemplateResponse(request, "home.html", _page_ctx(session))
+    # Fragment (#home-app), same reason as save(): the delete button swaps this
+    # into #home-app, so it must not carry the page header.
+    return templates.TemplateResponse(request, "_home_app.html", _page_ctx(session))
