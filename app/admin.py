@@ -146,9 +146,20 @@ def mount_admin(app, engine) -> None:
         column_labels = {"display_name": "Name", "kind": "Kind",
                          "airtrail_user_id": "AirTrail user id",
                          "aliases": "Aliases"}
-        form_overrides = {"aliases": LinesField}
-        form_args = {"aliases": {"description":
-                     "One alias per line (name as printed on tickets)."}}
+        # `kind` is a closed vocabulary (self | guest, D-35) — a free-text box
+        # let a typo like "Self" or "geust" through, which then matches no
+        # identity logic. Force the choice with a dropdown, same override
+        # mechanism as aliases -> LinesField.
+        form_overrides = {"aliases": LinesField, "kind": wtforms.SelectField}
+        form_args = {
+            "aliases": {"description":
+                        "One alias per line (name as printed on tickets)."},
+            "kind": {"choices": [("self", "self — the AirTrail account holder"),
+                                 ("guest", "guest")],
+                     "default": "guest",
+                     "description": "Exactly one traveller is 'self' (the "
+                     "AirTrail account holder); everyone else is a guest."},
+        }
 
     class TripAdmin(ModelView, model=models.Trip):
         name = "Trip"

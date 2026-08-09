@@ -50,6 +50,25 @@ def test_admin_mounts_including_travellers_regression():
     assert c.get("/admin/traveler-identity/list").status_code == 200
 
 
+def test_traveller_kind_is_a_dropdown_not_free_text():
+    """`kind` is a closed self|guest vocabulary (D-35); the create form must
+    offer it as a <select>, not a free-text box a typo can slip through."""
+    if not DEPS:
+        return
+    from fastapi import FastAPI
+    from app.admin import mount_admin
+    from app.db import engine as eng
+    a = FastAPI()
+    mount_admin(a, eng)
+    html = TestClient(a).get("/admin/traveler-identity/create").text
+    assert 'name="kind"' in html
+    # the element bearing name="kind" must be a <select> ... </select> holding
+    # both options — not an <input type="text">.
+    tag_open = html.rfind("<", 0, html.index('name="kind"'))
+    assert html[tag_open:tag_open + 7] == "<select"
+    assert ">self" in html and ">guest" in html
+
+
 def test_jobs_registry_runs_and_reports():
     """The in-memory job registry (D-49): start runs the work on a background
     thread, progress updates the live state, and a finished job carries its
