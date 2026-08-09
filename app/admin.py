@@ -63,7 +63,7 @@ def _registry_field(row, field: str):
 
 
 def mount_admin(app, engine) -> None:
-    admin = Admin(app, engine, title="travel-extractor")
+    admin = Admin(app, engine, title="Yonder")
     _theme(admin)
 
     class TravelItemAdmin(ModelView, model=models.TravelItem):

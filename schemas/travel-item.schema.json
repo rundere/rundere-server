@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/OWNER/travel-extractor/schemas/travel-item.schema.json",
+  "$id": "https://github.com/OWNER/yonder/schemas/travel-item.schema.json",
   "title": "TravelItem",
   "description": "Canonical contract between capture, extraction, resolution and commit stages. Field ownership is declared with x-owner: extractor | resolver | committer | ingest. A stage MUST NOT write fields it does not own.",
   "x-schema-version": "1.4.0",

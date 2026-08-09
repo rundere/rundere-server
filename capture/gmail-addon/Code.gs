@@ -1,5 +1,5 @@
 /**
- * Travel Extractor — Gmail capture add-on (D-03).
+ * Yonder — Gmail capture add-on (D-03).
  *
  * Runs inside the user's own Gmail session using the narrow
  * gmail.addons.current.message.readonly scope — NOT gmail.readonly — so no
@@ -26,7 +26,7 @@ function buildHomepageCard(e) {
   const ingestUrl = props.getProperty(PROP_INGEST_URL) || DEFAULT_INGEST_URL;
 
   const section = CardService.newCardSection()
-    .setHeader('Travel Extractor capture')
+    .setHeader('Yonder capture')
     .addWidget(CardService.newTextParagraph().setText(configured
       ? 'Configured. Open an email and use the side panel to capture it.'
       : 'Not configured yet. Paste the API key created via '
@@ -85,7 +85,7 @@ function buildContextualCard(e) {
     // event fired from a contextual card. Snapshotting them here instead
     // caused "Expired access token" once any time passed before the click.
     .addWidget(CardService.newTextButton()
-      .setText('Capture to Travel Extractor')
+      .setText('Capture to Yonder')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('captureMessage')));
 

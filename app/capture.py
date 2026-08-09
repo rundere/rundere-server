@@ -37,7 +37,7 @@ from app.ingest import store_batch
 from app.models import ApiKey
 from extract import maps_url
 
-log = logging.getLogger("travel-extractor.capture")
+log = logging.getLogger("yonder.capture")
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
 

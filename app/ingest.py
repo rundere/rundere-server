@@ -19,7 +19,7 @@ from app.config import settings
 from app.db import get_session
 from app.models import Artifact, IngestBatch
 
-log = logging.getLogger("travel-extractor.ingest")
+log = logging.getLogger("yonder.ingest")
 router = APIRouter()
 
 

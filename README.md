@@ -12,12 +12,6 @@ already read them (Gmail, Google Calendar, Maps), Yonder extracts and resolves
 the structured facts, you review them in a web queue, and it commits them to
 your trackers. Nothing is auto-posted without passing through review.
 
-> **A note on the name.** The project is **Yonder**, but the running artifacts
-> — Docker image, service/container names, package, and LAN hostnames — are
-> still `travel-extractor` / `travel_extractor`. That rename is a separate stack
-> migration; every command below uses the **real, currently-deployed** names so
-> they work as-is. See [Renaming to Yonder](#appendix-renaming-the-stack-to-yonder).
-
 ---
 
 ## What it does (and what's covered)
@@ -66,7 +60,7 @@ D-11) — nothing is sent to a cloud model.
 |---|---|---|
 | **Docker Engine + Compose** | Runs the app and its Postgres | Any orchestrator works — a reference stack is provided |
 | **Two external Docker networks** | The stack joins them, doesn't create them | `traefik-net` (proxy) and `travel-net` (targets/geocode). Create with `docker network create` if absent |
-| **PostgreSQL 16** | App database | Bundled in the stack as `travel-extractor-db` — nothing to install separately |
+| **PostgreSQL 16** | App database | Bundled in the stack as `yonder-db` — nothing to install separately |
 | **A reverse proxy with public HTTPS** | The Gmail/GCal add-ons POST from Google's servers to `/ingest` | Reference uses **Traefik**. The public route exposes **only** `POST /ingest` |
 | **At least one target** | Somewhere to commit to | **AdventureLog** (trips/places) and/or **AirTrail** (flights) |
 | **Python 3.12** | *Dev only* — running tests / uvicorn locally | Not needed for the Docker deployment |
@@ -116,7 +110,7 @@ docker compose -f docker-compose.dev.yml up -d --build
 **1. Build the image:**
 
 ```bash
-docker build -t travel-extractor:latest .
+docker build -t yonder:latest .
 ```
 
 **2. Deploy the stack.** [`portainer-stack.yml`](portainer-stack.yml) is a
@@ -131,11 +125,11 @@ labels — adapt to your proxy):
 - A **LAN/private** route to the **full app** (`/admin`, the review queue, the CLI-backed UI).
 - A **public HTTPS** route exposing **only `POST /ingest`**, for the Apps Script add-ons — they POST from Google's servers, which can't do an interactive proxy login, so this route authenticates purely with Yonder's own API keys + HMAC. Keep the rest of the app off the public route.
 
-> **Container names in commands below.** The examples use `travel-extractor` as
+> **Container names in commands below.** The examples use `yonder` as
 > the app container name. Yours will match your deployment — e.g. a Compose
-> project in a `travel_extractor/` folder yields `travel_extractor-travel-extractor-1`.
+> project in a `yonder/` folder yields `yonder-yonder-1`.
 > Substitute your actual container name (`docker ps`), or use
-> `docker compose exec travel-extractor …`.
+> `docker compose exec yonder …`.
 
 ### 3. First-run setup
 
@@ -145,14 +139,14 @@ Profiles`**, full CRUD with per-field help), or bootstrap from a file:
 
 ```bash
 # copy docs/home-profiles.example.json, fill it in, then:
-docker exec travel-extractor python -m app.cli import-home /data/home-profiles.json
+docker exec yonder python -m app.cli import-home /data/home-profiles.json
 ```
 
 **Create an API key for each Google add-on** (Gmail, Calendar):
 
 ```bash
-docker exec -it travel-extractor python -m app.cli create-key gmail-addon
-docker exec -it travel-extractor python -m app.cli create-key gcal-addon
+docker exec -it yonder python -m app.cli create-key gmail-addon
+docker exec -it yonder python -m app.cli create-key gcal-addon
 ```
 
 Each prints its key **once** — paste it into the matching add-on below. (Web
@@ -212,17 +206,17 @@ Extraction reuses the JSON-LD reader for web pages (most booking pages embed sch
 1. **Capture** — click the add-on button on an email/event, or use `/capture` for a web page or Maps drive. The item is stored immediately and never processed inline.
 2. **Process** — extract stored batches into `TravelItem`s:
    ```bash
-   docker exec travel-extractor python -m app.cli process
+   docker exec yonder python -m app.cli process
    ```
    (or **Process new captures** in the review queue UI).
 3. **Resolve** — assign canonical keys and trip collections:
    ```bash
-   docker exec travel-extractor python -m app.cli resolve
+   docker exec yonder python -m app.cli resolve
    ```
 4. **Review** — open the review queue (your LAN/private app URL), check the extracted items, correct anything, approve.
 5. **Commit** — write approved items to AirTrail / AdventureLog:
    ```bash
-   docker exec travel-extractor python -m app.cli commit
+   docker exec yonder python -m app.cli commit
    ```
 
 ---
@@ -251,7 +245,7 @@ deployment stack.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TX_DATABASE_URL` | `sqlite:///./travel_extractor_dev.sqlite3` | App DB (Postgres in prod) |
+| `TX_DATABASE_URL` | `sqlite:///./yonder_dev.sqlite3` | App DB (Postgres in prod) |
 | `TX_ARTIFACTS_DIR` | `/data/artifacts` | Immutable captured originals (D-15) |
 | `TX_INGEST_MAX_SKEW_SECONDS` | `300` | Signed-timestamp replay window |
 | `TX_INGEST_RATE_LIMIT` | `30` | Requests per key per window |
@@ -308,22 +302,6 @@ the generated `RULES.md` explain the resolution and rule behaviour in depth.
 Inline `D-NN` / `RULE-NN` / `OQ-NN` codes throughout the code and capture docs
 are provenance markers for decisions, rules, and open questions tracked in the
 author's local working notes (not part of this repo).
-
----
-
-## Appendix: renaming the stack to Yonder
-
-The prose says "Yonder"; the artifacts still say `travel-extractor`. A full
-rename (do it as one deliberate migration, not piecemeal) touches:
-
-- **Image**: `travel-extractor:latest` → `yonder:latest` (rebuild, update stack).
-- **Service/container names** in the deployment stack (`travel-extractor`, `travel-extractor-db`) and every `docker exec travel-extractor …` command.
-- **Package name** in `pyproject.toml` and `[tool.setuptools]`.
-- **Hostnames / DNS** for your LAN and public routes (proxy labels + DNS).
-- **Bind-mount paths** and the Postgres data dir if you rename the folder.
-- The `create-key` client names are cosmetic and can stay.
-
-Until then, every command in this README is correct as written.
 
 ---
 

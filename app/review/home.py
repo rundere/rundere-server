@@ -25,7 +25,7 @@ from app.config import settings
 from app.db import get_session
 from app.models import HomeProfile
 
-log = logging.getLogger("travel-extractor.home")
+log = logging.getLogger("yonder.home")
 router = APIRouter(prefix="/review/home")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 

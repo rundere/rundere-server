@@ -95,7 +95,7 @@ def _expand_short(url: str) -> str:
         return url
     try:
         req = urllib.request.Request(url, method="GET",
-                                     headers={"User-Agent": "travel-extractor"})
+                                     headers={"User-Agent": "yonder"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.geturl() or url
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):

@@ -1,7 +1,7 @@
 # Gmail capture add-on
 
 Turns "open a booking email in Gmail" into a stored, content-addressed batch
-on the travel-extractor `/ingest` endpoint. This is **capture only** — it does
+on the yonder `/ingest` endpoint. This is **capture only** — it does
 not parse anything. It sends the raw RFC 2822 message source (D-15: keep the
 original artifact forever) so the extractor stage has the real thing to work
 from, and reprocessing later never loses information.
@@ -87,7 +87,7 @@ stored server-side by the time label-moving runs.
 5. Open Gmail, refresh, open the add-on's side panel (plane icon), and on the
    **homepage card** paste the API key you created with:
    ```bash
-   docker exec -it travel_extractor-travel-extractor-1 python -m app.cli create-key <client-name>
+   docker exec -it yonder-yonder-1 python -m app.cli create-key <client-name>
    ```
    Leave the Ingest URL as the default unless you changed the public hostname
    in `portainer-stack.yml`. Click **Save** — the key is stored in your
@@ -96,7 +96,7 @@ stored server-side by the time label-moving runs.
 ## Using it
 
 Open any email → the add-on panel shows Subject/From/Date → optionally add a
-note or force a collection ID → **Capture to Travel Extractor**. A toast shows
+note or force a collection ID → **Capture to Yonder**. A toast shows
 the resulting `batch_id`, or the exact rejection reason (401 variants, 413 too
 large, 429 rate-limited) straight from the server.
 
@@ -146,7 +146,7 @@ authorization, and does not reliably refresh it. What actually works:
    them (with the expected "unverified app" click-through).
 4. If step 2 still doesn't prompt for anything new, go to
    [myaccount.google.com/permissions](https://myaccount.google.com/permissions),
-   find "Travel Extractor Capture," remove its access entirely, then repeat
+   find "Yonder Capture," remove its access entirely, then repeat
    steps 1–2 for a guaranteed clean consent flow.
 
 Separately (2026-08-03): the label-move calls now fetch the thread via
@@ -188,7 +188,7 @@ either path.
 You can confirm capture landed even before running the processing stage:
 
 ```bash
-docker exec travel_extractor-travel-extractor-db-1 psql -U travel -d travel \
+docker exec yonder-yonder-db-1 psql -U travel -d travel \
   -c "SELECT id, status, received_at, declared_segment_count FROM ingest_batches ORDER BY received_at DESC LIMIT 5;"
 ```
 

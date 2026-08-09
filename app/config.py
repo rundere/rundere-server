@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "sqlite:///./travel_extractor_dev.sqlite3"
+    database_url: str = "sqlite:///./yonder_dev.sqlite3"
     artifacts_dir: str = "/data/artifacts"
 
     # /ingest hardening (HANDOFF: the security-critical surface)

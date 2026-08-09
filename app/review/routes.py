@@ -27,7 +27,7 @@ from app.review import jobs
 from app.review import reasons as reason_text
 from app.review import summary as sm
 
-log = logging.getLogger("travel-extractor.review")
+log = logging.getLogger("yonder.review")
 router = APIRouter(prefix="/review")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 

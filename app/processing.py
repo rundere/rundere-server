@@ -17,7 +17,7 @@ from app.models import IngestBatch, TravelItem
 from extract.llm import PROMPT_VERSION, OllamaExtractor
 from extract.pipeline import extract_ingest_payload
 
-log = logging.getLogger("travel-extractor.processing")
+log = logging.getLogger("yonder.processing")
 
 _CONFIDENCE = {"jsonld": 0.9, "ical": 0.9, "maps_url": 0.9, "llm": 0.6}
 

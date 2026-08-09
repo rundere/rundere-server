@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/OWNER/travel-extractor/schemas/travel-extraction.schema.json",
+  "$id": "https://github.com/OWNER/yonder/schemas/travel-extraction.schema.json",
   "title": "TravelExtractionBatch",
   "description": "DERIVED \u2014 do not hand-edit. The ONLY object an extractor may emit. Always an array. CaptureContext is included as INPUT the extractor may read but must not invent: when the document lacks a date, list it in capture_required_fields rather than guessing. Home detection, geocoding and collection assignment remain resolver concerns and are stripped.",
-  "x-derived-from": "https://github.com/OWNER/travel-extractor/schemas/travel-item.schema.json",
+  "x-derived-from": "https://github.com/OWNER/yonder/schemas/travel-item.schema.json",
   "x-schema-version": "1.4.0",
   "$ref": "#/$defs/PayloadBatch",
   "$defs": {

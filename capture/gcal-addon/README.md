@@ -2,7 +2,7 @@
 
 The Calendar sibling of the [Gmail add-on](../gmail-addon/README.md). Turns "open
 an event in Google Calendar" into a stored, content-addressed batch on the
-travel-extractor `/ingest` endpoint. **Capture only** — it does not decide
+yonder `/ingest` endpoint. **Capture only** — it does not decide
 anything; the server maps the event in `extract/gcal.py`.
 
 Why an add-on and not a background sync: same reason as Gmail (D-02 removed
@@ -62,7 +62,7 @@ Identical flow to the Gmail add-on, with Calendar scopes.
 5. Open Google Calendar, refresh, open the add-on side panel (event icon), and on the
    **homepage card** paste the API key created with:
    ```bash
-   docker exec -it travel_extractor-travel-extractor-1 python -m app.cli create-key gcal-addon
+   docker exec -it yonder-yonder-1 python -m app.cli create-key gcal-addon
    ```
    Leave the Ingest URL as default unless you changed the public hostname in
    `portainer-stack.yml`. **Save** — stored in your script's User Properties, never in
@@ -72,7 +72,7 @@ Identical flow to the Gmail add-on, with Calendar scopes.
 ## Using it
 
 Open any calendar event → the add-on panel shows the event title → optionally add a
-note or force a collection ID → **Capture to Travel Extractor**. A toast shows the
+note or force a collection ID → **Capture to Yonder**. A toast shows the
 resulting `batch_id`, or the exact rejection reason (401 variants, 413 too large,
 429 rate-limited) straight from the server.
 
@@ -115,7 +115,7 @@ re-copy it from this repo. See the Gmail README for the underlying reason.
 ## Verifying it end-to-end
 
 ```bash
-docker exec travel_extractor-travel-extractor-db-1 psql -U travel -d travel \
+docker exec yonder-yonder-db-1 psql -U travel -d travel \
   -c "SELECT id, status, received_at FROM ingest_batches ORDER BY received_at DESC LIMIT 5;"
 ```
 

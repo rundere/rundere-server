@@ -41,7 +41,7 @@ they geocode; coordinate stops become lat/lon directly.
 
 1. **Create an API key** for this client:
    ```bash
-   docker exec -it travel_extractor-travel-extractor-1 python -m app.cli create-key maps-n8n
+   docker exec -it yonder-yonder-1 python -m app.cli create-key maps-n8n
    ```
    Copy the key it prints once.
 
@@ -51,9 +51,9 @@ they geocode; coordinate stops become lat/lon directly.
 
 3. **Fill in the Config node** (the only edit needed):
    - `apiKey` → the key from step 1
-   - `ingestUrl` → leave as `http://travel-extractor:8000/ingest` if n8n shares the
+   - `ingestUrl` → leave as `http://yonder:8000/ingest` if n8n shares the
      docker network with the app; otherwise your public
-     `https://travel-extractor.example.net/ingest`.
+     `https://yonder.example.net/ingest`.
 
 4. **Activate** the workflow. The Form Trigger gives you a hosted form URL
    (*Trip form* node → *Production URL*). Open it on desktop or phone.
@@ -93,7 +93,7 @@ Signing parity and ingest acceptance were verified against the live services
 capture land:
 
 ```bash
-docker exec travel_extractor-travel-extractor-db-1 psql -U travel -d travel \
+docker exec yonder-yonder-db-1 psql -U travel -d travel \
   -c "SELECT id, received_at, payload->>'capture_channel' AS ch FROM ingest_batches ORDER BY received_at DESC LIMIT 5;"
 ```
 

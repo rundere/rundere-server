@@ -34,7 +34,7 @@ from resolve.geocode import PhotonGeocoder, apply_geocode
 from resolve.targets import (compute_targets, enrich_places_from_airports,
                              item_date_span, places_in_payload)
 
-log = logging.getLogger("travel-extractor.resolving")
+log = logging.getLogger("yonder.resolving")
 
 
 def load_home_profiles(session: Session) -> list[HomeProfileRef]:

@@ -20,7 +20,7 @@ import logging
 
 from adapters.targets.airtrail import Airline, Airport
 
-log = logging.getLogger("travel-extractor.airtrail-db")
+log = logging.getLogger("yonder.airtrail-db")
 
 
 class AirTrailDB:

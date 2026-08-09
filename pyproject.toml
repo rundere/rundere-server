@@ -1,5 +1,5 @@
 [project]
-name = "travel-extractor"
+name = "yonder"
 version = "1.2.0"
 description = "Yonder — travel documents -> AirTrail + AdventureLog."
 requires-python = ">=3.12"

@@ -35,7 +35,7 @@ from app.models import CommitAttempt, TravelItem
 from resolve.geocode import tz_from_coords
 from resolve.targets import places_in_payload
 
-log = logging.getLogger("travel-extractor.commit")
+log = logging.getLogger("yonder.commit")
 
 
 # ---------------------------------------------------------------- datetime

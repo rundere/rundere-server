@@ -4,18 +4,18 @@
 #   docker compose -f docker-compose.dev.yml down -v
 
 services:
-  travel-extractor-dev:
+  yonder-dev:
     build: .
     ports:
       - "8100:8000"
     environment:
-      TX_DATABASE_URL: postgresql+psycopg://travel:devonly@travel-extractor-dev-db:5432/travel
+      TX_DATABASE_URL: postgresql+psycopg://travel:devonly@yonder-dev-db:5432/travel
       TX_INGEST_RATE_LIMIT: "30"
     depends_on:
-      travel-extractor-dev-db:
+      yonder-dev-db:
         condition: service_healthy
 
-  travel-extractor-dev-db:
+  yonder-dev-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: travel

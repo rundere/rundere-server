@@ -1,4 +1,4 @@
-"""travel-extractor Phase 0 — FastAPI skeleton (bandit-core / finance-analysis
+"""yonder Phase 0 — FastAPI skeleton (bandit-core / finance-analysis
 mold). Surface: /health, /ingest, /admin (SQLAdmin; internal-only in prod via
 Traefik routing). Pipeline stages arrive in later phases.
 """
@@ -15,9 +15,9 @@ from app.db import SessionLocal, engine
 from app.ingest import router as ingest_router
 from app.models import RuleSetting
 
-log = logging.getLogger("travel-extractor")
+log = logging.getLogger("yonder")
 
-app = FastAPI(title="travel-extractor", version=settings.app_version,
+app = FastAPI(title="Yonder", version=settings.app_version,
               docs_url=None, redoc_url=None)   # no public API docs surface
 app.include_router(ingest_router)
 
