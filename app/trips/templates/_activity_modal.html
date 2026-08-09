@@ -1,0 +1,23 @@
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
+  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+    <div class="dialog-title">{{ title }}</div>
+    <form class="dialog-body" hx-post="{{ action }}" hx-target="#modal-root" hx-swap="innerHTML">
+      <div class="field">
+        <label>Type</label>
+        <select class="input" name="type"
+                hx-get="/trips/{{ trip_id }}/activity/fields"
+                hx-target="#activity-fields" hx-swap="innerHTML"
+                hx-trigger="change" hx-include="this">
+          {% for opt in type_options %}
+          <option value="{{ opt.value }}" {% if opt.value == type %}selected{% endif %}>{{ opt.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div id="activity-fields">{% include "_activity_fields.html" %}</div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save activity</button>
+      </div>
+    </form>
+  </div>
+</div>

@@ -150,8 +150,26 @@ def mount_admin(app, engine) -> None:
         form_args = {"aliases": {"description":
                      "One alias per line (name as printed on tickets)."}}
 
+    class TripAdmin(ModelView, model=models.Trip):
+        name = "Trip"
+        name_plural = "Trips"
+        # The Trips surface (/trips) is the real editor; this raw view is the
+        # D-18 table explorer, useful for spotting seeded rows by source.
+        column_list = [models.Trip.name, models.Trip.start_date,
+                       models.Trip.end_date, models.Trip.source,
+                       models.Trip.external_ref, models.Trip.updated_at]
+        column_labels = {"external_ref": "External ref"}
+        column_default_sort = ("start_date", True)
+
+    class TripActivityAdmin(ModelView, model=models.TripActivity):
+        name = "Trip Activity"
+        name_plural = "Trip Activities"
+        column_list = [models.TripActivity.trip_id, models.TripActivity.type,
+                       models.TripActivity.starts_at,
+                       models.TripActivity.updated_at]
+
     for view in (TravelItemAdmin, ItemKeyAdmin, IngestBatchAdmin,
                  CommitAttemptAdmin, SourceRuleAdmin, ApiKeyAdmin,
                  ArtifactAdmin, TravelerIdentityAdmin,
-                 RuleSettingAdmin):
+                 RuleSettingAdmin, TripAdmin, TripActivityAdmin):
         admin.add_view(view)

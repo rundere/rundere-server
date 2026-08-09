@@ -1,0 +1,31 @@
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
+  <div class="dialog blueprint" onclick="event.stopPropagation()">
+    <div class="dialog-title">{{ title }}</div>
+    {% if error %}<div class="bp-error">{{ error }}</div>{% endif %}
+    <form class="dialog-body" hx-post="{{ action }}" hx-target="#modal-root" hx-swap="innerHTML">
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="field">
+        <label>Trip name</label>
+        <input class="input" name="name" value="{{ form.name }}" placeholder="e.g. Iceland Ring Road" autofocus>
+      </div>
+      <div class="bp-row2">
+        <div class="field">
+          <label>Start date</label>
+          <input class="input" type="date" name="start" value="{{ form.start }}">
+        </div>
+        <div class="field">
+          <label>End date</label>
+          <input class="input" type="date" name="end" value="{{ form.end }}">
+        </div>
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea class="input" name="notes" rows="3" placeholder="High level notes about this trip">{{ form.notes }}</textarea>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save trip</button>
+      </div>
+    </form>
+  </div>
+</div>

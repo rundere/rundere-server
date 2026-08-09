@@ -187,6 +187,57 @@ class TravelerIdentity(Base):
     notes: Mapped[str | None] = mapped_column(String(512))
 
 
+class Trip(Base):
+    """Yonder 2.0 — an in-house trip. The first capability Yonder owns outright:
+    trips no longer live only as AdventureLog collections. A trip is a named
+    span with optional dates and free-text notes; its day-by-day contents are
+    TripActivity rows.
+
+    `source`/`external_ref` are forward hooks for 2.1 seeding (AirTrail first,
+    then AdventureLog): `source` records where a seeded trip came from and
+    `external_ref` the originating id, so a re-seed dedups instead of
+    duplicating. A hand-made trip is source="manual" with no external_ref.
+    """
+    __tablename__ = "trips"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(200))
+    # ISO dates as strings (same style as HomeProfile.effective_from) — a trip
+    # is planned in whole days, never to the second, and string dates sort and
+    # compare correctly without a tz to reason about.
+    start_date: Mapped[str | None] = mapped_column(String(10))
+    end_date: Mapped[str | None] = mapped_column(String(10))
+    notes: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), default="manual")   # manual|airtrail|adventurelog
+    external_ref: Mapped[str | None] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripActivity(Base):
+    """One entry on a trip's timeline — a flight, a hotel night, a dinner, a
+    note. The type-specific fields stay in one `values` JSON blob rather than
+    columns: the activity-type registry (app/trips/types.py) is the contract for
+    what each type carries, mirroring how TravelItem keeps its envelope in JSON
+    instead of a second, drifting column set.
+
+    `starts_at` is a denormalized copy of values["when"] kept only so the
+    timeline can order and day-group in the database; an activity with no date
+    stores "" and sorts last ("Date not set")."""
+    __tablename__ = "trip_activities"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    type: Mapped[str] = mapped_column(String(24))
+    starts_at: Mapped[str | None] = mapped_column(String(32), index=True)
+    values: Mapped[dict] = mapped_column(JsonCol, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class RuleSetting(Base):
     """D-25: rule logic is code (rules.py registry), rule ENABLEMENT is data.
     Seeded from the registry at startup; SQLAdmin over this table is the

@@ -8,6 +8,7 @@
   <nav class="appnav" aria-label="Sections">
     <a href="/review" class="{{ 'on' if p in ('/review', '/review/') else '' }}">Review</a>
     <a href="/capture" class="{{ 'on' if p.startswith('/capture') else '' }}">Capture</a>
+    <a href="/trips" class="{{ 'on' if p.startswith('/trips') else '' }}">Trips</a>
     <span class="sep" aria-hidden="true"></span>
     <span class="grouplbl">Administer</span>
     <a href="/review/home" class="{{ 'on' if p.startswith('/review/home') else '' }}">Home&nbsp;profiles</a>

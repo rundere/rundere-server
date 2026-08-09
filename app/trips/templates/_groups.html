@@ -1,0 +1,43 @@
+{% if has_visible %}
+  {% for grp in groups %}
+  <section class="bp-group">
+    <div class="bp-group-label">{{ grp.label }}</div>
+    <div class="card blueprint bp-tablewrap">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <table class="table bp-triptable">
+        <thead>
+          <tr><th>Trip</th><th>Start</th><th>End</th><th>Notes</th><th class="bp-actcol"></th></tr>
+        </thead>
+        <tbody>
+          {% for trip in grp.trips %}
+          <tr class="yn-row" onclick="window.location='/trips/{{ trip.id }}'">
+            <td class="bp-name">{{ trip.name }}</td>
+            <td>{{ trip.start_display }}</td>
+            <td>{{ trip.end_display }}</td>
+            <td class="bp-notes">{{ trip.notes_preview }}</td>
+            <td class="bp-actcol">
+              <button class="btn btn-ghost bp-sm" onclick="event.stopPropagation()"
+                      hx-get="/trips/{{ trip.id }}/edit?next=/trips" hx-target="#modal-root">Edit</button>
+              <button class="btn btn-ghost bp-sm bp-muted" onclick="event.stopPropagation()"
+                      hx-post="/trips/{{ trip.id }}/delete"
+                      hx-confirm="Delete “{{ trip.name }}” and its activities?">Delete</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+{% elif search_no_results %}
+  <div class="card blueprint bp-empty-card">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="bp-empty-msg">No trips match your search.</div>
+  </div>
+{% else %}
+  <div class="card blueprint bp-empty-card">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="bp-empty-msg">No trips yet.</div>
+    <button class="btn btn-primary" hx-get="/trips/new" hx-target="#modal-root">+ New trip</button>
+  </div>
+{% endif %}

@@ -1,0 +1,13 @@
+{% for fl in fields %}
+  {% if fl.is_textarea %}
+  <div class="field">
+    <label>{{ fl.label }}</label>
+    <textarea class="input" name="{{ fl.key }}" rows="2">{{ fl.value }}</textarea>
+  </div>
+  {% else %}
+  <div class="field">
+    <label>{{ fl.label }}</label>
+    <input class="input" type="{{ fl.type }}" name="{{ fl.key }}" value="{{ fl.value }}">
+  </div>
+  {% endif %}
+{% endfor %}
