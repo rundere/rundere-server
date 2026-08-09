@@ -3,7 +3,7 @@
    Administer (config). Active item is derived from the request path. #}
 {% set p = (request.url.path if request else '') %}
 <header class="appbar">
-  <a class="wordmark" href="/review" style="text-decoration:none">Travel&nbsp;Extractor
+  <a class="wordmark" href="/review" style="text-decoration:none">Yonder
     <span>self-hosted</span></a>
   <nav class="appnav" aria-label="Sections">
     <a href="/review" class="{{ 'on' if p in ('/review', '/review/') else '' }}">Review</a>
@@ -14,6 +14,7 @@
     <a href="/admin/traveler-identity/list" class="{{ 'on' if 'traveler-identity' in p else '' }}">Travellers</a>
     <a href="/admin/rule-setting/list" class="{{ 'on' if 'rule-setting' in p else '' }}">Rules</a>
     <a href="/admin/" class="{{ 'on' if p.startswith('/admin') and 'traveler-identity' not in p and 'rule-setting' not in p else '' }}">Tables</a>
+    <a href="/about" class="{{ 'on' if p.startswith('/about') else '' }}">About</a>
   </nav>
   <span class="grow"></span>
   <button class="theme" type="button" onclick="txToggleTheme()"

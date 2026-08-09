@@ -35,6 +35,7 @@ from app.config import settings
 from app.db import get_session
 from app.ingest import store_batch
 from app.models import ApiKey
+from extract import maps_url
 
 log = logging.getLogger("travel-extractor.capture")
 router = APIRouter()
@@ -133,6 +134,31 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
     return batch.id
 
 
+def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
+                travel_date: str, travel_time: str | None = None,
+                title: str | None = None, notes: str | None = None,
+                collection_id: str | None = None) -> str:
+    """Store a Google Maps directions link as a `maps_url`-channel batch — the
+    native replacement for the old n8n form. The maps_url extractor needs a
+    travel date (a route carries none, RULE-31); the caller validates it."""
+    payload = {
+        "capture_channel": "maps_url",
+        "url": url,
+        "capture_context": {
+            "submitted_by": submitted_by or _WEB_CLIENT,
+            "travel_date": travel_date,
+            "travel_time": travel_time or None,
+            "title": title or None,
+            "notes": notes or None,
+            "collection_id": collection_id or None,
+        },
+    }
+    body = json.dumps(payload).encode("utf-8")
+    batch = store_batch(session, body, payload, _internal_key_id(session))
+    session.commit()
+    return batch.id
+
+
 @router.get("/capture", response_class=HTMLResponse)
 def capture_page(request: Request):
     # The bookmarklet POSTs the current tab's rendered HTML back to THIS host —
@@ -207,6 +233,20 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     source_url = None
     html = content
     if _looks_like_url(content):
+        # A Google Maps directions link is not a web page to fetch — route it to
+        # the maps_url extractor (native; retires the n8n form). It needs a date.
+        if maps_url.looks_like_maps_url(content):
+            if not travel_date:
+                return templates.TemplateResponse(request, "_capture_result.html", {
+                    "ok": False,
+                    "message": ("That’s a Google Maps directions link — add a "
+                                "Travel date (a route has no date of its own).")})
+            batch_id = _queue_maps(session, content, submitted_by=submitted_by,
+                                   travel_date=travel_date, travel_time=travel_time,
+                                   title=title, notes=notes, collection_id=collection_id)
+            return templates.TemplateResponse(request, "_capture_result.html", {
+                "ok": True, "batch_id": batch_id,
+                "message": "Captured the drive. Run “Process new captures” in the review queue to extract it."})
         source_url = content
         html = _fetch_public_html(content)
         if not html:
@@ -226,3 +266,11 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     return templates.TemplateResponse(request, "_capture_result.html", {
         "ok": True, "batch_id": batch_id,
         "message": "Captured. Run “Process new captures” in the review queue to extract it."})
+
+
+@router.get("/about", response_class=HTMLResponse)
+def about(request: Request):
+    return templates.TemplateResponse(request, "about.html", {
+        "version": settings.app_version,
+        "repo_url": "https://github.com/jeeves5454/yonder",
+    })

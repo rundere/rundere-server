@@ -1,5 +1,11 @@
 # Google Maps directions capture (n8n form)
 
+> **⚠️ Deprecated as of v1.2 — kept for reference.** Google Maps directions are
+> now captured natively in Yonder's built-in **`/capture`** page: paste a
+> directions link and set a travel date. It runs internally on the private route
+> (no n8n, no API key, no HMAC signing). This workflow is no longer needed; the
+> files remain here only to document the original approach.
+
 The capture client for the `maps_url` channel. Google Maps has no Apps Script
 add-on surface (unlike Gmail/Calendar), so capture is a small **n8n hosted form**:
 paste a directions link + a travel date, and it makes a signed POST to the same

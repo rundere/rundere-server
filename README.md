@@ -37,8 +37,8 @@ capture  →  /ingest  →  process (extract)  →  resolve  →  review  →  c
 |---|---|---|---|
 | Gmail | `gmail` | Apps Script add-on | Click "Capture" on an open booking email |
 | Google Calendar | `gcal` | Apps Script add-on | Click "Capture" on an open event |
-| Google Maps directions | `maps_url` | n8n hosted form | Paste a directions link + travel date |
-| Web page | `web` | Built-in page + bookmarklet | Click a bookmarklet on any booking page, or paste its source/URL |
+| Google Maps directions | `maps_url` | Built-in `/capture` | Paste a directions link + travel date |
+| Web page | `web` | Built-in `/capture` + bookmarklet | Click a bookmarklet on any booking page, or paste its source/URL |
 
 **Extractor chain** (`extract/`, tried in order — D-10/D-27):
 `jsonld → ical → pdf → maps_url → llm`. Structured sources (schema.org JSON-LD
@@ -79,7 +79,6 @@ D-11) — nothing is sent to a cloud model.
 | **[Ollama](https://ollama.com/)** + a model (`qwen3:14b`) | LLM extractor for free-form text | Structured sources (JSON-LD/iCal/PDF/Maps) still work; unstructured items go to review unparsed |
 | **[Photon](https://github.com/komoot/photon)** (self-hosted geocoder) | Address → coordinates without Google quota (D-22) | Geocoding unavailable; places needing lookup stall in review |
 | **AirTrail's own Postgres** (read-only) | Committing flights to airports you've **never flown before** (D-50) — supplies internal airport id/coords/tz | A flight to a never-flown airport is refused at commit |
-| **[n8n](https://n8n.io/)** | The Google Maps directions capture form | Gmail + Calendar capture still work |
 | **CrowdSec bouncer** | Hardens the public `/ingest` route | Route works; less abuse protection |
 
 ### How to find each prerequisite / credential
@@ -149,15 +148,15 @@ Profiles`**, full CRUD with per-field help), or bootstrap from a file:
 docker exec travel-extractor python -m app.cli import-home /data/home-profiles.json
 ```
 
-**Create an API key per capture client** (Gmail, Calendar, Maps):
+**Create an API key for each Google add-on** (Gmail, Calendar):
 
 ```bash
 docker exec -it travel-extractor python -m app.cli create-key gmail-addon
 docker exec -it travel-extractor python -m app.cli create-key gcal-addon
-docker exec -it travel-extractor python -m app.cli create-key maps-n8n
 ```
 
-Each prints its key **once** — paste it into the matching capture client below.
+Each prints its key **once** — paste it into the matching add-on below. (Web
+pages and Maps directions use the built-in `/capture` page and need no key.)
 
 ---
 
@@ -193,36 +192,24 @@ Identical flow to Gmail, with Calendar scopes:
 4. **Deploy → Test deployments → Install add-on.** Scopes: `calendar.addons.current.event.read`, `calendar.readonly`, `script.external_request`.
 5. In Google Calendar, open the add-on panel → paste the **`gcal-addon`** API key → **Save** (a distinct key from Gmail keeps ingest logs readable; reusing one also works).
 
-### Google Maps directions (n8n workflow)
-
-Full guide: [`capture/maps-n8n/README.md`](capture/maps-n8n/README.md).
-
-Maps has no Apps Script surface, so capture is a small n8n hosted form.
-
-1. Create the key: `create-key maps-n8n` (above).
-2. In n8n: **Workflows → Import from File →** [`capture/maps-n8n/workflow.json`](capture/maps-n8n/workflow.json). It builds four nodes: `Trip form` → `Config` → `Sign & build` → `POST to /ingest`.
-3. Edit the **`Config`** node only:
-   - `apiKey` → the `maps-n8n` key.
-   - `ingestUrl` → `http://travel-extractor:8000/ingest` if n8n shares the app's Docker network; otherwise your public `https://<your-ingest-host>/ingest`.
-4. **Activate** the workflow → open the Form Trigger's **Production URL** on desktop or phone.
-
-The `Sign & build` node mirrors [`capture/maps-n8n/code-node.js`](capture/maps-n8n/code-node.js); it signs the request identically to `app/auth.py` and sends the **raw** signed string — don't change the HTTP node's body type away from *Raw*, or the signature breaks. **Travel date is required** (a directions link has no date — RULE-31).
-
-### Web page (built-in, no external client)
+### Web pages & Google Maps directions (built-in `/capture`, no external client)
 
 Yonder serves its own capture page at **`/capture`** on the private app — no add-on, no n8n, no API key or HMAC. Because this page lives on the private router, it is authenticated by whatever you put in front of that router (a reverse-proxy auth layer, SSO, mTLS, or a trusted LAN); if your proxy forwards an identity header (`X-authentik-username`, `X-Forwarded-User`, …) Yonder records it as the submitter.
 
-Two ways to use it:
-- **Bookmarklet** (primary) — the `/capture` page offers a bookmarklet to drag to your bookmarks bar. Click it on any booking page — including one behind a login — and it POSTs the page's rendered HTML to Yonder. This is the reliable path: your browser has already loaded and authenticated the page.
+Three ways to use it:
+- **Bookmarklet** (primary, for web pages) — the `/capture` page offers a bookmarklet to drag to your bookmarks bar. Click it on any booking page — including one behind a login — and it POSTs the page's rendered HTML to Yonder. This is the reliable path: your browser has already loaded and authenticated the page. If a strict-CSP page blocks the direct send, it copies the HTML to your clipboard to paste instead.
 - **Paste / URL** — paste a page's HTML source, or a **public** URL Yonder fetches itself (SSRF-guarded: only public hosts; login-walled pages can't be fetched, so use the bookmarklet for those).
+- **Google Maps directions** — paste a directions link (`maps.app.goo.gl`, `/maps/dir/…`, or `?api=1&origin=…&destination=…`) and set a **Travel date** (a route has no date of its own — RULE-31). Yonder routes it to the road-trip extractor automatically.
 
-Extraction reuses the JSON-LD reader (most booking pages embed schema.org), falling back to the LLM for pages without markup. Keep the `/capture` route on the **private** router only — never expose it publicly.
+Extraction reuses the JSON-LD reader for web pages (most booking pages embed schema.org), falling back to the LLM for pages without markup. Keep the `/capture` route on the **private** router only — never expose it publicly.
+
+> **The n8n Maps form is retired** (v1.2). It POSTed to `/ingest` with an HMAC key; the native `/capture` page does the same job internally with no key. The old workflow still lives in [`capture/maps-n8n/`](capture/maps-n8n/) for reference.
 
 ---
 
 ## Daily workflow
 
-1. **Capture** — click the add-on button on an email/event, or submit the Maps form. The item lands on `/ingest` (stored, returns `202` immediately; never processed inline).
+1. **Capture** — click the add-on button on an email/event, or use `/capture` for a web page or Maps drive. The item is stored immediately and never processed inline.
 2. **Process** — extract stored batches into `TravelItem`s:
    ```bash
    docker exec travel-extractor python -m app.cli process
@@ -308,7 +295,8 @@ rules.py        rule registry + engine (57 rules, tri-state toggles — D-25)
 validation.py   schema gate (real jsonschema)
 schemas/        travel-item (canonical) + travel-extraction (derived, D-09)
 alembic/        migrations (baseline 0001)
-capture/        gmail-addon/, gcal-addon/ (Apps Script), maps-n8n/ (n8n form)
+capture/        gmail-addon/, gcal-addon/ (Apps Script); maps-n8n/ (deprecated,
+                superseded by the built-in /capture page in v1.2)
 tests/          pytest suite + samples.json regression corpus
 docs/           A5/A6 specs, home-profiles.example.json
 scripts/        extract_eval.py — run the chain over dumped real payloads

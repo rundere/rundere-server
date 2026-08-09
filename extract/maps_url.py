@@ -35,6 +35,27 @@ class ExtractionError(Exception):
     pass
 
 
+def looks_like_maps_url(url: str) -> bool:
+    """True for a Google Maps directions link in any accepted shape — a
+    `maps.app.goo.gl` / `goo.gl/maps` share link, a `/maps/dir/…` path, or a
+    `?api=1&origin=…&destination=…` query. Lets the native capture page route a
+    pasted Maps link to this extractor instead of the generic web fetch, so no
+    n8n form is needed. Conservative on bare short-hosts (requires `/maps`) to
+    avoid mis-routing an unrelated goo.gl link."""
+    u = (url or "").strip()
+    parts = urlsplit(u)
+    host = (parts.hostname or "").lower()
+    path = parts.path or ""
+    if host == "maps.app.goo.gl":
+        return True
+    if host in _SHORT_HOSTS and "/maps" in path:
+        return True
+    if _DIR_PATH.search(u):
+        return True
+    q = parse_qs(parts.query)
+    return bool(q.get("origin") and q.get("destination"))
+
+
 def _capture_dt(date, time, tz) -> dict:
     dt = {"local": f"{date}T{time}" if time else str(date),
           "precision": "datetime" if time else "date",

@@ -56,6 +56,15 @@ def test_extract_web_empty_on_plain_page():
     assert extract_web(_HTML_NO_LD) == []
 
 
+def test_looks_like_maps_url_detects_directions_shapes():
+    from extract.maps_url import looks_like_maps_url
+    assert looks_like_maps_url("https://www.google.com/maps/dir/Harar/Casablanca")
+    assert looks_like_maps_url("https://maps.app.goo.gl/abc123")
+    assert looks_like_maps_url("https://www.google.com/maps/dir/?api=1&origin=A&destination=B")
+    assert not looks_like_maps_url("https://booking.example.com/reservation/42")
+    assert not looks_like_maps_url("<html>not a url at all</html>")
+
+
 def test_llm_context_wires_operator_date_time_as_gap_filler():
     from extract.web import llm_context
     c = llm_context("https://x.example/booking",
@@ -179,6 +188,48 @@ def test_capture_web_rejects_private_url_ssrf():
         assert r.status_code == 200
         assert "bookmarklet" in r.text.lower()      # the "couldn't fetch" guidance
         assert len(_web_batches()) == before        # nothing stored
+    _route_or_skip(run)
+
+
+def _maps_batches():
+    with SessionLocal() as s:
+        return [b for b in s.query(IngestBatch).all()
+                if (b.payload or {}).get("capture_channel") == "maps_url"]
+
+
+def test_capture_maps_url_routes_to_maps_channel():
+    def run():
+        before = len(_maps_batches())
+        r = _client.post("/capture/web", data={
+            "content": "https://www.google.com/maps/dir/Harar/Casablanca",
+            "travel_date": "2026-09-23", "travel_time": "15:35"})
+        assert r.status_code == 200
+        assert "drive" in r.text.lower()
+        after = _maps_batches()
+        assert len(after) == before + 1
+        assert after[-1].payload["url"].endswith("Casablanca")
+        assert after[-1].payload["capture_context"]["travel_date"] == "2026-09-23"
+    _route_or_skip(run)
+
+
+def test_capture_maps_url_requires_travel_date():
+    def run():
+        before = len(_maps_batches())
+        r = _client.post("/capture/web", data={"content": "https://maps.app.goo.gl/xyz123"})
+        assert r.status_code == 200
+        assert "Travel date" in r.text
+        assert len(_maps_batches()) == before        # nothing stored without a date
+    _route_or_skip(run)
+
+
+def test_about_page_shows_version_repo_and_credit():
+    def run():
+        from app.config import settings
+        r = _client.get("/about")
+        assert r.status_code == 200
+        assert "github.com/jeeves5454/yonder" in r.text
+        assert "Claude" in r.text
+        assert settings.app_version in r.text
     _route_or_skip(run)
 
 

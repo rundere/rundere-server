@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}About{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops">
+    <div class="ops-row">
+      <h1 class="pagetitle">About Yonder</h1>
+    </div>
+  </div>
+
+  <div class="about">
+    <p class="about-lead">
+      <strong>Yonder</strong> turns travel documents — booking emails, calendar
+      invites, PDF confirmations, Google Maps directions, and web pages — into
+      clean records in your self-hosted <strong>AdventureLog</strong> (trips &amp;
+      places) and <strong>AirTrail</strong> (flights). You capture, it extracts
+      and resolves, you review, and it logs — nothing is written without your
+      approval.
+    </p>
+
+    <dl class="about-facts">
+      <dt>Version</dt><dd class="mono">{{ version }}</dd>
+      <dt>Pipeline</dt><dd class="mono">capture → process → resolve → review → log</dd>
+      <dt>Capture surfaces</dt><dd>Gmail &amp; Google Calendar add-ons, web pages
+        (built-in <code>/capture</code> + bookmarklet), and Google Maps directions</dd>
+      <dt>Repository</dt><dd><a href="{{ repo_url }}" target="_blank" rel="noopener">{{ repo_url }}</a></dd>
+      <dt>License</dt><dd>GNU Affero General Public License v3.0</dd>
+    </dl>
+
+    <p class="about-credit">
+      Yonder’s code was developed primarily with <strong>Claude</strong> (Anthropic).
+    </p>
+  </div>
+</div>
+
+<style>
+.about{padding:20px 22px;max-width:760px}
+.about-lead{font-size:15.5px;color:var(--ink-2);margin:0 0 20px}
+.about-facts{display:grid;grid-template-columns:auto 1fr;gap:10px 20px;margin:0 0 22px}
+.about-facts dt{color:var(--ink-3);font-size:11px;text-transform:uppercase;
+  letter-spacing:.07em;padding-top:2px;white-space:nowrap}
+.about-facts dd{margin:0;color:var(--ink)}
+.about-facts dd.mono{font-family:var(--mono);font-size:13px}
+.about-credit{padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--surface-sunk);color:var(--ink-2);font-size:14px;margin:0}
+</style>
+{% endblock %}
