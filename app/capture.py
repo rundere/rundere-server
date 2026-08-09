@@ -110,8 +110,8 @@ def _fetch_public_html(url: str) -> str | None:
 
 def _queue_web(session: Session, html: str, *, source_url: str | None,
                submitted_by: str | None, travel_date: str | None = None,
-               title: str | None = None, notes: str | None = None,
-               collection_id: str | None = None) -> str:
+               travel_time: str | None = None, title: str | None = None,
+               notes: str | None = None, collection_id: str | None = None) -> str:
     """Wrap a captured page into a `web`-channel batch and store it. Returns the
     batch id."""
     payload = {
@@ -121,6 +121,7 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
         "capture_context": {
             "submitted_by": submitted_by or _WEB_CLIENT,
             "travel_date": travel_date or None,
+            "travel_time": travel_time or None,
             "title": title or None,
             "notes": notes or None,
             "collection_id": collection_id or None,
@@ -138,11 +139,30 @@ def capture_page(request: Request):
     # request.base_url is the private host the operator loaded /capture on, which
     # is exactly where /capture/web lives.
     endpoint = str(request.base_url).rstrip("/") + "/capture/web"
+    # If the direct POST is blocked (a strict Content-Security-Policy on the
+    # page can forbid a bookmarklet's fetch to another origin) or otherwise
+    # fails, fall back to copying the page HTML to the clipboard so the operator
+    # can paste it into /capture in one step — the reliable escape hatch for
+    # heavy/locked-down sites.
     bookmarklet = (
-        "javascript:(function(){fetch('%s',{method:'POST',credentials:'include',"
-        "headers:{'Content-Type':'text/html'},body:document.documentElement.outerHTML})"
+        "javascript:(function(){"
+        "var h=document.documentElement.outerHTML;"
+        "var cp=function(){var t=document.createElement('textarea');t.value=h;"
+        "t.style.position='fixed';t.style.top='-9999px';document.body.appendChild(t);"
+        "t.focus();t.select();var k=false;try{k=document.execCommand('copy')}catch(e){}"
+        "document.body.removeChild(t);return k};"
+        "var fb=function(){var say=function(k){alert(k?"
+        "'Yonder could not post to the server (this page may block it). The page "
+        "HTML is now on your clipboard. Open Yonder /capture and paste it into the box.':"
+        "'Yonder could not post or auto-copy on this page. Open Yonder /capture and "
+        "paste the page source manually.')};"
+        "if(navigator.clipboard&&navigator.clipboard.writeText){"
+        "navigator.clipboard.writeText(h).then(function(){say(true)},function(){say(cp())})}"
+        "else{say(cp())}};"
+        "fetch('%s',{method:'POST',credentials:'include',"
+        "headers:{'Content-Type':'text/html'},body:h})"
         ".then(function(r){return r.text()}).then(function(t){alert(t)})"
-        ".catch(function(e){alert('Yonder capture failed: '+e)})})()" % endpoint
+        ".catch(function(){fb()})})()" % endpoint
     )
     return templates.TemplateResponse(request, "capture.html", {
         "bookmarklet": bookmarklet, "endpoint": endpoint})
@@ -175,6 +195,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     form = await request.form()
     content = (form.get("content") or "").strip()
     travel_date = (form.get("travel_date") or "").strip() or None
+    travel_time = (form.get("travel_time") or "").strip() or None
     title = (form.get("title") or "").strip() or None
     notes = (form.get("notes") or "").strip() or None
     collection_id = (form.get("collection_id") or "").strip() or None
@@ -200,8 +221,8 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
             "ok": False, "message": "That page is too large to capture."})
 
     batch_id = _queue_web(session, html, source_url=source_url, submitted_by=submitted_by,
-                          travel_date=travel_date, title=title, notes=notes,
-                          collection_id=collection_id)
+                          travel_date=travel_date, travel_time=travel_time, title=title,
+                          notes=notes, collection_id=collection_id)
     return templates.TemplateResponse(request, "_capture_result.html", {
         "ok": True, "batch_id": batch_id,
         "message": "Captured. Run “Process new captures” in the review queue to extract it."})

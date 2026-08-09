@@ -1,6 +1,6 @@
 [project]
 name = "travel-extractor"
-version = "1.1.0"
+version = "1.1.1"
 description = "Yonder — travel documents -> AirTrail + AdventureLog."
 requires-python = ">=3.12"
 dependencies = [

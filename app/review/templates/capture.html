@@ -18,6 +18,11 @@
         you’re viewing and queues it. This is the reliable path: your browser has
         already loaded and authenticated the page.
       </p>
+      <p class="why">
+        If a page blocks the direct send (some heavy or strict-CSP sites do),
+        Yonder copies the page’s HTML to your clipboard instead — just paste it
+        into the box on the right.
+      </p>
       <p>
         <a class="act primary bm" href="{{ bookmarklet|safe }}"
            onclick="return false">➤ Capture to Yonder</a>
@@ -49,6 +54,10 @@
             <input id="travel_date" name="travel_date" type="text" placeholder="YYYY-MM-DD">
           </div>
           <div class="field">
+            <label for="travel_time">Travel time (optional)</label>
+            <input id="travel_time" name="travel_time" type="text" placeholder="HH:MM">
+          </div>
+          <div class="field">
             <label for="collection_id">Trip / collection id (optional)</label>
             <input id="collection_id" name="collection_id" type="text"
                    placeholder="force a specific AdventureLog collection">
@@ -58,6 +67,11 @@
             <input id="notes" name="notes" type="text" placeholder="anything to remember">
           </div>
         </div>
+        <p class="why cap-hint">
+          Date/time are only used to fill gaps the page itself doesn’t state
+          (e.g. an event with no listed time) — a date or time on the page always
+          wins, and you can also just fix it later in the review queue.
+        </p>
         <div class="cap-actions">
           <button class="act primary" type="submit">Capture</button>
         </div>

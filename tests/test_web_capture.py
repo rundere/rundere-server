@@ -56,6 +56,22 @@ def test_extract_web_empty_on_plain_page():
     assert extract_web(_HTML_NO_LD) == []
 
 
+def test_llm_context_wires_operator_date_time_as_gap_filler():
+    from extract.web import llm_context
+    c = llm_context("https://x.example/booking",
+                    {"travel_date": "2026-09-13", "travel_time": "15:35"})
+    assert "https://x.example/booking" in c
+    assert "2026-09-13 at 15:35" in c
+    assert "never override" in c            # page always wins
+
+
+def test_llm_context_omits_date_line_when_absent():
+    from extract.web import llm_context
+    c = llm_context(None, {})
+    assert c.startswith("Captured web page")
+    assert "travel date" not in c.lower()   # no misleading hint when none given
+
+
 # ------------------------------------------------------- pipeline (needs jsonschema)
 
 def _pipeline_or_skip():
@@ -144,12 +160,15 @@ def test_capture_web_form_paste_stores_web_batch():
     def run():
         before = len(_web_batches())
         r = _client.post("/capture/web",
-                         data={"content": _HTML, "title": "My stay"})
+                         data={"content": _HTML, "title": "My stay",
+                               "travel_date": "2026-09-13", "travel_time": "15:35"})
         assert r.status_code == 200
         assert "Captured" in r.text
         after = _web_batches()
         assert len(after) == before + 1
-        assert after[-1].payload["capture_context"]["title"] == "My stay"
+        cc = after[-1].payload["capture_context"]
+        assert cc["title"] == "My stay"
+        assert cc["travel_date"] == "2026-09-13" and cc["travel_time"] == "15:35"
     _route_or_skip(run)
 
 

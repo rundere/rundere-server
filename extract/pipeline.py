@@ -99,8 +99,7 @@ def extract_ingest_payload(ingest_payload: dict,
                 "web page had no schema.org reservation markup and no LLM configured")
             return result
         doc = web.html_to_text(html)
-        url = ingest_payload.get("source_url") or ""
-        context = "Captured web page" + (f" — {url}" if url else "")
+        context = web.llm_context(ingest_payload.get("source_url"), cc)
         try:
             batch, attempts = llm.extract(doc, context)
         except ExtractionFailed as ex:

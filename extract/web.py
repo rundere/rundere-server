@@ -33,6 +33,27 @@ def extract_web(html: str) -> list[dict]:
     return jsonld.extract_jsonld(html or "")
 
 
+def llm_context(source_url: str | None, capture_context: dict | None) -> str:
+    """The context string handed to the LLM for a web-page fallback (a page with
+    no JSON-LD). Beyond the URL, it passes any operator-supplied travel date/time
+    as a GAP-FILLER: the prompt tells the model to use it only when the page
+    itself states no date or time, never to override what the page gives. This is
+    what makes the capture form's date/time fields meaningful for web — the
+    common JSON-LD path ignores them because the page already carries its dates."""
+    cc = capture_context or {}
+    parts = ["Captured web page" + (f" — {source_url}" if source_url else "")]
+    date = (cc.get("travel_date") or "").strip()
+    if date:
+        time = (cc.get("travel_time") or "").strip()
+        when = f"{date} at {time}" if time else date
+        tz = (cc.get("timezone") or "").strip()
+        parts.append(
+            "The person capturing this page says the travel date/time is "
+            f"{when}{f' ({tz})' if tz else ''}. Use it ONLY to fill a date or time "
+            "the page itself does not state; never override a date or time the page gives.")
+    return "\n".join(parts)
+
+
 def html_to_text(html: str) -> str:
     """A readable text rendering of a page for the LLM fallback. Not a parser —
     it drops script/style, turns block boundaries into newlines, strips the rest
