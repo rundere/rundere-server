@@ -52,6 +52,11 @@ class TravelItem(Base):
     schema_version: Mapped[str | None] = mapped_column(String(16))
     artifact_sha256: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("artifacts.sha256"))
+    # Yonder 2.1.2: soft link to an in-house Yonder Trip, set by the review trip
+    # picker. Independent of the AdventureLog collection (resolution.collection_id)
+    # — Yonder trips are their own trip system, not a mirror. Plain column, no DB
+    # FK (see migration 0008); the trips delete route clears dangling links.
+    trip_id: Mapped[str | None] = mapped_column(String(36), index=True)
     status: Mapped[dict | None] = mapped_column(JsonCol)
     source: Mapped[dict | None] = mapped_column(JsonCol)
     extraction: Mapped[dict | None] = mapped_column(JsonCol)

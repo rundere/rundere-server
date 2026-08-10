@@ -91,4 +91,27 @@
             hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
   </div>
 {% endif %}
+
+{% if linked_captures %}
+<div class="bp-timeline-head">
+  <h2 class="bp-h2">Linked captures</h2>
+</div>
+<section class="bp-group">
+  <div class="card blueprint bp-daycard">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    {% for c in linked_captures %}
+    <div class="yn-actrow">
+      <span class="tag tag-outline bp-typetag">{{ c.kind }}</span>
+      <div class="bp-act-main">
+        <div class="bp-act-title">{{ c.headline }}</div>
+        {% if c.subline %}<div class="bp-act-sub">{{ c.subline }}</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+<p class="bp-trip-notes">Items you linked to this trip from the
+  <a href="/review?bucket=all">review queue</a>. This is an in-house link,
+  independent of AdventureLog.</p>
+{% endif %}
 {% endblock %}

@@ -515,3 +515,105 @@ def test_approve_stays_on_current_bucket_with_oob_counts():
         assert 'hx-swap-oob="true"' in r.text            # counts refresh OOB
         assert item_id not in r.text                     # left the ready list
     _skip_or(run)
+
+
+# ---------------------------------------------------------------- trip pickers
+
+def _ready_flight(session):
+    payload = _flight_payload()
+    item = _add(session, payload, resolve_state="ok")
+    item.review = {"required": False}
+    item.resolution = {"outcome": "resolved", "targets": ["airtrail.flight"]}
+    session.commit()
+    return item
+
+
+def test_yonder_trip_picker_links_and_unlinks_a_capture():
+    """2.1.2: the Yonder trip picker is an in-house association only — it sets
+    item.trip_id and must NOT disturb resolution / targets / the commit path."""
+    def run():
+        from app.models import Trip
+        with SessionLocal() as s:
+            trip = Trip(name="Lisbon 2027", start_date="2027-09-01",
+                        end_date="2027-09-14")
+            s.add(trip); s.commit(); trip_id = trip.id
+            item = _ready_flight(s)
+            item_id = item.id
+            before = dict(item.resolution)
+        r = client.post(f"/review/item/{item_id}/assign-trip",
+                        data={"trip_id": trip_id})
+        assert r.status_code == 200
+        with SessionLocal() as s:
+            it = s.get(TravelItem, item_id)
+            assert it.trip_id == trip_id
+            assert it.resolution == before             # resolution untouched
+        r = client.post(f"/review/item/{item_id}/assign-trip", data={"trip_id": ""})
+        with SessionLocal() as s:
+            assert s.get(TravelItem, item_id).trip_id is None   # unlinked
+    _skip_or(run)
+
+
+def test_yonder_trip_picker_rejects_an_unknown_trip():
+    """Never link to a trip that doesn't exist."""
+    def run():
+        with SessionLocal() as s:
+            item_id = _ready_flight(s).id
+        r = client.post(f"/review/item/{item_id}/assign-trip",
+                        data={"trip_id": "no-such-trip"})
+        assert r.status_code == 200
+        with SessionLocal() as s:
+            assert s.get(TravelItem, item_id).trip_id is None
+    _skip_or(run)
+
+
+def test_deleting_a_yonder_trip_clears_its_capture_links():
+    """A soft link with no DB FK (migration 0008): the delete route must null
+    dangling links itself, and the capture itself must survive."""
+    def run():
+        from app.models import Trip
+        with SessionLocal() as s:
+            trip = Trip(name="Temp", start_date="2027-01-01", end_date="2027-01-05")
+            s.add(trip); s.commit(); trip_id = trip.id
+            item = _ready_flight(s)
+            item.trip_id = trip_id; s.commit(); item_id = item.id
+        client.post(f"/trips/{trip_id}/delete")
+        with SessionLocal() as s:
+            it = s.get(TravelItem, item_id)
+            assert it is not None                      # capture survives
+            assert it.trip_id is None                  # link cleared
+    _skip_or(run)
+
+
+def test_al_trip_picker_stores_the_pick_as_capture_context(monkeypatch):
+    """2.1.2: assigning an AdventureLog trip records it as capture_context.
+    collection_id — the resolver's top-of-ladder human choice (D-05) — and
+    re-resolves so the item files into that collection."""
+    def run():
+        from app.review import routes
+        monkeypatch.setattr(routes, "_list_trips", lambda: [
+            {"id": "col-1", "name": "Trip", "start_date": "", "end_date": ""}])
+        with SessionLocal() as s:
+            item_id = _add(s, _flight_payload(), resolve_state="needs_review").id
+        r = client.post(f"/review/item/{item_id}/assign",
+                        data={"collection_id": "col-1"})
+        assert r.status_code == 200
+        with SessionLocal() as s:
+            cc = (s.get(TravelItem, item_id).source or {}).get("capture_context") or {}
+            assert cc.get("collection_id") == "col-1"
+    _skip_or(run)
+
+
+def test_al_trip_picker_rejects_an_unknown_collection(monkeypatch):
+    """An id that names no known AdventureLog trip is ignored, not trusted."""
+    def run():
+        from app.review import routes
+        monkeypatch.setattr(routes, "_list_trips", lambda: [])
+        with SessionLocal() as s:
+            item_id = _add(s, _flight_payload(), resolve_state="needs_review").id
+        r = client.post(f"/review/item/{item_id}/assign",
+                        data={"collection_id": "ghost"})
+        assert r.status_code == 200
+        with SessionLocal() as s:
+            cc = (s.get(TravelItem, item_id).source or {}).get("capture_context") or {}
+            assert "collection_id" not in cc
+    _skip_or(run)

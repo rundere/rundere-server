@@ -137,10 +137,17 @@ def resolve_collection(
     if e < s:
         raise ValueError("item end before start")
 
-    # 1 — human choice short-circuits everything (D-05, RULE-35b/35c)
+    # 1 — human choice short-circuits everything (D-05, RULE-35b/35c). This is
+    # also the lever the in-review trip picker uses: an operator assigning a trip
+    # IS the human choice, just expressed in review instead of at capture. Carry
+    # the chosen trip's NAME when we know it, so the write preview can say which
+    # trip this files into rather than a bare "existing trip".
     if capture_collection_id:
+        name = next((c.name for c in collections
+                     if str(c.id) == str(capture_collection_id)), None)
         return Resolution(collection_action="user_selected", outcome="resolved",
-                          collection_id=capture_collection_id)
+                          collection_id=capture_collection_id,
+                          collection_name=name or None)
 
     # 2 — exact: collection date range contains the item span
     exact = [c for c in collections

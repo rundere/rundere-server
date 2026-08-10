@@ -188,8 +188,25 @@ def _detail_context(session: Session, trip: Trip) -> dict:
         },
         "day_groups": day_groups,
         "has_activities": bool(acts),
+        "linked_captures": _linked_captures(session, trip.id),
         **_push_state(trip),
     }
+
+
+def _linked_captures(session: Session, trip_id: str) -> list[dict]:
+    """Captured review items linked to this Yonder trip (2.1.2). Read-only here —
+    the link is made and unmade in the review queue's trip picker."""
+    from app.models import TravelItem
+    from app.review import summary as rs
+    rows = (session.query(TravelItem)
+            .filter(TravelItem.trip_id == trip_id)
+            .order_by(TravelItem.created_at).all())
+    out = []
+    for c in rows:
+        payload = (c.extraction or {}).get("payload") or {}
+        out.append({"id": c.id, "kind": rs.kind_label(payload),
+                    "headline": rs.headline(payload), "subline": rs.subline(payload)})
+    return out
 
 
 def _adventurelog():
@@ -363,6 +380,12 @@ def delete_trip(trip_id: str, session: Session = Depends(get_session)):
         # sweep the activities.
         session.query(TripActivity).filter(
             TripActivity.trip_id == trip_id).delete(synchronize_session=False)
+        # Clear the soft link from any captured items filed into this trip
+        # (2.1.2) — there's no DB FK to null it for us (migration 0008).
+        from app.models import TravelItem
+        session.query(TravelItem).filter(
+            TravelItem.trip_id == trip_id).update({"trip_id": None},
+                                                  synchronize_session=False)
         session.delete(trip)
         session.commit()
     return _redirect("/trips")
