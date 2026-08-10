@@ -750,3 +750,102 @@ def test_dry_run_update_plans_but_writes_nothing():
     row = [r for r in env["results"] if r["target"] == "adventurelog.transportation"][0]
     assert row["operation"] == "update" and row["updated_id"] == "tr-3"
     s.close()
+
+
+# -------------------------------------------------- Yonder first-party writes (2.2.0)
+
+def _add_linked(s, targets):
+    """An approved item linked to a fresh Yonder trip that spans its dates."""
+    from app.models import Trip
+    tr = Trip(name="United States — November 2026",
+              start_date="2026-11-20", end_date="2026-11-29")
+    s.add(tr); s.commit()
+    it = _add(s, _flight_payload(), targets=targets)
+    it.trip_id = tr.id
+    s.commit()
+    return it, tr
+
+
+def _cleanup_trips(s):
+    from app.models import Trip, TripActivity
+    s.query(TripActivity).delete()
+    s.query(Trip).delete()
+    s.commit()
+
+
+def test_yonder_dry_run_plans_a_trip_activity_but_writes_nothing():
+    _skip()
+    from app.models import TripActivity
+    s = SessionLocal()
+    it, tr = _add_linked(s, ["yonder.activity"])
+    env = C.commit_item(s, it, FakeAL(), FakeAT(), identities=[Ident("self", "vu75")],
+                        dry_run=True)
+    ya = [r for r in env["results"] if r["target"] == "yonder.activity"]
+    assert ya and ya[0]["operation"] == "create" and ya[0]["ok"]
+    assert s.query(TripActivity).count() == 0            # dry run wrote nothing
+    _cleanup_trips(s); s.close()
+
+
+def test_yonder_activity_created_with_capture_key():
+    _skip()
+    from app.models import TripActivity
+    s = SessionLocal()
+    it, tr = _add_linked(s, ["yonder.activity"])
+    C.commit_item(s, it, FakeAL(), FakeAT(), identities=[Ident("self", "vu75")],
+                  dry_run=False)
+    s.commit()
+    acts = s.query(TripActivity).filter_by(trip_id=tr.id).all()
+    assert len(acts) == 1
+    a = acts[0]
+    assert a.type == "flight"
+    assert a.source_item_key == it.canonical_key
+    assert a.values.get("flightNumber") == "AC9471"
+    assert s.query(CommitAttempt).filter_by(
+        item_id=it.id, target="yonder.activity").count() == 1     # tracked (D-19)
+    _cleanup_trips(s); s.close()
+
+
+def test_yonder_upserts_by_capture_key_never_duplicates():
+    _skip()
+    from app.models import TripActivity
+    s = SessionLocal()
+    it, tr = _add_linked(s, ["yonder.activity"])
+    C.commit_item(s, it, FakeAL(), FakeAT(), identities=[Ident("self", "vu75")],
+                  dry_run=False); s.commit()
+    # A second capture of the SAME booking (same canonical_key) updates in place.
+    it2 = _add(s, _flight_payload(), targets=["yonder.activity"])
+    it2.trip_id = tr.id; s.commit()
+    C.commit_item(s, it2, FakeAL(), FakeAT(), identities=[Ident("self", "vu75")],
+                  dry_run=False); s.commit()
+    assert s.query(TripActivity).filter_by(trip_id=tr.id).count() == 1
+    _cleanup_trips(s); s.close()
+
+
+def test_yonder_activity_removed_on_cancellation():
+    _skip()
+    from app.models import TripActivity
+    s = SessionLocal()
+    it, tr = _add_linked(s, ["yonder.activity"])
+    C.commit_item(s, it, FakeAL(), FakeAT(), identities=[Ident("self", "vu75")],
+                  dry_run=False); s.commit()
+    assert s.query(TripActivity).filter_by(trip_id=tr.id).count() == 1
+    it2 = _add(s, _flight_payload(), targets=["yonder.activity"])
+    it2.trip_id = tr.id
+    it2.revision = {"action": "supersede"}
+    s.commit()
+    C.commit_item(s, it2, FakeAL(), FakeAT(), identities=[Ident("self", "vu75")],
+                  dry_run=False); s.commit()
+    assert s.query(TripActivity).filter_by(trip_id=tr.id).count() == 0
+    _cleanup_trips(s); s.close()
+
+
+def test_yonder_write_refused_without_a_linked_trip():
+    _skip()
+    s = SessionLocal()
+    it = _add(s, _flight_payload(), targets=["yonder.activity"])   # no trip_id
+    env = C.commit_item(s, it, FakeAL(), FakeAT(), identities=[Ident("self", "vu75")],
+                        dry_run=False)
+    s.commit()
+    ya = [r for r in env["results"] if r["target"] == "yonder.activity"][0]
+    assert not ya["ok"] and "no Yonder trip" in ya["error"]
+    s.close()

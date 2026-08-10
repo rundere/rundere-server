@@ -243,6 +243,11 @@ class TripActivity(Base):
     type: Mapped[str] = mapped_column(String(24))
     starts_at: Mapped[str | None] = mapped_column(String(32), index=True)
     values: Mapped[dict] = mapped_column(JsonCol, default=dict)
+    # Yonder 2.2.0: the canonical_key of the capture this activity was logged
+    # from, or NULL for a hand-made one. The commit stage upserts on
+    # (trip_id, source_item_key) so a re-committed / re-captured booking updates
+    # in place instead of duplicating (migration 0009).
+    source_item_key: Mapped[str | None] = mapped_column(String(512), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)

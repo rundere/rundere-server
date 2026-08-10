@@ -36,12 +36,13 @@ from resolve.targets import (compute_targets, enrich_places_from_airports,
 
 log = logging.getLogger("yonder.resolving")
 
-# The one write target that needs NO collection: a flight's AirTrail record.
-# Everything else (AdventureLog transportation/lodging/note/location/collection)
-# is filed under a trip, so it waits until one is matched or picked. Keeping this
-# set live lets a flight reach AirTrail even while its trip is still unresolved
-# (owner, 2026-08-10 — backfilling old legs that may never map cleanly to a trip).
-_COLLECTION_INDEPENDENT_TARGETS = {"airtrail.flight"}
+# Targets that need NO AdventureLog collection, so they stay live even while the
+# AdventureLog trip is unresolved: a flight's AirTrail record, and the in-house
+# Yonder activity (filed under a Yonder trip, an entirely separate system).
+# Keeping these live lets a capture reach AirTrail / Yonder even when its
+# AdventureLog trip is still unresolved (owner, 2026-08-10 — backfilling old legs
+# that may never map cleanly to an AdventureLog trip).
+_COLLECTION_INDEPENDENT_TARGETS = {"airtrail.flight", "yonder.activity"}
 
 
 def _collection_reason(coll) -> str:
@@ -509,6 +510,13 @@ def resolve_item(session: Session, item: TravelItem,
                                  and is_minter))
     if decision.action == "no_change":
         targets = []                           # nothing to write (D-13)
+
+    # Yonder is a first-party write target (2.2.0): a capture linked to an
+    # in-house Yonder trip is filed there as a TripActivity, independent of
+    # AdventureLog. Add it whenever the item has a trip (manual pick or the
+    # unambiguous auto-link above) and there is actually something to write.
+    if item.trip_id and not home_only and decision.action != "no_change":
+        targets = targets + ["yonder.activity"]
 
     outcome = "ignored" if home_only else (coll.outcome if coll else "needs_review")
     if decision.review_required:
