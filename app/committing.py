@@ -380,11 +380,99 @@ def build_note(payload: dict, *, collection_id: str | None) -> dict:
     return {k: v for k, v in body.items() if v is not None}
 
 
+# Our ground_transport.mode -> Yonder activity type (app/trips/types.py). Modes
+# with no dedicated Yonder type fall back to "drive" (Road trip), whose free-text
+# route field carries the endpoints.
+_YONDER_GROUND_TYPE = {"train": "train", "car_rental": "carRental",
+                       "ferry": "cruise", "bus": "drive", "car": "drive",
+                       "rideshare": "drive", "transfer": "drive", "other": "drive"}
+
+
+def _local(dt: dict | None) -> str | None:
+    """The LOCAL datetime string a Yonder activity stores in its `when`/`endWhen`
+    fields (datetime-local). Yonder keeps wall-clock local strings, not UTC."""
+    if not isinstance(dt, dict):
+        return None
+    return dt.get("local") or None
+
+
+def _label(place: dict | None) -> str | None:
+    if not isinstance(place, dict):
+        return None
+    return (place.get("iata") or place.get("city") or place.get("name")
+            or place.get("raw") or None)
+
+
+def build_yonder_activity(payload: dict) -> tuple[str, dict]:
+    """Map a capture payload to a Yonder (type, values) for a TripActivity.
+
+    Yonder is a first-party trip system, so this mirrors the manual add-activity
+    form's value keys (app/trips/types.py) rather than an external API shape. The
+    activity is filed under the item's linked Yonder trip by the commit stage."""
+    t = payload.get("item_type")
+    ref = payload.get("booking_reference") or None
+
+    if t == "flight":
+        f = payload.get("flight") or {}
+        mc = f.get("marketing_carrier") or {}
+        dep, arr = f.get("departure") or {}, f.get("arrival") or {}
+        values = {
+            "when": _local(dep.get("time")), "endWhen": _local(arr.get("time")),
+            "airline": (mc.get("name") or mc.get("iata") or None),
+            "flightNumber": _flight_number_combined(payload) or None,
+            "from": _label(dep.get("place")), "to": _label(arr.get("place")),
+            "confirmation": ref,
+        }
+        return "flight", {k: v for k, v in values.items() if v}
+
+    if t == "ground_transport":
+        g = payload.get("ground_transport") or {}
+        prov = payload.get("provider") or {}
+        dep, arr = g.get("departure") or {}, g.get("arrival") or {}
+        a, b = _label(dep.get("place")), _label(arr.get("place"))
+        atype = _YONDER_GROUND_TYPE.get(g.get("mode"), "drive")
+        provider = (prov.get("name") if isinstance(prov, dict) else None)
+        base = {"when": _local(dep.get("time")), "endWhen": _local(arr.get("time")),
+                "confirmation": ref}
+        if atype == "drive":
+            base["route"] = " → ".join(x for x in (a, b) if x) or None
+        elif atype == "carRental":
+            base.update({"company": provider, "pickupLocation": a, "dropoffLocation": b})
+        elif atype == "cruise":
+            base.update({"operator": provider, "departurePort": a, "arrivalPort": b})
+        else:  # train
+            base.update({"operator": provider, "trainNumber": g.get("service_number"),
+                         "from": a, "to": b})
+        return atype, {k: v for k, v in base.items() if v}
+
+    if t == "lodging":
+        lg = payload.get("lodging") or {}
+        place = lg.get("place") or {}
+        values = {
+            "when": _local(lg.get("check_in")), "endWhen": _local(lg.get("check_out")),
+            "name": lg.get("property_name") or _label(place),
+            "address": place.get("address") or place.get("raw"),
+            "confirmation": ref,
+        }
+        return "lodging", {k: v for k, v in values.items() if v}
+
+    if t == "event":
+        ev = payload.get("event") or {}
+        values = {"when": _local(ev.get("start")), "name": ev.get("title") or "Event",
+                  "venue": _label(ev.get("venue"))}
+        return "event", {k: v for k, v in values.items() if v}
+
+    # Anything else (incl. note): a plain note carrying whatever text we have.
+    values = {"name": payload.get("title") or "Note",
+              "text": payload.get("notes")}
+    return "note", {k: v for k, v in values.items() if v}
+
+
 # ---------------------------------------------------------------- one item
 
 _ORDER = ["adventurelog.collection", "adventurelog.location",
           "adventurelog.transportation", "adventurelog.lodging",
-          "adventurelog.note", "airtrail.flight"]
+          "adventurelog.note", "airtrail.flight", "yonder.activity"]
 
 # AdventureLog has no orphan path for these — they REQUIRE a collection (RULE-08).
 _NEEDS_COLLECTION = {"adventurelog.transportation", "adventurelog.lodging",
@@ -616,6 +704,57 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
         if target in already:
             results.append({"target": target, "operation": "skip",
                             "ok": True, "skipped": "already committed"})
+            continue
+
+        # ---- Yonder (first-party, 2.2.0): file the capture onto its linked
+        # Yonder trip as a TripActivity. Self-contained — a LOCAL DB upsert keyed
+        # on (trip_id, source_item_key=canonical_key), independent of AirTrail /
+        # AdventureLog and of the revision id-plumbing below. Re-committing or an
+        # updated capture updates the same activity; a cancellation removes it.
+        if target == "yonder.activity":
+            from app.models import TripActivity
+            tid, key = item.trip_id, item.canonical_key
+            existing = (session.query(TripActivity)
+                        .filter(TripActivity.trip_id == tid,
+                                TripActivity.source_item_key == key).first()
+                        if (tid and key) else None)
+            if action == "supersede":
+                if not existing:
+                    results.append({"target": target, "operation": "cancel",
+                                    "ok": True, "skipped": "cancellation — nothing "
+                                    "on the Yonder trip to remove"})
+                    continue
+                extra = {"deleted_id": existing.id}
+                if not dry_run:
+                    session.delete(existing)
+                _record(target, "cancel", {"trip_id": tid},
+                        None if dry_run else (200, {}, ""), extra=extra)
+                continue
+            if not tid:
+                results.append({"target": target, "operation": "create", "ok": False,
+                                "dry_run": dry_run,
+                                "error": "no Yonder trip is linked to this item"})
+                continue
+            atype, values = build_yonder_activity(payload)
+            op = "update" if existing else "create"
+            if dry_run:
+                _record(target, op, {"trip_id": tid, "type": atype, "values": values},
+                        None, extra={"yonder_type": atype})
+                continue
+            if existing:
+                existing.type, existing.values = atype, values
+                existing.starts_at = values.get("when") or ""
+                flag_modified(existing, "values")
+                act_id = existing.id
+            else:
+                act = TripActivity(trip_id=tid, type=atype, values=values,
+                                   starts_at=values.get("when") or "",
+                                   source_item_key=key)
+                session.add(act)
+                session.flush()
+                act_id = act.id
+            _record(target, op, {"trip_id": tid, "type": atype, "values": values},
+                    (200, {"id": act_id}, ""), extra={"yonder_type": atype})
             continue
 
         # ---- revision: revise or cancel an ALREADY-written record before the

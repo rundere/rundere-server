@@ -539,3 +539,23 @@ def test_resolve_never_overrides_a_pinned_yonder_link():
             resolve_pending(s, adventurelog=None)
             assert s.get(TravelItem, it.id).trip_id is None
     _skip_or(run)
+
+
+def test_resolve_adds_yonder_target_when_linked_to_a_trip():
+    """2.2.0: a capture linked to a Yonder trip (here via the auto-link) carries
+    the first-party yonder.activity write target, independent of AdventureLog —
+    so a lodging with no AdventureLog trip still becomes writable to Yonder."""
+    def run():
+        from app.models import Trip
+        with SessionLocal() as s:
+            _reset_items_and_trips(s); _seed_home(s)
+            tr = Trip(name="Lisbon, May 2027", start_date="2027-05-01",
+                      end_date="2027-05-31")
+            s.add(tr); s.commit(); tid = tr.id
+            it = _add_item(s, _lodging_payload())      # no AdventureLog available
+            resolve_pending(s, adventurelog=None)
+            done = s.get(TravelItem, it.id)
+            assert done.trip_id == tid                 # auto-linked (unambiguous)
+            assert "yonder.activity" in (done.resolution or {}).get("targets", [])
+            assert (done.status or {}).get("resolve") == "ok"   # writable to Yonder
+    _skip_or(run)

@@ -112,6 +112,7 @@ _TARGET_LABEL = {
     "adventurelog.lodging": ("AdventureLog", "Lodging"),
     "adventurelog.note": ("AdventureLog", "Note"),
     "adventurelog.location": ("AdventureLog", "Location"),
+    "yonder.activity": ("Yonder", "Trip activity"),
 }
 
 
@@ -148,6 +149,19 @@ def write_preview(item_payload: dict, resolution: dict,
 
     for target in targets:
         system, label = _TARGET_LABEL.get(target, ("", target))
+
+        # Yonder (first-party, 2.2.0): filed onto the linked in-house trip,
+        # independent of AirTrail/AdventureLog. Its own create/update/remove line.
+        if target == "yonder.activity":
+            if action == "supersede":
+                out.append({"system": "Yonder", "state": "cancel",
+                            "text": f"Remove {headline(item_payload)} from your Yonder trip"})
+            else:
+                verb = "Update" if action == "update" else "Add"
+                out.append({"system": "Yonder",
+                            "state": "update" if action == "update" else "new",
+                            "text": f"{verb} {headline(item_payload)} on your Yonder trip"})
+            continue
 
         # A cancellation removes the flight, marks the AdventureLog record, and
         # leaves everything else (locations, trip) as it is (D-57).
