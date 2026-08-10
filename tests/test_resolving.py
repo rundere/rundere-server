@@ -480,3 +480,62 @@ def test_apply_maps_coords_from_url_and_bare_coordinate():
         "departure": {"place": {"raw": "Union Station"}}, "arrival": {"place": {"raw": "X"}},
         "waypoints": [], "route": {"provider": "amtrak", "source_url": "!1d-1!2d2"}}}
     assert "lat" not in _apply_maps_coords(pay3)["ground_transport"]["departure"]["place"]
+
+
+# --------------------------------------------------- Yonder trip auto-link (2.1.3)
+
+def _reset_items_and_trips(s):
+    from app.models import Trip
+    s.query(ItemKey).delete()
+    s.query(TravelItem).delete()
+    s.query(Trip).delete()
+    s.commit()
+
+
+def test_resolve_auto_links_a_single_matching_yonder_trip():
+    """2.1.3: exactly one Yonder trip whose dates contain the item -> auto-linked
+    on resolve. Independent of AdventureLog (resolve here runs with none)."""
+    def run():
+        from app.models import Trip
+        with SessionLocal() as s:
+            _reset_items_and_trips(s); _seed_home(s)
+            trip = Trip(name="Lisbon, May 2027", start_date="2027-05-01",
+                        end_date="2027-05-31")
+            s.add(trip); s.commit(); tid = trip.id
+            it = _add_item(s, _lodging_payload())     # 2027-05-10 -> 2027-05-14
+            resolve_pending(s, adventurelog=None)
+            assert s.get(TravelItem, it.id).trip_id == tid
+    _skip_or(run)
+
+
+def test_resolve_does_not_link_when_two_yonder_trips_match():
+    """Overlapping trips -> ambiguous -> left for the operator; never guess."""
+    def run():
+        from app.models import Trip
+        with SessionLocal() as s:
+            _reset_items_and_trips(s); _seed_home(s)
+            s.add(Trip(name="A", start_date="2027-05-01", end_date="2027-05-31"))
+            s.add(Trip(name="B", start_date="2027-04-01", end_date="2027-06-30"))
+            s.commit()
+            it = _add_item(s, _lodging_payload())
+            resolve_pending(s, adventurelog=None)
+            assert s.get(TravelItem, it.id).trip_id is None
+    _skip_or(run)
+
+
+def test_resolve_never_overrides_a_pinned_yonder_link():
+    """A manual link/unlink pins the item (review.trip_pinned); the resolver must
+    then leave the link alone even when exactly one trip would match."""
+    def run():
+        from app.models import Trip
+        with SessionLocal() as s:
+            _reset_items_and_trips(s); _seed_home(s)
+            s.add(Trip(name="Lisbon, May 2027", start_date="2027-05-01",
+                       end_date="2027-05-31"))
+            s.commit()
+            it = _add_item(s, _lodging_payload())
+            it.review = {"trip_pinned": True}         # operator unlinked earlier
+            s.commit()
+            resolve_pending(s, adventurelog=None)
+            assert s.get(TravelItem, it.id).trip_id is None
+    _skip_or(run)

@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # Geocoding (D-22: Photon on travel-net, avoids Google Maps quota)
     photon_url: str = "http://photon:2322"
 
-    app_version: str = "2.1.2"
+    app_version: str = "2.1.3"
 
     class Config:
         env_prefix = "TX_"                  # TX_DATABASE_URL, TX_INGEST_RATE_LIMIT, ...

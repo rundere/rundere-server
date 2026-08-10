@@ -58,7 +58,7 @@ def test_schema_has_trip_tables():
 def test_health_reports_2_0():
     if not DEPS:
         return
-    assert client.get("/health").json()["version"] == "2.1.2"
+    assert client.get("/health").json()["version"] == "2.1.3"
 
 
 def test_nav_shows_trips_link():

@@ -643,6 +643,13 @@ def assign_yonder_trip(item_id: str, request: Request, trip_id: str = Form(""),
     if tid and session.get(Trip, tid) is None:
         return _detail_response(request, session, item, bucket=bucket, saved=False)
     item.trip_id = tid or None
+    # Pin the choice so the resolver's auto-link never overrides a human — this
+    # holds for an explicit UNLINK too (empty tid), otherwise a later re-resolve
+    # would silently re-link the one trip the operator just removed.
+    review = dict(item.review or {})
+    review["trip_pinned"] = True
+    item.review = review
+    flag_modified(item, "review")
     session.commit()
     return _detail_response(request, session, item, bucket=bucket, saved=True)
 

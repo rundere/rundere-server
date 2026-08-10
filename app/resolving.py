@@ -52,6 +52,29 @@ def _collection_reason(coll) -> str:
     return "no_collection_match"
 
 
+def _auto_link_yonder_trip(session: Session, item: TravelItem,
+                           start: str | None, end: str | None) -> None:
+    """Link the item to a Yonder trip when EXACTLY ONE trip's dates contain it
+    (owner, 2026-08-10: auto-link on resolve when unambiguous).
+
+    Independent of AdventureLog — Yonder trips are their own system. Never
+    overrides a human: a manual link OR unlink in the review picker pins the
+    item (review.trip_pinned) and the resolver then leaves the link alone. Two or
+    more matching trips are left for the operator to pick (like the AL ladder,
+    the resolver never guesses between overlapping trips)."""
+    if item.trip_id or (item.review or {}).get("trip_pinned"):
+        return
+    if not (start and end):
+        return
+    from app.models import Trip
+    matches = [t for t in session.query(Trip).all()
+               if t.start_date and t.end_date
+               and t.start_date <= start and end <= t.end_date]
+    if len(matches) == 1:
+        item.trip_id = matches[0].id
+        log.info("auto-linked item %s to Yonder trip %s", item.id, matches[0].id)
+
+
 def load_home_profiles(session: Session) -> list[HomeProfileRef]:
     from app.models import HomeProfile
     return [HomeProfileRef(
@@ -395,6 +418,12 @@ def resolve_item(session: Session, item: TravelItem,
     payload, places = _annotate_places(payload, profiles, start)
     home_only = within_home_radius(places)
     unsuppressed = sum(1 for p in places if not p.get("suppressed"))
+
+    # In-house Yonder trip auto-link (independent of the AdventureLog ladder
+    # below): a real journey unambiguously inside one Yonder trip gets linked
+    # here; home-only movement isn't a trip, so skip it.
+    if not home_only:
+        _auto_link_yonder_trip(session, item, start, end)
 
     # ---- 4. collection ladder (A6). A flight in a CLOSED home-to-home journey
     # belongs to ONE trip shared by every leg: the earliest leg MINTS it and its
