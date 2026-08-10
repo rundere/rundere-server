@@ -36,6 +36,21 @@ from resolve.targets import (compute_targets, enrich_places_from_airports,
 
 log = logging.getLogger("yonder.resolving")
 
+# The one write target that needs NO collection: a flight's AirTrail record.
+# Everything else (AdventureLog transportation/lodging/note/location/collection)
+# is filed under a trip, so it waits until one is matched or picked. Keeping this
+# set live lets a flight reach AirTrail even while its trip is still unresolved
+# (owner, 2026-08-10 — backfilling old legs that may never map cleanly to a trip).
+_COLLECTION_INDEPENDENT_TARGETS = {"airtrail.flight"}
+
+
+def _collection_reason(coll) -> str:
+    """The review-reason code for a clean item whose only open question is which
+    trip it belongs to: several candidates -> pick one; otherwise none matched."""
+    if coll is not None and getattr(coll, "candidate_collections", None):
+        return "ambiguous_collection"
+    return "no_collection_match"
+
 
 def load_home_profiles(session: Session) -> list[HomeProfileRef]:
     from app.models import HomeProfile
@@ -470,13 +485,23 @@ def resolve_item(session: Session, item: TravelItem,
     if decision.review_required:
         outcome = "needs_review"
 
-    # An item is only WRITABLE when it actually resolved. A deferred, review or
-    # ignored item must advertise NO write targets — otherwise the commit
-    # preview shows (and a commit would attempt) writes that cannot succeed,
-    # e.g. an AdventureLog transportation with no collection (RULE-08). Only the
-    # no_change case cleared them before; a deferred flight kept a full target
-    # set and looked ready to log when it was not.
-    if outcome != "resolved":
+    # A flight's AirTrail write needs no trip, so an unsettled collection must not
+    # block it (owner, 2026-08-10): when the PAYLOAD is clean and only the TRIP is
+    # unresolved (deferred / ambiguous / mint-blocked), keep the collection-
+    # INDEPENDENT targets (the AirTrail flight) live and let the item be approved;
+    # the AdventureLog records that DO need a trip wait for a match or a manual
+    # pick. `collection_pending` marks this so the tail sets an approvable-but-
+    # flagged review instead of the old reasonless block.
+    #
+    # Otherwise an item is only WRITABLE when it actually resolved: a review or
+    # ignored item with nothing trip-independent to write advertises NO targets,
+    # or the commit would attempt a write that cannot succeed — e.g. an
+    # AdventureLog transportation with no collection (RULE-08).
+    collection_pending = (not home_only and not decision.review_required
+                          and outcome in ("deferred", "needs_review"))
+    if collection_pending:
+        targets = [t for t in targets if t in _COLLECTION_INDEPENDENT_TARGETS]
+    elif outcome != "resolved":
         targets = []
 
     resolution = {
@@ -492,6 +517,11 @@ def resolve_item(session: Session, item: TravelItem,
         "self_on_booking": self_on_booking,
         "targets": targets,
     }
+    if collection_pending:
+        # The payload is fine; only the trip is unsettled. Carried so the review
+        # UI can say so (and, later, offer a trip picker) and the commit stage can
+        # log the AirTrail flight while withholding the trip-bound records.
+        resolution["collection_pending"] = True
     if mint_group:
         # Shared journey key: the commit stage joins an attach leg to the trip
         # its minter sibling creates, and it records which leg is the minter.
@@ -544,6 +574,34 @@ def resolve_item(session: Session, item: TravelItem,
         log.warning("item %s -> needs_review: %s", item.id,
                     "; ".join(str(v) for v in blocking)[:300])
         return "needs_review"
+
+    # ---- collection unsettled, payload clean: approvable-but-flagged, never a
+    # reasonless block. A flight we can still log to AirTrail comes to you as
+    # APPROVABLE (status ok) with a soft reason naming the trip problem — it logs
+    # to AirTrail on approve, and the AdventureLog trip record follows once a trip
+    # is picked. An item with nothing to write without a trip stays blocked, but
+    # now SAYS why: the invisible "needs_review with empty reasons" deadlock (in
+    # 'Needs you', no note, Approve silently refused) is gone.
+    if collection_pending:
+        writable = bool(targets)              # the collection-independent subset
+        reasons = [_collection_reason(coll)]
+        if needs_traveler_review and payload.get("item_type") == "flight":
+            reasons.append("missing_passenger_list")
+        item.review = {**(item.review or {}),
+                       "required": writable or outcome == "needs_review",
+                       "reasons": reasons}
+        if writable:
+            # It resolves for the purpose of the AirTrail write; the pending trip
+            # lives in `collection_pending` + `candidate_collections`.
+            resolution = {**resolution, "outcome": "resolved"}
+            item.resolution = resolution
+        state = "ok" if writable else ("deferred" if outcome == "deferred"
+                                       else "needs_review")
+        item.status = {**(item.status or {}), "resolve": state}
+        for attr in ("extraction", "resolution", "revision", "review", "status"):
+            flag_modified(item, attr)
+        _sync_keys(session, item, key_result)
+        return state
 
     # Clean resolution: clear any STALE machine review state left over from a
     # previous pass (e.g. a passenger flag that a resolver fix has since made

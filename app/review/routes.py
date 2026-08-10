@@ -193,10 +193,6 @@ templates.env.filters["fields"] = _fields
 # Queue buckets, in the order an operator works them.
 BUCKETS = ("attention", "waiting", "ready", "staged", "logged", "all")
 
-# Review reasons that need a human glance but are approvable as-is: the
-# operator confirming is the resolution. Everything else needs data fixed first.
-_SOFT_REASONS = {"missing_passenger_list"}
-
 
 def _is_logged(item: TravelItem) -> bool:
     """Committed for real (not a dry run) with every target written. Such an
@@ -317,10 +313,16 @@ def _view(item: TravelItem) -> dict:
     review = item.review or {}
     codes = [c for c in (review.get("reasons") or []) if isinstance(c, str)]
     bucket = _bucket_of(item)
+    resolve_state = (item.status or {}).get("resolve")
     deferred_until = resolution.get("deferred_until")
 
-    if bucket == "attention" and not codes and resolution.get("outcome") == "deferred":
-        codes = ["no_collection_match"]
+    # An attention item must NEVER be reasonless — that was the invisible deadlock
+    # (in 'Needs you', no note, Approve silently refused). If a code got lost,
+    # name the trip problem when the outcome points at one, else a generic look.
+    if bucket == "attention" and not codes:
+        codes = (["no_collection_match"]
+                 if resolution.get("outcome") in ("deferred", "needs_review")
+                 else ["low_confidence"])
 
     note = reason_text.headline(codes)
     if resolution.get("outcome") == "deferred" and deferred_until:
@@ -350,11 +352,13 @@ def _view(item: TravelItem) -> dict:
         "extractor": (item.extraction or {}).get("extractor"),
         "confidence": (item.extraction or {}).get("confidence"),
         "created_at": item.created_at,
-        # "Blocked" = cannot be approved as-is. A SOFT reason (assume-self and
-        # notify) still needs a glance but Approve IS the confirmation, so it
-        # must not disable the button — otherwise the item deadlocks: it can't
-        # be approved and editing can't clear "no passengers were listed".
-        "blocked": bucket == "attention" and bool(set(codes) - _SOFT_REASONS),
+        # "Blocked" = Approve would refuse. Approve stages only a resolved item
+        # (status.resolve == "ok"), so blocked mirrors that exactly. A flight
+        # whose trip is still unsettled but whose AirTrail write is ready resolves
+        # to "ok" and is therefore approvable (it logs to AirTrail; the trip
+        # record follows once a trip is picked) — it shows in 'Needs you' with a
+        # reason but an ENABLED button, never the old reasonless dead end.
+        "blocked": bucket == "attention" and resolve_state != "ok",
         "writes": sm.write_preview(payload, resolution, item.revision),
         "payload": payload,
         "source": item.source or {},

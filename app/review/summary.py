@@ -185,6 +185,16 @@ def write_preview(item_payload: dict, resolution: dict,
                     "text": f"Location · {_place(p)}",
                     "state": "skip",
                     "why": _suppression_sentence(p)})
+
+    # The trip didn't resolve, so the AirTrail flight logs but the AdventureLog
+    # trip records are held back — say so explicitly, or the operator can't tell
+    # the collection silently failed (which is exactly how this went unnoticed).
+    if resolution.get("collection_pending"):
+        out.append({"system": "AdventureLog", "state": "skip",
+                    "text": "Trip record (transportation + locations)",
+                    "why": "No trip is settled for these dates yet. The flight "
+                           "still logs to AirTrail; this files once you pick or "
+                           "create a trip."})
     return out
 
 
