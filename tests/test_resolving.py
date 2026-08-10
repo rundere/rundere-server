@@ -363,10 +363,15 @@ def test_journey_legs_share_one_trip_with_a_single_minter():
     _skip_or(run)
 
 
-def test_deferred_flight_has_no_write_targets():
-    """Issue-2 fix (2026-08-05): a flight that DEFERS (no return leg yet, so the
-    trip has no end) must advertise NO write targets — a deferred transportation
-    would break RULE-08 and made the item look 'ready to log' when it was not."""
+def test_unresolved_trip_flight_still_targets_airtrail():
+    """Owner (2026-08-10): a flight's AirTrail write needs no trip, so an
+    unsettled collection (here an open one-way journey with no return leg yet)
+    must NOT block it — backfilled legs that never map cleanly to a trip were
+    stranded. The flight resolves as APPROVABLE with only the collection-
+    independent AirTrail target; the AdventureLog transportation is withheld
+    (would break RULE-08 with no collection) and waits for a trip.
+
+    Supersedes the old 'a deferred flight advertises NO targets' contract."""
     def run():
         with SessionLocal() as s:
             _seed_home(s)
@@ -376,8 +381,14 @@ def test_deferred_flight_has_no_write_targets():
             o = _add_item(s, out)
             resolve_pending(s, adventurelog=None)
             it = s.get(TravelItem, o.id)
-            assert it.status["resolve"] == "deferred"
-            assert it.resolution["targets"] == []
+            assert it.status["resolve"] == "ok"                 # approvable now
+            assert it.resolution["targets"] == ["airtrail.flight"]
+            assert "adventurelog.transportation" not in it.resolution["targets"]
+            assert it.resolution.get("collection_pending") is True
+            # Still needs a human eye (which trip?), but with a REASON, not a
+            # reasonless dead end — and an enabled Approve.
+            assert (it.review or {}).get("required") is True
+            assert it.review["reasons"] == ["no_collection_match"]
     _skip_or(run)
 
 
