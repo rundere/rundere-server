@@ -182,7 +182,9 @@ textarea.input { min-height: 72px; resize: vertical; }
 .bp-trip-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .bp-daterange { color: var(--color-neutral-600); font-size: 14px; }
 .bp-trip-notes { margin: 12px 0 0; color: var(--color-neutral-700); font-size: 14px; max-width: 560px; }
-.bp-trip-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.bp-trip-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.bp-push-err { display: inline-block; margin-top: 8px; font-size: 13px;
+  color: #fff; background: color-mix(in srgb, #b42318 82%, transparent); padding: 6px 10px; }
 .bp-timeline-head { display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 16px; gap: 16px; }
 

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # Targets. Facts confirmed by the A4 probe live in the adapters.
     adventurelog_url: str = "http://adventurelog-server:80"
     adventurelog_api_key: str = ""
+    # Browser-facing AdventureLog base (the one above is the internal container
+    # address, not clickable). Used to build direct links to a collection —
+    # {adventurelog_public_url}/collections/{id}. Empty = no link rendered.
+    adventurelog_public_url: str = ""
     airtrail_url: str = "http://airtrail:3000"
     airtrail_token: str = ""
     # AirTrail's own Postgres (READ-ONLY) — its `airport`/`airline` tables are the
@@ -35,7 +39,7 @@ class Settings(BaseSettings):
     # Geocoding (D-22: Photon on travel-net, avoids Google Maps quota)
     photon_url: str = "http://photon:2322"
 
-    app_version: str = "2.0.1"
+    app_version: str = "2.1.0"
 
     class Config:
         env_prefix = "TX_"                  # TX_DATABASE_URL, TX_INGEST_RATE_LIMIT, ...
