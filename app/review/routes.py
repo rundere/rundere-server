@@ -526,6 +526,159 @@ async def save(item_id: str, request: Request, bucket: str = "attention",
                             bucket=bucket, saved=bool(changed), oob_counts=True)
 
 
+@router.post("/item/{item_id}/assign", response_class=HTMLResponse)
+def assign_trip(item_id: str, request: Request, collection_id: str = Form(""),
+                bucket: str = "attention", session: Session = Depends(get_session)):
+    """Assign this item to a specific AdventureLog trip (or clear the assignment).
+
+    The pick is stored as capture_context.collection_id — the SAME lever the
+    capture flow uses and the top of the resolver's collection ladder (D-05) — so
+    the resolver honours it as `user_selected` and RULE-35b/c protect it. Choosing
+    a trip re-resolves the item: an ambiguous/no-trip flight that was logging only
+    to AirTrail now also files its AdventureLog transportation into the chosen
+    trip. An empty value clears the pick and returns the item to auto-resolution.
+    """
+    item = session.get(TravelItem, item_id)
+    if item is None:
+        return HTMLResponse("", status_code=404)
+
+    cid = (collection_id or "").strip()
+    if cid and cid not in {t["id"] for t in _list_trips()}:
+        # An id that names no known trip is ignored rather than trusted — never
+        # file into a collection the resolver couldn't confirm exists.
+        return _detail_response(request, session, item, bucket=bucket, saved=False)
+
+    source = dict(item.source or {})
+    cc = dict(source.get("capture_context") or {})
+    if cid:
+        cc["collection_id"] = cid
+    else:
+        cc.pop("collection_id", None)
+    source["capture_context"] = cc
+    item.source = source
+    review = dict(item.review or {})
+    review.update({"action_taken": "edited",
+                   "resolved_at": datetime.now(timezone.utc).isoformat(),
+                   "resolved_by": "review-ui"})
+    item.review = review
+    status = dict(item.status or {})
+    status["resolve"] = "pending"
+    item.status = status
+    for attr in ("source", "review", "status"):
+        flag_modified(item, attr)
+    session.commit()
+    _reresolve(session, item)
+
+    final = session.get(TravelItem, item_id)
+    return _detail_response(request, session, final, bucket=bucket,
+                            saved=True, oob_counts=True)
+
+
+def _list_trips() -> list[dict]:
+    """Existing AdventureLog trips for the picker, newest first. Best-effort: an
+    empty list when AdventureLog isn't configured or can't be reached (the picker
+    then simply doesn't render)."""
+    adventurelog, _ = _target_clients()
+    if adventurelog is None:
+        return []
+    try:
+        return [{"id": str(c.id), "name": c.name or "(unnamed trip)",
+                 "start_date": (c.start_date or "")[:10],
+                 "end_date": (c.end_date or "")[:10]}
+                for c in adventurelog.list_collections()]
+    except Exception:
+        log.warning("could not list trips for the picker", exc_info=True)
+        return []
+
+
+def _trip_context(session: Session, item: TravelItem, view: dict) -> dict | None:
+    """Options for the in-review trip picker, or None when it shouldn't show.
+
+    Only for items still being worked (not staged/logged/ignored) that aren't
+    home-only. Candidates the resolver flagged sort first, then trips whose dates
+    contain the item, then the rest newest-first."""
+    if view["bucket"] not in ("attention", "waiting", "ready"):
+        return None
+    payload = view["payload"]
+    if (item.resolution or {}).get("within_home_radius"):
+        return None
+    trips = _list_trips()
+    if not trips:
+        return None
+    from resolve.targets import item_date_span
+    start, end = (item_date_span(payload) or (None, None))
+    candidates = set((item.resolution or {}).get("candidate_collections") or [])
+    selected = ((item.source or {}).get("capture_context") or {}).get("collection_id")
+
+    def _contains(t: dict) -> bool:
+        if not (start and end and t["start_date"] and t["end_date"]):
+            return False
+        return t["start_date"] <= start and end <= t["end_date"]
+
+    for t in trips:
+        t["is_candidate"] = t["id"] in candidates
+        t["contains"] = _contains(t)
+        t["selected"] = t["id"] == selected
+    trips.sort(key=lambda t: t["start_date"], reverse=True)          # newest first
+    trips.sort(key=lambda t: 0 if t["is_candidate"] else 1 if t["contains"] else 2)
+    return {"trips": trips, "selected": selected}
+
+
+@router.post("/item/{item_id}/assign-trip", response_class=HTMLResponse)
+def assign_yonder_trip(item_id: str, request: Request, trip_id: str = Form(""),
+                       bucket: str = "attention",
+                       session: Session = Depends(get_session)):
+    """Link this item to an in-house Yonder Trip (or clear the link).
+
+    Independent of the AdventureLog collection: Yonder trips are their own trip
+    system, so this does NOT touch resolution, targets, or the commit — it only
+    records the association (item.trip_id), which the Yonder trip page surfaces
+    as a linked capture. No re-resolve needed; the item's bucket is unchanged.
+    """
+    from app.models import Trip
+    item = session.get(TravelItem, item_id)
+    if item is None:
+        return HTMLResponse("", status_code=404)
+    tid = (trip_id or "").strip()
+    if tid and session.get(Trip, tid) is None:
+        return _detail_response(request, session, item, bucket=bucket, saved=False)
+    item.trip_id = tid or None
+    session.commit()
+    return _detail_response(request, session, item, bucket=bucket, saved=True)
+
+
+def _yonder_trip_context(session: Session, item: TravelItem,
+                         view: dict) -> dict | None:
+    """Options for the in-house Yonder trip picker, or None when it shouldn't
+    show (item already staged/logged/ignored). Always available even with no
+    trips yet — it then invites creating one. Trips whose dates contain the item
+    sort first, then newest-first; the current link is preselected."""
+    from app.models import Trip
+    if view["bucket"] not in ("attention", "waiting", "ready"):
+        return None
+    from resolve.targets import item_date_span
+    start, end = (item_date_span(view["payload"]) or (None, None))
+    trips = session.query(Trip).order_by(Trip.start_date.desc()).all()
+    selected = item.trip_id
+    selected_name = None
+
+    def _contains(t) -> bool:
+        if not (start and end and t.start_date and t.end_date):
+            return False
+        return t.start_date <= start and end <= t.end_date
+
+    opts = []
+    for t in trips:
+        if t.id == selected:
+            selected_name = t.name
+        opts.append({"id": t.id, "name": t.name or "(unnamed trip)",
+                     "start_date": t.start_date or "", "end_date": t.end_date or "",
+                     "contains": _contains(t), "selected": t.id == selected})
+    opts.sort(key=lambda o: 0 if o["contains"] else 1)
+    return {"trips": opts, "selected": selected, "selected_name": selected_name,
+            "have_trips": bool(opts)}
+
+
 def _reresolve(session: Session, item: TravelItem) -> None:
     """Resolve this one item in place, reusing the full resolver so the review
     path and the batch path can never diverge."""
@@ -603,7 +756,13 @@ def _detail_response(request: Request, session: Session, item: TravelItem,
                       rules_module.check_item(_rule_shape(item),
                                               load_enablement(session))]
     ctx = {"i": view, "violations": violations, "saved": saved, "bucket": bucket,
-           "pax": _passenger_context(session, view["payload"])}
+           "pax": _passenger_context(session, view["payload"]),
+           # Two independent trip pickers (2.1.2): the AdventureLog collection the
+           # item files into (drives the commit; only when AL is configured), and
+           # the in-house Yonder trip it belongs to (association only). Either can
+           # be absent and the template just omits that picker.
+           "trip_al": _trip_context(session, item, view),
+           "trip_yonder": _yonder_trip_context(session, item, view)}
     if oob_counts:
         # Saving can move the item between buckets; refresh the counts too.
         views = _all_views(session)
