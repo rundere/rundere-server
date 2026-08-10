@@ -162,10 +162,16 @@ class AdventureLogClient:
     # keep DRF trailing slashes; country is ISO alpha-2 upper; datetimes must be
     # explicit UTC "Z" (A4 — naive is read as UTC).
 
-    def create_collection(self, name: str, start_date: str,
-                          end_date: str) -> tuple[int, dict | list | None, str]:
-        return self._request("POST", "/api/collections/", body={
-            "name": name, "start_date": start_date, "end_date": end_date})
+    def create_collection(self, name: str, start_date: str, end_date: str,
+                          *, is_public: bool = False
+                          ) -> tuple[int, dict | list | None, str]:
+        # is_public defaults False so the commit-mint path is unchanged; the
+        # Yonder "Push to AdventureLog" path passes True — a private collection
+        # cannot be direct-linked to from outside AdventureLog.
+        body = {"name": name, "start_date": start_date, "end_date": end_date}
+        if is_public:
+            body["is_public"] = True
+        return self._request("POST", "/api/collections/", body=body)
 
     def create_location(self, *, name: str, latitude: float | None,
                         longitude: float | None, address: str | None = None,

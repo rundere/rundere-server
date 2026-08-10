@@ -210,6 +210,11 @@ class Trip(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(16), default="manual")   # manual|airtrail|adventurelog
     external_ref: Mapped[str | None] = mapped_column(String(128), index=True)
+    # AdventureLog link (2.1): the collection this trip maps to. Kept separate
+    # from external_ref (seed provenance) so a trip seeded FROM AirTrail can
+    # still carry an AdventureLog collection id. Set by "Push to AdventureLog"
+    # or entered by hand; the detail page links to it.
+    adventurelog_collection_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)

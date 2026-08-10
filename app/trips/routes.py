@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_session
 from app.models import Trip, TripActivity
 from app.trips import types as activity_types
@@ -182,9 +183,51 @@ def _detail_context(session: Session, trip: Trip) -> dict:
             "start_display": fmt_date(trip.start_date) or "—",
             "end_display": fmt_date(trip.end_date) or "—",
             "notes": notes, "has_notes": bool(notes),
+            "adventurelog_collection_id": trip.adventurelog_collection_id,
+            "adventurelog_url": _collection_url(trip.adventurelog_collection_id),
         },
         "day_groups": day_groups,
         "has_activities": bool(acts),
+        **_push_state(trip),
+    }
+
+
+def _adventurelog():
+    """The AdventureLog client, or None when the deployment hasn't configured
+    one — same seam as review's _target_clients."""
+    if not settings.adventurelog_api_key:
+        return None
+    from adapters.targets.adventurelog import AdventureLogClient
+    return AdventureLogClient(settings.adventurelog_url,
+                              settings.adventurelog_api_key)
+
+
+def _collection_url(collection_id: str | None) -> str | None:
+    """Browser-facing link to a collection, or None when either the public base
+    isn't set or the trip isn't linked."""
+    base = (settings.adventurelog_public_url or "").rstrip("/")
+    if not (base and collection_id):
+        return None
+    return f"{base}/collections/{collection_id}"
+
+
+def _push_state(trip: Trip) -> dict:
+    """What the detail header shows for AdventureLog: a link if already pushed,
+    a Push button if we can, or a disabled button + reason if we can't yet."""
+    linked = bool(trip.adventurelog_collection_id)
+    configured = bool(settings.adventurelog_api_key)
+    has_dates = bool(trip.start_date and trip.end_date)
+    reason = ""
+    if not linked:
+        if not configured:
+            reason = "AdventureLog isn't configured on this server."
+        elif not has_dates:
+            reason = "Add a start and end date first — AdventureLog needs both."
+    return {
+        "al_linked": linked,
+        "al_show_push": configured and not linked,
+        "al_can_push": configured and not linked and has_dates,
+        "al_push_reason": reason,
     }
 
 
@@ -229,7 +272,8 @@ def new_trip(request: Request, next: str = "/trips"):
     return templates.TemplateResponse(request, "_trip_modal.html", {
         "request": request, "mode": "create", "title": "New trip",
         "action": "/trips", "next": next,
-        "form": {"name": "", "start": "", "end": "", "notes": ""}, "error": None})
+        "form": {"name": "", "start": "", "end": "", "notes": "",
+                 "collection_id": ""}, "error": None})
 
 
 @router.get("/{trip_id}", response_class=HTMLResponse)
@@ -253,32 +297,37 @@ def edit_trip(trip_id: str, request: Request, next: str = "",
         "request": request, "mode": "edit", "title": "Edit trip",
         "action": f"/trips/{trip.id}", "next": next or f"/trips/{trip.id}",
         "form": {"name": trip.name, "start": trip.start_date or "",
-                 "end": trip.end_date or "", "notes": trip.notes or ""},
+                 "end": trip.end_date or "", "notes": trip.notes or "",
+                 "collection_id": trip.adventurelog_collection_id or ""},
         "error": None})
 
 
 # ----------------------------------------------------------------- trip writes
 
-def _save_trip_fields(trip: Trip, name: str, start: str, end: str, notes: str):
+def _save_trip_fields(trip: Trip, name: str, start: str, end: str, notes: str,
+                      collection_id: str = ""):
     trip.name = name.strip()
     trip.start_date = start.strip() or None
     trip.end_date = end.strip() or None
     trip.notes = notes.strip() or None
+    trip.adventurelog_collection_id = collection_id.strip() or None
 
 
 @router.post("", response_class=HTMLResponse)
 def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
                 end: str = Form(""), notes: str = Form(""),
+                adventurelog_collection_id: str = Form(""),
                 next: str = Form("/trips"),
                 session: Session = Depends(get_session)):
     if not name.strip():
         return templates.TemplateResponse(request, "_trip_modal.html", {
             "request": request, "mode": "create", "title": "New trip",
             "action": "/trips", "next": next,
-            "form": {"name": name, "start": start, "end": end, "notes": notes},
+            "form": {"name": name, "start": start, "end": end, "notes": notes,
+                     "collection_id": adventurelog_collection_id},
             "error": "A trip needs a name."})
     trip = Trip(source="manual")
-    _save_trip_fields(trip, name, start, end, notes)
+    _save_trip_fields(trip, name, start, end, notes, adventurelog_collection_id)
     session.add(trip)
     session.commit()
     return _redirect("/trips")
@@ -287,6 +336,7 @@ def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
 @router.post("/{trip_id}", response_class=HTMLResponse)
 def update_trip(trip_id: str, request: Request, name: str = Form(""),
                 start: str = Form(""), end: str = Form(""), notes: str = Form(""),
+                adventurelog_collection_id: str = Form(""),
                 next: str = Form(""), session: Session = Depends(get_session)):
     trip = session.get(Trip, trip_id)
     if trip is None:
@@ -296,9 +346,10 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
         return templates.TemplateResponse(request, "_trip_modal.html", {
             "request": request, "mode": "edit", "title": "Edit trip",
             "action": f"/trips/{trip.id}", "next": dest,
-            "form": {"name": name, "start": start, "end": end, "notes": notes},
+            "form": {"name": name, "start": start, "end": end, "notes": notes,
+                     "collection_id": adventurelog_collection_id},
             "error": "A trip needs a name."})
-    _save_trip_fields(trip, name, start, end, notes)
+    _save_trip_fields(trip, name, start, end, notes, adventurelog_collection_id)
     session.commit()
     return _redirect(dest)
 
@@ -315,6 +366,43 @@ def delete_trip(trip_id: str, session: Session = Depends(get_session)):
         session.delete(trip)
         session.commit()
     return _redirect("/trips")
+
+
+def _push_msg(text: str) -> HTMLResponse:
+    """Inline failure notice swapped next to the Push button (a success answers
+    with an HX-Redirect that reloads the detail showing the new link)."""
+    return HTMLResponse(f'<span class="bp-push-err">{text}</span>')
+
+
+@router.post("/{trip_id}/push-adventurelog", response_class=HTMLResponse)
+def push_adventurelog(trip_id: str, session: Session = Depends(get_session)):
+    """Create a PUBLIC AdventureLog collection from this trip and link it.
+
+    Public by default so the collection can be direct-linked from outside
+    AdventureLog (owner requirement). Idempotent: a trip already linked is left
+    alone — we never create a second collection for the same trip.
+    """
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    if trip.adventurelog_collection_id:
+        return _redirect(f"/trips/{trip_id}")           # already linked
+    client = _adventurelog()
+    if client is None:
+        return _push_msg("AdventureLog isn't configured on this server.")
+    if not (trip.start_date and trip.end_date):
+        return _push_msg("Add a start and end date first — AdventureLog needs both.")
+    try:
+        status, parsed, raw = client.create_collection(
+            trip.name, trip.start_date, trip.end_date, is_public=True)
+    except Exception as ex:                              # network/adapter error
+        return _push_msg(f"AdventureLog request failed: {ex}")
+    if status >= 400 or not isinstance(parsed, dict) or not parsed.get("id"):
+        return _push_msg(f"AdventureLog rejected the collection (HTTP {status}).")
+    trip.adventurelog_collection_id = str(parsed["id"])
+    trip.source = trip.source or "manual"
+    session.commit()
+    return _redirect(f"/trips/{trip_id}")
 
 
 # ----------------------------------------------------------------- activities

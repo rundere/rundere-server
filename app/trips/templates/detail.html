@@ -12,12 +12,22 @@
       {% if trip.has_notes %}<p class="bp-trip-notes">{{ trip.notes }}</p>{% endif %}
     </div>
     <div class="bp-trip-actions">
+      {% if trip.adventurelog_url %}
+        <a class="btn btn-secondary" href="{{ trip.adventurelog_url }}" target="_blank" rel="noopener">↗ View in AdventureLog</a>
+      {% elif trip.adventurelog_collection_id %}
+        <span class="tag tag-neutral">AdventureLog: {{ trip.adventurelog_collection_id }}</span>
+      {% elif al_show_push %}
+        <button class="btn btn-secondary" {% if not al_can_push %}disabled title="{{ al_push_reason }}"{% endif %}
+                hx-post="/trips/{{ trip.id }}/push-adventurelog"
+                hx-target="#push-msg" hx-swap="innerHTML" hx-disabled-elt="this">Push to AdventureLog</button>
+      {% endif %}
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
       <button class="btn btn-ghost"
               hx-post="/trips/{{ trip.id }}/delete"
               hx-confirm="Delete this trip and its activities?">Delete</button>
     </div>
+    <span id="push-msg"></span>
   </div>
 </div>
 

@@ -22,6 +22,11 @@
         <label>Notes</label>
         <textarea class="input" name="notes" rows="3" placeholder="High level notes about this trip">{{ form.notes }}</textarea>
       </div>
+      <div class="field">
+        <label>AdventureLog collection id</label>
+        <input class="input" name="adventurelog_collection_id" value="{{ form.collection_id }}"
+               placeholder="optional — links this trip to an AdventureLog collection">
+      </div>
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
         <button type="submit" class="btn btn-primary">Save trip</button>
