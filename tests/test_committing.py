@@ -849,3 +849,33 @@ def test_yonder_write_refused_without_a_linked_trip():
     ya = [r for r in env["results"] if r["target"] == "yonder.activity"][0]
     assert not ya["ok"] and "no Yonder trip" in ya["error"]
     s.close()
+
+
+# ------------------------------------ AdventureLog coarse transport type (2.2.1)
+
+def _ground(mode, ref="A498317861", provider="Hertz"):
+    return {"item_type": "ground_transport", "booking_reference": ref,
+            "provider": {"name": provider},
+            "ground_transport": {"mode": mode, "service_number": "",
+                "departure": {"place": {"raw": "LHR", "city": "London"}},
+                "arrival": {"place": {"raw": "LHR", "city": "London"}}}}
+
+
+def test_car_rental_maps_to_car_with_details_in_description():
+    """AdventureLog's transportation type enum has no 'car_rental' — it must log
+    as 'car' with the rental mode + operator kept in the description."""
+    _skip()
+    body, _ = C.build_transportation(_ground("car_rental"), collection_id="c1")
+    assert body["type"] == "car"                       # not the rejected car_rental
+    assert "Car rental" in body["description"]
+    assert "Hertz" in body["description"]
+    assert "A498317861" in body["description"]
+
+
+def test_ground_modes_map_to_adventurelog_enum():
+    _skip()
+    cases = {"car_rental": "car", "rideshare": "car", "transfer": "car",
+             "ferry": "boat", "train": "train", "bus": "bus", "other": "other"}
+    for mode, expected in cases.items():
+        body, _ = C.build_transportation(_ground(mode), collection_id="c1")
+        assert body["type"] == expected, f"{mode} -> {body['type']}, want {expected}"
