@@ -262,6 +262,20 @@ def build_airtrail_flight(payload: dict, *, airports: dict, airlines: dict,
     return body, None
 
 
+# AdventureLog's transportation `type` is a CLOSED, coarse enum (plane/train/
+# bus/car/boat/bike/walking/other) — it has no "car_rental", "rideshare" etc.
+# Map our finer ground modes onto it; the specific mode + operator are preserved
+# in the description so nothing is lost (owner, 2026-08-10: a car rental logs as
+# "car" with the rental details in the notes, not a rejected write).
+_AL_TRANSPORT_TYPE = {"train": "train", "bus": "bus", "ferry": "boat",
+                      "car": "car", "car_rental": "car", "rideshare": "car",
+                      "transfer": "car", "other": "other"}
+# Human label for the real mode, led into the description when AdventureLog's
+# coarse type would otherwise hide it.
+_GROUND_MODE_DESC = {"car_rental": "Car rental", "rideshare": "Rideshare",
+                     "transfer": "Transfer", "ferry": "Ferry"}
+
+
 def build_transportation(payload: dict, *, collection_id: str | None,
                          airports: "dict | None" = None) -> tuple[dict, bool]:
     f = payload.get("flight") or payload.get("ground_transport") or {}
@@ -295,10 +309,19 @@ def build_transportation(payload: dict, *, collection_id: str | None,
     ref = payload.get("booking_reference")
     pax = ", ".join(t.get("raw_name", "") for t in (payload.get("travelers") or [])
                     if t.get("raw_name"))
-    desc = ". ".join(p for p in (f"Booking Ref: {ref}" if ref else "",
+    # Lead the description with the SPECIFIC ground mode + operator, since
+    # AdventureLog's coarse type collapses e.g. a car rental to "car". A flight's
+    # type ("plane") already says everything, so it gets no lead.
+    mode = None if is_flight else (f.get("mode") or "other")
+    prov = payload.get("provider") or {}
+    prov_name = prov.get("name") if isinstance(prov, dict) else None
+    lead = _GROUND_MODE_DESC.get(mode, "")
+    if prov_name:
+        lead = f"{lead} · {prov_name}" if lead else prov_name
+    desc = ". ".join(p for p in (lead, f"Booking Ref: {ref}" if ref else "",
                                  f"Passengers: {pax}" if pax else "") if p) or None
     body = {
-        "type": "plane" if is_flight else (f.get("mode") or "other"),
+        "type": "plane" if is_flight else _AL_TRANSPORT_TYPE.get(mode, "other"),
         "name": name,
         "flight_number": _flight_number_combined(payload) if is_flight else None,
         "date": date_val,
