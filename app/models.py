@@ -202,6 +202,10 @@ class Trip(Base):
     then AdventureLog): `source` records where a seeded trip came from and
     `external_ref` the originating id, so a re-seed dedups instead of
     duplicating. A hand-made trip is source="manual" with no external_ref.
+    source="resolver" (2.2.2) is minted by the commit stage alongside a NEW
+    AdventureLog collection, when a flight closes a home-to-home journey that
+    has no existing Yonder trip to auto-link to — the two systems should never
+    disagree on whether a trip exists.
     """
     __tablename__ = "trips"
 
@@ -213,7 +217,7 @@ class Trip(Base):
     start_date: Mapped[str | None] = mapped_column(String(10))
     end_date: Mapped[str | None] = mapped_column(String(10))
     notes: Mapped[str | None] = mapped_column(Text)
-    source: Mapped[str] = mapped_column(String(16), default="manual")   # manual|airtrail|adventurelog
+    source: Mapped[str] = mapped_column(String(16), default="manual")   # manual|airtrail|adventurelog|resolver
     external_ref: Mapped[str | None] = mapped_column(String(128), index=True)
     # AdventureLog link (2.1): the collection this trip maps to. Kept separate
     # from external_ref (seed provenance) so a trip seeded FROM AirTrail can
