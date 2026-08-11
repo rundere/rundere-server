@@ -15,7 +15,12 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to tag the image with, e.g. 2.2.1 (also tags :latest). Builds the selected ref's code — use it to publish a release whose tag predates this workflow, or to rebuild any version on demand."
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -49,10 +54,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
-          # From tag v2.2.1: 2.2.1, 2.2, and latest (default flavor latest=auto).
+          # Tag-push path: from tag v2.2.1 -> 2.2.1, 2.2, latest (flavor
+          # latest=auto). Manual path: the supplied version + latest.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=latest,enable=${{ inputs.version != '' }}
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
