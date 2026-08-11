@@ -107,11 +107,17 @@ docker compose -f docker-compose.dev.yml up -d --build
 
 ### Production (Docker)
 
-**1. Build the image:**
+**1. Get the image.** CI builds and publishes it to GHCR on every `vX.Y.Z` tag
+([`.github/workflows/release.yml`](.github/workflows/release.yml)), so you pull a
+versioned artifact rather than building locally:
 
 ```bash
-docker build -t yonder:latest .
+docker pull ghcr.io/jeeves5454/yonder:latest   # or a pinned :2.2.1
 ```
+
+The package is private; give Portainer a registry credential (Registries → Add →
+Custom: `ghcr.io`, your GitHub username, a PAT with `read:packages`). To build
+locally instead, `docker build -t yonder:latest .` still works.
 
 **2. Deploy the stack.** [`portainer-stack.yml`](portainer-stack.yml) is a
 reference Compose/stack definition — use it with `docker compose`, Portainer,
