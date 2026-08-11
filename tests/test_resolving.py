@@ -223,9 +223,10 @@ def test_no_trip_is_minted_until_a_flight_comes_home():
     invent one — and every later leg outside that invented range would mint
     ANOTHER trip for the same journey."""
     def run():
-        from app.resolving import _trip_envelope
+        from app.resolving import _trip_envelope, load_home_profiles
         with SessionLocal() as s:
             _seed_home(s)
+            profiles = load_home_profiles(s)
             out = {"item_type": "flight", "booking_status": "confirmed",
                    "booking_reference": "ENV01",
                    "flight": {"flight_number": "1",
@@ -236,7 +237,7 @@ def test_no_trip_is_minted_until_a_flight_comes_home():
                                           "time": _dt("2027-09-01T12:00")}}}
             outbound = _add_item(s, out)
             # Only the outbound exists: not a closed trip, so not mintable.
-            assert _trip_envelope(s, outbound, out) is None
+            assert _trip_envelope(s, outbound, out, profiles) is None
 
             ret = {"item_type": "flight", "booking_status": "confirmed",
                    "booking_reference": "ENV01",
@@ -249,7 +250,7 @@ def test_no_trip_is_minted_until_a_flight_comes_home():
             _add_item(s, ret)
             # Now the journey is closed: the span is home-to-home, covering
             # every leg between, not just the one that happened to mint.
-            assert _trip_envelope(s, outbound, out) == ("2027-09-01", "2027-09-14")
+            assert _trip_envelope(s, outbound, out, profiles) == ("2027-09-01", "2027-09-14")
     _skip_or(run)
 
 
@@ -363,6 +364,68 @@ def test_journey_legs_share_one_trip_with_a_single_minter():
     _skip_or(run)
 
 
+def test_journey_envelope_ignores_a_not_yet_annotated_sibling():
+    """Regression (owner bug report, 2026-08-11): resolve_pending commits one
+    item at a time, so when the outbound leg of a same-batch round trip is
+    resolved, the return leg already EXISTS as a row but has not been through
+    its own _annotate_places yet -- its stored payload carries no `is_home` at
+    all, exactly like a freshly-extracted, not-yet-resolved item in prod
+    (unlike the `_leg()` helper above, which bakes `is_home` straight into the
+    fixture and so never exercised this path). Trusting that absent flag made
+    the envelope search skip the real return leg and walk forward to whatever
+    OTHER, already-resolved home-arrival flight existed further in the future
+    -- minting the outbound into a months-away trip while the return leg,
+    resolved moments later with its own fresh annotation, correctly computed
+    the real dates and minted a SECOND, different trip for the same journey.
+    """
+    def run():
+        with SessionLocal() as s:
+            _seed_home(s)
+            s.query(ItemKey).delete(); s.query(TravelItem).delete(); s.commit()
+            # A pre-existing, unrelated home-arrival flight far in the future --
+            # stands in for "some other already-resolved trip" that a broken
+            # envelope search could wrongly latch onto.
+            decoy = _leg("DECOY9", "9", "MUC", "HHH", "2027-12-18T08:00",
+                         "2027-12-18T14:00", to_home=True, dest_country="DE")
+            _add_item(s, decoy)
+
+            # Round-trip legs with NO is_home baked in -- raw as extraction
+            # would actually produce them, before any resolver has touched them.
+            out = {"item_type": "flight", "booking_status": "confirmed",
+                   "booking_reference": "OUTR9",
+                   "travelers": [{"raw_name": "Pat Example"}],
+                   "flight": {"flight_number": "1",
+                              "marketing_carrier": {"name": "Test Air", "iata": "TA"},
+                              "departure": {"place": {"raw": "HHH", "iata": "HHH"},
+                                            "time": _dt("2027-09-04T12:00")},
+                              "arrival": {"place": {"raw": "LIS", "iata": "LIS",
+                                                    "country": "PT"},
+                                          "time": _dt("2027-09-04T20:00")}}}
+            ret = {"item_type": "flight", "booking_status": "confirmed",
+                   "booking_reference": "RETR9",
+                   "travelers": [{"raw_name": "Pat Example"}],
+                   "flight": {"flight_number": "2",
+                              "marketing_carrier": {"name": "Test Air", "iata": "TA"},
+                              "departure": {"place": {"raw": "LIS", "iata": "LIS",
+                                                      "country": "PT"},
+                                            "time": _dt("2027-09-08T09:00")},
+                              "arrival": {"place": {"raw": "HHH", "iata": "HHH"},
+                                          "time": _dt("2027-09-08T15:00")}}}
+            # Insertion order matters: the outbound must be created (and thus
+            # resolved) BEFORE the return, so its envelope search queries a
+            # return-leg row that exists but has not yet been annotated.
+            o, r = _add_item(s, out), _add_item(s, ret)
+            resolve_pending(s, adventurelog=None)
+
+            ro = s.get(TravelItem, o.id).resolution
+            rr = s.get(TravelItem, r.id).resolution
+            assert ro["mint_group"] == "2027-09-04..2027-09-08"
+            assert rr["mint_group"] == "2027-09-04..2027-09-08"
+            assert ro["collection_name"] == rr["collection_name"]
+            assert ro["is_minter"] != rr["is_minter"]
+    _skip_or(run)
+
+
 def test_unresolved_trip_flight_still_targets_airtrail():
     """Owner (2026-08-10): a flight's AirTrail write needs no trip, so an
     unsettled collection (here an open one-way journey with no return leg yet)
@@ -396,9 +459,10 @@ def test_middle_leg_inherits_the_enclosing_trip():
     """A leg that never touches home (IAD->PHX) still belongs to the journey
     bounded by the home departure and the home return."""
     def run():
-        from app.resolving import _trip_envelope
+        from app.resolving import _trip_envelope, load_home_profiles
         with SessionLocal() as s:
             _seed_home(s)
+            profiles = load_home_profiles(s)
             def leg(num, frm, to, dep_at, arr_at, from_home=False, to_home=False):
                 p = {"item_type": "flight", "booking_status": "confirmed",
                      "booking_reference": "ENV02",
@@ -419,7 +483,7 @@ def test_middle_leg_inherits_the_enclosing_trip():
                                    "2027-10-02T15:40")
             leg("12", "PHX", "HHH", "2027-10-11T07:00", "2027-10-11T14:20",
                 to_home=True)
-            assert _trip_envelope(s, mid, mid_payload) == ("2027-10-02", "2027-10-11")
+            assert _trip_envelope(s, mid, mid_payload, profiles) == ("2027-10-02", "2027-10-11")
     _skip_or(run)
 
 

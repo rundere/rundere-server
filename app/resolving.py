@@ -28,7 +28,8 @@ from resolve import keys as keys_mod
 from resolve import revision as rev_mod
 from resolve.collections import (CollectionRef, Resolution, collection_name,
                                  resolve_collection)
-from resolve.home import HomeProfileRef, annotate_place, within_home_radius
+from resolve.home import (HomeProfileRef, annotate_place, match_place,
+                          within_home_radius)
 from resolve.identity import Identity, resolve_travelers
 from resolve.geocode import PhotonGeocoder, apply_geocode
 from resolve.targets import (compute_targets, enrich_places_from_airports,
@@ -179,8 +180,21 @@ def _gap_hours(arrive, depart_next) -> float | None:
     return (b - a).total_seconds() / 3600.0
 
 
-def _leg_facts(payload: dict) -> dict | None:
-    """Home/route/time facts for one flight leg, used to group a journey."""
+def _leg_facts(payload: dict, profiles: list[HomeProfileRef]) -> dict | None:
+    """Home/route/time facts for one flight leg, used to group a journey.
+
+    Home status is computed HERE via match_place, never trusted from the
+    payload's own `is_home` flag. resolve_pending commits one item at a time,
+    so a sibling leg queried mid-batch (e.g. the return flight of a pair
+    captured together) may not have been through its own _annotate_places yet
+    -- its stored `is_home` reads False/absent even though it plainly IS the
+    home arrival. That let an envelope search skip right past the real return
+    leg and snap onto whatever LATER, already-resolved home-arrival flight it
+    found next (owner bug report, 2026-08-11: a same-day outbound/return pair
+    minted into two different trips, one of them months away). Recomputing
+    from the raw place independent of resolve order fixes that regardless of
+    which leg processes first.
+    """
     f = payload.get("flight") or {}
     dep, arr = f.get("departure") or {}, f.get("arrival") or {}
     dep_place, arr_place = dep.get("place") or {}, arr.get("place") or {}
@@ -190,8 +204,8 @@ def _leg_facts(payload: dict) -> dict | None:
     a_date = a_local[:10] or d_date
     if not d_date:
         return None
-    return {"from_home": bool(dep_place.get("is_home")),
-            "to_home": bool(arr_place.get("is_home")),
+    return {"from_home": match_place(dep_place, profiles, d_date)[0] is not None,
+            "to_home": match_place(arr_place, profiles, a_date)[0] is not None,
             "dep": d_date, "arr": a_date,
             # Full timestamp for ORDERING: connecting legs routinely share a
             # date, and ordering them by anything else (a uuid, insertion
@@ -204,8 +218,8 @@ def _leg_facts(payload: dict) -> dict | None:
             "arr_country": arr_place.get("country")}
 
 
-def _trip_envelope(session: Session, item: TravelItem,
-                   payload: dict) -> tuple[str, str] | None:
+def _trip_envelope(session: Session, item: TravelItem, payload: dict,
+                   profiles: list[HomeProfileRef]) -> tuple[str, str] | None:
     """The home-to-home span containing this flight, or None if it isn't closed.
 
     A trip is bounded by home (owner, 2026-08-03): flying AWAY from home is
@@ -219,7 +233,7 @@ def _trip_envelope(session: Session, item: TravelItem,
     => a closed trip whose real boundaries are known. Otherwise => None, and
     the caller defers until the return leg arrives.
     """
-    here = _leg_facts(payload)
+    here = _leg_facts(payload, profiles)
     if not here:
         return None
 
@@ -227,7 +241,7 @@ def _trip_envelope(session: Session, item: TravelItem,
     for sib in (session.query(TravelItem)
                 .filter(TravelItem.item_type == "flight")
                 .filter(TravelItem.id != item.id).all()):
-        facts = _leg_facts((sib.extraction or {}).get("payload") or {})
+        facts = _leg_facts((sib.extraction or {}).get("payload") or {}, profiles)
         if facts:
             legs.append((facts["order"], facts, sib.id))
     legs.sort(key=lambda x: (x[0], str(x[2])))
@@ -266,8 +280,9 @@ def _journey_destination(members: list) -> str | None:
     return dest
 
 
-def _journey_minter(session: Session, item: TravelItem,
-                    payload: dict) -> tuple[tuple[str, str], str, str | None] | None:
+def _journey_minter(session: Session, item: TravelItem, payload: dict,
+                    profiles: list[HomeProfileRef]
+                    ) -> tuple[tuple[str, str], str, str | None] | None:
     """For a flight in a CLOSED home-to-home journey, return
     (envelope, minter_id, destination_country): the single leg that MINTS the
     shared trip (the earliest, so its siblings ATTACH), plus the journey's
@@ -275,14 +290,14 @@ def _journey_minter(session: Session, item: TravelItem,
     whole journey agrees on one trip name (owner: resolver picks one minter,
     2026-08-05). None when the journey is not closed (defer until the return).
     """
-    here = _leg_facts(payload)
+    here = _leg_facts(payload, profiles)
     if not here:
         return None
     legs = [(here["order"], here, item.id)]
     for sib in (session.query(TravelItem)
                 .filter(TravelItem.item_type == "flight")
                 .filter(TravelItem.id != item.id).all()):
-        facts = _leg_facts((sib.extraction or {}).get("payload") or {})
+        facts = _leg_facts((sib.extraction or {}).get("payload") or {}, profiles)
         if facts:
             legs.append((facts["order"], facts, sib.id))
     legs.sort(key=lambda x: (x[0], str(x[2])))
@@ -431,7 +446,7 @@ def resolve_item(session: Session, item: TravelItem,
     # siblings ATTACH, instead of each leg minting its own (owner: resolver picks
     # one minter, 2026-08-05). _journey_minter names that single minter.
     is_flight = payload.get("item_type") == "flight"
-    journey = (_journey_minter(session, item, payload)
+    journey = (_journey_minter(session, item, payload, profiles)
                if (is_flight and not home_only) else None)
     envelope = journey[0] if journey else None
     is_minter = bool(journey) and journey[1] == item.id
