@@ -1,11 +1,13 @@
 # Yonder
 
-**Version 1.0** · [AGPL-3.0](LICENSE)
+**Version 2.2.1** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/yonder/releases)
 
 Yonder turns travel documents — booking emails, calendar invites, PDF
 confirmations, and Google Maps directions — into clean records in your
 self-hosted travel apps: **flights → [AirTrail](https://github.com/johanohly/AirTrail)**,
-**trips & places → [AdventureLog](https://github.com/seanmorley15/AdventureLog)**.
+**trips & places → [AdventureLog](https://github.com/seanmorley15/AdventureLog)** —
+and into **Yonder's own built-in trips**, a first-party trip system it writes to
+alongside the others.
 
 It is a self-hosted FastAPI service. You *capture* travel items from where you
 already read them (Gmail, Google Calendar, Maps), Yonder extracts and resolves
