@@ -497,6 +497,17 @@ def resolve_item(session: Session, item: TravelItem,
                                                     envelope[1]),
                     match_attempted=True)
 
+    # Yonder trip minting mirrors the AdventureLog ladder (owner, 2026-08-12):
+    # whenever this leg is minting OR attaching to a NEW AdventureLog trip and no
+    # EXISTING Yonder trip already covers it (_auto_link_yonder_trip above found
+    # no unambiguous match), a Yonder trip should exist too — the two systems
+    # track the same journey and must not disagree on whether a trip exists. The
+    # attach-leg override just above also sets collection_action == "created", so
+    # this single check already covers both legs of the journey without having to
+    # special-case the minter vs. attach split again.
+    mint_yonder_trip = bool(
+        coll and coll.collection_action == "created" and not item.trip_id)
+
     # ---- 5. who travelled — FLIGHTS ONLY (D-22/RULE-10). Traveller identity
     # exists solely to keep guest-only flights out of AirTrail; nothing else
     # writes to AirTrail, and AdventureLog does not care who was on a booking.
@@ -529,8 +540,11 @@ def resolve_item(session: Session, item: TravelItem,
     # Yonder is a first-party write target (2.2.0): a capture linked to an
     # in-house Yonder trip is filed there as a TripActivity, independent of
     # AdventureLog. Add it whenever the item has a trip (manual pick or the
-    # unambiguous auto-link above) and there is actually something to write.
-    if item.trip_id and not home_only and decision.action != "no_change":
+    # unambiguous auto-link above), OR the commit stage is about to mint one
+    # (mint_yonder_trip) — the trip doesn't exist yet, but it will by the time
+    # this target is written — and there is actually something to write.
+    if ((item.trip_id or mint_yonder_trip) and not home_only
+            and decision.action != "no_change"):
         targets = targets + ["yonder.activity"]
 
     outcome = "ignored" if home_only else (coll.outcome if coll else "needs_review")
@@ -579,6 +593,10 @@ def resolve_item(session: Session, item: TravelItem,
         # its minter sibling creates, and it records which leg is the minter.
         resolution["mint_group"] = mint_group
         resolution["is_minter"] = is_minter
+    if mint_yonder_trip:
+        # Tells the commit stage to mint (minter) or borrow (attach leg, via
+        # mint_group) a Yonder trip alongside the AdventureLog collection.
+        resolution["mint_yonder_trip"] = True
     if is_minter and coll and coll.collection_action == "created" and envelope:
         # The commit stage mints the collection, and D-34 says a trip spans the
         # whole home-to-home journey, not this one leg — so persist that span

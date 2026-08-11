@@ -361,6 +361,46 @@ def test_journey_legs_share_one_trip_with_a_single_minter():
             # neither leg defers now — the journey is closed and shared
             assert s.get(TravelItem, o.id).status["resolve"] == "ok"
             assert s.get(TravelItem, r.id).status["resolve"] == "ok"
+            # Owner (2026-08-12): a Yonder trip must come into existence
+            # alongside the new AdventureLog collection, on BOTH legs -- not
+            # just the ones that happen to auto-link to an already-existing
+            # trip. Neither leg has a trip_id yet (no existing Yonder trip
+            # covers these dates), so both must be flagged to mint/attach one.
+            assert minter.get("mint_yonder_trip") is True
+            assert attach.get("mint_yonder_trip") is True
+            assert "yonder.activity" in minter["targets"]
+            assert "yonder.activity" in attach["targets"]
+    _skip_or(run)
+
+
+def test_no_yonder_mint_flag_when_already_linked_to_an_existing_trip():
+    """The mint flag is only for a journey with NO existing Yonder trip. When
+    _auto_link_yonder_trip already found an unambiguous existing trip, minting
+    a second one would be wrong -- the item just uses the one it matched."""
+    def run():
+        from app.models import Trip
+        with SessionLocal() as s:
+            _seed_home(s)
+            s.query(ItemKey).delete(); s.query(TravelItem).delete(); s.commit()
+            s.query(Trip).filter(Trip.name == "Existing PT Trip").delete()
+            s.add(Trip(name="Existing PT Trip", start_date="2027-09-01",
+                      end_date="2027-09-14"))
+            s.commit()
+            out = _leg("OUT10", "1", "HHH", "LIS", "2027-09-01T08:00",
+                       "2027-09-01T12:00", from_home=True, dest_country="PT")
+            ret = _leg("RET10", "2", "LIS", "HHH", "2027-09-14T09:00",
+                       "2027-09-14T15:00", to_home=True, dest_country="PT")
+            o, r = _add_item(s, out), _add_item(s, ret)
+            resolve_pending(s, adventurelog=None)
+
+            ro = s.get(TravelItem, o.id).resolution
+            rr = s.get(TravelItem, r.id).resolution
+            assert not ro.get("mint_yonder_trip")
+            assert not rr.get("mint_yonder_trip")
+            assert s.get(TravelItem, o.id).trip_id
+            assert s.get(TravelItem, r.id).trip_id
+            s.query(Trip).filter(Trip.name == "Existing PT Trip").delete()
+            s.commit()
     _skip_or(run)
 
 

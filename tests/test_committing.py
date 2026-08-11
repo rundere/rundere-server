@@ -851,6 +851,93 @@ def test_yonder_write_refused_without_a_linked_trip():
     s.close()
 
 
+def test_yonder_trip_minted_alongside_new_adventurelog_collection():
+    """Owner (2026-08-12): 'yonder.activity' already required a linked trip,
+    but nothing ever CREATED one -- only an existing trip could be auto-linked
+    at resolve. When the resolver decides a NEW AdventureLog collection is
+    needed (mint_yonder_trip), the commit stage must mint a matching Yonder
+    trip too: the minter leg creates it (linked to the collection it just
+    created via adventurelog_collection_id), and the attach leg borrows the
+    SAME trip through the shared mint_group -- exactly the pairing the
+    AdventureLog side already does, so the two systems never disagree on
+    whether a trip exists."""
+    _skip()
+    from app.models import Trip, TripActivity
+    s = SessionLocal()
+    s.query(TripActivity).delete(); s.query(Trip).delete(); s.commit()
+
+    minter = _add(s, _flight_payload(),
+                 targets=["adventurelog.collection", "yonder.activity"])
+    minter.canonical_key = "flight:pnr:MINT1:AC:8780:YYZ"
+    minter.resolution = {**minter.resolution,
+                         "mint_group": "MINTTEST1:2026-11-20..2026-11-29",
+                         "is_minter": True, "mint_yonder_trip": True}
+    s.commit()
+
+    attach_payload = _flight_payload()
+    attach = _add(s, attach_payload, targets=["yonder.activity"])
+    attach.canonical_key = "flight:pnr:ATTACH1:AC:8781:DCA"
+    attach.resolution = {**attach.resolution,
+                         "mint_group": "MINTTEST1:2026-11-20..2026-11-29",
+                         "is_minter": False, "mint_yonder_trip": True}
+    s.commit()
+
+    al, at = FakeAL(), FakeAT()
+    C.commit_item(s, minter, al, at, identities=[Ident("self", "vu75")], dry_run=False)
+    s.commit()
+    C.commit_item(s, attach, al, at, identities=[Ident("self", "vu75")], dry_run=False)
+    s.commit()
+
+    trips = s.query(Trip).all()
+    assert len(trips) == 1                              # ONE trip for the journey
+    trip = trips[0]
+    assert trip.source == "resolver"
+    assert trip.name == "United States — November 2026"
+    assert trip.start_date == "2026-11-20" and trip.end_date == "2026-11-29"
+    assert trip.adventurelog_collection_id == "coll-1"   # linked to the mint
+    assert minter.trip_id == trip.id and attach.trip_id == trip.id
+    acts = s.query(TripActivity).filter_by(trip_id=trip.id).all()
+    assert len(acts) == 2                                # both legs filed
+
+    s.query(TripActivity).delete(); s.query(Trip).delete()
+    s.query(TravelItem).filter(TravelItem.id.in_([minter.id, attach.id])).delete(
+        synchronize_session=False)
+    s.commit()
+    s.close()
+
+
+def test_yonder_trip_mint_deferred_until_minter_commits():
+    """An attach leg committed BEFORE its minter sibling (out-of-order) has no
+    trip to borrow yet -- refused with a reason, same as an unresolved
+    AdventureLog collection, not a crash or a wrongly-minted second trip."""
+    _skip()
+    from app.models import Trip, TripActivity
+    s = SessionLocal()
+    s.query(TripActivity).delete(); s.query(Trip).delete(); s.commit()
+
+    attach_payload = _flight_payload()
+    attach = _add(s, attach_payload, targets=["yonder.activity"])
+    attach.canonical_key = "flight:pnr:ATTACH2:AC:8782:YUL"
+    attach.resolution = {**attach.resolution,
+                         "mint_group": "MINTTEST2:2026-11-20..2026-11-29",
+                         "is_minter": False, "mint_yonder_trip": True}
+    s.commit()
+
+    env = C.commit_item(s, attach, FakeAL(), FakeAT(),
+                        identities=[Ident("self", "vu75")], dry_run=False)
+    s.commit()
+    ya = [r for r in env["results"] if r["target"] == "yonder.activity"][0]
+    assert not ya["ok"] and "no Yonder trip" in ya["error"]
+    assert s.query(Trip).count() == 0                    # never guessed one into being
+
+    s.query(TravelItem).filter(TravelItem.id == attach.id).delete(
+        synchronize_session=False)
+    s.commit()
+
+    s.query(TripActivity).delete(); s.query(Trip).delete(); s.commit()
+    s.close()
+
+
 # ------------------------------------ AdventureLog coarse transport type (2.2.1)
 
 def _ground(mode, ref="A498317861", provider="Hertz"):

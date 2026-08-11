@@ -737,6 +737,9 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
         if target == "yonder.activity":
             from app.models import TripActivity
             tid, key = item.trip_id, item.canonical_key
+            if not tid and action != "supersede" and resolution.get("mint_yonder_trip"):
+                tid = _resolve_or_mint_yonder_trip(session, item, resolution,
+                                                   collection_id, dry_run)
             existing = (session.query(TripActivity)
                         .filter(TripActivity.trip_id == tid,
                                 TripActivity.source_item_key == key).first()
@@ -985,6 +988,58 @@ def _resolve_collection_id(session, item) -> str | None:
         if sres.get("mint_group") == group and sres.get("collection_id"):
             return str(sres["collection_id"])
     return None
+
+
+def _resolve_or_mint_yonder_trip(session: Session, item: TravelItem,
+                                 resolution: dict, collection_id: str | None,
+                                 dry_run: bool) -> str | None:
+    """The Yonder trip this item's activity files under, minting one when the
+    resolver decided a NEW AdventureLog trip is needed and no EXISTING Yonder
+    trip already covers it (owner, 2026-08-12): the two systems track the same
+    journey, so whichever leg mints the AdventureLog collection also mints the
+    matching Yonder trip, linked to it via adventurelog_collection_id — the
+    same pairing "push to AdventureLog" makes in the other direction. An
+    attach leg borrows the minter's trip via the shared mint_group, mirroring
+    how _resolve_collection_id already does this for the AdventureLog side.
+    Returns None when the minter sibling has not created the trip yet (out-of-
+    order commit) — the caller then refuses this target for now, same as an
+    unresolved AdventureLog collection, and it resolves on the next commit.
+    """
+    if resolution.get("yonder_trip_id"):
+        return resolution["yonder_trip_id"]
+    group = resolution.get("mint_group")
+    if group:
+        for sib in (session.query(TravelItem)
+                    .filter(TravelItem.id != item.id).all()):
+            sres = sib.resolution or {}
+            if sres.get("mint_group") == group and sres.get("yonder_trip_id"):
+                tid = str(sres["yonder_trip_id"])
+                if not dry_run:
+                    # Persist onto the ATTACH leg too, not just the minter --
+                    # item.trip_id is read elsewhere (review UI, linked-capture
+                    # listings, the auto-link skip check), so every leg of the
+                    # journey should show as linked, not just the one that
+                    # happened to create the trip.
+                    item.trip_id = tid
+                return tid
+    if not resolution.get("is_minter"):
+        return None                    # minter hasn't committed its trip yet
+    if dry_run:
+        return "(new Yonder trip)"
+    from app.models import Trip
+    cid = (collection_id if collection_id
+           and not str(collection_id).startswith("(") else None)
+    trip = Trip(source="resolver",
+               name=resolution.get("collection_name") or "Untitled trip",
+               start_date=resolution.get("collection_start"),
+               end_date=resolution.get("collection_end"),
+               adventurelog_collection_id=cid)
+    session.add(trip)
+    session.flush()
+    item.trip_id = trip.id
+    item.resolution = {**(item.resolution or {}), "yonder_trip_id": trip.id}
+    flag_modified(item, "resolution")
+    return trip.id
 
 
 def _unsuppressed_places(payload: dict) -> list[dict]:
