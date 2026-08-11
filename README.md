@@ -61,17 +61,16 @@ D-11) — nothing is sent to a cloud model.
 | Requirement | Why | Notes |
 |---|---|---|
 | **Docker Engine + Compose** | Runs the app and its Postgres | Any orchestrator works — a reference stack is provided |
-| **Two external Docker networks** | The stack joins them, doesn't create them | `traefik-net` (proxy) and `travel-net` (targets/geocode). Create with `docker network create` if absent |
+| **Docker network reachability to your tools** | Yonder talks to the reverse proxy and to each target/geocoder it calls over Docker networking | Put the container on whatever existing Docker network(s) those services use — one or several. The stack *joins* external networks, it doesn't create them (`docker network create` any that are missing). The reference stack's `traefik-net` + `travel-net` split is just this deployment's shape, not a requirement |
 | **PostgreSQL 16** | App database | Bundled in the stack as `yonder-db` — nothing to install separately |
 | **A reverse proxy with public HTTPS** | The Gmail/GCal add-ons POST from Google's servers to `/ingest` | Reference uses **Traefik**. The public route exposes **only** `POST /ingest` |
-| **At least one target** | Somewhere to commit to | **AdventureLog** (trips/places) and/or **AirTrail** (flights) |
-| **Python 3.12** | *Dev only* — running tests / uvicorn locally | Not needed for the Docker deployment |
 | **A Google account** | For the Gmail & Calendar capture add-ons | Personal, unpublished Apps Script — no Google review needed |
 
 ### Soft prerequisites (optional — degrade gracefully)
 
 | Requirement | Unlocks | Without it |
 |---|---|---|
+| **AdventureLog and/or AirTrail** (external targets) | Also pushing out — flights → AirTrail, trips/places → AdventureLog | Yonder still records everything to its **own built-in trips** (the default, first-party target); the external pushes simply don't happen |
 | **[Ollama](https://ollama.com/)** + a model (`qwen3:14b`) | LLM extractor for free-form text | Structured sources (JSON-LD/iCal/PDF/Maps) still work; unstructured items go to review unparsed |
 | **[Photon](https://github.com/komoot/photon)** (self-hosted geocoder) | Address → coordinates without Google quota (D-22) | Geocoding unavailable; places needing lookup stall in review |
 | **AirTrail's own Postgres** (read-only) | Committing flights to airports you've **never flown before** (D-50) — supplies internal airport id/coords/tz | A flight to a never-flown airport is refused at commit |
@@ -79,7 +78,7 @@ D-11) — nothing is sent to a cloud model.
 
 ### How to find each prerequisite / credential
 
-- **`traefik-net` / `travel-net` networks** — likely already exist if you run other homelab services behind Traefik. Check with `docker network ls`; create any missing one with `docker network create <name>`.
+- **Docker network reachability** — Yonder must share a Docker network with your reverse proxy and with each target/tool it calls (AdventureLog, AirTrail, Photon, Ollama). Put it on whatever external network(s) those already use — check with `docker network ls`; the stack joins them, so `docker network create <name>` any that are missing. Whether that's one network or several (the reference stack uses `traefik-net` + `travel-net`) is up to your setup.
 - **AdventureLog API key** (`TX_ADVENTURELOG_API_KEY`) — in the AdventureLog web UI → **Settings → Integrations / API tokens** → generate a token.
 - **AirTrail token** (`TX_AIRTRAIL_TOKEN`) — in the AirTrail UI → your **account / API settings** → create an API token.
 - **AirTrail DB URL** (`TX_AIRTRAIL_DB_URL`) — read the Postgres user/password/db from AirTrail's own compose file; it looks like
