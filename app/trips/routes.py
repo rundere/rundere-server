@@ -10,6 +10,7 @@ filter and the modals swap partials.
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from app.db import get_session
 from app.models import Trip, TripActivity
 from app.trips import types as activity_types
 
+log = logging.getLogger("yonder.trips")
 router = APIRouter(prefix="/trips")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 # Let Trips templates {% include %} the shared global header (_appheader.html)
@@ -219,6 +221,19 @@ def _adventurelog():
                               settings.adventurelog_api_key)
 
 
+def _airtrail():
+    """AirTrail client, or None when unconfigured — same seam as _adventurelog."""
+    if not settings.airtrail_token:
+        return None
+    from adapters.targets.airtrail import AirTrailClient
+    return AirTrailClient(settings.airtrail_url, settings.airtrail_token)
+
+
+def _photon():
+    from resolve.geocode import PhotonGeocoder
+    return PhotonGeocoder(settings.photon_url)
+
+
 def _collection_url(collection_id: str | None) -> str | None:
     """Browser-facing link to a collection, or None when either the public base
     isn't set or the trip isn't linked."""
@@ -397,13 +412,173 @@ def _push_msg(text: str) -> HTMLResponse:
     return HTMLResponse(f'<span class="bp-push-err">{text}</span>')
 
 
+# Every Yonder activity type becomes a Transportation, except lodging (its own
+# AdventureLog object) and tour/event/dining/note, which fall through to a
+# Note — AdventureLog has no generic "activity" object to hold those.
+_AL_TRANSPORT_TYPE = {
+    "flight": "plane", "train": "train", "drive": "car",
+    "carRental": "car", "cruise": "boat",
+}
+
+
+def _al_iso(value: str | None) -> str | None:
+    """A stored `when`/`endWhen` value (bare "YYYY-MM-DD" or datetime-local
+    "YYYY-MM-DDTHH:MM") as AdventureLog's explicit-UTC ISO string.
+
+    TripActivity carries no per-activity timezone (RULE D-06's naive-time
+    guard doesn't apply here — there's no source document to hold a zone), so
+    — consistent with the rest of the adapter layer (D-06's Photon-adjacent
+    convention: a naive value is always sent as explicit UTC, never guessed
+    at) — this treats the stored value as UTC rather than inventing one."""
+    if not value:
+        return None
+    if len(value) == 10:                                 # "YYYY-MM-DD"
+        return f"{value}T00:00:00Z"
+    if value.endswith("Z"):
+        return value
+    return f"{value}:00Z" if len(value) == 16 else f"{value}Z"
+
+
+def _resolve_coords(place: str | None, airports: dict, photon,
+                    cache: dict) -> tuple[float | None, float | None]:
+    """Best-effort (lat, lon) for a transportation endpoint.
+
+    `place` is usually an IATA/ICAO code (flight/train) but may be free text
+    (a cruise port, a car-rental address) — AirTrail's flown-airport reference
+    is checked first (free, exact, already loaded), Photon covers everything
+    else, including an airport AirTrail has never seen flown (same fallback
+    chain as the home-profile airport lookup in app/review/home.py). `cache`
+    is the caller's dict, reused across every activity in one push so the same
+    airport isn't geocoded twice."""
+    if not place:
+        return None, None
+    key = place.strip().upper()
+    if key in cache:
+        return cache[key]
+    coords = (None, None)
+    airport = airports.get(key)
+    if airport is None:
+        airport = next((a for a in airports.values()
+                        if a.icao and a.icao.upper() == key), None)
+    if airport is not None:
+        coords = (airport.lat, airport.lon)
+    else:
+        try:
+            looks_like_code = key.isalpha() and len(key) in (3, 4)
+            result = photon.geocode_freeform(f"{place} airport" if looks_like_code else place)
+        except Exception:
+            result = None
+        if result is not None:
+            coords = (result.lat, result.lon)
+    cache[key] = coords
+    return coords
+
+
+def _al_body_for_activity(activity: TripActivity, collection_id: str,
+                          airports: dict, photon, coord_cache: dict) -> tuple[str, dict]:
+    """Map one TripActivity onto the AdventureLog object it becomes.
+
+    Returns (kind, body) where kind is "transportation" | "lodging" | "note" —
+    the three create_* methods on AdventureLogClient. `is_public: True`
+    matches the collection push_adventurelog always creates as public; every
+    child object must agree or AdventureLog's own validation rejects it."""
+    v = activity.values or {}
+    t = activity_types.get_type(activity.type)
+    title = t.title(v) or "Untitled"
+    subtitle = t.subtitle(v)
+    starts = _al_iso(v.get("when"))
+    ends = _al_iso(v.get("endWhen")) or starts
+    link = v.get("sourceLink") or None
+    detail_lines = [f"Confirmation: {v['confirmation']}"] if v.get("confirmation") else []
+    if v.get("notes"):
+        detail_lines.append(v["notes"])
+    description = "\n\n".join(detail_lines) or None
+
+    if activity.type in _AL_TRANSPORT_TYPE:
+        name = f"{title} – {subtitle}" if subtitle else title
+        origin = v.get("from") or v.get("pickupLocation") or v.get("departurePort")
+        dest = v.get("to") or v.get("dropoffLocation") or v.get("arrivalPort")
+        origin_lat, origin_lon = _resolve_coords(origin, airports, photon, coord_cache)
+        dest_lat, dest_lon = _resolve_coords(dest, airports, photon, coord_cache)
+        body = {
+            "type": _AL_TRANSPORT_TYPE[activity.type], "name": name,
+            "date": starts, "end_date": ends,
+            "from_location": origin, "to_location": dest,
+            "start_code": v.get("from"), "end_code": v.get("to"),
+            "origin_latitude": origin_lat, "origin_longitude": origin_lon,
+            "destination_latitude": dest_lat, "destination_longitude": dest_lon,
+            "link": link, "description": description,
+            "is_public": True, "collection": collection_id,
+        }
+        if activity.type == "flight":
+            body["flight_number"] = v.get("flightNumber")
+        return "transportation", {k: v for k, v in body.items() if v is not None}
+
+    if activity.type == "lodging":
+        body = {
+            "name": v.get("name") or title, "check_in": starts, "check_out": ends,
+            "location": v.get("address"), "reservation_number": v.get("confirmation"),
+            "link": link, "description": v.get("notes") or None,
+            "is_public": True, "collection": collection_id,
+        }
+        return "lodging", {k: v for k, v in body.items() if v is not None}
+
+    content = "\n\n".join(p for p in (subtitle, v.get("text"), description) if p) or None
+    body = {
+        "name": title, "content": content, "links": [link] if link else None,
+        "date": (v.get("when") or "")[:10] or None,
+        "is_public": True, "collection": collection_id,
+    }
+    return "note", {k: v for k, v in body.items() if v is not None}
+
+
+def _push_activities(client, collection_id: str, trip_id: str,
+                     activities: list[TripActivity]) -> None:
+    """Best-effort: the collection is already created and linked by the time
+    this runs, so one bad activity logs and moves on rather than losing the
+    ones that would otherwise succeed."""
+    airtrail = _airtrail()
+    airports = {}
+    if airtrail is not None:
+        try:
+            airports = airtrail.airport_reference()
+        except Exception:
+            log.warning("push-adventurelog: AirTrail airport reference unavailable "
+                       "for trip %s, falling back to Photon for every endpoint", trip_id)
+    photon = _photon()
+    coord_cache: dict = {}
+    create = {"transportation": client.create_transportation,
+             "lodging": client.create_lodging, "note": client.create_note}
+    failed = 0
+    for activity in activities:
+        kind, body = _al_body_for_activity(activity, collection_id,
+                                           airports, photon, coord_cache)
+        try:
+            status, parsed, raw = create[kind](body)
+            if status >= 400:
+                failed += 1
+                log.warning("push-adventurelog: %s for trip %s rejected (HTTP %s): %s",
+                           kind, trip_id, status, raw[:300])
+        except Exception:
+            failed += 1
+            log.exception("push-adventurelog: %s failed for trip %s", kind, trip_id)
+    if failed:
+        log.warning("push-adventurelog: %d/%d activities failed for trip %s",
+                    failed, len(activities), trip_id)
+
+
 @router.post("/{trip_id}/push-adventurelog", response_class=HTMLResponse)
 def push_adventurelog(trip_id: str, session: Session = Depends(get_session)):
-    """Create a PUBLIC AdventureLog collection from this trip and link it.
+    """Create a PUBLIC AdventureLog collection from this trip, seed it with the
+    trip's activities, and link it.
 
     Public by default so the collection can be direct-linked from outside
-    AdventureLog (owner requirement). Idempotent: a trip already linked is left
-    alone — we never create a second collection for the same trip.
+    AdventureLog (owner requirement). Idempotent on the collection itself: a
+    trip already linked is left alone — we never create a second collection
+    for the same trip. The activity push is one-shot at creation time, not an
+    ongoing sync — AdventureLog has no server-side dedup on transportations/
+    lodging/notes, so re-running this against an already-linked trip would
+    duplicate everything rather than reconcile it.
     """
     trip = session.get(Trip, trip_id)
     if trip is None:
@@ -422,9 +597,16 @@ def push_adventurelog(trip_id: str, session: Session = Depends(get_session)):
         return _push_msg(f"AdventureLog request failed: {ex}")
     if status >= 400 or not isinstance(parsed, dict) or not parsed.get("id"):
         return _push_msg(f"AdventureLog rejected the collection (HTTP {status}).")
-    trip.adventurelog_collection_id = str(parsed["id"])
+    collection_id = str(parsed["id"])
+    trip.adventurelog_collection_id = collection_id
     trip.source = trip.source or "manual"
     session.commit()
+
+    activities = (session.query(TripActivity)
+                  .filter(TripActivity.trip_id == trip_id)
+                  .order_by(TripActivity.starts_at).all())
+    if activities:
+        _push_activities(client, collection_id, trip_id, activities)
     return _redirect(f"/trips/{trip_id}")
 
 

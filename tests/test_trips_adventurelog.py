@@ -28,15 +28,63 @@ if DEPS:
 
 
 class FakeAL:
-    """Records create_collection calls; returns a canned (status, parsed, raw)."""
+    """Records create_* calls; returns a canned (status, parsed, raw) for the
+    collection and a fixed 201 for every child object."""
     def __init__(self, result):
         self.result = result
         self.calls = []
+        self.transportations = []
+        self.lodging = []
+        self.notes = []
 
     def create_collection(self, name, start_date, end_date, *, is_public=False):
         self.calls.append({"name": name, "start": start_date, "end": end_date,
                            "is_public": is_public})
         return self.result
+
+    def create_transportation(self, body):
+        self.transportations.append(body)
+        return (201, {"id": f"trans_{len(self.transportations)}"}, "")
+
+    def create_lodging(self, body):
+        self.lodging.append(body)
+        return (201, {"id": f"lodge_{len(self.lodging)}"}, "")
+
+    def create_note(self, body):
+        self.notes.append(body)
+        return (201, {"id": f"note_{len(self.notes)}"}, "")
+
+
+class FakeAirport:
+    def __init__(self, iata, lat, lon, icao=None):
+        self.iata, self.lat, self.lon, self.icao = iata, lat, lon, icao
+
+
+class FakeAirTrail:
+    """A canned airport_reference() — no network, no real AirTrail."""
+    def __init__(self, airports=None):
+        self._airports = airports or {}
+
+    def airport_reference(self):
+        return self._airports
+
+
+class FakePhoton:
+    """Records every geocode_freeform query; returns a canned result (or None)."""
+    def __init__(self, result=None):
+        self.result = result
+        self.queries = []
+
+    def geocode_freeform(self, text):
+        self.queries.append(text)
+        return self.result
+
+
+def _no_geocoding(monkeypatch):
+    """Push tests that don't care about coordinates get this: no AirTrail, no
+    Photon hit — keeps them off the network and deterministic."""
+    monkeypatch.setattr(trips_routes, "_airtrail", lambda: None)
+    monkeypatch.setattr(trips_routes, "_photon", lambda: FakePhoton(None))
 
 
 def _mk_trip(name, start=None, end=None, collection_id=None):
@@ -62,6 +110,110 @@ def test_push_creates_public_collection_and_links(monkeypatch):
     assert fake.calls[0]["name"] == "Iceland"
     with SessionLocal() as s:
         assert s.get(Trip, tid).adventurelog_collection_id == "col_1"
+
+
+def test_push_seeds_flight_as_transportation(monkeypatch):
+    if not DEPS:
+        return
+    tid = _mk_trip("Iceland flights", "2026-09-01", "2026-09-10")
+    client.post(f"/trips/{tid}/activity", data={
+        "type": "flight", "when": "2026-09-01T09:00", "endWhen": "2026-09-01T11:30",
+        "airline": "Air Canada", "flightNumber": "AC4826", "from": "YYZ", "to": "KEF",
+        "confirmation": "ABC123", "sourceLink": "https://example.com/eticket"})
+    fake = FakeAL((201, {"id": "col_flight"}, ""))
+    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    _no_geocoding(monkeypatch)
+    r = client.post(f"/trips/{tid}/push-adventurelog")
+    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
+    assert len(fake.transportations) == 1
+    body = fake.transportations[0]
+    assert body["type"] == "plane"
+    assert body["flight_number"] == "AC4826"
+    assert body["from_location"] == "YYZ" and body["to_location"] == "KEF"
+    assert body["date"] == "2026-09-01T09:00:00Z"
+    assert body["end_date"] == "2026-09-01T11:30:00Z"
+    assert body["is_public"] is True
+    assert body["collection"] == "col_flight"
+    assert "ABC123" in body["description"]
+    assert fake.lodging == [] and fake.notes == []
+
+
+def test_push_seeds_lodging_and_note(monkeypatch):
+    if not DEPS:
+        return
+    tid = _mk_trip("Iceland stay", "2026-09-01", "2026-09-10")
+    client.post(f"/trips/{tid}/activity", data={
+        "type": "lodging", "when": "2026-09-01T15:00", "endWhen": "2026-09-05T11:00",
+        "name": "Hotel Nordljos", "address": "Posthusstraeti 11", "confirmation": "H-99"})
+    client.post(f"/trips/{tid}/activity", data={
+        "type": "event", "when": "2026-09-02T20:00", "name": "Northern lights tour",
+        "venue": "Reykjavik"})
+    fake = FakeAL((201, {"id": "col_stay"}, ""))
+    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    _no_geocoding(monkeypatch)
+    r = client.post(f"/trips/{tid}/push-adventurelog")
+    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
+    assert len(fake.lodging) == 1
+    lodge = fake.lodging[0]
+    assert lodge["name"] == "Hotel Nordljos" and lodge["reservation_number"] == "H-99"
+    assert lodge["is_public"] is True and lodge["collection"] == "col_stay"
+    assert len(fake.notes) == 1
+    assert fake.notes[0]["name"] == "Northern lights tour"
+    assert fake.transportations == []
+
+
+def test_push_activity_failure_does_not_block_others(monkeypatch):
+    if not DEPS:
+        return
+    tid = _mk_trip("Partial failure", "2026-09-01", "2026-09-10")
+    client.post(f"/trips/{tid}/activity", data={
+        "type": "flight", "when": "2026-09-01T09:00", "flightNumber": "AC1",
+        "from": "YYZ", "to": "KEF"})
+    client.post(f"/trips/{tid}/activity", data={
+        "type": "flight", "when": "2026-09-05T09:00", "flightNumber": "AC2",
+        "from": "KEF", "to": "YYZ"})
+    fake = FakeAL((201, {"id": "col_partial"}, ""))
+    calls = {"n": 0}
+    def flaky_create_transportation(body):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return (400, {"detail": "bad"}, "bad")
+        fake.transportations.append(body)
+        return (201, {"id": "trans_ok"}, "")
+    fake.create_transportation = flaky_create_transportation
+    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    _no_geocoding(monkeypatch)
+    r = client.post(f"/trips/{tid}/push-adventurelog")
+    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"     # collection link still succeeds
+    assert len(fake.transportations) == 1                       # second flight still pushed
+    with SessionLocal() as s:
+        assert s.get(Trip, tid).adventurelog_collection_id == "col_partial"
+
+
+def test_push_resolves_transportation_coordinates(monkeypatch):
+    if not DEPS:
+        return
+    tid = _mk_trip("Geocoded flights", "2026-09-01", "2026-09-10")
+    client.post(f"/trips/{tid}/activity", data={
+        "type": "flight", "when": "2026-09-01T09:00", "flightNumber": "AC4826",
+        "from": "YYZ", "to": "KEF"})
+    fake = FakeAL((201, {"id": "col_geo"}, ""))
+    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    # YYZ is "flown" (known to AirTrail); KEF is not, so it falls back to Photon.
+    monkeypatch.setattr(trips_routes, "_airtrail",
+                        lambda: FakeAirTrail({"YYZ": FakeAirport("YYZ", 43.68, -79.63)}))
+    from resolve.geocode import GeocodeResult
+    photon_result = GeocodeResult(lat=63.98, lon=-22.61, country="IS", city="Keflavik",
+                                  name="Keflavik", confidence="verified")
+    fake_photon = FakePhoton(photon_result)
+    monkeypatch.setattr(trips_routes, "_photon", lambda: fake_photon)
+
+    r = client.post(f"/trips/{tid}/push-adventurelog")
+    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
+    body = fake.transportations[0]
+    assert body["origin_latitude"] == 43.68 and body["origin_longitude"] == -79.63
+    assert body["destination_latitude"] == 63.98 and body["destination_longitude"] == -22.61
+    assert fake_photon.queries == ["KEF airport"]   # AirTrail-known YYZ never hit Photon
 
 
 def test_push_requires_dates(monkeypatch):
