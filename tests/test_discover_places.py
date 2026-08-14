@@ -54,6 +54,15 @@ class _StubGeocoder:
                     confidence="verified" if verified else "unverified")
         return None
 
+    def geocode_freeform(self, text):
+        """Top hit for a user-typed string — always 'verified' (human vouches),
+        mirroring PhotonGeocoder.geocode_freeform."""
+        for needle, (lat, lon, country, city, _v) in self.responses.items():
+            if needle.lower() in (text or "").lower():
+                return GeocodeResult(lat=lat, lon=lon, country=country, city=city,
+                                     name=city, confidence="verified")
+        return None
+
 
 _NO_GEO = _StubGeocoder({})
 
@@ -115,6 +124,26 @@ def test_unverified_geocode_is_dropped_not_guessed():
     out = derive_locations(acts, resolve_airport=_no_airport, geocoder=geo)
     assert out.places == []
     assert out.dropped and out.dropped[0]["activity_type"] == "lodging"
+
+
+def test_manual_lodging_freeform_fallback_geocodes_address():
+    """A hand-entered lodging with a free-text address and NO structured city:
+    strict geocode_place can't verify it, but the freeform fallback (the human
+    typed the address) resolves it — the fix for manual trips."""
+    acts = [_act("lodging", {"name": "Hotel Lac Bleu",
+                             "address": "10 Rue du Rhône, Geneva"})]
+    geo = _StubGeocoder({"rhône": (46.2, 6.14, "CH", "Geneva", False)})
+    out = derive_locations(acts, resolve_airport=_no_airport, geocoder=geo)
+    assert [p.label for p in out.places] == ["Geneva, CH"]
+
+
+def test_manual_lodging_bare_name_still_drops():
+    """No freeform for a bare property name (no address) — the wrong-branch trap
+    stays closed."""
+    acts = [_act("lodging", {"name": "SureStay"})]
+    geo = _StubGeocoder({"surestay": (29.9, -95.3, "US", "Humble", False)})
+    out = derive_locations(acts, resolve_airport=_no_airport, geocoder=geo)
+    assert out.places == [] and out.dropped
 
 
 # ------------------------------------------------------------------ dedup

@@ -8,22 +8,32 @@
       </p>
 
       {% if places %}
-      <div class="yn-derived-tags">
+      <div class="yn-derived-list">
         {% for p in places %}
-        <span class="tag tag-outline yn-derived-tag{% if p.is_home %} yn-derived-home{% endif %}"
-              title="from {{ p.sources | join(', ') }}{% if p.lat is not none %} · {{ '%.3f'|format(p.lat) }}, {{ '%.3f'|format(p.lon) }}{% endif %}">
-          {{ p.label }}
-          {% if p.is_home %}<span class="yn-derived-badge">home · not researched</span>
-          {% elif p.home_country %}<span class="yn-derived-badge">home country · local topics skipped</span>{% endif %}
-          <span class="yn-derived-src">{{ p.sources | join(', ') }}</span>
-        </span>
+        <div class="yn-derived-row{% if p.excluded %} yn-derived-excluded{% elif p.is_home %} yn-derived-home{% endif %}">
+          <div class="yn-derived-main"
+               title="from {{ p.sources | join(', ') }}{% if p.lat is not none %} · {{ '%.3f'|format(p.lat) }}, {{ '%.3f'|format(p.lon) }}{% endif %}">
+            <span class="yn-derived-label">{{ p.label }}</span>
+            {% if p.excluded %}<span class="yn-derived-badge">excluded</span>
+            {% elif p.is_home %}<span class="yn-derived-badge">home · not researched</span>
+            {% elif p.home_country %}<span class="yn-derived-badge">home country · local topics skipped</span>{% endif %}
+            <span class="yn-derived-src">{{ p.sources | join(', ') }}</span>
+          </div>
+          {% if not p.is_home %}
+          <button class="btn btn-ghost bp-sm"
+                  hx-post="/trips/{{ trip_id }}/derived-locations/toggle"
+                  hx-vals='{"place_key": {{ p.key | tojson }}}'
+                  hx-target="#modal-root" hx-swap="innerHTML">
+            {{ 'Include' if p.excluded else 'Exclude' }}</button>
+          {% endif %}
+        </div>
         {% endfor %}
       </div>
-      {% if has_home %}
-      <p class="bp-trip-notes">Places at home aren't researched; a non-home city in
-        your home country still gets weather, events and food, but currency, plugs
-        and language (same as home) are skipped.</p>
-      {% endif %}
+      <p class="bp-trip-notes">Exclude a place (a layover you only pass through, a
+        wrong pin) and Discovery won't research it. Changes apply on the next run.
+        {% if has_home %} Places at home aren't researched; a non-home city in your
+        home country still gets weather/events/food, but currency, plugs and
+        language (same as home) are skipped.{% endif %}</p>
       {% if countries %}
       <p class="bp-trip-notes yn-derived-count">
         {{ places | length }} place{{ '' if places|length == 1 else 's' }} ·
