@@ -1,10 +1,28 @@
 # Yonder 3.0 — Discovery (in-house trip research pipeline)
 
-Status: **PLANNED** (spec). Supersedes the MCP work as the 3.0 headline; MCP moves
-to 4.0 (direct DB access makes MCP a thin win — see the roadmap). Discovery will,
-after significant testing, become the **primary** replacement for the external
-`adventurelog-trip-prep` Claude skill; that skill stays as a **backup** until
-Yonder proves out.
+Status: **3.0 = deterministic tier (IN REVIEW)**. Supersedes the MCP work as the
+3.0 headline; MCP moves to 4.0 (direct DB access makes MCP a thin win — see the
+roadmap). Discovery will, after significant testing, become the **primary**
+replacement for the external `adventurelog-trip-prep` Claude skill; that skill
+stays as a **backup** until Yonder proves out.
+
+**Scope split (2026-08-14).** 3.0 ships the fully-deterministic tier + review; the
+LLM tier and packing are deliberately deferred so 3.0 is small, correct, and has
+zero LLM variance:
+
+- **3.0 (this PR)** — first-party location derivation + viewer, durable run/finding
+  model, the deterministic resolvers (plugs, weather, currency + calculator,
+  language L1/L2), the home filter, and the in-Yonder review UI
+  (approve/edit/reject).
+- **3.1 — Packing.** NOT a plain rule-engine (revised). It needs a **packing
+  template database** (à la PackPoint / packing-list tools): a master set of
+  situation templates — trip type, climate, activities, duration, gender/kids —
+  that a deterministic pass instantiates and an LLM pass refines. Specced
+  separately before build.
+- **3.2 — LLM tier.** SearXNG + Ollama resolvers (visa, safety, events, food),
+  language L3 (the regional register), grounding/corroboration, the durable
+  background job + polling panel, steerable single-topic re-runs (D-71), and the
+  push of approved findings to AdventureLog Notes.
 
 ## Goal
 
@@ -147,7 +165,7 @@ The static/dynamic line is drawn **per field, not per topic** (see language).
 | Plugs / voltage | static dataset | `discover/data/plugs.json` | no |
 | Weather | deterministic API | Open-Meteo (no key) | no |
 | Currency | deterministic API | Frankfurter/ECB + calculator | no |
-| Packing | rule engine | weather + duration + activity types | no |
+| Packing | **template DB + refinement** (→ 3.1) | situation templates instantiated deterministically, refined by LLM | deferred |
 | Language phrases | **hybrid** | CLDR/Babel + vetted static + grounded overlay | partial |
 | Visa / vaccination | searxng + llm, **flagged** | SearXNG → Ollama | yes |
 | Safety / transport | searxng + llm, corroborated | SearXNG → Ollama | yes |
@@ -330,18 +348,26 @@ restart. So: **keep the pattern, change the backing store.**
 
 ## 11. Phasing
 
-1. **Deterministic spine (first slice).** Location derivation (`discover/places.py`)
-   + `DiscoveryRun`/`DiscoveryFinding` migration + static datasets (plugs) +
-   deterministic APIs (weather, currency) + the **currency calculator**. Fully
-   testable with **zero LLM variance**; proves the first-party location model and
-   ships a visibly useful feature (the calculator) before any search enters.
-2. **Rule + hybrid.** Packing rule engine; language L1/L2 (offline); durable job
-   panel + Discovery tab + review/approve UI; push-to-AdventureLog for approved
-   findings.
-3. **Grounded LLM topics.** SearXNG service + client; visa, safety, events, food;
-   language L3 overlay; grounding + corroboration guards.
-4. **Harden.** TTL caching per topic; re-run/refresh; confidence surfacing;
-   idempotent re-push.
+**Delivered in 3.0 (this PR):**
+1. First-party location derivation (`discover/places.py`) + the "What Yonder found"
+   viewer, `DiscoveryRun`/`DiscoveryFinding` migration.
+2. Deterministic resolvers behind one interface: plugs (static), weather
+   (Open-Meteo forecast + seasonal archive fallback), currency (ECB/Frankfurter) +
+   the **currency calculator**, language L1/L2 (Babel + vetted phrasebook).
+3. The home filter (D-72) — scope-aware home suppression via Home Profiles.
+4. In-Yonder review UI: Discovery tab, findings grouped by topic with
+   approve/edit/reject, run/re-run (synchronous; preserves human-touched findings).
+
+The run is synchronous here because the deterministic tier is fast; the durable
+background job is not yet needed and lands with the LLM tier.
+
+**Deferred:**
+- **3.1 — Packing** (template DB + deterministic instantiation + LLM refinement;
+  specced separately).
+- **3.2 — LLM tier** — SearXNG + Ollama resolvers (visa, safety, events, food),
+  language L3, grounding + corroboration, the durable background job + polling
+  panel, steerable single-topic re-runs (D-71), and the push of approved findings
+  to AdventureLog Notes. TTL caching / refresh harden here too.
 
 ## 12. Open questions
 
