@@ -6,6 +6,7 @@ COPY app/ app/
 COPY resolve/ resolve/
 COPY extract/ extract/
 COPY adapters/ adapters/
+COPY discover/ discover/
 COPY rules.py validation.py ./
 COPY schemas/ schemas/
 COPY alembic.ini .

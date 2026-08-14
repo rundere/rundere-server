@@ -22,6 +22,8 @@
                 hx-target="#push-msg" hx-swap="innerHTML" hx-disabled-elt="this">Push to AdventureLog</button>
       {% endif %}
       <button class="btn btn-secondary"
+              hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Yonder found</button>
+      <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
       <button class="btn btn-ghost"
               hx-post="/trips/{{ trip.id }}/delete"

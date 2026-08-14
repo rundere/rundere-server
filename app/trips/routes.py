@@ -234,6 +234,43 @@ def _photon():
     return PhotonGeocoder(settings.photon_url)
 
 
+def _airport_resolver():
+    """A complete `(code) -> Airport | None` lookup for location derivation
+    (discover/places.py). AirTrail's flown-airport reference is checked first
+    (free, in-memory), then its complete read-only airport DB (D-50) so a
+    never-before-flown destination airport still resolves. Both are optional;
+    with neither configured, airport codes simply drop and geocoding carries the
+    rest — same graceful degradation as the push path's _resolve_coords."""
+    airports: dict = {}
+    at = _airtrail()
+    if at is not None:
+        try:
+            airports = at.airport_reference()
+        except Exception:
+            airports = {}
+    db = None
+    if settings.airtrail_db_url:
+        from adapters.targets.airtrail_db import AirTrailDB
+        db = AirTrailDB(settings.airtrail_db_url)
+
+    def resolve(code: str):
+        key = (code or "").strip().upper()
+        if not key:
+            return None
+        ap = airports.get(key)
+        if ap is None:
+            ap = next((a for a in airports.values()
+                       if a.icao and a.icao.upper() == key), None)
+        if ap is None and db is not None:
+            try:
+                ap = db.airport(key)
+            except Exception:
+                ap = None
+        return ap
+
+    return resolve
+
+
 def _collection_url(collection_id: str | None) -> str | None:
     """Browser-facing link to a collection, or None when either the public base
     isn't set or the trip isn't linked."""
@@ -317,6 +354,37 @@ def detail(trip_id: str, request: Request,
                             status_code=404)
     ctx = {"request": request, **_detail_context(session, trip)}
     return templates.TemplateResponse(request, "detail.html", ctx)
+
+
+@router.get("/{trip_id}/derived-locations", response_class=HTMLResponse)
+def derived_locations(trip_id: str, request: Request,
+                      session: Session = Depends(get_session)):
+    """The "What Yonder found" viewer (D-68): show the destination set Discovery
+    DERIVED from this trip's own activities (D-62) — with per-place provenance
+    and the places that couldn't be verified — so the operator sees the
+    pipeline's starting point rather than guessing at it. On-demand modal, read
+    from the same discover.places output a run would use, so it doubles as a
+    pre-flight check."""
+    from discover.places import derive_locations
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    acts = trip_activities(session, trip_id)
+    result = derive_locations(acts, resolve_airport=_airport_resolver(),
+                              geocoder=_photon())
+    places = [{
+        "label": p.label, "city": p.city, "country": p.country,
+        "lat": p.lat, "lon": p.lon,
+        "sources": [f"{pr['activity_type']} · {pr['field']}"
+                    for pr in p.provenance],
+    } for p in result.places]
+    return templates.TemplateResponse(request, "_derived_locations.html", {
+        "request": request, "trip_id": trip_id,
+        "trip_name": trip.name,
+        "places": places,
+        "countries": result.countries,
+        "dropped": result.dropped,
+    })
 
 
 @router.get("/{trip_id}/edit", response_class=HTMLResponse)
