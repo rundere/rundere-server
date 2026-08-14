@@ -47,6 +47,9 @@ class _NoGeo:
     def geocode_place(self, place):
         return None
 
+    def geocode_freeform(self, text):
+        return None
+
 
 def _fresh_trip():
     with SessionLocal() as s:
@@ -64,12 +67,12 @@ def _fresh_trip():
         return t.id
 
 
-def _run(trip_id):
+def _run(trip_id, excluded=frozenset()):
     with SessionLocal() as s:
         trip = s.get(Trip, trip_id)
         run = run_discovery(s, trip, resolve_airport=_airports, geocoder=_NoGeo(),
                             resolvers=[PlugsResolver(), _FakeCityResolver()],
-                            today="2026-08-14")
+                            excluded=excluded, today="2026-08-14")
         return run.id
 
 
@@ -117,3 +120,49 @@ def test_rerun_preserves_approved_but_refreshes_drafts():
         assert len(ca) == 1 and ca[0].status == "draft"
         # no duplication overall
         assert s.query(DiscoveryFinding).filter_by(trip_id=tid).count() == 4
+
+
+def test_excluded_place_is_not_researched():
+    if not DEPS:
+        return
+    tid = _fresh_trip()
+    _run(tid, excluded={"CH:Geneva"})
+    with SessionLocal() as s:
+        got = {(f.topic, f.place_key)
+               for f in s.query(DiscoveryFinding).filter_by(trip_id=tid).all()}
+        assert not any(pk.startswith("CH") for _, pk in got)   # Geneva/CH excluded
+        assert ("plugs", "CA") in got and ("weather", "CA:Toronto") in got
+        run = (s.query(DiscoveryRun).filter_by(trip_id=tid)
+               .order_by(DiscoveryRun.started_at.desc()).first())
+        assert run.params["excluded"] == ["CH:Geneva"]
+
+
+def test_rerun_prunes_stale_drafts():
+    if not DEPS:
+        return
+    tid = _fresh_trip()
+    _run(tid)                                   # 4 findings incl. CH
+    with SessionLocal() as s:
+        assert s.query(DiscoveryFinding).filter_by(trip_id=tid).count() == 4
+    _run(tid, excluded={"CH:Geneva"})           # re-run with Geneva excluded
+    with SessionLocal() as s:
+        got = {(f.topic, f.place_key)
+               for f in s.query(DiscoveryFinding).filter_by(trip_id=tid).all()}
+        assert got == {("plugs", "CA"), ("weather", "CA:Toronto")}   # CH drafts pruned
+
+
+def test_prune_keeps_human_touched_findings():
+    if not DEPS:
+        return
+    tid = _fresh_trip()
+    _run(tid)
+    with SessionLocal() as s:
+        ch = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="plugs",
+                                                 place_key="CH").one()
+        ch.status = "approved"
+        s.commit()
+        cid = ch.id
+    _run(tid, excluded={"CH:Geneva"})           # CH no longer produced
+    with SessionLocal() as s:
+        kept = s.get(DiscoveryFinding, cid)
+        assert kept is not None and kept.status == "approved"   # not pruned

@@ -102,15 +102,29 @@ def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> No
     existing.generated_at = _now()
 
 
+def _prune_stale_drafts(session: Session, trip_id: str,
+                        produced: set[tuple[str, str]]) -> None:
+    """Delete DRAFT findings the latest run did not produce — the place was
+    excluded, an activity was removed, or it no longer geocodes. Human-touched
+    findings (approved/edited/rejected) are always kept."""
+    for f in (session.query(DiscoveryFinding)
+              .filter(DiscoveryFinding.trip_id == trip_id,
+                      DiscoveryFinding.status == "draft").all()):
+        if (f.topic, f.place_key) not in produced:
+            session.delete(f)
+
+
 def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
                   resolvers: list[Resolver], home_profiles: list = (),
+                  excluded: set[str] = frozenset(),
                   base_currencies: tuple[str, ...] = ("CAD", "USD"),
                   today: str | None = None) -> DiscoveryRun:
     """Execute one Discovery pass over `trip` and persist its findings.
 
     `home_profiles` (HomeProfileRef list) suppresses research of home — see
-    discover/home_filter. Returns the finished (or failed) DiscoveryRun row,
-    already committed."""
+    discover/home_filter. `excluded` is the set of DerivedPlace place_keys the
+    operator excluded in the viewer. Returns the finished (or failed)
+    DiscoveryRun row, already committed."""
     run = DiscoveryRun(trip_id=trip.id, status="running", phase="deriving locations",
                        started_at=_now())
     session.add(run)
@@ -121,6 +135,10 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
             TripActivity.trip_id == trip.id).all()
         derived = derive_locations(acts, resolve_airport=resolve_airport,
                                    geocoder=geocoder)
+        # Drop operator-excluded places before anything is planned or counted.
+        if excluded:
+            derived.places = [p for p in derived.places
+                              if p.place_key not in excluded]
         ctx = ResolverContext(
             start_date=trip.start_date, end_date=trip.end_date,
             today=today or date.today().isoformat(),
@@ -129,10 +147,12 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
         tasks, home_skipped = _plan_tasks(derived, resolvers,
                                           list(home_profiles or []), trip.start_date)
         run.params = {"countries": derived.countries, "cities": derived.cities,
-                      "dropped": len(derived.dropped), "home_skipped": home_skipped}
+                      "dropped": len(derived.dropped), "home_skipped": home_skipped,
+                      "excluded": sorted(excluded)}
         run.total = len(tasks)
         session.flush()
 
+        produced: set[tuple[str, str]] = set()
         for i, (resolver, place) in enumerate(tasks):
             run.phase = f"{resolver.topic} · {place.label}"
             run.done = i
@@ -145,8 +165,10 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
                 finding = None
             if finding is not None:
                 _upsert(session, run, trip.id, finding)
+                produced.add((finding.topic, finding.place_key))
             session.flush()
 
+        _prune_stale_drafts(session, trip.id, produced)
         run.done = len(tasks)
         run.status = "done"
         run.phase = "done"

@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_session
-from app.models import DiscoveryFinding, DiscoveryRun, Trip, TripActivity
+from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
+                        TripActivity)
 from app.trips import types as activity_types
 
 log = logging.getLogger("yonder.trips")
@@ -368,33 +369,71 @@ def derived_locations(trip_id: str, request: Request,
     pipeline's starting point rather than guessing at it. On-demand modal, read
     from the same discover.places output a run would use, so it doubles as a
     pre-flight check."""
-    from app.resolving import load_home_profiles
-    from discover.home_filter import home_country_set, is_home_place
-    from discover.places import derive_locations
     trip = session.get(Trip, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    acts = trip_activities(session, trip_id)
+    return templates.TemplateResponse(request, "_derived_locations.html",
+                                      _derived_locations_ctx(request, session, trip))
+
+
+def _excluded_keys(session: Session, trip_id: str) -> set[str]:
+    return {e.place_key for e in session.query(DiscoveryExclusion)
+            .filter(DiscoveryExclusion.trip_id == trip_id).all()}
+
+
+def _derived_locations_ctx(request: Request, session: Session, trip: Trip) -> dict:
+    from app.resolving import load_home_profiles
+    from discover.home_filter import home_country_set, is_home_place
+    from discover.places import derive_locations
+    acts = trip_activities(session, trip.id)
     result = derive_locations(acts, resolve_airport=_airport_resolver(),
                               geocoder=_photon())
     profiles = load_home_profiles(session)
     hc = home_country_set(result.places, profiles, trip.start_date)
+    excluded = _excluded_keys(session, trip.id)
     places = [{
         "label": p.label, "city": p.city, "country": p.country,
-        "lat": p.lat, "lon": p.lon,
+        "lat": p.lat, "lon": p.lon, "key": p.place_key,
         "sources": [f"{pr['activity_type']} · {pr['field']}"
                     for pr in p.provenance],
         "is_home": is_home_place(p, profiles, trip.start_date),
         "home_country": bool(p.country and p.country.upper() in hc),
+        "excluded": p.place_key in excluded,
     } for p in result.places]
-    return templates.TemplateResponse(request, "_derived_locations.html", {
-        "request": request, "trip_id": trip_id,
-        "trip_name": trip.name,
-        "places": places,
-        "countries": result.countries,
+    return {
+        "request": request, "trip_id": trip.id, "trip_name": trip.name,
+        "places": places, "countries": result.countries,
         "dropped": result.dropped,
         "has_home": any(p["is_home"] or p["home_country"] for p in places),
-    })
+    }
+
+
+@router.post("/{trip_id}/derived-locations/toggle", response_class=HTMLResponse)
+def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
+                          request: Request = None,
+                          session: Session = Depends(get_session)):
+    """Exclude/include a derived place, then re-render the viewer. Excluding also
+    drops that place's DRAFT findings for instant feedback; country-scope findings
+    reconcile on the next run (the runner prunes stale drafts)."""
+    trip = session.get(Trip, trip_id)
+    if trip is None or not place_key:
+        return HTMLResponse("", status_code=404)
+    existing = (session.query(DiscoveryExclusion)
+                .filter(DiscoveryExclusion.trip_id == trip_id,
+                        DiscoveryExclusion.place_key == place_key).first())
+    if existing is not None:
+        session.delete(existing)
+    else:
+        session.add(DiscoveryExclusion(trip_id=trip_id, place_key=place_key))
+        # Instant feedback: remove this place's own draft findings now.
+        for f in (session.query(DiscoveryFinding)
+                  .filter(DiscoveryFinding.trip_id == trip_id,
+                          DiscoveryFinding.place_key == place_key,
+                          DiscoveryFinding.status == "draft").all()):
+            session.delete(f)
+    session.commit()
+    return templates.TemplateResponse(request, "_derived_locations.html",
+                                      _derived_locations_ctx(request, session, trip))
 
 
 # --------------------------------------------------------------- discovery (3.0)
@@ -489,6 +528,7 @@ def run_discovery_route(trip_id: str, session: Session = Depends(get_session)):
     run_discovery(session, trip, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
                   home_profiles=load_home_profiles(session),
+                  excluded=_excluded_keys(session, trip_id),
                   base_currencies=settings.base_currency_list)
     return _redirect(f"/trips/{trip_id}")
 

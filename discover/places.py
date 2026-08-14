@@ -38,6 +38,8 @@ class PlaceRef:
     kind: str                  # "airport" | "place"
     raw: str                   # the literal string, for the dropped-list display
     geo: dict = field(default_factory=dict)   # geocode_place input (place kind)
+    freeform: str = ""         # user-typed address/place to try if strict geocode
+                               # can't verify (manual entry has no structured city)
 
 
 @dataclass
@@ -65,6 +67,12 @@ class DerivedPlace:
         if self.country and self.city:
             return f"{self.country}:{self.city}"
         return None
+
+    @property
+    def place_key(self) -> str | None:
+        """Stable identity for the whole place — the handle the exclude/include
+        toggle stores. City places key on "CC:City", country-only on "CC"."""
+        return self.city_key or self.country
 
 
 @dataclass
@@ -117,10 +125,12 @@ def _extract(activity) -> list[PlaceRef]:
     v = activity.values or {}
     refs: list[PlaceRef] = []
 
-    def add(fname: str, kind: str, raw, geo: dict | None = None) -> None:
+    def add(fname: str, kind: str, raw, geo: dict | None = None,
+            freeform: str | None = None) -> None:
         raw = (raw or "").strip()
         if raw:
-            refs.append(PlaceRef(activity.id, t, fname, kind, raw, geo or {}))
+            refs.append(PlaceRef(activity.id, t, fname, kind, raw, geo or {},
+                                 (freeform or "").strip()))
 
     if t == "flight":
         add("from", "airport", v.get("from"))
@@ -129,35 +139,41 @@ def _extract(activity) -> list[PlaceRef]:
         # Stations/cities, not airport codes — geocode as a city.
         for f in ("from", "to"):
             val = v.get(f)
-            add(f, "place", val, {"name": val, "raw": val, "city": val})
+            add(f, "place", val, {"name": val, "raw": val, "city": val},
+                freeform=val)
     elif t == "carRental":
         for f in ("pickupLocation", "dropoffLocation"):
             val = v.get(f)
             if _looks_like_airport_code(val):
                 add(f, "airport", val)
             else:
-                add(f, "place", val, {"name": val, "raw": val, "city": val})
+                add(f, "place", val, {"name": val, "raw": val, "city": val},
+                    freeform=val)
     elif t == "lodging":
         raw = v.get("name") or v.get("address") or v.get("city")
         add("lodging", "place", raw, {
             "name": v.get("name"), "raw": v.get("name") or v.get("address"),
-            "address": v.get("address"), "city": v.get("city")})
+            "address": v.get("address"), "city": v.get("city")},
+            # freeform ONLY the address (a specific postal string), never a bare
+            # property name — a lone chain name is the wrong-branch trap.
+            freeform=v.get("address"))
     elif t == "tour":
         loc = v.get("location")
         name = v.get("name")
         add("location", "place", loc or name,
-            {"name": name or loc, "raw": name or loc, "city": loc})
+            {"name": name or loc, "raw": name or loc, "city": loc}, freeform=loc)
     elif t == "dining":
         add("address", "place", v.get("name") or v.get("address"),
             {"name": v.get("name"), "raw": v.get("name") or v.get("address"),
-             "address": v.get("address")})
+             "address": v.get("address")}, freeform=v.get("address"))
     elif t == "event":
         add("venue", "place", v.get("venue"),
-            {"name": v.get("venue"), "raw": v.get("venue")})
+            {"name": v.get("venue"), "raw": v.get("venue")}, freeform=v.get("venue"))
     elif t == "cruise":
         for f in ("departurePort", "arrivalPort"):
             val = v.get(f)
-            add(f, "place", val, {"name": val, "raw": val, "city": val})
+            add(f, "place", val, {"name": val, "raw": val, "city": val},
+                freeform=val)
     # drive (free-text route) and note carry no reliably-parseable place — skipped.
     return refs
 
@@ -173,6 +189,19 @@ def _resolve(ref: PlaceRef, resolve_airport: Callable, geocoder) -> DerivedPlace
     if res is not None and res.usable and (res.country or res.city):
         return DerivedPlace(country=_iso(res.country), city=res.city,
                             lat=res.lat, lon=res.lon, region=res.region)
+    # Freeform fallback for a user-typed address/place the strict, verified path
+    # couldn't confirm — manual entry carries no structured city/country to check
+    # against. The human typed it, so (like resolve/geocode.geocode_freeform and
+    # the push path) the top hit is trusted. Only address-like fields set
+    # ref.freeform, so a bare chain name still can't reach here.
+    if ref.freeform:
+        try:
+            ff = geocoder.geocode_freeform(ref.freeform)
+        except Exception:
+            ff = None
+        if ff is not None and (ff.country or ff.city):
+            return DerivedPlace(country=_iso(ff.country), city=ff.city,
+                                lat=ff.lat, lon=ff.lon, region=ff.region)
     return None
 
 

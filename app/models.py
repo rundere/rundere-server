@@ -328,3 +328,20 @@ class DiscoveryFinding(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     adventurelog_note_id: Mapped[str | None] = mapped_column(String(64))
+
+
+class DiscoveryExclusion(Base):
+    """A derived place the operator chose NOT to research for a trip — a layover
+    city they only pass through, a mis-geocoded stop (SPEC-3-discovery.md §1).
+
+    `place_key` is the DerivedPlace identity shown in the "What Yonder found"
+    viewer ("DE:Frankfurt" for a city, "DE" for a country-only place). A run
+    filters excluded places out of the derived set before planning; the toggle in
+    the viewer adds/removes rows here. Plain soft link on trip_id, app-enforced
+    uniqueness on (trip_id, place_key) — same convention as the other tables."""
+    __tablename__ = "discovery_exclusions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    place_key: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
