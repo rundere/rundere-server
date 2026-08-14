@@ -268,3 +268,63 @@ class RuleSetting(Base):
     note: Mapped[str | None] = mapped_column(String(512))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class DiscoveryRun(Base):
+    """Yonder 3.0 — one Discovery research pass over a Trip (D-63). Unlike the
+    in-memory review job registry (app/review/jobs.py), a Discovery run is a
+    DURABLE row: research is quality-paced and minutes-to-hours long, and its
+    output must survive a container restart. The background thread writes
+    phase/done/total here; the poll panel reads them. A run orphaned by a
+    restart is marked `failed` on next poll rather than vanishing.
+
+    `params` snapshots what the run was launched against — the topic set and the
+    derived place set (D-62) — so the run is reproducible and auditable after the
+    trip's activities later change."""
+    __tablename__ = "discovery_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # Soft link, plain indexed column (same convention as travel_items.trip_id —
+    # no DB FK; the trips delete route is responsible for cleanup).
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    status: Mapped[str] = mapped_column(String(12), default="running", index=True)  # running|done|failed|cancelled
+    phase: Mapped[str | None] = mapped_column(String(128))
+    done: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    params: Mapped[dict | None] = mapped_column(JsonCol)
+    error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DiscoveryFinding(Base):
+    """Yonder 3.0 — one researched topic for one place, held on Yonder for human
+    review/edit/approve BEFORE it is pushed to AdventureLog (D-63). Follows the
+    TravelItem envelope philosophy: the rendered `body_md` is what crosses to an
+    AdventureLog Note; structured `data` (currency rates, a weather series) rides
+    alongside for rich in-Yonder rendering (e.g. the currency calculator, D-65).
+
+    Idempotency is on (trip_id, topic, place_key), enforced in app code — a re-run
+    or a steerable single-topic re-run (D-71) upserts in place instead of
+    duplicating (same app-enforced-uniqueness pattern as trip_activities, 0009).
+    `steer_note` records the operator's correction fed into the resolver prompt on
+    a re-run, for provenance."""
+    __tablename__ = "discovery_findings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    run_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    topic: Mapped[str] = mapped_column(String(24), index=True)  # weather|currency|visa|...
+    scope: Mapped[str] = mapped_column(String(8))               # country|city
+    place_key: Mapped[str] = mapped_column(String(128))          # "US" | "US:Glendale"
+    status: Mapped[str] = mapped_column(String(12), default="draft")  # draft|approved|edited|rejected
+    body_md: Mapped[str | None] = mapped_column(Text)
+    data: Mapped[dict | None] = mapped_column(JsonCol)
+    sources: Mapped[list | None] = mapped_column(JsonCol)
+    confidence: Mapped[str | None] = mapped_column(String(8))    # high|medium|flagged
+    resolver: Mapped[str | None] = mapped_column(String(32))
+    steer_note: Mapped[str | None] = mapped_column(Text)
+    ttl_seconds: Mapped[int | None] = mapped_column(Integer)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    adventurelog_note_id: Mapped[str | None] = mapped_column(String(64))

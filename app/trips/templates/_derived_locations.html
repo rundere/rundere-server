@@ -1,0 +1,64 @@
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
+  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+    <div class="dialog-title">What Yonder found · {{ trip_name }}</div>
+    <div class="dialog-body">
+      <p class="bp-trip-notes">
+        Locations Yonder derived from this trip's own activities — the starting
+        point for Discovery. Nothing here is read from AdventureLog.
+      </p>
+
+      {% if places %}
+      <div class="yn-derived-tags">
+        {% for p in places %}
+        <span class="tag tag-outline yn-derived-tag{% if p.is_home %} yn-derived-home{% endif %}"
+              title="from {{ p.sources | join(', ') }}{% if p.lat is not none %} · {{ '%.3f'|format(p.lat) }}, {{ '%.3f'|format(p.lon) }}{% endif %}">
+          {{ p.label }}
+          {% if p.is_home %}<span class="yn-derived-badge">home · not researched</span>
+          {% elif p.home_country %}<span class="yn-derived-badge">home country · local topics skipped</span>{% endif %}
+          <span class="yn-derived-src">{{ p.sources | join(', ') }}</span>
+        </span>
+        {% endfor %}
+      </div>
+      {% if has_home %}
+      <p class="bp-trip-notes">Places at home aren't researched; a non-home city in
+        your home country still gets weather, events and food, but currency, plugs
+        and language (same as home) are skipped.</p>
+      {% endif %}
+      {% if countries %}
+      <p class="bp-trip-notes yn-derived-count">
+        {{ places | length }} place{{ '' if places|length == 1 else 's' }} ·
+        {{ countries | length }} countr{{ 'y' if countries|length == 1 else 'ies' }}
+        ({{ countries | join(', ') }})
+      </p>
+      {% endif %}
+      {% else %}
+      <div class="bp-empty-msg">
+        No locations could be derived yet. Add an activity with a place —
+        a flight, lodging, or a tour — then check again.
+      </div>
+      {% endif %}
+
+      {% if dropped %}
+      <div class="yn-derived-dropped">
+        <div class="bp-field-label">Couldn't place ({{ dropped | length }})</div>
+        <ul class="yn-derived-droplist">
+          {% for d in dropped %}
+          <li><span class="yn-derived-raw">{{ d.raw }}</span>
+            <span class="yn-derived-src">{{ d.activity_type }} · {{ d.field }}</span></li>
+          {% endfor %}
+        </ul>
+        <p class="bp-trip-notes">
+          These named a place Yonder couldn't verify (an ambiguous name with no
+          stated city/country is dropped rather than guessed). The city is
+          usually still captured from a nearby flight or hotel.
+        </p>
+      </div>
+      {% endif %}
+
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-primary"
+                hx-get="/trips/close" hx-target="#modal-root">Close</button>
+      </div>
+    </div>
+  </div>
+</div>

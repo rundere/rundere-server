@@ -1,0 +1,50 @@
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
+  <div class="dialog blueprint" onclick="event.stopPropagation()">
+    <div class="dialog-title">Currency calculator</div>
+    <div class="dialog-body">
+      {% if currencies|length < 2 %}
+      <p class="bp-trip-notes">Not enough currencies with rates to convert yet.</p>
+      {% else %}
+      <div class="yn-cc">
+        <input class="input yn-cc-amt" id="yn-cc-amt" type="number" value="1" min="0" step="any" inputmode="decimal">
+        <select class="input" id="yn-cc-from">
+          {% for c in currencies %}<option value="{{ c }}" {% if c == default_from %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+        <button type="button" class="btn btn-secondary yn-cc-swap" id="yn-cc-swap" title="Swap">⇄</button>
+        <select class="input" id="yn-cc-to">
+          {% for c in currencies %}<option value="{{ c }}" {% if c == default_to %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="yn-cc-result"><span id="yn-cc-out">—</span></div>
+      <p class="bp-trip-notes">Rates as of {{ as_of }} — for reference only, rates
+        fluctuate. Computed from Yonder's stored snapshot (no live lookup).</p>
+      <script>
+      (function(){
+        var perCad = {{ per_cad_json }};
+        var amt = document.getElementById('yn-cc-amt');
+        var from = document.getElementById('yn-cc-from');
+        var to = document.getElementById('yn-cc-to');
+        var out = document.getElementById('yn-cc-out');
+        function conv(){
+          var a = parseFloat(amt.value); if (isNaN(a)) a = 0;
+          var f = perCad[from.value], t = perCad[to.value];
+          if (!f || !t) { out.textContent = '—'; return; }
+          var r = a / f * t;
+          out.textContent = r.toLocaleString(undefined, {maximumFractionDigits: 2}) + ' ' + to.value;
+        }
+        [amt, from, to].forEach(function(el){
+          el.addEventListener('input', conv); el.addEventListener('change', conv);
+        });
+        document.getElementById('yn-cc-swap').addEventListener('click', function(){
+          var tmp = from.value; from.value = to.value; to.value = tmp; conv();
+        });
+        conv();
+      })();
+      </script>
+      {% endif %}
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-primary" hx-get="/trips/close" hx-target="#modal-root">Close</button>
+      </div>
+    </div>
+  </div>
+</div>

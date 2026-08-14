@@ -39,7 +39,21 @@ class Settings(BaseSettings):
     # Geocoding (D-22: Photon on travel-net, avoids Google Maps quota)
     photon_url: str = "http://photon:2322"
 
+    # Discovery (Yonder 3.0, SPEC-3-discovery.md). Deterministic-tier sources —
+    # overridable so a deployment can self-host (e.g. its own Frankfurter) and
+    # stay fully local. base_currencies is the home bases the currency resolver +
+    # calculator convert FROM (D-65).
+    discovery_base_currencies: str = "CAD,USD"
+    frankfurter_url: str = "https://api.frankfurter.dev/v1"
+    open_meteo_url: str = "https://api.open-meteo.com/v1"
+    open_meteo_archive_url: str = "https://archive-api.open-meteo.com/v1"
+
     app_version: str = "2.3.1"
+
+    @property
+    def base_currency_list(self) -> tuple[str, ...]:
+        return tuple(c.strip().upper() for c in self.discovery_base_currencies.split(",")
+                     if c.strip())
 
     class Config:
         env_prefix = "TX_"                  # TX_DATABASE_URL, TX_INGEST_RATE_LIMIT, ...
