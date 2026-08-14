@@ -55,10 +55,12 @@ def test_schema_has_trip_tables():
     assert {"trips", "trip_activities"} <= names
 
 
-def test_health_reports_2_0():
+def test_health_reports_version():
     if not DEPS:
         return
-    assert client.get("/health").json()["version"] == "2.3.1"
+    # Assert against the configured version so a release bump doesn't break this.
+    from app.config import settings
+    assert client.get("/health").json()["version"] == settings.app_version
 
 
 def test_nav_shows_trips_link():
