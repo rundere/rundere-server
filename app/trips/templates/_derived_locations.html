@@ -10,13 +10,20 @@
       {% if places %}
       <div class="yn-derived-tags">
         {% for p in places %}
-        <span class="tag tag-outline yn-derived-tag"
+        <span class="tag tag-outline yn-derived-tag{% if p.is_home %} yn-derived-home{% endif %}"
               title="from {{ p.sources | join(', ') }}{% if p.lat is not none %} · {{ '%.3f'|format(p.lat) }}, {{ '%.3f'|format(p.lon) }}{% endif %}">
           {{ p.label }}
+          {% if p.is_home %}<span class="yn-derived-badge">home · not researched</span>
+          {% elif p.home_country %}<span class="yn-derived-badge">home country · local topics skipped</span>{% endif %}
           <span class="yn-derived-src">{{ p.sources | join(', ') }}</span>
         </span>
         {% endfor %}
       </div>
+      {% if has_home %}
+      <p class="bp-trip-notes">Places at home aren't researched; a non-home city in
+        your home country still gets weather, events and food, but currency, plugs
+        and language (same as home) are skipped.</p>
+      {% endif %}
       {% if countries %}
       <p class="bp-trip-notes yn-derived-count">
         {{ places | length }} place{{ '' if places|length == 1 else 's' }} ·

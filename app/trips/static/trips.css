@@ -221,6 +221,10 @@ textarea.input { min-height: 72px; resize: vertical; }
   padding: 6px 10px; line-height: 1.3; }
 .yn-derived-src { font-size: 10px; letter-spacing: .03em; text-transform: uppercase;
   color: var(--color-neutral-500); }
+.yn-derived-home { opacity: .6; }
+.yn-derived-badge { font-size: 10px; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--color-neutral-600); background: var(--color-neutral-100);
+  padding: 1px 5px; border-radius: 2px; }
 .yn-derived-count { font-size: 13px; }
 .yn-derived-dropped { margin-top: 18px; padding-top: 14px;
   border-top: 1px solid var(--color-neutral-200); }

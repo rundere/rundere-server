@@ -321,6 +321,12 @@ restart. So: **keep the pattern, change the backing store.**
 - **D-71** — Reviewers can trigger **steerable single-topic re-runs** with an
   optional correction note fed into the resolver prompt; the note is recorded on
   the finding.
+- **D-72** — Home is **not researched**, suppressed scope-aware via the existing
+  Home Profiles (D-07 `resolve/home.py` matcher — first-party, so Discovery and
+  commit agree on what home is): a home **country** skips country-scope topics
+  (currency/plugs/visa/language), a home **place** skips city-scope topics too,
+  but a non-home city in the home country still gets weather/events/food. What was
+  suppressed is recorded on the run and shown in the derived-locations viewer.
 
 ## 11. Phasing
 

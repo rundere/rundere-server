@@ -21,6 +21,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import DiscoveryFinding, DiscoveryRun, TripActivity
+from discover.home_filter import home_country_set, is_home_place
 from discover.places import DerivedLocations, DerivedPlace, derive_locations
 from discover.resolvers import Finding, Resolver, ResolverContext
 
@@ -48,15 +49,35 @@ def _city_reps(derived: DerivedLocations) -> list[DerivedPlace]:
     return list(seen.values())
 
 
-def _tasks(derived: DerivedLocations,
-           resolvers: list[Resolver]) -> list[tuple[Resolver, DerivedPlace]]:
+def _plan_tasks(derived: DerivedLocations, resolvers: list[Resolver],
+                profiles: list, on_date: str | None
+                ) -> tuple[list[tuple[Resolver, DerivedPlace]], dict]:
+    """The (resolver, place) tasks to run, with home places suppressed
+    scope-aware (see discover/home_filter). Also returns what was suppressed, for
+    transparency on the run and in the derived-locations viewer."""
     countries = _country_reps(derived)
     cities = _city_reps(derived)
+    home_countries = home_country_set(derived.places, profiles, on_date)
+    home_cities = {p.city_key for p in cities if is_home_place(p, profiles, on_date)}
+
     out: list[tuple[Resolver, DerivedPlace]] = []
     for r in resolvers:
-        for place in (countries if r.scope == "country" else cities):
-            out.append((r, place))
-    return out
+        if r.scope == "country":
+            for place in countries:
+                if not (place.country and place.country.upper() in home_countries):
+                    out.append((r, place))
+        else:
+            for place in cities:
+                if place.city_key not in home_cities:
+                    out.append((r, place))
+
+    skipped = {
+        "home_countries": sorted(c for c in home_countries
+                                 if any(p.country and p.country.upper() == c
+                                        for p in countries)),
+        "home_cities": sorted(p.label for p in cities if p.city_key in home_cities),
+    }
+    return out, skipped
 
 
 def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> None:
@@ -82,12 +103,14 @@ def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> No
 
 
 def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
-                  resolvers: list[Resolver],
+                  resolvers: list[Resolver], home_profiles: list = (),
                   base_currencies: tuple[str, ...] = ("CAD", "USD"),
                   today: str | None = None) -> DiscoveryRun:
     """Execute one Discovery pass over `trip` and persist its findings.
 
-    Returns the finished (or failed) DiscoveryRun row, already committed."""
+    `home_profiles` (HomeProfileRef list) suppresses research of home — see
+    discover/home_filter. Returns the finished (or failed) DiscoveryRun row,
+    already committed."""
     run = DiscoveryRun(trip_id=trip.id, status="running", phase="deriving locations",
                        started_at=_now())
     session.add(run)
@@ -98,14 +121,15 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
             TripActivity.trip_id == trip.id).all()
         derived = derive_locations(acts, resolve_airport=resolve_airport,
                                    geocoder=geocoder)
-        run.params = {"countries": derived.countries, "cities": derived.cities,
-                      "dropped": len(derived.dropped)}
         ctx = ResolverContext(
             start_date=trip.start_date, end_date=trip.end_date,
             today=today or date.today().isoformat(),
             base_currencies=tuple(base_currencies))
 
-        tasks = _tasks(derived, resolvers)
+        tasks, home_skipped = _plan_tasks(derived, resolvers,
+                                          list(home_profiles or []), trip.start_date)
+        run.params = {"countries": derived.countries, "cities": derived.cities,
+                      "dropped": len(derived.dropped), "home_skipped": home_skipped}
         run.total = len(tasks)
         session.flush()
 

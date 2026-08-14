@@ -368,6 +368,8 @@ def derived_locations(trip_id: str, request: Request,
     pipeline's starting point rather than guessing at it. On-demand modal, read
     from the same discover.places output a run would use, so it doubles as a
     pre-flight check."""
+    from app.resolving import load_home_profiles
+    from discover.home_filter import home_country_set, is_home_place
     from discover.places import derive_locations
     trip = session.get(Trip, trip_id)
     if trip is None:
@@ -375,11 +377,15 @@ def derived_locations(trip_id: str, request: Request,
     acts = trip_activities(session, trip_id)
     result = derive_locations(acts, resolve_airport=_airport_resolver(),
                               geocoder=_photon())
+    profiles = load_home_profiles(session)
+    hc = home_country_set(result.places, profiles, trip.start_date)
     places = [{
         "label": p.label, "city": p.city, "country": p.country,
         "lat": p.lat, "lon": p.lon,
         "sources": [f"{pr['activity_type']} · {pr['field']}"
                     for pr in p.provenance],
+        "is_home": is_home_place(p, profiles, trip.start_date),
+        "home_country": bool(p.country and p.country.upper() in hc),
     } for p in result.places]
     return templates.TemplateResponse(request, "_derived_locations.html", {
         "request": request, "trip_id": trip_id,
@@ -387,6 +393,7 @@ def derived_locations(trip_id: str, request: Request,
         "places": places,
         "countries": result.countries,
         "dropped": result.dropped,
+        "has_home": any(p["is_home"] or p["home_country"] for p in places),
     })
 
 
@@ -474,12 +481,14 @@ def run_discovery_route(trip_id: str, session: Session = Depends(get_session)):
     """Run a Discovery pass over the trip (deterministic tier) and reload the
     detail so the new findings show. Synchronous for now — the deterministic
     resolvers are fast; the durable background job lands with the LLM tier."""
+    from app.resolving import load_home_profiles
     from discover.runner import run_discovery
     trip = session.get(Trip, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     run_discovery(session, trip, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
+                  home_profiles=load_home_profiles(session),
                   base_currencies=settings.base_currency_list)
     return _redirect(f"/trips/{trip_id}")
 
