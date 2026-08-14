@@ -11,17 +11,19 @@ filter and the modals swap partials.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_session
-from app.models import Trip, TripActivity
+from app.models import DiscoveryFinding, DiscoveryRun, Trip, TripActivity
 from app.trips import types as activity_types
 
 log = logging.getLogger("yonder.trips")
@@ -192,6 +194,7 @@ def _detail_context(session: Session, trip: Trip) -> dict:
         "has_activities": bool(acts),
         "linked_captures": _linked_captures(session, trip.id),
         **_push_state(trip),
+        **_discovery_context(session, trip.id),
     }
 
 
@@ -384,6 +387,193 @@ def derived_locations(trip_id: str, request: Request,
         "places": places,
         "countries": result.countries,
         "dropped": result.dropped,
+    })
+
+
+# --------------------------------------------------------------- discovery (3.0)
+
+TOPIC_ORDER = ["weather", "currency", "plugs", "visa", "safety", "events",
+               "food", "language", "packing"]
+TOPIC_LABELS = {
+    "weather": "Weather", "currency": "Currency", "plugs": "Plugs & voltage",
+    "visa": "Visa & vaccination", "safety": "Safety & transport",
+    "events": "Local events", "food": "Food & drink", "language": "Language",
+    "packing": "Packing",
+}
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _render_md(text: str | None) -> Markup:
+    """Minimal, safe render of a finding's body: escape first, then a tiny
+    subset — **bold**, "- " bullets, line breaks. No markdown dependency; the
+    raw markdown is what later crosses to an AdventureLog Note."""
+    if not text:
+        return Markup("")
+    html = str(escape(text))
+    html = _MD_BOLD.sub(r"<strong>\1</strong>", html)
+    out = []
+    for line in html.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith("- "):
+            out.append("• " + stripped[2:])
+        else:
+            out.append(line)
+    return Markup("<br>".join(out))
+
+
+def _finding_view(f: DiscoveryFinding) -> dict:
+    data = f.data or {}
+    return {
+        "id": f.id, "topic": f.topic, "place_key": f.place_key,
+        "scope": f.scope, "status": f.status, "confidence": f.confidence,
+        "body": _render_md(f.body_md), "sources": f.sources or [],
+        "is_currency": f.topic == "currency",
+        "has_rates": bool(data.get("rates")),
+    }
+
+
+def _run_view(run: DiscoveryRun) -> dict:
+    return {"status": run.status, "phase": run.phase, "done": run.done,
+            "total": run.total,
+            "when": run.finished_at.strftime("%Y-%m-%d %H:%M")
+            if run.finished_at else ""}
+
+
+def _discovery_context(session: Session, trip_id: str) -> dict:
+    findings = (session.query(DiscoveryFinding)
+                .filter(DiscoveryFinding.trip_id == trip_id).all())
+    grouped: dict[str, list] = {}
+    for f in findings:
+        grouped.setdefault(f.topic, []).append(f)
+    topic_groups = []
+    for topic in TOPIC_ORDER:
+        fs = grouped.get(topic)
+        if fs:
+            fs.sort(key=lambda x: x.place_key or "")
+            topic_groups.append({"topic": topic,
+                                 "label": TOPIC_LABELS.get(topic, topic),
+                                 "findings": [_finding_view(f) for f in fs]})
+    last = (session.query(DiscoveryRun)
+            .filter(DiscoveryRun.trip_id == trip_id)
+            .order_by(DiscoveryRun.started_at.desc()).first())
+    return {"discovery_topics": topic_groups,
+            "discovery_has_findings": bool(findings),
+            "discovery_last": _run_view(last) if last else None}
+
+
+def _resolvers():
+    from discover.resolvers import build_deterministic
+    return build_deterministic(
+        frankfurter_url=settings.frankfurter_url,
+        open_meteo_url=settings.open_meteo_url,
+        open_meteo_archive_url=settings.open_meteo_archive_url)
+
+
+@router.post("/{trip_id}/discover", response_class=HTMLResponse)
+def run_discovery_route(trip_id: str, session: Session = Depends(get_session)):
+    """Run a Discovery pass over the trip (deterministic tier) and reload the
+    detail so the new findings show. Synchronous for now — the deterministic
+    resolvers are fast; the durable background job lands with the LLM tier."""
+    from discover.runner import run_discovery
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    run_discovery(session, trip, resolve_airport=_airport_resolver(),
+                  geocoder=_photon(), resolvers=_resolvers(),
+                  base_currencies=settings.base_currency_list)
+    return _redirect(f"/trips/{trip_id}")
+
+
+def _finding_or_404(session: Session, trip_id: str, fid: str) -> DiscoveryFinding | None:
+    f = session.get(DiscoveryFinding, fid)
+    return f if (f is not None and f.trip_id == trip_id) else None
+
+
+@router.post("/{trip_id}/finding/{fid}/{action}", response_class=HTMLResponse)
+def finding_action(trip_id: str, fid: str, action: str,
+                   session: Session = Depends(get_session)):
+    f = _finding_or_404(session, trip_id, fid)
+    if f is None:
+        return HTMLResponse("", status_code=404)
+    if action == "approve":
+        f.status = "approved"
+    elif action == "reject":
+        f.status = "rejected"
+    elif action == "reset":
+        f.status = "draft"
+    else:
+        return HTMLResponse("", status_code=400)
+    session.commit()
+    return _redirect(f"/trips/{trip_id}")
+
+
+@router.get("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
+def edit_finding(trip_id: str, fid: str, request: Request,
+                 session: Session = Depends(get_session)):
+    f = _finding_or_404(session, trip_id, fid)
+    if f is None:
+        return HTMLResponse("", status_code=404)
+    return templates.TemplateResponse(request, "_finding_edit.html", {
+        "request": request, "trip_id": trip_id, "fid": fid,
+        "topic_label": TOPIC_LABELS.get(f.topic, f.topic),
+        "place_key": f.place_key, "body": f.body_md or ""})
+
+
+@router.post("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
+def save_finding(trip_id: str, fid: str, body: str = Form(""),
+                 session: Session = Depends(get_session)):
+    f = _finding_or_404(session, trip_id, fid)
+    if f is None:
+        return HTMLResponse("", status_code=404)
+    f.body_md = body
+    f.status = "edited"
+    session.commit()
+    return _redirect(f"/trips/{trip_id}")
+
+
+@router.get("/{trip_id}/finding/{fid}/calculator", response_class=HTMLResponse)
+def currency_calculator(trip_id: str, fid: str, request: Request,
+                        session: Session = Depends(get_session)):
+    """The per-trip currency calculator (D-65). Computes client-side from the
+    STORED rate snapshot — no live call — pivoting every currency through CAD so
+    any pair converts, including local↔local on a multi-country trip."""
+    f = _finding_or_404(session, trip_id, fid)
+    if f is None:
+        return HTMLResponse("", status_code=404)
+    cur_findings = (session.query(DiscoveryFinding)
+                    .filter(DiscoveryFinding.trip_id == trip_id,
+                            DiscoveryFinding.topic == "currency").all())
+    # rates[code][base] = units of `code` per 1 `base` (from the snapshots).
+    rates: dict[str, dict[str, float]] = {}
+    as_of = None
+    for cf in cur_findings:
+        d = cf.data or {}
+        as_of = as_of or d.get("date")
+        for code, per in (d.get("rates") or {}).items():
+            rates[code] = {b.replace("per_", ""): v for b, v in per.items()}
+    # Pivot table: units of each currency per 1 CAD.
+    per_cad: dict[str, float] = {"CAD": 1.0}
+    usd_per_cad = None
+    for code, br in rates.items():
+        if br.get("CAD"):
+            per_cad[code] = br["CAD"]
+        if usd_per_cad is None and br.get("CAD") and br.get("USD"):
+            usd_per_cad = br["CAD"] / br["USD"]
+    if rates.get("USD", {}).get("CAD"):
+        usd_per_cad = rates["USD"]["CAD"]
+    if usd_per_cad:
+        per_cad["USD"] = usd_per_cad
+    # Dropdown order: bases first, then destination currencies.
+    bases = [b for b in settings.base_currency_list if b in per_cad]
+    dests = sorted(c for c in per_cad if c not in bases)
+    currencies = bases + dests
+    import json as _json
+    return templates.TemplateResponse(request, "_calculator.html", {
+        "request": request, "trip_id": trip_id,
+        "currencies": currencies, "per_cad_json": Markup(_json.dumps(per_cad)),
+        "as_of": as_of or "—",
+        "default_from": bases[0] if bases else (currencies[0] if currencies else ""),
+        "default_to": dests[0] if dests else (currencies[-1] if currencies else ""),
     })
 
 

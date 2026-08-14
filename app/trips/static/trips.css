@@ -229,6 +229,33 @@ textarea.input { min-height: 72px; resize: vertical; }
 .yn-derived-droplist li { display: flex; align-items: baseline; gap: 10px; }
 .yn-derived-raw { font-size: 14px; color: var(--color-text); }
 
+/* ---- discovery: findings ---- */
+.yn-findings { padding: 0; }
+.yn-finding { padding: 14px 16px; border-bottom: 1px solid var(--color-neutral-200); }
+.yn-finding:last-child { border-bottom: 0; }
+.yn-finding.yn-status-rejected { opacity: .5; }
+.yn-finding.yn-status-approved { border-left: 3px solid var(--color-accent); }
+.yn-finding-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.yn-conf { font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 2px; }
+.yn-conf-high { color: #12694a; background: color-mix(in srgb, #12694a 12%, transparent); }
+.yn-conf-medium { color: #8a5a00; background: color-mix(in srgb, #8a5a00 12%, transparent); }
+.yn-conf-flagged { color: #b42318; background: color-mix(in srgb, #b42318 12%, transparent); }
+.yn-status-badge { margin-left: auto; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--color-neutral-500); }
+.yn-finding-body { font-size: 14px; color: var(--color-text); line-height: 1.5; }
+.yn-sources { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 10px;
+  font-size: 12px; color: var(--color-neutral-500); }
+.yn-sources a { color: var(--color-accent-700); }
+.yn-finding-btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+/* ---- discovery: currency calculator ---- */
+.yn-cc { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
+.yn-cc-amt { max-width: 120px; }
+.yn-cc-swap { flex-shrink: 0; }
+.yn-cc-result { font-size: 22px; font-weight: 600; color: var(--color-text);
+  margin: 10px 0 4px; }
+
 @media (max-width: 640px) {
   .bp-trip-head-row { flex-direction: column; }
   .bp-row2 { flex-direction: column; }

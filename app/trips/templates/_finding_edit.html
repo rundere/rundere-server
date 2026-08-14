@@ -1,0 +1,19 @@
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
+  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+    <div class="dialog-title">Edit finding · {{ topic_label }} · {{ place_key }}</div>
+    <form class="dialog-body" hx-post="/trips/{{ trip_id }}/finding/{{ fid }}/edit"
+          hx-target="#modal-root" hx-swap="innerHTML">
+      <p class="bp-trip-notes">Correct or rewrite what Yonder found. Saving marks
+        this finding <b>edited</b>. Markdown is kept as-is for the eventual
+        AdventureLog Note.</p>
+      <div class="field">
+        <label>Finding text</label>
+        <textarea class="input" name="body" rows="12">{{ body }}</textarea>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>

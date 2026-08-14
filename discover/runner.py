@@ -1,0 +1,136 @@
+"""Discovery orchestration (SPEC-3-discovery.md §6).
+
+Derive a trip's locations first-party (discover/places.py), run the enabled
+resolvers over them, and persist the results as durable DiscoveryFinding rows
+inside a DiscoveryRun (D-63). This slice runs SYNCHRONOUSLY — the deterministic
+tier (plugs/currency/weather) is a handful of fast HTTP calls — while still
+writing the durable run/finding rows. The background-thread + polling harness
+lands with the slow searxng+llm tier, which is where it earns its keep.
+
+Idempotency (D-63/D-71): a finding is keyed by (trip_id, topic, place_key). A
+re-run refreshes DRAFT findings in place but LEAVES a human's approved / edited /
+rejected findings untouched, so re-running never clobbers review work. The
+steerable single-topic re-run (a later slice) is the tool for deliberately
+overriding one of those.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import date, datetime, timezone
+
+from sqlalchemy.orm import Session
+
+from app.models import DiscoveryFinding, DiscoveryRun, TripActivity
+from discover.places import DerivedLocations, DerivedPlace, derive_locations
+from discover.resolvers import Finding, Resolver, ResolverContext
+
+log = logging.getLogger("yonder.discovery")
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _country_reps(derived: DerivedLocations) -> list[DerivedPlace]:
+    seen: dict[str, DerivedPlace] = {}
+    for p in derived.places:
+        if p.country and p.country not in seen:
+            seen[p.country] = p
+    return list(seen.values())
+
+
+def _city_reps(derived: DerivedLocations) -> list[DerivedPlace]:
+    seen: dict[str, DerivedPlace] = {}
+    for p in derived.places:
+        k = p.city_key
+        if k and k not in seen:
+            seen[k] = p
+    return list(seen.values())
+
+
+def _tasks(derived: DerivedLocations,
+           resolvers: list[Resolver]) -> list[tuple[Resolver, DerivedPlace]]:
+    countries = _country_reps(derived)
+    cities = _city_reps(derived)
+    out: list[tuple[Resolver, DerivedPlace]] = []
+    for r in resolvers:
+        for place in (countries if r.scope == "country" else cities):
+            out.append((r, place))
+    return out
+
+
+def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> None:
+    existing = (session.query(DiscoveryFinding)
+                .filter_by(trip_id=trip_id, topic=f.topic, place_key=f.place_key)
+                .first())
+    if existing is not None and existing.status in ("approved", "edited", "rejected"):
+        return                      # preserve human decisions across a re-run
+    if existing is None:
+        existing = DiscoveryFinding(trip_id=trip_id, topic=f.topic,
+                                    place_key=f.place_key)
+        session.add(existing)
+    existing.run_id = run.id
+    existing.scope = f.scope
+    existing.status = "draft"
+    existing.body_md = f.body_md
+    existing.data = f.data
+    existing.sources = f.sources
+    existing.confidence = f.confidence
+    existing.resolver = f.resolver
+    existing.ttl_seconds = f.ttl_seconds
+    existing.generated_at = _now()
+
+
+def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
+                  resolvers: list[Resolver],
+                  base_currencies: tuple[str, ...] = ("CAD", "USD"),
+                  today: str | None = None) -> DiscoveryRun:
+    """Execute one Discovery pass over `trip` and persist its findings.
+
+    Returns the finished (or failed) DiscoveryRun row, already committed."""
+    run = DiscoveryRun(trip_id=trip.id, status="running", phase="deriving locations",
+                       started_at=_now())
+    session.add(run)
+    session.flush()                 # need run.id for finding.run_id
+
+    try:
+        acts = session.query(TripActivity).filter(
+            TripActivity.trip_id == trip.id).all()
+        derived = derive_locations(acts, resolve_airport=resolve_airport,
+                                   geocoder=geocoder)
+        run.params = {"countries": derived.countries, "cities": derived.cities,
+                      "dropped": len(derived.dropped)}
+        ctx = ResolverContext(
+            start_date=trip.start_date, end_date=trip.end_date,
+            today=today or date.today().isoformat(),
+            base_currencies=tuple(base_currencies))
+
+        tasks = _tasks(derived, resolvers)
+        run.total = len(tasks)
+        session.flush()
+
+        for i, (resolver, place) in enumerate(tasks):
+            run.phase = f"{resolver.topic} · {place.label}"
+            run.done = i
+            session.flush()
+            try:
+                finding = resolver.resolve(place, ctx)
+            except Exception:
+                log.exception("discovery: %s failed for %s on trip %s",
+                              resolver.topic, place.label, trip.id)
+                finding = None
+            if finding is not None:
+                _upsert(session, run, trip.id, finding)
+            session.flush()
+
+        run.done = len(tasks)
+        run.status = "done"
+        run.phase = "done"
+    except Exception as ex:
+        log.exception("discovery run failed for trip %s", trip.id)
+        run.status = "failed"
+        run.error = str(ex)
+    finally:
+        run.finished_at = _now()
+        session.commit()
+    return run
