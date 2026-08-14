@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     open_meteo_url: str = "https://api.open-meteo.com/v1"
     open_meteo_archive_url: str = "https://archive-api.open-meteo.com/v1"
 
-    app_version: str = "2.3.1"
+    app_version: str = "3.0.0"
 
     @property
     def base_currency_list(self) -> tuple[str, ...]:
