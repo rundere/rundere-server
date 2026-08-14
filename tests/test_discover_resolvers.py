@@ -116,6 +116,6 @@ def test_weather_skips_placeless_city():
                                      _ctx()) is None
 
 
-def test_build_deterministic_wires_three_topics():
+def test_build_deterministic_wires_all_topics():
     topics = {r.topic for r in build_deterministic()}
-    assert topics == {"plugs", "currency", "weather"}
+    assert topics == {"plugs", "currency", "weather", "language"}
