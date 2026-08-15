@@ -196,6 +196,7 @@ def _detail_context(session: Session, trip: Trip) -> dict:
         "linked_captures": _linked_captures(session, trip.id),
         **_push_state(trip),
         **_discovery_context(session, trip.id),
+        **_packing_context(session, trip.id),
     }
 
 
@@ -650,6 +651,93 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
     })
 
 
+# ----------------------------------------------------------------- planning (3.1)
+
+from app.models import PackingItem, PackingPlan   # noqa: E402
+
+PACK_CAT_ORDER = ["documents", "health", "clothing", "footwear", "toiletries",
+                  "tech", "activity"]
+PACK_CAT_LABELS = {"documents": "Documents", "health": "Health",
+                   "clothing": "Clothing", "footwear": "Footwear",
+                   "toiletries": "Toiletries", "tech": "Tech",
+                   "activity": "Activity gear"}
+
+
+def _packing_item_view(i: PackingItem) -> dict:
+    return {"id": i.id, "label": i.label, "category": i.category,
+            "quantity": i.quantity, "bag": i.bag, "reason": i.reason,
+            "source": i.source, "status": i.status, "swap_for": i.swap_for,
+            "packed": i.status == "packed"}
+
+
+def _packing_context(session: Session, trip_id: str) -> dict:
+    items = (session.query(PackingItem)
+             .filter(PackingItem.trip_id == trip_id).all())
+    plan = (session.query(PackingPlan)
+            .filter(PackingPlan.trip_id == trip_id)
+            .order_by(PackingPlan.generated_at.desc()).first())
+    included = [i for i in items if i.status in ("draft", "packed")]
+    omitted = [i for i in items if i.status == "omitted"]
+    grouped: dict[str, list] = {}
+    for i in included:
+        grouped.setdefault(i.category, []).append(i)
+    cats = []
+    for cat in PACK_CAT_ORDER:
+        rows = grouped.get(cat)
+        if rows:
+            rows.sort(key=lambda x: x.label)
+            cats.append({"category": cat, "label": PACK_CAT_LABELS.get(cat, cat),
+                         "items": [_packing_item_view(r) for r in rows],
+                         "packed": sum(1 for r in rows if r.status == "packed"),
+                         "total": len(rows)})
+    return {
+        "packing_cats": cats,
+        "packing_omitted": [_packing_item_view(i) for i in omitted],
+        "packing_has": bool(included),
+        "packing_warnings": (plan.warnings if plan else None) or [],
+        "packing_tasks": (plan.tasks if plan else None) or [],
+        "packing_archetypes": (plan.archetypes if plan else None) or [],
+        "packing_when": plan.generated_at.strftime("%Y-%m-%d %H:%M")
+        if plan and plan.generated_at else "",
+        "packing_failed": bool(plan and plan.status == "failed"),
+    }
+
+
+@router.post("/{trip_id}/pack", response_class=HTMLResponse)
+def generate_packing_plan_route(trip_id: str,
+                                session: Session = Depends(get_session)):
+    """Generate (or re-generate) the Packing Plan and reload the detail. Preserves
+    your ticked-off / removed items."""
+    from app.resolving import load_home_profiles
+    from planning.runner import generate_plan
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                  geocoder=_photon(), home_profiles=load_home_profiles(session))
+    return _redirect(f"/trips/{trip_id}")
+
+
+@router.post("/{trip_id}/pack-item/{item_id}/{action}", response_class=HTMLResponse)
+def packing_item_action(trip_id: str, item_id: str, action: str,
+                        session: Session = Depends(get_session)):
+    i = session.get(PackingItem, item_id)
+    if i is None or i.trip_id != trip_id:
+        return HTMLResponse("", status_code=404)
+    if action == "pack":
+        i.status = "packed"
+    elif action == "unpack":
+        i.status = "draft"
+    elif action == "remove":
+        i.status = "removed"
+    elif action in ("restore", "keep"):        # keep = bring back an omitted item
+        i.status = "draft"
+    else:
+        return HTMLResponse("", status_code=400)
+    session.commit()
+    return _redirect(f"/trips/{trip_id}")
+
+
 @router.get("/{trip_id}/edit", response_class=HTMLResponse)
 def edit_trip(trip_id: str, request: Request, next: str = "",
               session: Session = Depends(get_session)):
@@ -805,6 +893,24 @@ def _resolve_coords(place: str | None, airports: dict, photon,
     return coords
 
 
+# AdventureLog's Lodging.type enum. A free-text lodging type only crosses over
+# when it matches one (else omitted, so AL never 400s on an unknown value).
+_AL_LODGING_TYPES = {"hotel", "hostel", "resort", "bnb", "campground", "cabin",
+                     "apartment", "house", "villa", "motel", "other"}
+# Common synonyms → the canonical AL value.
+_AL_LODGING_ALIASES = {"airbnb": "bnb", "b&b": "bnb", "bed and breakfast": "bnb",
+                       "guesthouse": "hotel", "ryokan": "other", "camping": "campground",
+                       "lodge": "cabin", "inn": "hotel", "flat": "apartment"}
+
+
+def _al_lodging_type(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    key = raw.strip().lower()
+    key = _AL_LODGING_ALIASES.get(key, key)
+    return key if key in _AL_LODGING_TYPES else None
+
+
 def _al_body_for_activity(activity: TripActivity, collection_id: str,
                           airports: dict, photon, coord_cache: dict) -> tuple[str, dict]:
     """Map one TripActivity onto the AdventureLog object it becomes.
@@ -850,6 +956,7 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
             "name": v.get("name") or title, "check_in": starts, "check_out": ends,
             "location": v.get("address"), "reservation_number": v.get("confirmation"),
             "link": link, "description": v.get("notes") or None,
+            "type": _al_lodging_type(v.get("type")),
             "is_public": True, "collection": collection_id,
         }
         return "lodging", {k: v for k, v in body.items() if v is not None}

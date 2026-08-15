@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "purpose": "Cultural norms by country + region defaults (SPEC-3.1-planning.md §4, from research/rule_sets_cultural.md). Consumed by the engine's cultural pass and, later, a Discovery 'culture' briefing topic (D-74 — one shared dataset). `modest` drives coverage (adds scarf/long layers, filters revealing items under strict strictness). `add_items` are catalog ids to include. `shoes_off` favours slip-on footwear.",
+    "add_item_ids_reference": "planning/data/items.json"
+  },
+  "countries": {
+    "JP": {"modest": true, "dress_code": "conservative", "shoes_off": true, "add_items": ["slip_on_loafers", "modest_scarf"], "note": "Remove shoes at temples/ryokan; socks without holes."},
+    "KR": {"modest": true, "dress_code": "conservative", "shoes_off": true, "add_items": ["slip_on_loafers"], "note": "Neat, conservative; shoes off at temples/homes."},
+    "CN": {"modest": false, "dress_code": "casual_neat", "shoes_off": false, "add_items": []},
+    "TH": {"modest": true, "dress_code": "modest_temples", "shoes_off": true, "add_items": ["modest_scarf", "slip_on_loafers"], "note": "Strict temple modesty; cover shoulders/knees; feet respectful."},
+    "VN": {"modest": true, "dress_code": "modest_temples", "shoes_off": true, "add_items": ["modest_scarf"]},
+    "ID": {"modest": true, "dress_code": "modest_temples", "shoes_off": true, "add_items": ["modest_scarf"], "note": "Bali temples require a sarong."},
+    "IN": {"modest": true, "dress_code": "modest", "shoes_off": true, "add_items": ["modest_scarf", "headscarf", "loose_trousers"], "note": "Head cover at gurdwaras; remove shoes at temples."},
+    "AE": {"modest": true, "dress_code": "very_modest", "shoes_off": true, "add_items": ["modest_scarf", "loose_trousers"], "note": "Cover shoulders/knees in public; headscarf at mosques."},
+    "SA": {"modest": true, "dress_code": "very_modest", "shoes_off": true, "add_items": ["headscarf", "loose_trousers"], "note": "Very conservative; abaya customary for women."},
+    "QA": {"modest": true, "dress_code": "very_modest", "shoes_off": true, "add_items": ["modest_scarf", "loose_trousers"]},
+    "EG": {"modest": true, "dress_code": "modest", "shoes_off": true, "add_items": ["modest_scarf", "loose_trousers"]},
+    "MA": {"modest": true, "dress_code": "modest", "shoes_off": false, "add_items": ["modest_scarf", "loose_trousers"], "note": "Cover shoulders/knees, esp. rural; comfortable shoes for medinas."},
+    "TR": {"modest": true, "dress_code": "modest_mosques", "shoes_off": true, "add_items": ["modest_scarf"], "note": "Headscarf + shoes off at mosques."},
+    "FR": {"modest": false, "dress_code": "neat_polished", "shoes_off": false, "add_items": ["modest_scarf"], "note": "Cover shoulders/knees in churches; smart-casual in cities."},
+    "IT": {"modest": false, "dress_code": "neat_polished", "shoes_off": false, "add_items": ["modest_scarf"], "note": "Churches/Vatican require covered shoulders/knees; no hats."},
+    "ES": {"modest": false, "dress_code": "neat_polished", "shoes_off": false, "add_items": ["modest_scarf"]},
+    "GR": {"modest": false, "dress_code": "neat_polished", "shoes_off": false, "add_items": ["modest_scarf"], "note": "Monasteries require covered shoulders/knees."},
+    "GB": {"modest": false, "dress_code": "casual_neat", "shoes_off": false, "add_items": []},
+    "DE": {"modest": false, "dress_code": "casual_neat", "shoes_off": false, "add_items": []},
+    "US": {"modest": false, "dress_code": "casual", "shoes_off": false, "add_items": []},
+    "CA": {"modest": false, "dress_code": "casual", "shoes_off": true, "add_items": [], "note": "Shoes off in homes is common."},
+    "CH": {"modest": false, "dress_code": "neat", "shoes_off": false, "add_items": []}
+  },
+  "region_defaults": {
+    "middle_east":    {"countries": ["AE", "SA", "QA", "OM", "KW", "BH", "JO", "IR", "IQ"], "modest": true, "dress_code": "very_modest", "shoes_off": true, "add_items": ["modest_scarf", "loose_trousers"]},
+    "south_asia":     {"countries": ["IN", "PK", "BD", "LK", "NP"], "modest": true, "dress_code": "modest", "shoes_off": true, "add_items": ["modest_scarf", "loose_trousers"]},
+    "southeast_asia": {"countries": ["TH", "VN", "ID", "MY", "PH", "KH", "LA", "MM"], "modest": true, "dress_code": "modest_temples", "shoes_off": true, "add_items": ["modest_scarf"]},
+    "east_asia":      {"countries": ["JP", "KR", "CN", "TW", "HK", "MO"], "modest": true, "dress_code": "conservative", "shoes_off": true, "add_items": ["slip_on_loafers"]},
+    "north_africa":   {"countries": ["MA", "EG", "TN", "DZ", "LY"], "modest": true, "dress_code": "modest", "shoes_off": false, "add_items": ["modest_scarf", "loose_trousers"]},
+    "europe":         {"countries": ["FR", "IT", "ES", "DE", "GB", "GR", "PT", "AT", "NL", "BE", "IE", "CH", "CZ", "PL", "HU", "HR", "SE", "NO", "DK", "FI"], "modest": false, "dress_code": "neat_polished", "shoes_off": false, "add_items": ["modest_scarf"]}
+  }
+}

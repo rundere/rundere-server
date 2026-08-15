@@ -108,6 +108,10 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("when", "Check-in", "datetime-local"),
             _f("endWhen", "Check-out", "datetime-local"),
             _f("name", "Property name"),
+            # Accommodation kind — feeds the packing archetype (resort→beach,
+            # campground/cabin→outdoors, …) and AdventureLog's Lodging.type on
+            # push (D-81). Free text; the planning context normalises it.
+            _f("type", "Type (hotel, hostel, resort, bnb, campground, cabin, …)"),
             _f("address", "Address"),
             _f("confirmation", "Confirmation #"),
             _f("sourceLink", "Source document", "url"),

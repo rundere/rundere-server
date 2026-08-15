@@ -214,9 +214,28 @@ def mount_admin(app, engine) -> None:
                    "(lowercase, no spaces), e.g. quick_dry_top."},
         }
 
+    class PackingProfileAdmin(ModelView, model=models.PackingProfile):
+        name = "Packing Profile"
+        name_plural = "Packing Profiles"
+        # The "ask once" packing preferences (D-82: single-user for now). The
+        # engine runs on sensible defaults with no profile at all; this is where
+        # you tune it. `values` is a JSON blob for now — a friendly form is a
+        # fast-follow. Keys: laundry_comfort (none|hand_wash|machine),
+        # packing_style (minimalist|balanced|prepared), cultural_strictness
+        # (strict|flexible), clothing_variant (masc|fem|neutral), style_constraints
+        # [no_heels, modest_dress], must_have_items [item ids], bag {mode:
+        # one_bag|carry_on|checked, weight_kg}.
+        column_list = [models.PackingProfile.id, models.PackingProfile.traveler_id,
+                       models.PackingProfile.values, models.PackingProfile.updated_at]
+        form_columns = ["traveler_id", "values"]
+        form_args = {"values": {"description":
+                     'e.g. {"laundry_comfort":"machine","packing_style":"balanced",'
+                     '"bag":{"mode":"one_bag","weight_kg":10},'
+                     '"style_constraints":["no_heels"],"must_have_items":[]}'}}
+
     for view in (TravelItemAdmin, ItemKeyAdmin, IngestBatchAdmin,
                  CommitAttemptAdmin, SourceRuleAdmin, ApiKeyAdmin,
                  ArtifactAdmin, TravelerIdentityAdmin,
                  RuleSettingAdmin, TripAdmin, TripActivityAdmin,
-                 PackingCatalogItemAdmin):
+                 PackingCatalogItemAdmin, PackingProfileAdmin):
         admin.add_view(view)

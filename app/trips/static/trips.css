@@ -279,6 +279,30 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-sources a { color: var(--color-accent-700); }
 .yn-finding-btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
+/* ---- planning: packing list ---- */
+.yn-note-card { padding: 12px 16px; }
+.yn-note-card.yn-warn { border-left: 3px solid #b42318; }
+.yn-note-card.yn-todo { border-left: 3px solid var(--color-accent); }
+.yn-notelist { margin: 8px 0 0; padding-left: 18px; font-size: 14px;
+  color: var(--color-text); display: flex; flex-direction: column; gap: 4px; }
+.yn-pack-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  border-bottom: 1px solid var(--color-neutral-200); }
+.yn-pack-row:last-child { border-bottom: 0; }
+.yn-pack-check { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid var(--color-neutral-300); background: transparent;
+  cursor: pointer; font-size: 13px; color: var(--color-neutral-500); }
+.yn-pack-row.yn-packed .yn-pack-check { background: var(--color-accent);
+  color: #fff; border-color: var(--color-accent); }
+.yn-pack-row.yn-packed .yn-pack-label { text-decoration: line-through;
+  color: var(--color-neutral-500); }
+.yn-pack-main { flex: 1; min-width: 0; }
+.yn-pack-label { font-size: 14px; font-weight: 600; color: var(--color-text); }
+.yn-pack-qty { font-weight: 400; color: var(--color-neutral-600); }
+.yn-pack-reason { font-size: 12px; color: var(--color-neutral-500); }
+.yn-pack-bag { flex-shrink: 0; }
+.yn-pack-row.yn-omitted { opacity: .7; }
+.yn-pack-row.yn-omitted .yn-pack-label { text-decoration: line-through; }
+
 /* ---- discovery: currency calculator ---- */
 .yn-cc { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
 .yn-cc-amt { max-width: 120px; }

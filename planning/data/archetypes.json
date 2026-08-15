@@ -29,7 +29,7 @@
     "humid": [{"item": "anti_chafe", "qty": 1}],
     "business": [
       {"item": "blazer", "qty": 1}, {"item": "dress_shirt", "qty": 3},
-      {"item": "business_bottoms", "qty": 2}, {"item": "smart_flats", "qty": 1},
+      {"item": "business_bottoms", "qty": 2}, {"item": "dress_shoes", "qty": 1},
       {"item": "laptop", "qty": 1}, {"item": "business_cards", "qty": 1}
     ],
     "hiking": [
@@ -101,7 +101,7 @@
       "transport": ["flight", "train"],
       "base_items": [
         {"item": "dress_shirt", "qty": 4}, {"item": "business_bottoms", "qty": 2},
-        {"item": "blazer", "qty": 1}, {"item": "smart_flats", "qty": 1},
+        {"item": "blazer", "qty": 1}, {"item": "dress_shoes", "qty": 1},
         {"item": "walking_shoes", "qty": 1}, {"item": "laptop", "qty": 1},
         {"item": "business_cards", "qty": 1}
       ]
