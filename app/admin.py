@@ -179,8 +179,44 @@ def mount_admin(app, engine) -> None:
                        models.TripActivity.starts_at,
                        models.TripActivity.updated_at]
 
+    class PackingCatalogItemAdmin(ModelView, model=models.PackingCatalogItem):
+        name = "Packing Item"
+        name_plural = "Packing Items"
+        # The owner-editable packing item catalog (D-84): seeded from
+        # planning/data/items.json, then managed HERE instead of by editing JSON.
+        # archetypes.json references these ids, so retire an item with `enabled`
+        # rather than deleting it out from under a template reference.
+        column_list = [models.PackingCatalogItem.id, models.PackingCatalogItem.label,
+                       models.PackingCatalogItem.category, models.PackingCatalogItem.bag,
+                       models.PackingCatalogItem.weight_g,
+                       models.PackingCatalogItem.enabled,
+                       models.PackingCatalogItem.tags]
+        column_labels = {"id": "Item id", "weight_g": "Weight (g)"}
+        column_searchable_list = [models.PackingCatalogItem.id,
+                                  models.PackingCatalogItem.label,
+                                  models.PackingCatalogItem.category]
+        column_sortable_list = [models.PackingCatalogItem.category,
+                                models.PackingCatalogItem.label]
+        column_default_sort = "category"
+        page_size = 200
+        # Edit the human fields; `variants`/`updated_at` stay off the form.
+        form_columns = ["id", "label", "category", "bag", "weight_g", "tags", "enabled"]
+        form_overrides = {"tags": LinesField, "category": wtforms.SelectField,
+                          "bag": wtforms.SelectField}
+        form_args = {
+            "tags": {"description": "One tag per line (e.g. modest, warm, formal)."},
+            "category": {"choices": [(c, c) for c in
+                                     ("clothing", "footwear", "toiletries", "tech",
+                                      "documents", "health", "activity")]},
+            "bag": {"choices": [("checked", "checked"), ("carry_on", "carry-on")],
+                    "default": "checked"},
+            "id": {"description": "Stable key referenced by archetypes "
+                   "(lowercase, no spaces), e.g. quick_dry_top."},
+        }
+
     for view in (TravelItemAdmin, ItemKeyAdmin, IngestBatchAdmin,
                  CommitAttemptAdmin, SourceRuleAdmin, ApiKeyAdmin,
                  ArtifactAdmin, TravelerIdentityAdmin,
-                 RuleSettingAdmin, TripAdmin, TripActivityAdmin):
+                 RuleSettingAdmin, TripAdmin, TripActivityAdmin,
+                 PackingCatalogItemAdmin):
         admin.add_view(view)

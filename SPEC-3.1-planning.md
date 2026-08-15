@@ -158,9 +158,13 @@ files, versioned in the repo like `plugs.json` / `phrases.json`:
   trigger conditions (activities/accommodation/transport/duration), base items,
   cross-archetype modifiers, and per-archetype quantity overrides. (Straight from
   `rule_sets_templates.md`.)
-- **`planning/data/items.json`** — the item catalog: `{id, label, category, default_bag,
-  weight_g, tags, variants{masc,fem,neutral}}`. The single source of truth items
-  reference, so quantities/bags/weights aren't scattered across templates.
+- **`planning/data/items.json`** — the item catalog `{id, label, category,
+  default_bag, weight_g, tags, variants{masc,fem,neutral}}`. But this JSON is only
+  the shipped **default**: it **seeds `packing_catalog_items` at startup** (like
+  RuleSetting seeds from the rules registry), and thereafter the DB is truth and
+  the owner **manages items in the admin UI**, never by editing JSON (D-84). The
+  engine reads the catalog from the DB. (Archetypes/modifiers stay JSON — they're
+  structural logic, not day-to-day data.)
 - **`planning/data/culture.json`** — cultural norms by country + venue overrides
   (dress code, shoes-off locations, add/remove items, taboos, seasonal/event
   flags). From `rule_sets_cultural.md`.
@@ -328,6 +332,12 @@ cleanly onto passes 2–8.
   values align to AdventureLog's `Lodging.type`, so the push populates it too.
 - **D-82** — `PackingProfile` is scaffolded per-traveller (`traveler_id`) but 3.1
   operates on the single `self` traveller — Yonder has no multi-user yet.
+- **D-84** — The item catalog is **owner-editable data**: `items.json` seeds
+  `packing_catalog_items` at startup, the DB is truth thereafter, and items are
+  managed in the admin UI (SQLAdmin) — not by editing JSON. Archetypes/modifiers
+  remain code-versioned JSON. (A "Trekking/Roughing" archetype — noted as ~an
+  extension of Backpacking + the hiking/camping modifiers — becomes a natural
+  first user of catalog/archetype editing rather than a hardcoded addition.)
 - **D-83** — One merged plan per trip, made *smart*: quantities are
   `f(duration, laundry)` with a derived **in-trip laundry task** rather than
   one-per-day; filtered items become transparent **omitted** rows with reasons and

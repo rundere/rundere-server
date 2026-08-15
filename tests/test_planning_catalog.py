@@ -11,6 +11,14 @@ sys.path.insert(0, str(ROOT))
 
 from planning import catalog
 
+try:
+    from app.db import SessionLocal, engine
+    from app.models import Base, PackingCatalogItem
+    Base.metadata.create_all(engine)
+    DEPS = True
+except ImportError:
+    DEPS = False
+
 
 def test_datasets_are_internally_consistent():
     problems = catalog.validate()
@@ -40,3 +48,47 @@ def test_label_for_honours_clothing_variant():
 def test_essentials_include_the_non_negotiables():
     ids = {e["item"] for e in catalog.essentials()}
     assert {"passport", "tickets", "prescription_meds"} <= ids
+
+
+# ------------------------------------------------------------------ DB catalog
+
+def test_seed_populates_db_and_is_idempotent():
+    if not DEPS:
+        return
+    with SessionLocal() as s:
+        s.query(PackingCatalogItem).delete()
+        s.commit()
+        catalog.seed_catalog(s)
+        n1 = s.query(PackingCatalogItem).count()
+        assert n1 == len(catalog.seed_items())
+        catalog.seed_catalog(s)                     # idempotent — no duplicates
+        assert s.query(PackingCatalogItem).count() == n1
+        # the engine reads the catalog from the DB when given a session
+        loaded = catalog.items(s)
+        assert loaded["quick_dry_top"]["category"] == "clothing"
+
+
+def test_disabled_item_drops_out_of_the_active_catalog():
+    if not DEPS:
+        return
+    with SessionLocal() as s:
+        s.query(PackingCatalogItem).delete()
+        catalog.seed_catalog(s)
+        row = s.get(PackingCatalogItem, "jeans")
+        row.enabled = False
+        s.commit()
+        assert "jeans" not in catalog.items(s)      # retired, not deleted
+
+
+def test_owner_edit_survives_reseed():
+    if not DEPS:
+        return
+    with SessionLocal() as s:
+        s.query(PackingCatalogItem).delete()
+        catalog.seed_catalog(s)
+        row = s.get(PackingCatalogItem, "jeans")
+        row.label = "Owner-renamed jeans"
+        s.commit()
+    with SessionLocal() as s:
+        catalog.seed_catalog(s)                     # a later startup re-seed
+        assert s.get(PackingCatalogItem, "jeans").label == "Owner-renamed jeans"

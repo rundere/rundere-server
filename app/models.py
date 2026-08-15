@@ -400,6 +400,32 @@ class PackingItem(Base):
         DateTime(timezone=True), default=_now, onupdate=_now)
 
 
+class PackingCatalogItem(Base):
+    """Yonder 3.1 — the packing item catalog as EDITABLE data (D-84).
+
+    Seeded from planning/data/items.json at startup — JSON is the shipped DEFAULT,
+    exactly as RuleSetting seeds from the rules registry (new items in a release
+    appear; existing rows are left alone so owner edits survive). Thereafter the DB
+    is truth and the owner manages items through the admin UI, never by editing
+    JSON. The Planning engine reads its item catalog from here.
+
+    `id` is the stable item key referenced by archetypes.json ("quick_dry_top").
+    `enabled` lets an item be retired without deleting it (and orphaning an
+    archetype reference)."""
+    __tablename__ = "packing_catalog_items"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    label: Mapped[str] = mapped_column(String(128))
+    category: Mapped[str] = mapped_column(String(16), index=True)
+    bag: Mapped[str] = mapped_column(String(12), default="checked")   # carry_on|checked
+    weight_g: Mapped[int] = mapped_column(Integer, default=0)
+    tags: Mapped[list | None] = mapped_column(JsonCol, default=list)
+    variants: Mapped[dict | None] = mapped_column(JsonCol, default=dict)  # {masc,fem,neutral}
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class DiscoveryExclusion(Base):
     """A derived place the operator chose NOT to research for a trip — a layover
     city they only pass through, a mis-geocoded stop (SPEC-3-discovery.md §1).

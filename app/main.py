@@ -71,6 +71,11 @@ def load_enablement(session) -> dict[str, str]:
 def startup() -> None:
     with SessionLocal() as session:
         seed_rule_settings(session)
+        try:
+            from planning.catalog import seed_catalog
+            seed_catalog(session)
+        except Exception:                   # pragma: no cover
+            log.exception("packing catalog seed failed; Planning may be empty")
     try:
         from app.admin import mount_admin
         mount_admin(app, engine)

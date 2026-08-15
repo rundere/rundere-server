@@ -1,9 +1,16 @@
-"""Load + validate the planning reference datasets (SPEC-3.1-planning.md §4).
+"""Planning reference data (SPEC-3.1-planning.md §4).
 
-The item catalog is the single source of truth; archetypes.json references it.
-`validate()` is the integrity gate — every referenced item must exist and every
-quantity formula must be known — run in a test so a bad edit to either file fails
-CI rather than surfacing as a broken plan at runtime.
+Two tiers, deliberately different:
+
+  * ITEM CATALOG — owner-editable DATA. The JSON here is the shipped DEFAULT that
+    seeds `packing_catalog_items` at startup (D-84); at runtime the engine reads
+    the catalog from the DB (`items(session)`), so the owner manages items in the
+    admin UI, not by editing JSON.
+  * ARCHETYPES / MODIFIERS / ESSENTIALS — structural logic, still JSON (versioned
+    with the code, like a rules registry). They reference catalog item ids.
+
+`validate()` is the integrity gate over the JSON seed — every referenced item
+exists, every quantity formula is known — run in a test so a bad edit fails CI.
 """
 from __future__ import annotations
 
@@ -32,12 +39,30 @@ def _arch_doc() -> dict:
     return _load("archetypes.json")
 
 
-def items() -> dict:
+def seed_items() -> dict:
+    """The shipped default catalog (from items.json) used to seed the DB and as
+    the validation reference."""
     return _items_doc()["items"]
 
 
-def item(item_id: str) -> dict | None:
-    return items().get(item_id)
+def items(session=None) -> dict:
+    """The active item catalog as `{id: {label, category, bag, weight_g, tags,
+    variants}}`. From the DB (owner-editable, enabled only) when a session is
+    given; falls back to the JSON seed otherwise (tests / pre-seed)."""
+    if session is None:
+        return seed_items()
+    from app.models import PackingCatalogItem
+    rows = session.query(PackingCatalogItem).filter(
+        PackingCatalogItem.enabled.is_(True)).all()
+    if not rows:
+        return seed_items()
+    return {r.id: {"label": r.label, "category": r.category, "bag": r.bag,
+                   "weight_g": r.weight_g or 0, "tags": r.tags or [],
+                   "variants": r.variants or {}} for r in rows}
+
+
+def item(item_id: str, session=None) -> dict | None:
+    return items(session).get(item_id)
 
 
 def categories() -> list[str]:
@@ -60,19 +85,35 @@ def international_essentials() -> list[dict]:
     return _arch_doc()["international_essentials"]
 
 
-def label_for(item_id: str, variant: str = "neutral") -> str:
+def label_for(item_id: str, variant: str = "neutral", session=None) -> str:
     """The display label for an item, honouring the clothing_variant (masc|fem|
     neutral) when the item declares variant alternates."""
-    it = item(item_id) or {}
+    it = item(item_id, session) or {}
     variants = it.get("variants") or {}
     return variants.get(variant) or variants.get("neutral") or it.get("label", item_id)
 
 
+def seed_catalog(session) -> None:
+    """Insert any catalog item missing from the DB (JSON = defaults, DB = truth) —
+    same idempotent seed contract as seed_rule_settings. Owner edits and deletions
+    are never overwritten; only genuinely-new item ids are added."""
+    from app.models import PackingCatalogItem
+    have = {r.id for r in session.query(PackingCatalogItem.id).all()}
+    for iid, it in seed_items().items():
+        if iid in have:
+            continue
+        session.add(PackingCatalogItem(
+            id=iid, label=it.get("label", iid), category=it["category"],
+            bag=it.get("bag", "checked"), weight_g=it.get("weight_g", 0),
+            tags=it.get("tags", []), variants=it.get("variants", {})))
+    session.commit()
+
+
 def validate() -> list[str]:
-    """Integrity problems across the datasets — empty list means clean."""
+    """Integrity problems across the JSON datasets — empty list means clean."""
     problems: list[str] = []
     cats = set(categories())
-    known = set(items())
+    known = set(seed_items())
 
     def check(entry: dict, where: str) -> None:
         iid = entry.get("item")
@@ -96,7 +137,7 @@ def validate() -> list[str]:
         for e in a.get("base_items", []):
             check(e, f"archetype:{a.get('id')}")
 
-    for iid, it in items().items():
+    for iid, it in seed_items().items():
         if it.get("category") not in cats:
             problems.append(f"item:{iid}: bad category '{it.get('category')}'")
         if not it.get("label"):
