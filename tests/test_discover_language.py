@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from discover.places import DerivedPlace
-from discover.resolvers.language import LanguageResolver
+from discover.resolvers.language import (LanguageResolver, build_language_body,
+                                         supported_languages)
 from discover.resolvers.base import ResolverContext
 
 _R = LanguageResolver()
@@ -56,3 +57,24 @@ def test_unknown_country_is_flagged():
 
 def test_placeless_returns_none():
     assert _R.resolve(DerivedPlace(None, None, None, None), _CTX) is None
+
+
+# ------------------------------------------------------------------ picker
+
+def test_supported_languages_are_the_phrasebook_set():
+    codes = {c for c, _ in supported_languages()}
+    assert {"fr", "es", "de", "it", "pt", "nl", "ja"} <= codes
+    assert "en" not in codes                      # English carries no phrasebook
+
+
+def test_build_language_body_from_manual_picks():
+    # The Morocco fix: pick French manually and get the French phrasebook.
+    body, data, conf = build_language_body("Harar, MA", ["fr"], official=False)
+    assert "Bonjour" in body and "official" not in body.split("\n")[0]
+    assert conf == "high"
+    assert [l["code"] for l in data["languages"]] == ["fr"]
+
+
+def test_build_language_body_empty_is_flagged():
+    body, data, conf = build_language_body("X", [], official=False)
+    assert conf == "flagged" and data["languages"] == []

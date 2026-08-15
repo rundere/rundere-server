@@ -163,6 +163,27 @@ textarea.input { min-height: 72px; resize: vertical; }
 .bp-group { margin-bottom: 28px; }
 .bp-group-label { font-family: var(--font-heading); font-size: 13px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--color-neutral-500); margin-bottom: 8px; }
+/* When bp-group is a <details>, its label is a <summary> (collapsible group). */
+details.bp-group > summary.bp-group-label { cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: 8px; user-select: none; }
+details.bp-group > summary.bp-group-label::-webkit-details-marker { display: none; }
+details.bp-group > summary.bp-group-label::before { content: "▸"; font-size: 11px;
+  color: var(--color-neutral-500); transition: transform .15s; }
+details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90deg); }
+.bp-group-count { font-family: var(--font-body, inherit); letter-spacing: 0;
+  text-transform: none; color: var(--color-neutral-500);
+  background: var(--color-neutral-100); border-radius: 10px; padding: 0 7px;
+  font-size: 11px; }
+.bp-head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  justify-content: flex-end; }
+@media (prefers-reduced-motion: reduce) {
+  details.bp-group > summary.bp-group-label::before { transition: none; }
+}
+/* ---- discovery: language picker (Edit on a language finding) ---- */
+.yn-lang-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px 16px; margin: 12px 0; }
+.yn-lang-opt { display: flex; align-items: center; gap: 8px; font-size: 14px;
+  cursor: pointer; }
 .bp-tablewrap { padding: 0; overflow-x: auto; }
 .bp-triptable { min-width: 640px; }
 .yn-row { cursor: pointer; }

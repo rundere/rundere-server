@@ -1,0 +1,25 @@
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
+  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+    <div class="dialog-title">Languages · {{ place_key }}</div>
+    <form class="dialog-body" hx-post="/trips/{{ trip_id }}/finding/{{ fid }}/edit"
+          hx-target="#modal-root" hx-swap="innerHTML">
+      <p class="bp-trip-notes">Pick the language(s) to show phrases for. Use this
+        when Yonder didn't detect the right one, or to add a widely-spoken language
+        (e.g. French in Morocco). Saving marks the finding <b>edited</b> so a
+        re-run won't overwrite your choice.</p>
+      <div class="yn-lang-picker">
+        {% for o in options %}
+        <label class="yn-lang-opt">
+          <input type="checkbox" name="langs" value="{{ o.code }}"
+                 {% if o.checked %}checked{% endif %}>
+          <span>{{ o.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>

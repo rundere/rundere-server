@@ -95,7 +95,7 @@ def test_runner_persists_findings_and_marks_done():
         assert all(f.status == "draft" for f in findings)
 
 
-def test_rerun_preserves_approved_but_refreshes_drafts():
+def test_rerun_preserves_edited_but_refreshes_drafts():
     if not DEPS:
         return
     tid = _fresh_trip()
@@ -103,16 +103,16 @@ def test_rerun_preserves_approved_but_refreshes_drafts():
     with SessionLocal() as s:
         ch = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="plugs",
                                                  place_key="CH").one()
-        ch.status = "approved"
+        ch.status = "edited"
         ch.body_md = "HUMAN EDIT — keep me"
         s.commit()
-        approved_id = ch.id
+        edited_id = ch.id
 
-    _run(tid)                       # re-run over the same trip
+    _run(tid)                       # whole-trip re-run over the same trip
 
     with SessionLocal() as s:
-        ch = s.get(DiscoveryFinding, approved_id)
-        assert ch.status == "approved"            # human decision preserved
+        ch = s.get(DiscoveryFinding, edited_id)
+        assert ch.status == "edited"              # human edit preserved
         assert ch.body_md == "HUMAN EDIT — keep me"
         # a draft finding was regenerated in place (still exactly one row)
         ca = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="plugs",
@@ -159,10 +159,35 @@ def test_prune_keeps_human_touched_findings():
     with SessionLocal() as s:
         ch = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="plugs",
                                                  place_key="CH").one()
-        ch.status = "approved"
+        ch.status = "edited"
         s.commit()
         cid = ch.id
     _run(tid, excluded={"CH:Geneva"})           # CH no longer produced
     with SessionLocal() as s:
         kept = s.get(DiscoveryFinding, cid)
-        assert kept is not None and kept.status == "approved"   # not pruned
+        assert kept is not None and kept.status == "edited"   # not pruned
+
+
+def test_rerun_single_finding_overrides_edit():
+    if not DEPS:
+        return
+    from discover.runner import rerun_finding
+    tid = _fresh_trip()
+    _run(tid)
+    with SessionLocal() as s:
+        ch = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="plugs",
+                                                 place_key="CH").one()
+        ch.status = "edited"
+        ch.body_md = "STALE MANUAL TEXT"
+        s.commit()
+        fid = ch.id
+    with SessionLocal() as s:
+        f = s.get(DiscoveryFinding, fid)
+        rerun_finding(s, f, resolve_airport=_airports, geocoder=_NoGeo(),
+                      resolvers=[PlugsResolver(), _FakeCityResolver()],
+                      today="2026-08-14")
+    with SessionLocal() as s:
+        f = s.get(DiscoveryFinding, fid)
+        # Explicit single re-run OVERRIDES the edit and regenerates fresh content.
+        assert f.status == "draft"
+        assert "Type" in f.body_md and f.body_md != "STALE MANUAL TEXT"
