@@ -449,6 +449,13 @@ TOPIC_LABELS = {
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 
 
+def _bold_label(body_md: str | None) -> str:
+    """The leading **bold** place label a finding body opens with (e.g.
+    "Geneva, CH"), used to re-title a regenerated language finding."""
+    m = _MD_BOLD.match((body_md or "").lstrip())
+    return m.group(1) if m else ""
+
+
 def _render_md(text: str | None) -> Markup:
     """Minimal, safe render of a finding's body: escape first, then a tiny
     subset — **bold**, "- " bullets, line breaks. No markdown dependency; the
@@ -474,6 +481,7 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         "scope": f.scope, "status": f.status, "confidence": f.confidence,
         "body": _render_md(f.body_md), "sources": f.sources or [],
         "is_currency": f.topic == "currency",
+        "is_language": f.topic == "language",
         "has_rates": bool(data.get("rates")),
     }
 
@@ -538,21 +546,18 @@ def _finding_or_404(session: Session, trip_id: str, fid: str) -> DiscoveryFindin
     return f if (f is not None and f.trip_id == trip_id) else None
 
 
-@router.post("/{trip_id}/finding/{fid}/{action}", response_class=HTMLResponse)
-def finding_action(trip_id: str, fid: str, action: str,
-                   session: Session = Depends(get_session)):
+@router.post("/{trip_id}/finding/{fid}/rerun", response_class=HTMLResponse)
+def rerun_finding_route(trip_id: str, fid: str,
+                        session: Session = Depends(get_session)):
+    """Regenerate this one finding (the per-topic re-run). Re-fetches live topics
+    (weather/currency) and overrides a manual edit — an explicit fresh copy."""
+    from discover.runner import rerun_finding
     f = _finding_or_404(session, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
-    if action == "approve":
-        f.status = "approved"
-    elif action == "reject":
-        f.status = "rejected"
-    elif action == "reset":
-        f.status = "draft"
-    else:
-        return HTMLResponse("", status_code=400)
-    session.commit()
+    rerun_finding(session, f, resolve_airport=_airport_resolver(),
+                  geocoder=_photon(), resolvers=_resolvers(),
+                  base_currencies=settings.base_currency_list)
     return _redirect(f"/trips/{trip_id}")
 
 
@@ -562,6 +567,16 @@ def edit_finding(trip_id: str, fid: str, request: Request,
     f = _finding_or_404(session, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
+    # Language uses a structured picker, not free text (you pick from the vetted
+    # list) — every other topic edits as markdown.
+    if f.topic == "language":
+        from discover.resolvers.language import supported_languages
+        chosen = {l.get("code") for l in (f.data or {}).get("languages", [])}
+        options = [{"code": c, "name": n, "checked": c in chosen}
+                   for c, n in supported_languages()]
+        return templates.TemplateResponse(request, "_language_edit.html", {
+            "request": request, "trip_id": trip_id, "fid": fid,
+            "place_key": f.place_key, "options": options})
     return templates.TemplateResponse(request, "_finding_edit.html", {
         "request": request, "trip_id": trip_id, "fid": fid,
         "topic_label": TOPIC_LABELS.get(f.topic, f.topic),
@@ -570,11 +585,20 @@ def edit_finding(trip_id: str, fid: str, request: Request,
 
 @router.post("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
 def save_finding(trip_id: str, fid: str, body: str = Form(""),
+                 langs: list[str] = Form(default=[]),
                  session: Session = Depends(get_session)):
     f = _finding_or_404(session, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
-    f.body_md = body
+    if f.topic == "language":
+        # Rebuild the phrasebook from the picked languages (a manual override,
+        # not "official"); marking edited protects it from a whole-trip re-run.
+        from discover.resolvers.language import build_language_body
+        label = _bold_label(f.body_md) or f.place_key
+        f.body_md, f.data, f.confidence = build_language_body(
+            label, langs, official=False)
+    else:
+        f.body_md = body
     f.status = "edited"
     session.commit()
     return _redirect(f"/trips/{trip_id}")

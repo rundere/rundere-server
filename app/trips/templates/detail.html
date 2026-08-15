@@ -35,14 +35,21 @@
 
 <div class="bp-timeline-head">
   <h2 class="bp-h2">Timeline</h2>
-  <button class="btn btn-primary"
-          hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
+  <div class="bp-head-actions">
+    {% if has_activities %}
+    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('timeline', true)">Expand all</button>
+    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('timeline', false)">Collapse all</button>
+    {% endif %}
+    <button class="btn btn-primary"
+            hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
+  </div>
 </div>
 
 {% if has_activities %}
   {% for day in day_groups %}
-  <section class="bp-group">
-    <div class="bp-group-label">{{ day.label }}</div>
+  <details class="bp-group" data-grp="timeline" open>
+    <summary class="bp-group-label">{{ day.label }}
+      <span class="bp-group-count">{{ day.activities | length }}</span></summary>
     <div class="card blueprint bp-daycard">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       {% for act in day.activities %}
@@ -83,7 +90,7 @@
       </details>
       {% endfor %}
     </div>
-  </section>
+  </details>
   {% endfor %}
 {% else %}
   <div class="card blueprint bp-empty-card">
@@ -96,8 +103,14 @@
 
 <div class="bp-timeline-head">
   <h2 class="bp-h2">Discovery</h2>
-  <button class="btn btn-primary" hx-post="/trips/{{ trip.id }}/discover"
-          hx-disabled-elt="this">{{ 'Re-run discovery' if discovery_has_findings else 'Run discovery' }}</button>
+  <div class="bp-head-actions">
+    {% if discovery_has_findings %}
+    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('discovery', true)">Expand all</button>
+    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('discovery', false)">Collapse all</button>
+    {% endif %}
+    <button class="btn btn-primary" hx-post="/trips/{{ trip.id }}/discover"
+            hx-disabled-elt="this">{{ 'Re-run discovery' if discovery_has_findings else 'Run discovery' }}</button>
+  </div>
 </div>
 {% if discovery_last %}
 <p class="bp-trip-notes">Last run: <b>{{ discovery_last.status }}</b>{% if discovery_last.when %} · {{ discovery_last.when }}{% endif %} · {{ discovery_last.done }}/{{ discovery_last.total }} topics.
@@ -106,8 +119,9 @@
 
 {% if discovery_has_findings %}
   {% for grp in discovery_topics %}
-  <section class="bp-group">
-    <div class="bp-group-label">{{ grp.label }}</div>
+  <details class="bp-group" data-grp="discovery" open>
+    <summary class="bp-group-label">{{ grp.label }}
+      <span class="bp-group-count">{{ grp.findings | length }}</span></summary>
     <div class="card blueprint bp-daycard yn-findings">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       {% for f in grp.findings %}
@@ -115,7 +129,7 @@
         <div class="yn-finding-head">
           <span class="tag tag-outline bp-typetag">{{ f.place_key }}</span>
           <span class="yn-conf yn-conf-{{ f.confidence }}">{{ f.confidence }}</span>
-          <span class="yn-status-badge">{{ f.status }}</span>
+          {% if f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
         </div>
         <div class="yn-finding-body">{{ f.body }}</div>
         {% if f.sources %}
@@ -131,24 +145,15 @@
           <button class="btn btn-secondary bp-sm"
                   hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/calculator" hx-target="#modal-root">Open calculator</button>
           {% endif %}
-          {% if f.status != 'approved' %}
           <button class="btn btn-secondary bp-sm"
-                  hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/approve">Approve</button>
-          {% endif %}
+                  hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun" hx-disabled-elt="this">Re-run</button>
           <button class="btn btn-secondary bp-sm"
-                  hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">Edit</button>
-          {% if f.status != 'rejected' %}
-          <button class="btn btn-ghost bp-sm"
-                  hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/reject">Reject</button>
-          {% else %}
-          <button class="btn btn-ghost bp-sm"
-                  hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/reset">Restore</button>
-          {% endif %}
+                  hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">{{ 'Languages' if f.is_language else 'Edit' }}</button>
         </div>
       </div>
       {% endfor %}
     </div>
-  </section>
+  </details>
   {% endfor %}
 {% else %}
   <div class="card blueprint bp-empty-card">
@@ -180,4 +185,11 @@
   <a href="/review?bucket=all">review queue</a>. This is an in-house link,
   independent of AdventureLog.</p>
 {% endif %}
+
+<script>
+function ynToggleAll(grp, open) {
+  document.querySelectorAll('details.bp-group[data-grp="' + grp + '"]')
+    .forEach(function (d) { d.open = open; });
+}
+</script>
 {% endblock %}

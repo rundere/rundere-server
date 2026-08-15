@@ -59,6 +59,55 @@ def _lang_name(code: str) -> str:
         return code
 
 
+def supported_languages() -> list[tuple[str, str]]:
+    """(code, display name) for every language with a vetted phrasebook — the
+    options offered by the manual language picker (Edit on a language finding)."""
+    codes = [k for k in _PHRASES if not k.startswith("_")]
+    return sorted(((c, _lang_name(c)) for c in codes), key=lambda cn: cn[1])
+
+
+def build_language_body(label: str, codes: list[str], *, official: bool = True
+                        ) -> tuple[str, dict, str]:
+    """Render the phrasebook body for a given language-code list — shared by the
+    auto resolver (CLDR-detected codes) and the manual picker (Edit). Returns
+    (body_md, data, confidence)."""
+    names = [(c, _lang_name(c)) for c in codes]
+    if not names:
+        return ("_No languages selected._", {"languages": []}, "flagged")
+
+    qual = "official " if official else ""
+    header = (f"**{label}** — {qual}language{'s' if len(names) > 1 else ''}: "
+              f"{', '.join(n for _, n in names)}.")
+    sections = [header, ""]
+    data_langs = []
+    any_book = False
+
+    for code, name in names:
+        if code == "en":
+            data_langs.append({"code": code, "name": name, "has_phrasebook": False})
+            sections += [f"**{name}** — spoken here, no phrasebook needed.", ""]
+            continue
+        book = _PHRASES.get(code)
+        data_langs.append({"code": code, "name": name, "has_phrasebook": bool(book)})
+        sections.append(f"**{name}**")
+        if book:
+            any_book = True
+            for key, plabel in PHRASE_KEYS:
+                entry = book.get(key)
+                if entry:
+                    pron = f" · {entry['p']}" if entry.get("p") else ""
+                    sections.append(f"- {plabel} — **{entry['t']}**{pron}")
+        else:
+            sections.append(f"- A vetted phrasebook for {name} isn't in Yonder's "
+                            f"dataset yet.")
+        sections.append("")
+
+    sections.append("_Everyday phrases are standard forms; local greetings and "
+                    "slang vary by region (added later by the research tier)._")
+    return ("\n".join(sections).strip(), {"languages": data_langs},
+            "high" if any_book else "medium")
+
+
 class LanguageResolver:
     topic = "language"
     scope = "country"
@@ -86,42 +135,11 @@ class LanguageResolver:
             return Finding(
                 topic=self.topic, scope=self.scope, place_key=country,
                 resolver="language.static", confidence="flagged", sources=_SOURCE,
-                body_md=f"Couldn't determine the official language(s) for **{country}**.")
+                body_md=f"Couldn't determine the official language(s) for "
+                        f"**{country}**. Use Edit to pick one or more languages.")
 
-        names = [(code, _lang_name(code)) for code in langs]
-        header = (f"**{place.label}** — official "
-                  f"language{'s' if len(langs) > 1 else ''}: "
-                  f"{', '.join(n for _, n in names)}.")
-        sections = [header, ""]
-        data_langs = []
-        any_book = False
-
-        for code, name in names:
-            if code == "en":
-                data_langs.append({"code": code, "name": name, "has_phrasebook": False})
-                sections.append(f"**{name}** — spoken here, no phrasebook needed.")
-                sections.append("")
-                continue
-            book = _PHRASES.get(code)
-            data_langs.append({"code": code, "name": name, "has_phrasebook": bool(book)})
-            sections.append(f"**{name}**")
-            if book:
-                any_book = True
-                for key, label in PHRASE_KEYS:
-                    entry = book.get(key)
-                    if entry:
-                        pron = f" · {entry['p']}" if entry.get("p") else ""
-                        sections.append(f"- {label} — **{entry['t']}**{pron}")
-            else:
-                sections.append(f"- A vetted phrasebook for {name} isn't in "
-                                f"Yonder's dataset yet.")
-            sections.append("")
-
-        sections.append("_Everyday phrases are standard forms; local greetings and "
-                        "slang vary by region (added later by the research tier)._")
-
+        body, data, confidence = build_language_body(place.label, langs, official=True)
         return Finding(
             topic=self.topic, scope=self.scope, place_key=country,
-            resolver="language.static", confidence="high" if any_book else "medium",
-            sources=_SOURCE, data={"languages": data_langs},
-            body_md="\n".join(sections).strip())
+            resolver="language.static", confidence=confidence, sources=_SOURCE,
+            data=data, body_md=body)

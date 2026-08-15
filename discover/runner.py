@@ -114,6 +114,57 @@ def _prune_stale_drafts(session: Session, trip_id: str,
             session.delete(f)
 
 
+def _find_place(derived: DerivedLocations, scope: str,
+                place_key: str) -> DerivedPlace | None:
+    for p in derived.places:
+        if scope == "country" and p.country == place_key:
+            return p
+        if scope != "country" and p.city_key == place_key:
+            return p
+    return None
+
+
+def rerun_finding(session: Session, finding, *, resolve_airport, geocoder,
+                  resolvers: list[Resolver],
+                  base_currencies: tuple[str, ...] = ("CAD", "USD"),
+                  today: str | None = None):
+    """Regenerate ONE finding in place — the per-topic re-run (D-71). Unlike a
+    whole-trip run this deliberately OVERRIDES a human-edited finding (an explicit
+    "give me a fresh one"), re-fetching live topics (weather/currency) and, for
+    the LLM tier later, carrying a steer note. Returns the row, or None if the
+    place no longer derives or the topic has no resolver."""
+    from app.models import Trip
+    resolver = next((r for r in resolvers if r.topic == finding.topic), None)
+    if resolver is None:
+        return None
+    trip = session.get(Trip, finding.trip_id)
+    if trip is None:
+        return None
+    acts = session.query(TripActivity).filter(
+        TripActivity.trip_id == trip.id).all()
+    derived = derive_locations(acts, resolve_airport=resolve_airport,
+                               geocoder=geocoder)
+    place = _find_place(derived, finding.scope, finding.place_key)
+    if place is None:
+        return None
+    ctx = ResolverContext(start_date=trip.start_date, end_date=trip.end_date,
+                          today=today or date.today().isoformat(),
+                          base_currencies=tuple(base_currencies))
+    fresh = resolver.resolve(place, ctx)
+    if fresh is None:
+        return None
+    finding.body_md = fresh.body_md
+    finding.data = fresh.data
+    finding.sources = fresh.sources
+    finding.confidence = fresh.confidence
+    finding.resolver = fresh.resolver
+    finding.ttl_seconds = fresh.ttl_seconds
+    finding.status = "draft"
+    finding.generated_at = _now()
+    session.commit()
+    return finding
+
+
 def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
                   resolvers: list[Resolver], home_profiles: list = (),
                   excluded: set[str] = frozenset(),
