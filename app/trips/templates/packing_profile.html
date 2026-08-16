@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Packing profile{% endblock %}
+{% block content %}
+<a class="bp-back" href="/trips">← All trips</a>
+
+<div class="card blueprint bp-trip-header">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <h1 class="bp-h1">Packing profile</h1>
+  <p class="bp-trip-notes">Set these once — they shape every packing plan. After
+    changing them, re-generate a trip's plan to apply.</p>
+</div>
+
+{% if saved %}
+<div class="card blueprint yn-note-card yn-todo yn-profile-saved">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <div class="bp-group-label">Saved ✓</div>
+  <p class="bp-trip-notes">Preferences saved. Re-generate a trip's packing plan to apply them.</p>
+</div>
+{% endif %}
+
+<form method="post" action="/trips/settings/packing-profile"
+      class="card blueprint yn-profile-card">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+
+  <div class="yn-form-grid">
+    <div class="field"><label>Luggage</label>
+      <select class="input" name="bag_mode">
+        {% for o in bag_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Weight limit (kg)</label>
+      <input class="input" type="number" name="bag_weight_kg" value="{{ bag_weight_kg }}" min="0" step="1"></div>
+    <div class="field"><label>Laundry on the trip</label>
+      <select class="input" name="laundry_comfort">
+        {% for o in laundry_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Packing style</label>
+      <select class="input" name="packing_style">
+        {% for o in style_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Climate comfort</label>
+      <select class="input" name="climate_preference">
+        {% for o in climate_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Cultural dress</label>
+      <select class="input" name="cultural_strictness">
+        {% for o in strictness_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Clothing cut</label>
+      <select class="input" name="clothing_variant">
+        {% for o in variant_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+  </div>
+
+  <div class="field"><label>Constraints</label>
+    <div class="yn-checkrow">
+      {% for c in constraints %}
+      <label class="yn-check"><input type="checkbox" name="style_constraints" value="{{ c.value }}" {% if c.checked %}checked{% endif %}> {{ c.label }}</label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="field"><label>Always pack these <span class="yn-help">— your must-haves, added to every plan</span></label>
+    <div class="yn-musthave">
+      {% for g in must_groups %}
+      <div class="yn-musthave-group">
+        <div class="yn-musthave-cat">{{ g.label }}</div>
+        {% for it in g.rows %}
+        <label class="yn-check"><input type="checkbox" name="must_have_items" value="{{ it.id }}" {% if it.checked %}checked{% endif %}> {{ it.label }}</label>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="dialog-actions">
+    <a class="btn btn-ghost" href="/trips">Back to trips</a>
+    <button type="submit" class="btn btn-primary">Save profile</button>
+  </div>
+</form>
+{% endblock %}

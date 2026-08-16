@@ -352,9 +352,11 @@ cleanly onto passes 2–8.
 
 - **D-86** — The Packing Profile is edited through a **structured form** (dropdowns
   for the closed choices, checkboxes for constraints + must-haves grouped by
-  category, a number field for the weight limit) reached from a "Profile" button on
-  the Packing tab — not a raw JSON blob. The SQLAdmin JSON view stays as an
-  advanced escape hatch.
+  category, a number field for the weight limit) — never raw JSON. It's a
+  **standalone page in the Administer nav** ("Packing profile", beside Home
+  Profiles — a global preference belongs there), also linked from the Packing tab.
+  The SQLAdmin raw-JSON view was **removed** (it competed with the form and
+  confused which was authoritative).
 
 ## 10. Phasing
 

@@ -7,8 +7,7 @@
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('packing', true)">Expand all</button>
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('packing', false)">Collapse all</button>
     {% endif %}
-    <button class="btn btn-secondary bp-sm"
-            hx-get="/trips/settings/packing-profile" hx-target="#modal-root">Profile</button>
+    <a class="btn btn-secondary bp-sm" href="/trips/settings/packing-profile">Profile</a>
     <button class="btn btn-primary" hx-post="/trips/{{ trip.id }}/pack"
             hx-disabled-elt="this">{{ 'Re-generate' if packing_has else 'Generate packing plan' }}</button>
   </div>

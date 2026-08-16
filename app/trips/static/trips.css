@@ -285,7 +285,12 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-sources a { color: var(--color-accent-700); }
 .yn-finding-btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
-/* ---- planning: packing profile form ---- */
+/* ---- planning: packing profile page ---- */
+.yn-profile-card { padding: 24px; margin-top: 16px; }
+.yn-profile-card .field { margin-bottom: 16px; }
+.yn-profile-card .field > label { display: block; font-size: 13px; font-weight: 600;
+  color: var(--color-neutral-800); margin-bottom: 6px; }
+.yn-profile-saved { margin-top: 16px; padding: 12px 16px; }
 .yn-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px 18px; margin: 12px 0; }
 .yn-checkrow { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 6px; }
