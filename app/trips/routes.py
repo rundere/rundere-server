@@ -686,8 +686,10 @@ def _packing_context(session: Session, trip_id: str) -> dict:
         rows = grouped.get(cat)
         if rows:
             rows.sort(key=lambda x: x.label)
+            # NB: key is "rows", not "items" — Jinja's `grp.items` would resolve
+            # to the dict's built-in items() method, not this list.
             cats.append({"category": cat, "label": PACK_CAT_LABELS.get(cat, cat),
-                         "items": [_packing_item_view(r) for r in rows],
+                         "rows": [_packing_item_view(r) for r in rows],
                          "packed": sum(1 for r in rows if r.status == "packed"),
                          "total": len(rows)})
     return {

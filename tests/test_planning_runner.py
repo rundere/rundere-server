@@ -9,10 +9,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 try:
+    from fastapi.testclient import TestClient
     from app.db import SessionLocal, engine
+    from app.main import app
     from app.models import (Base, PackingItem, PackingPlan, Trip, TripActivity)
     from planning.runner import generate_plan
     Base.metadata.create_all(engine)
+    _client = TestClient(app)
     DEPS = True
 except ImportError:
     DEPS = False
@@ -89,3 +92,15 @@ def test_packed_item_survives_regenerate():
         # exactly one passport row — upserted, not duplicated
         assert s.query(PackingItem).filter_by(
             trip_id=tid, item_key="documents:passport").count() == 1
+
+
+def test_trip_detail_renders_the_packing_plan():
+    """Render smoke — catches template traps (e.g. Jinja `grp.items` resolving to
+    a dict method) that unit tests on the data alone miss."""
+    if not DEPS:
+        return
+    tid = _trip()
+    _gen(tid)
+    r = _client.get(f"/trips/{tid}")
+    assert r.status_code == 200
+    assert "Packing" in r.text and "yn-pack-row" in r.text

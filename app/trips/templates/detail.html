@@ -205,7 +205,7 @@
       <span class="bp-group-count">{{ grp.packed }}/{{ grp.total }}</span></summary>
     <div class="card blueprint bp-daycard yn-findings">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      {% for i in grp.items %}
+      {% for i in grp.rows %}
       <div class="yn-pack-row{% if i.packed %} yn-packed{% endif %}">
         <button class="yn-pack-check"
                 hx-post="/trips/{{ trip.id }}/pack-item/{{ i.id }}/{{ 'unpack' if i.packed else 'pack' }}"
