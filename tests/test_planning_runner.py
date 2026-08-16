@@ -106,6 +106,45 @@ def test_trip_detail_renders_the_packing_plan():
     assert "Packing" in r.text and "yn-pack-row" in r.text
 
 
+def test_packing_profile_form_is_structured_not_json():
+    if not DEPS:
+        return
+    r = _client.get("/trips/settings/packing-profile")
+    assert r.status_code == 200
+    assert '<select' in r.text                          # dropdowns, not a textarea
+    for name in ("bag_mode", "laundry_comfort", "packing_style",
+                 "cultural_strictness", "style_constraints", "must_have_items"):
+        assert f'name="{name}"' in r.text
+
+
+def test_packing_profile_saves_structured_values():
+    if not DEPS:
+        return
+    from app.models import PackingProfile
+    with SessionLocal() as s:
+        s.query(PackingProfile).delete()
+        s.commit()
+    try:
+        r = _client.post("/trips/settings/packing-profile", data={
+            "bag_mode": "one_bag", "bag_weight_kg": "8",
+            "laundry_comfort": "machine", "packing_style": "minimalist",
+            "climate_preference": "runs_hot", "cultural_strictness": "flexible",
+            "clothing_variant": "neutral",
+            "style_constraints": ["no_heels", "modest_dress"],
+            "must_have_items": ["headphones"]})
+        assert r.status_code == 200 and "saved" in r.text.lower()
+        with SessionLocal() as s:
+            v = s.query(PackingProfile).one().values
+            assert v["bag"] == {"mode": "one_bag", "weight_kg": 8}
+            assert v["laundry_comfort"] == "machine"
+            assert set(v["style_constraints"]) == {"no_heels", "modest_dress"}
+            assert v["must_have_items"] == ["headphones"]
+    finally:
+        with SessionLocal() as s:                        # don't pollute defaults
+            s.query(PackingProfile).delete()
+            s.commit()
+
+
 def test_check_off_is_inline_not_a_reload():
     """pack returns just the row + an OOB count, with no HX-Redirect — so the page
     doesn't reload / jump (D-85)."""

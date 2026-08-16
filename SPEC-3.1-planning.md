@@ -350,6 +350,12 @@ cleanly onto passes 2–8.
   request from a self-hosted homelab) and darkens the washed-out secondary-text /
   border ramp for legibility.
 
+- **D-86** — The Packing Profile is edited through a **structured form** (dropdowns
+  for the closed choices, checkboxes for constraints + must-haves grouped by
+  category, a number field for the weight limit) reached from a "Profile" button on
+  the Packing tab — not a raw JSON blob. The SQLAdmin JSON view stays as an
+  advanced escape hatch.
+
 ## 10. Phasing
 
 - **3.1 (this build)** — the three reference datasets, the `PackingProfile` +
