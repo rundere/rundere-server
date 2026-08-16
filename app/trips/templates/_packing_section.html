@@ -1,0 +1,82 @@
+<div id="packing-section">
+{% set trip_id = trip.id %}
+<div class="bp-timeline-head">
+  <h2 class="bp-h2">Packing</h2>
+  <div class="bp-head-actions">
+    {% if packing_has %}
+    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('packing', true)">Expand all</button>
+    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('packing', false)">Collapse all</button>
+    {% endif %}
+    <button class="btn btn-primary" hx-post="/trips/{{ trip.id }}/pack"
+            hx-disabled-elt="this">{{ 'Re-generate' if packing_has else 'Generate packing plan' }}</button>
+  </div>
+</div>
+{% if packing_when %}
+<p class="bp-trip-notes">Plan: {% for a in packing_archetypes %}<b>{{ a.label }}</b>{% if not loop.last %} + {% endif %}{% endfor %}
+  · {{ packing_when }}. Held on Yonder; the AdventureLog Checklist push comes later.</p>
+{% endif %}
+
+{% if packing_warnings %}
+<section class="bp-group">
+  <div class="card blueprint yn-note-card yn-warn">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="bp-group-label">Heads up</div>
+    <ul class="yn-notelist">{% for w in packing_warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+</section>
+{% endif %}
+{% if packing_tasks %}
+<section class="bp-group">
+  <div class="card blueprint yn-note-card yn-todo">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="bp-group-label">To-do en route</div>
+    <ul class="yn-notelist">{% for t in packing_tasks %}<li>{{ t.note or t.do }}</li>{% endfor %}</ul>
+  </div>
+</section>
+{% endif %}
+
+{% if packing_has %}
+  {% for grp in packing_cats %}
+  <details class="bp-group" data-grp="packing" open>
+    <summary class="bp-group-label">{{ grp.label }}
+      <span class="bp-group-count" id="pc-{{ grp.category }}">{{ grp.packed }}/{{ grp.total }}</span></summary>
+    <div class="card blueprint bp-daycard yn-findings">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      {% for i in grp.rows %}{% include "_packing_item.html" %}{% endfor %}
+    </div>
+  </details>
+  {% endfor %}
+
+  {% if packing_omitted %}
+  <details class="bp-group" data-grp="packing">
+    <summary class="bp-group-label">Left behind / swapped
+      <span class="bp-group-count">{{ packing_omitted | length }}</span></summary>
+    <div class="card blueprint bp-daycard yn-findings">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      {% for i in packing_omitted %}
+      <div class="yn-pack-row yn-omitted">
+        <div class="yn-pack-main">
+          <div class="yn-pack-label">{{ i.label }}</div>
+          <div class="yn-pack-reason">{{ i.reason }}{% if i.swap_for %} → swapped for {{ i.swap_for }}{% endif %}</div>
+        </div>
+        <button class="btn btn-ghost bp-sm"
+                hx-post="/trips/{{ trip.id }}/pack-item/{{ i.id }}/keep"
+                hx-target="#packing-section" hx-swap="outerHTML">Bring anyway</button>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+{% elif packing_failed %}
+  <div class="card blueprint bp-empty-card">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="bp-empty-msg">Plan generation failed — check the server logs.</div>
+  </div>
+{% else %}
+  <div class="card blueprint bp-empty-card">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="bp-empty-msg">No packing plan yet. Generate one to get a smart,
+      right-sized list built from this trip's destinations, weather and activities.</div>
+  </div>
+{% endif %}
+</div>

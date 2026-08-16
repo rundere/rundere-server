@@ -1,0 +1,15 @@
+{# One packing checklist row. Returned on its own by the pack/unpack action so the
+   check-off swaps in place (no page reload). #}
+<div class="yn-pack-row{% if i.packed %} yn-packed{% endif %}">
+  <button class="yn-pack-check" aria-label="{{ 'Packed' if i.packed else 'Mark packed' }}"
+          hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/{{ 'unpack' if i.packed else 'pack' }}"
+          hx-target="closest .yn-pack-row" hx-swap="outerHTML">{{ '✓' if i.packed else '' }}</button>
+  <div class="yn-pack-main">
+    <div class="yn-pack-label">{{ i.label }}{% if i.quantity > 1 %} <span class="yn-pack-qty">× {{ i.quantity }}</span>{% endif %}</div>
+    {% if i.reason %}<div class="yn-pack-reason">{{ i.reason }}</div>{% endif %}
+  </div>
+  <span class="tag tag-neutral yn-pack-bag">{{ 'carry-on' if i.bag == 'carry_on' else 'checked' }}</span>
+  <button class="btn btn-ghost bp-sm yn-pack-remove"
+          hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/remove"
+          hx-target="closest .yn-pack-row" hx-swap="outerHTML">Remove</button>
+</div>

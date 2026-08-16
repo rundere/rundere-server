@@ -343,6 +343,13 @@ cleanly onto passes 2–8.
   one-per-day; filtered items become transparent **omitted** rows with reasons and
   swaps; divergent-climate trips layer rather than duplicate.
 
+- **D-85** — Checklist interactions are **inline**: pack/unpack/remove swap just
+  the row (+ an out-of-band category count), keep re-renders the section — never a
+  full-page reload that scrolls the user away. Related: the /trips surface drops
+  the external Google-Fonts import for the system UI stack (crisper, no outbound
+  request from a self-hosted homelab) and darkens the washed-out secondary-text /
+  border ramp for legibility.
+
 ## 10. Phasing
 
 - **3.1 (this build)** — the three reference datasets, the `PackingProfile` +

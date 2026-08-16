@@ -4,29 +4,34 @@
    (which still style the shared app header). The header's light/dark toggle
    stamps data-theme on <html>; we re-declare both themes so it wins over the OS
    media query in both directions, exactly as theme.css does. */
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap');
+/* Fonts: use the system UI stack (crisp at any size, no external request — a
+   self-hosted homelab shouldn't reach out to Google Fonts, and the imported
+   Barlow read too thin/light). The blueprint feel comes from the uppercase +
+   letter-spacing on labels, not the typeface. */
 
 :root {
-  --color-bg: #f2f2f3;
-  --color-surface: #e9e9ea;
-  --color-text: #1d1f20;
-  --color-accent: #5980a6;
-  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+  --color-bg: #eeeef0;
+  --color-surface: #e4e4e6;
+  --color-text: #17181a;
+  --color-accent: #365f86;
+  --color-divider: color-mix(in srgb, #17181a 22%, transparent);
 
-  --color-neutral-100: #f5f5f8; --color-neutral-200: #e7e7ea;
-  --color-neutral-300: #d4d4d7; --color-neutral-400: #b7b7ba;
-  --color-neutral-500: #98989b; --color-neutral-600: #7a7a7d;
-  --color-neutral-700: #5d5d60; --color-neutral-800: #424244;
-  --color-neutral-900: #2b2b2d;
+  /* Darker secondary-text + border ramp — the old ramp washed out (neutral-500
+     was #98989b, near-invisible on the light ground). */
+  --color-neutral-100: #f3f3f5; --color-neutral-200: #d9d9de;
+  --color-neutral-300: #c2c2c8; --color-neutral-400: #9a9aa0;
+  --color-neutral-500: #6a6a6f; --color-neutral-600: #545459;
+  --color-neutral-700: #3d3d42; --color-neutral-800: #2a2a2d;
+  --color-neutral-900: #1a1a1c;
 
-  --color-accent-100: #eef6ff; --color-accent-200: #d6ebff;
-  --color-accent-300: #b5d9fd; --color-accent-400: #94bce3;
-  --color-accent-500: #749dc4; --color-accent-600: #597ea3;
-  --color-accent-700: #416180; --color-accent-800: #2c455d;
-  --color-accent-900: #1d2d3d;
+  --color-accent-100: #e7f0fb; --color-accent-200: #cfe2f6;
+  --color-accent-300: #a9c9ec; --color-accent-400: #7ba6d8;
+  --color-accent-500: #5285bd; --color-accent-600: #365f86;
+  --color-accent-700: #2a4c6c; --color-accent-800: #1f3852;
+  --color-accent-900: #16283b;
 
-  --font-heading: "Barlow Condensed", system-ui, sans-serif;
-  --font-body: "Barlow", system-ui, sans-serif;
+  --font-heading: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
   --radius-md: 4px; --radius-lg: 7px;
   --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
@@ -285,21 +290,23 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-note-card.yn-todo { border-left: 3px solid var(--color-accent); }
 .yn-notelist { margin: 8px 0 0; padding-left: 18px; font-size: 14px;
   color: var(--color-text); display: flex; flex-direction: column; gap: 4px; }
-.yn-pack-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+.yn-pack-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px;
   border-bottom: 1px solid var(--color-neutral-200); }
 .yn-pack-row:last-child { border-bottom: 0; }
-.yn-pack-check { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
-  border: 1px solid var(--color-neutral-300); background: transparent;
-  cursor: pointer; font-size: 13px; color: var(--color-neutral-500); }
+.yn-pack-check { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
+  border: 2px solid var(--color-neutral-400); background: var(--color-surface);
+  cursor: pointer; font-size: 15px; font-weight: 700; line-height: 1;
+  color: var(--color-neutral-500); transition: background .1s, border-color .1s; }
+.yn-pack-check:hover { border-color: var(--color-accent); }
 .yn-pack-row.yn-packed .yn-pack-check { background: var(--color-accent);
   color: #fff; border-color: var(--color-accent); }
 .yn-pack-row.yn-packed .yn-pack-label { text-decoration: line-through;
-  color: var(--color-neutral-500); }
+  color: var(--color-neutral-600); }
 .yn-pack-main { flex: 1; min-width: 0; }
-.yn-pack-label { font-size: 14px; font-weight: 600; color: var(--color-text); }
-.yn-pack-qty { font-weight: 400; color: var(--color-neutral-600); }
-.yn-pack-reason { font-size: 12px; color: var(--color-neutral-500); }
-.yn-pack-bag { flex-shrink: 0; }
+.yn-pack-label { font-size: 15px; font-weight: 600; color: var(--color-text); }
+.yn-pack-qty { font-weight: 500; color: var(--color-accent-700); }
+.yn-pack-reason { font-size: 13px; color: var(--color-neutral-600); margin-top: 1px; }
+.yn-pack-bag { flex-shrink: 0; font-size: 11px; }
 .yn-pack-row.yn-omitted { opacity: .7; }
 .yn-pack-row.yn-omitted .yn-pack-label { text-decoration: line-through; }
 

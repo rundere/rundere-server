@@ -720,9 +720,24 @@ def generate_packing_plan_route(trip_id: str,
     return _redirect(f"/trips/{trip_id}")
 
 
+def _pack_count_oob(session: Session, trip_id: str, category: str) -> str:
+    """An out-of-band swap for a category's packed/total badge, so an inline
+    row change keeps the header count honest without a page reload."""
+    rows = (session.query(PackingItem)
+            .filter(PackingItem.trip_id == trip_id,
+                    PackingItem.category == category,
+                    PackingItem.status.in_(("draft", "packed"))).all())
+    packed = sum(1 for r in rows if r.status == "packed")
+    return (f'<span class="bp-group-count" id="pc-{category}" '
+            f'hx-swap-oob="true">{packed}/{len(rows)}</span>')
+
+
 @router.post("/{trip_id}/pack-item/{item_id}/{action}", response_class=HTMLResponse)
-def packing_item_action(trip_id: str, item_id: str, action: str,
+def packing_item_action(trip_id: str, item_id: str, action: str, request: Request,
                         session: Session = Depends(get_session)):
+    """Toggle one packing item and answer INLINE — no page reload (D-85). pack /
+    unpack / remove swap just the row (+ the category count out-of-band); keep
+    (bring back an omitted item, which crosses sections) re-renders the section."""
     i = session.get(PackingItem, item_id)
     if i is None or i.trip_id != trip_id:
         return HTMLResponse("", status_code=404)
@@ -736,8 +751,17 @@ def packing_item_action(trip_id: str, item_id: str, action: str,
         i.status = "draft"
     else:
         return HTMLResponse("", status_code=400)
+    category = i.category
     session.commit()
-    return _redirect(f"/trips/{trip_id}")
+
+    if action in ("keep", "restore"):
+        trip = session.get(Trip, trip_id)
+        return templates.TemplateResponse(request, "_packing_section.html",
+                                          {"request": request, "trip": trip,
+                                           **_packing_context(session, trip_id)})
+    row_html = "" if action == "remove" else templates.env.get_template(
+        "_packing_item.html").render(trip_id=trip_id, i=_packing_item_view(i))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category))
 
 
 @router.get("/{trip_id}/edit", response_class=HTMLResponse)

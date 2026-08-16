@@ -104,3 +104,23 @@ def test_trip_detail_renders_the_packing_plan():
     r = _client.get(f"/trips/{tid}")
     assert r.status_code == 200
     assert "Packing" in r.text and "yn-pack-row" in r.text
+
+
+def test_check_off_is_inline_not_a_reload():
+    """pack returns just the row + an OOB count, with no HX-Redirect — so the page
+    doesn't reload / jump (D-85)."""
+    if not DEPS:
+        return
+    tid = _trip()
+    _gen(tid)
+    with SessionLocal() as s:
+        iid = s.query(PackingItem).filter_by(
+            trip_id=tid, item_key="documents:passport").one().id
+    r = _client.post(f"/trips/{tid}/pack-item/{iid}/pack")
+    assert r.status_code == 200
+    assert "HX-Redirect" not in r.headers          # not a full-page navigation
+    assert "yn-pack-row" in r.text                 # just the row
+    assert 'hx-swap-oob="true"' in r.text          # + the category count
+    assert "<html" not in r.text.lower()           # a fragment, not a page
+    with SessionLocal() as s:
+        assert s.get(PackingItem, iid).status == "packed"
