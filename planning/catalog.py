@@ -104,7 +104,7 @@ def seed_catalog(session) -> None:
             continue
         session.add(PackingCatalogItem(
             id=iid, label=it.get("label", iid), category=it["category"],
-            bag=it.get("bag", "checked"), weight_g=it.get("weight_g", 0),
+            bag=it.get("bag", "carry_on"), weight_g=it.get("weight_g", 0),
             tags=it.get("tags", []), variants=it.get("variants", {})))
     session.commit()
 

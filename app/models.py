@@ -417,7 +417,7 @@ class PackingCatalogItem(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     label: Mapped[str] = mapped_column(String(128))
     category: Mapped[str] = mapped_column(String(16), index=True)
-    bag: Mapped[str] = mapped_column(String(12), default="checked")   # carry_on|checked
+    bag: Mapped[str] = mapped_column(String(12), default="carry_on")   # carry_on|checked
     weight_g: Mapped[int] = mapped_column(Integer, default=0)
     tags: Mapped[list | None] = mapped_column(JsonCol, default=list)
     variants: Mapped[dict | None] = mapped_column(JsonCol, default=dict)  # {masc,fem,neutral}

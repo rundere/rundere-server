@@ -155,8 +155,8 @@ textarea.input { min-height: 72px; resize: vertical; }
 .bp-head { display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 20px; gap: 16px; }
 .bp-h1 { font-family: var(--font-heading); font-weight: 700; font-size: 28px; margin: 0; }
-.bp-h2 { font-family: var(--font-heading); font-weight: 600; font-size: 18px; margin: 0;
-  letter-spacing: .02em; text-transform: uppercase; color: var(--color-neutral-700); }
+.bp-h2 { font-family: var(--font-heading); font-weight: 700; font-size: 19px; margin: 0;
+  letter-spacing: .01em; text-transform: uppercase; color: var(--color-text); }
 .bp-back { display: inline-block; font-size: 13px; margin-bottom: 16px;
   color: var(--color-accent-700); text-decoration: none; }
 .bp-back:hover { text-decoration: underline; }
@@ -167,7 +167,8 @@ textarea.input { min-height: 72px; resize: vertical; }
 .bp-search { flex: 1; min-width: 200px; max-width: 320px; }
 .bp-group { margin-bottom: 28px; }
 .bp-group-label { font-family: var(--font-heading); font-size: 13px; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--color-neutral-500); margin-bottom: 8px; }
+  text-transform: uppercase; color: var(--color-neutral-800); font-weight: 600;
+  margin-bottom: 8px; }
 /* When bp-group is a <details>, its label is a <summary> (collapsible group). */
 details.bp-group > summary.bp-group-label { cursor: pointer; list-style: none;
   display: flex; align-items: center; gap: 8px; user-select: none; }
@@ -212,7 +213,7 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .bp-push-err { display: inline-block; margin-top: 8px; font-size: 13px;
   color: #fff; background: color-mix(in srgb, #b42318 82%, transparent); padding: 6px 10px; }
 .bp-timeline-head { display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 16px; gap: 16px; }
+  margin: 52px 0 16px; gap: 16px; }
 
 /* ---- detail: timeline ---- */
 .bp-daycard { padding: 0; }

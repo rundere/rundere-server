@@ -208,8 +208,10 @@ def mount_admin(app, engine) -> None:
             "category": {"choices": [(c, c) for c in
                                      ("clothing", "footwear", "toiletries", "tech",
                                       "documents", "health", "activity")]},
-            "bag": {"choices": [("checked", "checked"), ("carry_on", "carry-on")],
-                    "default": "checked"},
+            # Single-select on purpose: anything that fits carry-on also fits
+            # checked, so carry-on is the safe default for a new item.
+            "bag": {"choices": [("carry_on", "carry-on"), ("checked", "checked")],
+                    "default": "carry_on"},
             "id": {"description": "Stable key referenced by archetypes "
                    "(lowercase, no spaces), e.g. quick_dry_top."},
         }
