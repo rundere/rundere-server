@@ -792,47 +792,54 @@ def _profile_row(session: Session) -> PackingProfile | None:
             .order_by(PackingProfile.created_at).first())
 
 
-@router.get("/settings/packing-profile", response_class=HTMLResponse)
-def edit_packing_profile(request: Request, session: Session = Depends(get_session)):
-    """The structured Packing Profile editor (D-86) — dropdowns + checkboxes, no
-    JSON. A 2-segment static path so `/{trip_id}` doesn't capture it."""
+def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -> dict:
     from planning.engine import default_profile
     from planning import catalog
     row = _profile_row(session)
     values = {**default_profile(), **((row.values if row else None) or {})}
     bag = values.get("bag") or {}
-    # must-haves as checkboxes grouped by category (labels, not ids)
     items = catalog.items(session)
-    groups = []
     by_cat: dict[str, list] = {}
     for iid, it in items.items():
-        by_cat.setdefault(it.get("category", "activity"), []).append((iid, it.get("label", iid)))
+        by_cat.setdefault(it.get("category", "activity"), []).append(
+            (iid, it.get("label", iid)))
     chosen_must = set(values.get("must_have_items") or [])
+    groups = []
     for cat in _PACK_CAT_ORDER_FULL:
         rows = sorted(by_cat.get(cat, []), key=lambda p: p[1])
         if rows:
             groups.append({"label": PACK_CAT_LABELS.get(cat, cat),
                            "rows": [{"id": i, "label": l, "checked": i in chosen_must}
                                     for i, l in rows]})
+
     def opts(field):
         cur = values.get(field)
         return [{"value": v, "label": t, "selected": v == cur}
                 for v, t in PROFILE_SELECTS[field]]
-    bag_opts = [{"value": v, "label": t, "selected": v == bag.get("mode", "carry_on")}
-                for v, t in PROFILE_SELECTS["bag_mode"]]
     chosen_cons = set(values.get("style_constraints") or [])
-    return templates.TemplateResponse(request, "_packing_profile.html", {
-        "request": request,
-        "bag_opts": bag_opts, "bag_weight_kg": bag.get("weight_kg", 10),
-        "laundry_opts": opts("laundry_comfort"),
-        "style_opts": opts("packing_style"),
+    return {
+        "request": request, "saved": saved,
+        "bag_opts": [{"value": v, "label": t,
+                      "selected": v == bag.get("mode", "carry_on")}
+                     for v, t in PROFILE_SELECTS["bag_mode"]],
+        "bag_weight_kg": bag.get("weight_kg", 10),
+        "laundry_opts": opts("laundry_comfort"), "style_opts": opts("packing_style"),
         "climate_opts": opts("climate_preference"),
         "strictness_opts": opts("cultural_strictness"),
         "variant_opts": opts("clothing_variant"),
         "constraints": [{"value": v, "label": t, "checked": v in chosen_cons}
                         for v, t in PROFILE_CONSTRAINTS],
         "must_groups": groups,
-    })
+    }
+
+
+@router.get("/settings/packing-profile", response_class=HTMLResponse)
+def edit_packing_profile(request: Request, session: Session = Depends(get_session)):
+    """The structured Packing Profile editor (D-86) — a standalone page in the
+    Administer nav (a global preference, like Home Profiles), dropdowns +
+    checkboxes, no JSON. 2-segment static path so `/{trip_id}` doesn't capture it."""
+    return templates.TemplateResponse(request, "packing_profile.html",
+                                      _profile_form_ctx(request, session))
 
 
 @router.post("/settings/packing-profile", response_class=HTMLResponse)
@@ -866,17 +873,10 @@ def save_packing_profile(request: Request,
     else:
         row.values = values
     session.commit()
-    # Replace the form with a small confirmation; the plan picks up the new
-    # profile on the next Re-generate.
-    return HTMLResponse(
-        '<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">'
-        '<div class="dialog blueprint" onclick="event.stopPropagation()">'
-        '<div class="dialog-title">Profile saved ✓</div>'
-        '<div class="dialog-body"><p class="bp-trip-notes">Preferences saved. '
-        'Re-generate a trip\'s packing plan to apply them.</p>'
-        '<div class="dialog-actions"><button class="btn btn-primary" '
-        'hx-get="/trips/close" hx-target="#modal-root">Done</button></div>'
-        '</div></div>')
+    # Re-render the page with a saved banner; the plan applies the new profile on
+    # the next Re-generate.
+    return templates.TemplateResponse(request, "packing_profile.html",
+                                      _profile_form_ctx(request, session, saved=True))
 
 
 @router.get("/{trip_id}/edit", response_class=HTMLResponse)
