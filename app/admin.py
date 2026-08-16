@@ -179,8 +179,65 @@ def mount_admin(app, engine) -> None:
                        models.TripActivity.starts_at,
                        models.TripActivity.updated_at]
 
+    class PackingCatalogItemAdmin(ModelView, model=models.PackingCatalogItem):
+        name = "Packing Item"
+        name_plural = "Packing Items"
+        # The owner-editable packing item catalog (D-84): seeded from
+        # planning/data/items.json, then managed HERE instead of by editing JSON.
+        # archetypes.json references these ids, so retire an item with `enabled`
+        # rather than deleting it out from under a template reference.
+        column_list = [models.PackingCatalogItem.id, models.PackingCatalogItem.label,
+                       models.PackingCatalogItem.category, models.PackingCatalogItem.bag,
+                       models.PackingCatalogItem.weight_g,
+                       models.PackingCatalogItem.enabled,
+                       models.PackingCatalogItem.tags]
+        column_labels = {"id": "Item id", "weight_g": "Weight (g)"}
+        column_searchable_list = [models.PackingCatalogItem.id,
+                                  models.PackingCatalogItem.label,
+                                  models.PackingCatalogItem.category]
+        column_sortable_list = [models.PackingCatalogItem.category,
+                                models.PackingCatalogItem.label]
+        column_default_sort = "category"
+        page_size = 200
+        # Edit the human fields; `variants`/`updated_at` stay off the form.
+        form_columns = ["id", "label", "category", "bag", "weight_g", "tags", "enabled"]
+        form_overrides = {"tags": LinesField, "category": wtforms.SelectField,
+                          "bag": wtforms.SelectField}
+        form_args = {
+            "tags": {"description": "One tag per line (e.g. modest, warm, formal)."},
+            "category": {"choices": [(c, c) for c in
+                                     ("clothing", "footwear", "toiletries", "tech",
+                                      "documents", "health", "activity")]},
+            # Single-select on purpose: anything that fits carry-on also fits
+            # checked, so carry-on is the safe default for a new item.
+            "bag": {"choices": [("carry_on", "carry-on"), ("checked", "checked")],
+                    "default": "carry_on"},
+            "id": {"description": "Stable key referenced by archetypes "
+                   "(lowercase, no spaces), e.g. quick_dry_top."},
+        }
+
+    class PackingProfileAdmin(ModelView, model=models.PackingProfile):
+        name = "Packing Profile"
+        name_plural = "Packing Profiles"
+        # The "ask once" packing preferences (D-82: single-user for now). The
+        # engine runs on sensible defaults with no profile at all; this is where
+        # you tune it. `values` is a JSON blob for now — a friendly form is a
+        # fast-follow. Keys: laundry_comfort (none|hand_wash|machine),
+        # packing_style (minimalist|balanced|prepared), cultural_strictness
+        # (strict|flexible), clothing_variant (masc|fem|neutral), style_constraints
+        # [no_heels, modest_dress], must_have_items [item ids], bag {mode:
+        # one_bag|carry_on|checked, weight_kg}.
+        column_list = [models.PackingProfile.id, models.PackingProfile.traveler_id,
+                       models.PackingProfile.values, models.PackingProfile.updated_at]
+        form_columns = ["traveler_id", "values"]
+        form_args = {"values": {"description":
+                     'e.g. {"laundry_comfort":"machine","packing_style":"balanced",'
+                     '"bag":{"mode":"one_bag","weight_kg":10},'
+                     '"style_constraints":["no_heels"],"must_have_items":[]}'}}
+
     for view in (TravelItemAdmin, ItemKeyAdmin, IngestBatchAdmin,
                  CommitAttemptAdmin, SourceRuleAdmin, ApiKeyAdmin,
                  ArtifactAdmin, TravelerIdentityAdmin,
-                 RuleSettingAdmin, TripAdmin, TripActivityAdmin):
+                 RuleSettingAdmin, TripAdmin, TripActivityAdmin,
+                 PackingCatalogItemAdmin, PackingProfileAdmin):
         admin.add_view(view)

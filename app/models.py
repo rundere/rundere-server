@@ -330,6 +330,102 @@ class DiscoveryFinding(Base):
     adventurelog_note_id: Mapped[str | None] = mapped_column(String(64))
 
 
+class PackingProfile(Base):
+    """Yonder 3.1 — the "ask once" packing preferences (SPEC-3.1-planning.md §3).
+
+    Real preferences that can't be derived from a trip — bag setup, laundry
+    comfort, climate tolerance, style constraints, must-haves, clothing variant.
+    Scaffolded per-traveller via `traveler_id` (D-82), but Yonder has no multi-user
+    yet, so 3.1 uses the single `self` traveller. Preferences live in `values` as a
+    JSON blob — same convention as TripActivity.values — so adding a preference is
+    a data change, not a migration. Managed in the admin UI like HomeProfile /
+    TravelerIdentity (never hardcoded)."""
+    __tablename__ = "packing_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # Soft link to a TravelerIdentity (plain column, house convention). NULL = the
+    # deployment-wide default profile used while Yonder is single-user.
+    traveler_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    values: Mapped[dict] = mapped_column(JsonCol, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PackingPlan(Base):
+    """Yonder 3.1 — one generated Packing Plan for a trip (peer of DiscoveryRun).
+
+    The plan is an aggregation of the deterministic engine's passes: it records the
+    chosen archetypes + scores, the derived context snapshot, the pre-flight
+    warnings, and the IN-TRIP tasks the packing math implies (laundry cadence,
+    etc. — D-83). The checklist lines themselves are PackingItem rows."""
+    __tablename__ = "packing_plans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    status: Mapped[str] = mapped_column(String(12), default="running", index=True)
+    archetypes: Mapped[dict | None] = mapped_column(JsonCol)   # chosen + scores
+    context: Mapped[dict | None] = mapped_column(JsonCol)      # derived inputs snapshot
+    warnings: Mapped[list | None] = mapped_column(JsonCol)
+    tasks: Mapped[list | None] = mapped_column(JsonCol)        # in-trip actions
+    error: Mapped[str | None] = mapped_column(Text)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PackingItem(Base):
+    """Yonder 3.1 — one checklist line of a Packing Plan (peer of DiscoveryFinding).
+
+    Idempotent on (trip_id, item_key): a re-generate upserts in place and PRESERVES
+    the human states (packed = ticked off, removed = you dropped it), refreshing
+    only draft rows — the same review-survives-regeneration rule as Discovery
+    (D-63). `omitted` is the engine's own "left behind" decision (with a reason and
+    optional swap) — shown, never hidden (D-83)."""
+    __tablename__ = "packing_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    plan_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    item_key: Mapped[str] = mapped_column(String(64), index=True)   # "clothing:quick_dry_top"
+    label: Mapped[str] = mapped_column(String(128))
+    category: Mapped[str] = mapped_column(String(16), index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    bag: Mapped[str | None] = mapped_column(String(12))             # carry_on | checked
+    reason: Mapped[str | None] = mapped_column(String(256))
+    source: Mapped[str | None] = mapped_column(String(16))          # template|modifier|must_have|...
+    swap_for: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(12), default="draft")  # draft|packed|removed|omitted
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PackingCatalogItem(Base):
+    """Yonder 3.1 — the packing item catalog as EDITABLE data (D-84).
+
+    Seeded from planning/data/items.json at startup — JSON is the shipped DEFAULT,
+    exactly as RuleSetting seeds from the rules registry (new items in a release
+    appear; existing rows are left alone so owner edits survive). Thereafter the DB
+    is truth and the owner manages items through the admin UI, never by editing
+    JSON. The Planning engine reads its item catalog from here.
+
+    `id` is the stable item key referenced by archetypes.json ("quick_dry_top").
+    `enabled` lets an item be retired without deleting it (and orphaning an
+    archetype reference)."""
+    __tablename__ = "packing_catalog_items"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    label: Mapped[str] = mapped_column(String(128))
+    category: Mapped[str] = mapped_column(String(16), index=True)
+    bag: Mapped[str] = mapped_column(String(12), default="carry_on")   # carry_on|checked
+    weight_g: Mapped[int] = mapped_column(Integer, default=0)
+    tags: Mapped[list | None] = mapped_column(JsonCol, default=list)
+    variants: Mapped[dict | None] = mapped_column(JsonCol, default=dict)  # {masc,fem,neutral}
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class DiscoveryExclusion(Base):
     """A derived place the operator chose NOT to research for a trip — a layover
     city they only pass through, a mis-geocoded stop (SPEC-3-discovery.md §1).

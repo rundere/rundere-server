@@ -1,0 +1,149 @@
+{
+  "_meta": {
+    "purpose": "Trip archetypes + cross-archetype modifiers (SPEC-3.1-planning.md §4, from research/rule_sets_templates.md). base_items reference planning/data/items.json ids. `formula` = an engine quantity formula (tops|bottoms|underwear|socks|sleepwear), else `qty` is fixed. Modifiers are additive and applied by the engine's pass 4 (climate bands from the weather finding; activity/event tags derived from the trip).",
+    "formulas": ["tops", "bottoms", "underwear", "socks", "sleepwear"]
+  },
+
+  "essentials": [
+    {"item": "passport", "qty": 1}, {"item": "tickets", "qty": 1},
+    {"item": "reservations", "qty": 1}, {"item": "phone_charger", "qty": 1},
+    {"item": "portable_battery", "qty": 1}, {"item": "prescription_meds", "qty": 1},
+    {"item": "pain_relief", "qty": 1}, {"item": "toiletry_bag_tsa", "qty": 1},
+    {"item": "underwear", "formula": "underwear"}, {"item": "socks", "formula": "socks"},
+    {"item": "sleepwear", "formula": "sleepwear"}, {"item": "sunglasses", "qty": 1}
+  ],
+  "international_essentials": [
+    {"item": "travel_insurance", "qty": 1}, {"item": "universal_adapter", "qty": 1}
+  ],
+
+  "modifiers": {
+    "cold_weather": [
+      {"item": "thermal_base_layer", "qty": 2}, {"item": "wool_sweater", "qty": 1},
+      {"item": "insulated_jacket", "qty": 1}, {"item": "wool_socks", "qty": 3},
+      {"item": "beanie", "qty": 1}, {"item": "gloves", "qty": 1},
+      {"item": "moisturizer", "qty": 1}, {"item": "lip_balm", "qty": 1}
+    ],
+    "layering": [{"item": "cardigan", "qty": 1}, {"item": "light_jacket", "qty": 1}],
+    "lightweight": [{"item": "sun_hat", "qty": 1}],
+    "rain_gear": [{"item": "compact_umbrella", "qty": 1}, {"item": "waterproof_jacket", "qty": 1}],
+    "humid": [{"item": "anti_chafe", "qty": 1}],
+    "business": [
+      {"item": "blazer", "qty": 1}, {"item": "dress_shirt", "qty": 3},
+      {"item": "business_bottoms", "qty": 2}, {"item": "dress_shoes", "qty": 1},
+      {"item": "laptop", "qty": 1}, {"item": "business_cards", "qty": 1}
+    ],
+    "hiking": [
+      {"item": "hiking_boots", "qty": 1}, {"item": "daypack", "qty": 1},
+      {"item": "water_bottle", "qty": 1}, {"item": "trail_snacks", "qty": 1},
+      {"item": "trekking_poles", "qty": 1}, {"item": "headlamp", "qty": 1}
+    ],
+    "beach": [
+      {"item": "swimwear", "qty": 2}, {"item": "sandals", "qty": 1},
+      {"item": "waterproof_pouch", "qty": 1}, {"item": "beach_towel", "qty": 1},
+      {"item": "after_sun", "qty": 1}, {"item": "sun_hat", "qty": 1},
+      {"item": "sunscreen", "qty": 1}
+    ],
+    "watersport": [{"item": "rash_guard", "qty": 1}],
+    "temple": [{"item": "modest_scarf", "qty": 1}, {"item": "slip_on_loafers", "qty": 1}],
+    "ski": [
+      {"item": "ski_trousers", "qty": 1}, {"item": "ski_boots", "qty": 1},
+      {"item": "ski_goggles", "qty": 1}, {"item": "hand_warmers", "qty": 1}
+    ],
+    "camping": [{"item": "tent", "qty": 1}, {"item": "sleeping_bag", "qty": 1}],
+    "road": [{"item": "car_charger", "qty": 1}, {"item": "cooler", "qty": 1}],
+    "hostel": [{"item": "padlock", "qty": 1}, {"item": "laundry_kit", "qty": 1}],
+    "tropical": [{"item": "insect_repellent", "qty": 1}]
+  },
+
+  "archetypes": [
+    {
+      "id": "city_break", "label": "Weekend City Break",
+      "duration": {"min": 1, "max": 3},
+      "activities": ["urban", "dining", "sightseeing", "nightlife", "shopping"],
+      "accommodation": ["hotel", "bnb", "apartment", "boutique"],
+      "transport": ["flight", "train", "car"],
+      "base_items": [
+        {"item": "smart_casual_top", "formula": "tops"},
+        {"item": "jeans", "qty": 1}, {"item": "chinos", "qty": 1},
+        {"item": "walking_shoes", "qty": 1}, {"item": "daypack", "qty": 1}
+      ]
+    },
+    {
+      "id": "beach", "label": "Beach Holiday",
+      "duration": {"min": 5, "max": 14},
+      "activities": ["beach", "swimming", "watersport", "dining"],
+      "accommodation": ["hotel", "resort", "bnb"],
+      "transport": ["flight"],
+      "base_items": [
+        {"item": "tshirt", "formula": "tops"}, {"item": "shorts", "qty": 3},
+        {"item": "linen_shirt", "qty": 2}, {"item": "walking_shoes", "qty": 1},
+        {"item": "sandals", "qty": 1}
+      ]
+    },
+    {
+      "id": "cold_ski", "label": "Cold Weather / Ski",
+      "duration": {"min": 3, "max": 12},
+      "activities": ["ski", "snow", "hiking"],
+      "accommodation": ["hotel", "cabin", "resort"],
+      "transport": ["flight", "car"],
+      "base_items": [
+        {"item": "thermal_base_layer", "qty": 2}, {"item": "wool_sweater", "qty": 2},
+        {"item": "insulated_jacket", "qty": 1}, {"item": "quick_dry_bottoms", "qty": 2},
+        {"item": "winter_boots", "qty": 1}, {"item": "wool_socks", "qty": 4},
+        {"item": "beanie", "qty": 1}, {"item": "gloves", "qty": 1}
+      ]
+    },
+    {
+      "id": "business", "label": "Business / Conference",
+      "duration": {"min": 2, "max": 7},
+      "activities": ["business", "dining"],
+      "accommodation": ["hotel"],
+      "transport": ["flight", "train"],
+      "base_items": [
+        {"item": "dress_shirt", "qty": 4}, {"item": "business_bottoms", "qty": 2},
+        {"item": "blazer", "qty": 1}, {"item": "dress_shoes", "qty": 1},
+        {"item": "walking_shoes", "qty": 1}, {"item": "laptop", "qty": 1},
+        {"item": "business_cards", "qty": 1}
+      ]
+    },
+    {
+      "id": "backpacking", "label": "Backpacking / Long-Term",
+      "duration": {"min": 14, "max": 120},
+      "activities": ["hiking", "sightseeing", "urban"],
+      "accommodation": ["hostel", "campground", "bnb"],
+      "transport": ["flight", "train", "car"],
+      "base_items": [
+        {"item": "quick_dry_top", "formula": "tops"},
+        {"item": "quick_dry_bottoms", "qty": 2}, {"item": "hiking_boots", "qty": 1},
+        {"item": "sandals", "qty": 1}, {"item": "daypack", "qty": 1},
+        {"item": "padlock", "qty": 1}, {"item": "laundry_kit", "qty": 1},
+        {"item": "water_bottle", "qty": 1}
+      ]
+    },
+    {
+      "id": "road_trip", "label": "Road Trip",
+      "duration": {"min": 3, "max": 14},
+      "activities": ["sightseeing", "hiking", "beach", "dining"],
+      "accommodation": ["bnb", "campground", "motel", "hotel", "cabin"],
+      "transport": ["car"],
+      "base_items": [
+        {"item": "tshirt", "formula": "tops"}, {"item": "jeans", "qty": 2},
+        {"item": "walking_shoes", "qty": 1}, {"item": "car_charger", "qty": 1},
+        {"item": "cooler", "qty": 1}, {"item": "daypack", "qty": 1}
+      ]
+    },
+    {
+      "id": "cultural", "label": "Cultural / Pilgrimage",
+      "duration": {"min": 3, "max": 10},
+      "activities": ["temple", "religious", "sightseeing", "dining"],
+      "accommodation": ["hotel", "guesthouse", "ryokan"],
+      "transport": ["flight", "train"],
+      "base_items": [
+        {"item": "modest_top", "formula": "tops"}, {"item": "long_skirt", "qty": 2},
+        {"item": "loose_trousers", "qty": 1}, {"item": "slip_on_loafers", "qty": 1},
+        {"item": "walking_shoes", "qty": 1}, {"item": "modest_scarf", "qty": 1},
+        {"item": "daypack", "qty": 1}
+      ]
+    }
+  ]
+}
