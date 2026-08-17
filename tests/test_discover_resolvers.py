@@ -96,6 +96,30 @@ def test_weather_seasonal_when_beyond_forecast_horizon(monkeypatch):
     assert "1 day(s) with rain" in f.body_md         # only the 3.0mm day
 
 
+def test_weather_straddles_horizon_blends_forecast_and_seasonal(monkeypatch):
+    # today 2026-08-14, horizon = today+15 = 2026-08-29. Trip starts inside the
+    # horizon (08-20) but ends well past it (09-10) — the front segment must be
+    # a real forecast, the tail a prior-year seasonal estimate, combined into
+    # ONE finding (findings are one-per-place) rather than the tail silently
+    # vanishing.
+    def fake_get_json(url, timeout=12):
+        if "archive" in url:
+            return _daily([18, 20], [8, 9], [0, 0])
+        return _daily([30, 32], [20, 22], [5.0, 0])
+    monkeypatch.setattr(weather_mod, "get_json", fake_get_json)
+
+    f = WeatherResolver().resolve(DerivedPlace("CH", "Geneva", 46.2, 6.1),
+                                  _ctx(start_date="2026-08-20", end_date="2026-09-10",
+                                       today="2026-08-14"))
+    assert f.confidence == "medium"
+    assert "Real forecast through 2026-08-29" in f.body_md
+    assert "seasonal" in f.body_md.lower()
+    assert f.data["mode"] == "forecast+seasonal"
+    # mean across BOTH segments' daily series, not just one
+    assert f.data["high_c"] == round((30 + 32 + 18 + 20) / 4)
+    assert f.data["rain_days"] == 1
+
+
 def test_weather_forecast_within_horizon(monkeypatch):
     monkeypatch.setattr(weather_mod, "get_json",
                         lambda url, timeout=12: _daily([25], [15], [0]))

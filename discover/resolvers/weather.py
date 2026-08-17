@@ -15,7 +15,11 @@ from discover.resolvers.base import Finding, ResolverContext, get_json, qs
 
 _SOURCE = [{"title": "Open-Meteo", "url": "https://open-meteo.com"}]
 _DAILY = "temperature_2m_max,temperature_2m_min,precipitation_sum"
-_FORECAST_HORIZON_DAYS = 16
+# Open-Meteo's forecast endpoint accepts end_date up to (today + 15) inclusive —
+# confirmed live (a +16 request 400s: "out of allowed range ... today+15"). This
+# must stay <= that true ceiling or every straddling-trip request 400s outright
+# (Open-Meteo rejects the whole multi-day range, not just the excess day).
+_FORECAST_HORIZON_DAYS = 15
 
 
 def _parse(d: str | None) -> date | None:
@@ -70,20 +74,43 @@ class WeatherResolver:
         today = _parse(ctx.today) or date.today()
         horizon = today + timedelta(days=_FORECAST_HORIZON_DAYS)
 
-        mode = "forecast"          # forecast | past | seasonal
+        # Each segment is (mode, q_start, q_end, endpoint). A trip that STRADDLES
+        # the horizon (starts within it, ends beyond) gets two: the forecastable
+        # front, plus a seasonal (prior-year archive) estimate for the tail that
+        # falls outside Open-Meteo's forecast range — previously that tail was
+        # silently dropped (D-past bug: the whole trip's dates were shown in the
+        # body even though only the front segment was ever queried).
+        segments: list[tuple[str, date, date, str]] = []
         if end < today:
-            mode, q_start, q_end, ep = "past", start, end, self.archive_ep
+            segments = [("past", start, end, self.archive_ep)]
         elif start > horizon:
-            mode, q_start, q_end, ep = ("seasonal", _prior_year(start),
-                                        _prior_year(end), self.archive_ep)
+            segments = [("seasonal", _prior_year(start), _prior_year(end), self.archive_ep)]
         else:
-            q_start, q_end, ep = max(start, today), min(end, horizon), self.forecast_ep
+            segments = [("forecast", max(start, today), min(end, horizon), self.forecast_ep)]
+            if end > horizon:
+                tail_start = horizon + timedelta(days=1)
+                segments.append(("seasonal", _prior_year(tail_start), _prior_year(end),
+                                 self.archive_ep))
 
-        data = self._fetch(ep, place.lat, place.lon, q_start, q_end, ctx.timeout)
-        daily = (data or {}).get("daily") or {}
-        highs = daily.get("temperature_2m_max") or []
-        lows = daily.get("temperature_2m_min") or []
-        precip = daily.get("precipitation_sum") or []
+        highs: list = []
+        lows: list = []
+        precip: list = []
+        hit: list[str] = []
+        forecast_through = None
+        for mode, q_start, q_end, ep in segments:
+            data = self._fetch(ep, place.lat, place.lon, q_start, q_end, ctx.timeout)
+            daily = (data or {}).get("daily") or {}
+            h = daily.get("temperature_2m_max") or []
+            l = daily.get("temperature_2m_min") or []
+            if not h or not l:
+                continue
+            highs += h
+            lows += l
+            precip += daily.get("precipitation_sum") or []
+            hit.append(mode)
+            if mode == "forecast":
+                forecast_through = q_end
+
         hi, lo = _mean(highs), _mean(lows)
         if hi is None or lo is None:
             return Finding(
@@ -96,27 +123,35 @@ class WeatherResolver:
         n = len(highs)
         window = f"{ctx.start_date} – {ctx.end_date}"
 
-        if mode == "forecast":
+        if hit == ["forecast"]:
             head = f"**{place.label}** — forecast for {window}"
             tail = "Source: Open-Meteo (forecast)."
             conf = "high"
-        elif mode == "past":
+        elif hit == ["past"]:
             head = f"**{place.label}** — recorded weather for {window}"
             tail = "Source: Open-Meteo (archive)."
             conf = "high"
-        else:
+        elif hit == ["seasonal"]:
             head = f"**{place.label}** — typical for {window}"
             tail = (f"This is last year's actual weather for the same dates — a "
                     f"seasonal guide, not a forecast. Source: Open-Meteo (archive).")
             conf = "medium"
+        else:                                       # forecast + seasonal tail
+            head = f"**{place.label}** — {window}"
+            tail = (f"Real forecast through {forecast_through.isoformat()}; the rest of "
+                    f"the trip is beyond Open-Meteo's forecast range, so those days use "
+                    f"last year's actual weather instead — a seasonal guide, not a "
+                    f"forecast. Source: Open-Meteo (forecast + archive).")
+            conf = "medium"
 
+        mode_out = "+".join(hit)
         body = (f"{head}: highs ~{round(hi)}°C, lows ~{round(lo)}°C, "
                 f"{rain_days} day(s) with rain over {n} days.\n\n{tail}")
 
         return Finding(
             topic=self.topic, scope=self.scope, place_key=key,
             resolver="weather.openmeteo", confidence=conf, sources=_SOURCE,
-            ttl_seconds=(6 * 3600 if mode == "forecast" else 30 * 86400),
-            data={"mode": mode, "high_c": round(hi), "low_c": round(lo),
+            ttl_seconds=(6 * 3600 if hit == ["forecast"] else 30 * 86400),
+            data={"mode": mode_out, "high_c": round(hi), "low_c": round(lo),
                   "rain_days": rain_days, "days": n},
             body_md=body)
