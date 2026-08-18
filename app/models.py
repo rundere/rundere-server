@@ -158,6 +158,10 @@ class HomeProfile(Base):
     __tablename__ = "home_profiles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # 3.2 (D-94): soft link to the person this home belongs to. NULL = the
+    # deployment-wide default (backward compatible — the `self` traveller inherits
+    # all NULL homes until a UI assigns them). Integer to match traveler_identities.id.
+    traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)
     kind: Mapped[str] = mapped_column(String(16))       # residence|home_airport|home_region
     label: Mapped[str] = mapped_column(String(128))
     # Airport/metro IATA for kind=home_airport. Matching also understands metro
@@ -189,6 +193,17 @@ class TravelerIdentity(Base):
     kind: Mapped[str] = mapped_column(String(8), default="guest")   # self | guest
     aliases: Mapped[list | None] = mapped_column(JsonCol, default=list)
     airtrail_user_id: Mapped[str | None] = mapped_column(String(64))
+    # 3.2 (D-91): ISO-2 country code, used by the visa resolver (the `self`
+    # traveller's nationality). NULL = visa research skipped with a visible prompt.
+    nationality: Mapped[str | None] = mapped_column(String(2))
+    # 3.2 (D-100): a generic guest is a roster placeholder — "someone is coming"
+    # — NOT a modelled person. Minted by the trip "add a guest" quick-add. It
+    # carries no profile/nationality and is deliberately EXCLUDED from discovery
+    # and planning (see routes.discovery_travelers), so guest records never become
+    # a dumping ground for considerations ("female guest", "old guest"). To make a
+    # companion actually count, give them a real profile instead of a guest name.
+    generic: Mapped[bool] = mapped_column(Boolean, default=False,
+                                          server_default="0")
     notes: Mapped[str | None] = mapped_column(String(512))
 
 
@@ -227,6 +242,21 @@ class Trip(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripTraveler(Base):
+    """Yonder 3.2 (D-94) — who is on a trip. A structured association replacing
+    the old free-text `traveling_with` hint: each row links a trip to a
+    TravelerIdentity with a role. Discovery reads the roster to look up each
+    person's DiscoveryProfile/PackingProfile and the `self` traveller's
+    nationality (visa resolver). `traveling_with` is now derived from this
+    roster (D-96), not entered on a profile."""
+    __tablename__ = "trip_travelers"
+
+    trip_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("trips.id", ondelete="CASCADE"), primary_key=True)
+    traveler_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), default="companion")  # self|companion
 
 
 class TripActivity(Base):
@@ -344,8 +374,34 @@ class PackingProfile(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     # Soft link to a TravelerIdentity (plain column, house convention). NULL = the
-    # deployment-wide default profile used while Yonder is single-user.
-    traveler_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    # deployment-wide default profile used while Yonder is single-user. 3.2 (D-94):
+    # Integer to match traveler_identities.id — migration 0014 converts the legacy
+    # String(36) column (always NULL to date) to the coherent type.
+    traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    values: Mapped[dict] = mapped_column(JsonCol, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class DiscoveryProfile(Base):
+    """Yonder 3.2 (D-89) — the "ask once" discovery preferences, peer of
+    PackingProfile and following the same proven pattern: nullable `traveler_id`
+    soft-linked to TravelerIdentity (NULL = deployment-wide default while
+    single-user), preferences in a `values` JSON blob so adding a field is a data
+    change, never a migration (D-82). Exactly one per person (D-95).
+
+    Constraint-first (D-87): the blob captures what to SKIP (dietary restrictions,
+    cuisine dislikes, budget ceiling, mobility) and what to ADD (drink/activity
+    interests) — never affinities inferred from origin or history (D-93). The
+    resolvers read the sections they care about and shape their SearXNG queries
+    and Ollama prompts accordingly. A blank profile means "show everything"."""
+    __tablename__ = "discovery_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # Soft link to a TravelerIdentity (house convention, Integer to match the PK).
+    # NULL = the deployment-wide default profile used while Yonder is single-user.
+    traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)
     values: Mapped[dict] = mapped_column(JsonCol, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(

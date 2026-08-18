@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
-                        TripActivity)
+                        TripActivity, TravelerIdentity, TripTraveler)
 from app.trips import types as activity_types
 
 log = logging.getLogger("yonder.trips")
@@ -195,6 +195,7 @@ def _detail_context(session: Session, trip: Trip) -> dict:
         "has_activities": bool(acts),
         "linked_captures": _linked_captures(session, trip.id),
         **_push_state(trip),
+        **_travelers_context(session, trip.id),
         **_discovery_context(session, trip.id),
         **_packing_context(session, trip.id),
     }
@@ -214,6 +215,78 @@ def _linked_captures(session: Session, trip_id: str) -> list[dict]:
         out.append({"id": c.id, "kind": rs.kind_label(payload),
                     "headline": rs.headline(payload), "subline": rs.subline(payload)})
     return out
+
+
+# --------------------------------------------------------------- travelers (3.2)
+# Who is on this trip (D-94): a structured TripTraveler roster replacing the old
+# free-text `traveling_with` hint. Discovery reads it for each person's profile
+# and the `self` traveller's nationality (visa resolver).
+
+_ROLE_LABELS = {"self": "You", "companion": "Companion"}
+
+
+def _traveler_view(t: TravelerIdentity, role: str) -> dict:
+    return {"id": t.id, "name": t.display_name, "kind": t.kind, "role": role,
+            "role_label": _ROLE_LABELS.get(role, role.title()),
+            "nationality": t.nationality, "generic": bool(t.generic)}
+
+
+def discovery_travelers(session: Session, trip_id: str) -> list[TravelerIdentity]:
+    """The trip's travellers that discovery/planning should CONSIDER (D-100):
+    every roster member except generic guests, which are roster placeholders
+    carrying no profile or nationality. Future resolvers read the roster through
+    this helper so a guest name never leaks into a recommendation."""
+    rows = (session.query(TripTraveler)
+            .filter(TripTraveler.trip_id == trip_id).all())
+    ids = [r.traveler_id for r in rows]
+    if not ids:
+        return []
+    return (session.query(TravelerIdentity)
+            .filter(TravelerIdentity.id.in_(ids),
+                    TravelerIdentity.generic.is_(False))
+            .order_by(TravelerIdentity.display_name).all())
+
+
+def _self_identity(session: Session) -> TravelerIdentity | None:
+    return (session.query(TravelerIdentity)
+            .filter(TravelerIdentity.kind == "self")
+            .order_by(TravelerIdentity.id).first())
+
+
+def _auto_link_self(session: Session, trip_id: str) -> None:
+    """Link the `self` traveller to a trip on creation (§11.2). No-op when there
+    is no self identity yet, or the link already exists."""
+    ident = _self_identity(session)
+    if ident is None:
+        return
+    if session.get(TripTraveler, {"trip_id": trip_id,
+                                  "traveler_id": ident.id}) is None:
+        session.add(TripTraveler(trip_id=trip_id, traveler_id=ident.id,
+                                 role="self"))
+
+
+def _travelers_context(session: Session, trip_id: str) -> dict:
+    rows = (session.query(TripTraveler)
+            .filter(TripTraveler.trip_id == trip_id).all())
+    roles = {r.traveler_id: r.role for r in rows}
+    idents = ({t.id: t for t in session.query(TravelerIdentity)
+               .filter(TravelerIdentity.id.in_(roles)).all()} if roles else {})
+    # self first, then companions alphabetically. Orphan rows (identity deleted)
+    # are skipped silently.
+    travelers = [_traveler_view(idents[tid], role)
+                 for tid, role in roles.items() if tid in idents]
+    travelers.sort(key=lambda v: (v["role"] != "self", v["name"].lower()))
+    avail_q = session.query(TravelerIdentity)
+    if roles:
+        avail_q = avail_q.filter(~TravelerIdentity.id.in_(roles))
+    available = avail_q.order_by(TravelerIdentity.display_name).all()
+    return {
+        "trip_id": trip_id,
+        "travelers": travelers,
+        "travelers_available": [{"id": t.id, "name": t.display_name}
+                                for t in available],
+        "travelers_manage_url": "/admin/traveler-identity/list",
+    }
 
 
 def _adventurelog():
@@ -921,6 +994,8 @@ def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
     trip = Trip(source="manual")
     _save_trip_fields(trip, name, start, end, notes, adventurelog_collection_id)
     session.add(trip)
+    session.flush()                       # need trip.id for the self-traveller link
+    _auto_link_self(session, trip.id)     # §11.2 — you're on your own trip by default
     session.commit()
     return _redirect("/trips")
 
@@ -955,6 +1030,8 @@ def delete_trip(trip_id: str, session: Session = Depends(get_session)):
         # sweep the activities.
         session.query(TripActivity).filter(
             TripActivity.trip_id == trip_id).delete(synchronize_session=False)
+        session.query(TripTraveler).filter(
+            TripTraveler.trip_id == trip_id).delete(synchronize_session=False)
         # Clear the soft link from any captured items filed into this trip
         # (2.1.2) — there's no DB FK to null it for us (migration 0008).
         from app.models import TravelItem
@@ -964,6 +1041,78 @@ def delete_trip(trip_id: str, session: Session = Depends(get_session)):
         session.delete(trip)
         session.commit()
     return _redirect("/trips")
+
+
+def _travelers_section(request: Request, session: Session, trip_id: str) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request, "_travelers_section.html",
+        {"request": request, **_travelers_context(session, trip_id)})
+
+
+@router.post("/{trip_id}/travelers", response_class=HTMLResponse)
+def add_traveler(trip_id: str, request: Request, traveler_id: str = Form(""),
+                 session: Session = Depends(get_session)):
+    """Add an existing TravelerIdentity to the trip roster as a companion (the
+    `self` traveller auto-links on creation). Idempotent — a duplicate add is a
+    no-op — and swaps just the Who's-traveling section."""
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    try:
+        tid = int(traveler_id)
+    except (TypeError, ValueError):
+        tid = 0
+    ident = session.get(TravelerIdentity, tid) if tid else None
+    if ident is not None and session.get(
+            TripTraveler, {"trip_id": trip_id, "traveler_id": tid}) is None:
+        role = "self" if ident.kind == "self" else "companion"
+        session.add(TripTraveler(trip_id=trip_id, traveler_id=tid, role=role))
+        session.commit()
+    return _travelers_section(request, session, trip_id)
+
+
+@router.post("/{trip_id}/travelers/new", response_class=HTMLResponse)
+def add_guest(trip_id: str, request: Request, name: str = Form(""),
+              session: Session = Depends(get_session)):
+    """Quick-add a generic guest by name — mint a minimal TravelerIdentity
+    (kind=guest, no profile, no nationality) and link it as a companion (§11.2's
+    "+ Add new"). A guest needs no Discovery/Packing profile; those tables are
+    optional and hang off the identity later if ever wanted (D-94). Reuses an
+    existing identity of the same name rather than duplicating it (display_name
+    is unique). Blank name is a no-op."""
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    label = name.strip()
+    if label:
+        ident = (session.query(TravelerIdentity)
+                 .filter(TravelerIdentity.display_name == label).first())
+        if ident is None:
+            # generic=True: a placeholder person, ignored by discovery/planning
+            # (D-100). Reusing an existing identity never flips its flag.
+            ident = TravelerIdentity(display_name=label, kind="guest",
+                                     generic=True)
+            session.add(ident)
+            session.flush()               # need ident.id for the link
+        if session.get(TripTraveler, {"trip_id": trip_id,
+                                      "traveler_id": ident.id}) is None:
+            role = "self" if ident.kind == "self" else "companion"
+            session.add(TripTraveler(trip_id=trip_id, traveler_id=ident.id,
+                                     role=role))
+        session.commit()
+    return _travelers_section(request, session, trip_id)
+
+
+@router.post("/{trip_id}/travelers/{traveler_id}/remove", response_class=HTMLResponse)
+def remove_traveler(trip_id: str, traveler_id: int, request: Request,
+                    session: Session = Depends(get_session)):
+    """Drop a traveller from the trip roster. Swaps just the section."""
+    row = session.get(TripTraveler,
+                      {"trip_id": trip_id, "traveler_id": traveler_id})
+    if row is not None:
+        session.delete(row)
+        session.commit()
+    return _travelers_section(request, session, trip_id)
 
 
 def _push_msg(text: str) -> HTMLResponse:
