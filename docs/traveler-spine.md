@@ -106,3 +106,34 @@ explicitly a **placeholder**:
 
 To make a companion actually count for discovery, give them a real profile — not
 a guest name.
+
+## Discovery Profile editor
+
+Implementation: `app/trips/routes.py` (`edit_discovery_profile` /
+`save_discovery_profile`, `/trips/settings/discovery-profile`),
+`app/trips/templates/discovery_profile.html`, nav link in
+`app/review/templates/_appheader.html`.
+Tests: `tests/test_discovery_profile.py`.
+
+A structured form (checkboxes / radios / a select — never raw JSON), peer of the
+Packing Profile page and linked from the same Administer nav group. It reads and
+writes `DiscoveryProfile.values`, single-user for now (the first row is the
+deployment-wide default, same convention as the packing profile).
+
+**Constraint-first (D-87).** The blob is a filter, not a wish list:
+
+- **Subtract / bound** — dietary restrictions (checkboxes; results must
+  accommodate), cuisines to avoid (comma-separated free text), allergies (free
+  text, flagged as a warning not a filter), budget ceiling (radio, `$/$$/$$$/$$$$`
+  or no limit — D-88, stored as an int 0–4).
+- **Add** — drink interests and activity interests (opt-in checkboxes; unchecked
+  is simply not searched). Activity interests double as the curation lens for
+  suggested events.
+- **Practical** — mobility (a select).
+
+The `values` shape matches SPEC-3.2 §2.2 (`food` / `drink` / `activity` /
+`practical`). A blank form saves all defaults — empty lists, budget 0, mobility
+`no_limits` — meaning "show me everything." On save, closed-vocabulary fields
+(drink/activity interests, mobility, budget) are filtered to known keys so the
+blob stays clean; dietary restrictions are not filtered because the model allows
+custom strings (D-93). No resolver reads the profile yet — that is phase 6+.

@@ -13,6 +13,7 @@
     <span class="grouplbl">Administer</span>
     <a href="/review/home" class="{{ 'on' if p.startswith('/review/home') else '' }}">Home&nbsp;profiles</a>
     <a href="/trips/settings/packing-profile" class="{{ 'on' if 'packing-profile' in p else '' }}">Packing&nbsp;profile</a>
+    <a href="/trips/settings/discovery-profile" class="{{ 'on' if 'discovery-profile' in p else '' }}">Discovery&nbsp;profile</a>
     <a href="/admin/traveler-identity/list" class="{{ 'on' if 'traveler-identity' in p else '' }}">Travellers</a>
     <a href="/admin/rule-setting/list" class="{{ 'on' if 'rule-setting' in p else '' }}">Rules</a>
     <a href="/admin/" class="{{ 'on' if p.startswith('/admin') and 'traveler-identity' not in p and 'rule-setting' not in p else '' }}">Tables</a>

@@ -726,7 +726,8 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
 
 # ----------------------------------------------------------------- planning (3.1)
 
-from app.models import PackingItem, PackingPlan, PackingProfile   # noqa: E402
+from app.models import (PackingItem, PackingPlan, PackingProfile,   # noqa: E402
+                        DiscoveryProfile)
 
 # The Packing Profile form — closed vocabularies rendered as dropdowns/checkboxes
 # (D-86) so the owner never hand-writes JSON. label pairs are (value, human text).
@@ -757,6 +758,41 @@ PACK_CAT_LABELS = {"documents": "Documents", "health": "Health",
                    "clothing": "Clothing", "footwear": "Footwear",
                    "toiletries": "Toiletries", "tech": "Tech",
                    "activity": "Activity gear"}
+
+# ---- Discovery Profile vocabularies (3.2, SPEC-3.2 §2.2) --------------------
+# Constraint-first (D-87): dietary/dislikes/budget/mobility SUBTRACT or bound;
+# drink/activity interests ADD search queries. Closed vocabularies map to the
+# resolvers' SearXNG query templates; dietary allows custom strings (D-93) but
+# the form offers the standard set as checkboxes.
+DISCOVERY_DIETARY = [("vegetarian", "Vegetarian"), ("vegan", "Vegan"),
+                     ("halal", "Halal"), ("kosher", "Kosher"),
+                     ("gluten_free", "Gluten-free"), ("dairy_free", "Dairy-free")]
+DISCOVERY_DRINKS = [("craft_beer", "Craft beer"), ("distilleries", "Distilleries"),
+                    ("wineries", "Wineries"), ("coffee", "Coffee"), ("tea", "Tea"),
+                    ("non_alcoholic", "Non-alcoholic")]
+DISCOVERY_ACTIVITIES = [("markets", "Markets"), ("hidden_gems", "Hidden gems"),
+                        ("museums", "Museums"), ("outdoor", "Outdoor"),
+                        ("historical", "Historical"), ("nightlife", "Nightlife"),
+                        ("sports", "Sports"), ("shopping", "Shopping"),
+                        ("wellness", "Wellness"), ("cooking_classes", "Cooking classes"),
+                        ("live_music", "Live music"), ("architecture", "Architecture")]
+# Budget ceiling (D-88): $/$$/$$$/$$$$, 0 = no limit. Integer, a ceiling not a floor.
+DISCOVERY_BUDGET = [(0, "No limit"), (1, "$"), (2, "$$"), (3, "$$$"), (4, "$$$$")]
+DISCOVERY_MOBILITY = [("no_limits", "No limits"),
+                      ("moderate", "Moderate — some walking is fine"),
+                      ("limited", "Limited — minimal walking or stairs"),
+                      ("wheelchair", "Wheelchair accessible only")]
+
+
+def _discovery_default() -> dict:
+    """A blank profile — "show me everything, no constraints" (SPEC-3.2 §2.2)."""
+    return {
+        "food": {"dietary_restrictions": [], "cuisine_dislikes": [],
+                 "allergies": "", "budget_ceiling": 0},
+        "drink": {"interests": []},
+        "activity": {"interests": []},
+        "practical": {"mobility": "no_limits"},
+    }
 
 
 def _packing_item_view(i: PackingItem) -> dict:
@@ -950,6 +986,100 @@ def save_packing_profile(request: Request,
     # the next Re-generate.
     return templates.TemplateResponse(request, "packing_profile.html",
                                       _profile_form_ctx(request, session, saved=True))
+
+
+# ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------
+
+def _discovery_profile_row(session: Session) -> DiscoveryProfile | None:
+    """Single-user for now (D-89): the first row is the deployment-wide default,
+    same convention as _profile_row for packing."""
+    return (session.query(DiscoveryProfile)
+            .order_by(DiscoveryProfile.created_at).first())
+
+
+def _discovery_form_ctx(request: Request, session: Session,
+                        saved: bool = False) -> dict:
+    row = _discovery_profile_row(session)
+    d = _discovery_default()
+    v = {**d, **((row.values if row else None) or {})}
+    food = {**d["food"], **(v.get("food") or {})}
+    drink = {**d["drink"], **(v.get("drink") or {})}
+    activity = {**d["activity"], **(v.get("activity") or {})}
+    practical = {**d["practical"], **(v.get("practical") or {})}
+    diet = set(food.get("dietary_restrictions") or [])
+    drinks = set(drink.get("interests") or [])
+    acts = set(activity.get("interests") or [])
+    budget = food.get("budget_ceiling") or 0
+    mob = practical.get("mobility") or "no_limits"
+    return {
+        "request": request, "saved": saved,
+        "dietary": [{"value": k, "label": t, "checked": k in diet}
+                    for k, t in DISCOVERY_DIETARY],
+        "cuisine_dislikes": ", ".join(food.get("cuisine_dislikes") or []),
+        "allergies": food.get("allergies") or "",
+        "budget_opts": [{"value": k, "label": t, "checked": k == budget}
+                        for k, t in DISCOVERY_BUDGET],
+        "drinks": [{"value": k, "label": t, "checked": k in drinks}
+                   for k, t in DISCOVERY_DRINKS],
+        "activities": [{"value": k, "label": t, "checked": k in acts}
+                       for k, t in DISCOVERY_ACTIVITIES],
+        "mobility_opts": [{"value": k, "label": t, "selected": k == mob}
+                          for k, t in DISCOVERY_MOBILITY],
+    }
+
+
+@router.get("/settings/discovery-profile", response_class=HTMLResponse)
+def edit_discovery_profile(request: Request, session: Session = Depends(get_session)):
+    """The Discovery Profile editor (D-89) — peer of the Packing Profile page,
+    linked from the Administer nav. Constraint-first preferences that shape what
+    the food/activity resolvers search for. 2-segment static path so `/{trip_id}`
+    doesn't capture it."""
+    return templates.TemplateResponse(request, "discovery_profile.html",
+                                      _discovery_form_ctx(request, session))
+
+
+@router.post("/settings/discovery-profile", response_class=HTMLResponse)
+def save_discovery_profile(request: Request,
+                           dietary_restrictions: list[str] = Form(default=[]),
+                           cuisine_dislikes: str = Form(""),
+                           allergies: str = Form(""),
+                           budget_ceiling: str = Form("0"),
+                           drink_interests: list[str] = Form(default=[]),
+                           activity_interests: list[str] = Form(default=[]),
+                           mobility: str = Form("no_limits"),
+                           session: Session = Depends(get_session)):
+    try:
+        budget = int(budget_ceiling)
+    except (TypeError, ValueError):
+        budget = 0
+    if budget not in (0, 1, 2, 3, 4):
+        budget = 0
+    # Interests are closed vocabularies (they map to query templates) — filter to
+    # known keys so the blob stays clean. Dietary allows custom strings (D-93), so
+    # it is not filtered. Cuisine dislikes are free text, split on commas.
+    drinks_ok = {k for k, _ in DISCOVERY_DRINKS}
+    acts_ok = {k for k, _ in DISCOVERY_ACTIVITIES}
+    mob_ok = {k for k, _ in DISCOVERY_MOBILITY}
+    dislikes = [c.strip() for c in cuisine_dislikes.split(",") if c.strip()]
+    values = {
+        "food": {
+            "dietary_restrictions": [d.strip() for d in dietary_restrictions if d.strip()],
+            "cuisine_dislikes": dislikes,
+            "allergies": allergies.strip(),
+            "budget_ceiling": budget,
+        },
+        "drink": {"interests": [x for x in drink_interests if x in drinks_ok]},
+        "activity": {"interests": [x for x in activity_interests if x in acts_ok]},
+        "practical": {"mobility": mobility if mobility in mob_ok else "no_limits"},
+    }
+    row = _discovery_profile_row(session)
+    if row is None:
+        session.add(DiscoveryProfile(values=values))
+    else:
+        row.values = values
+    session.commit()
+    return templates.TemplateResponse(request, "discovery_profile.html",
+                                      _discovery_form_ctx(request, session, saved=True))
 
 
 @router.get("/{trip_id}/edit", response_class=HTMLResponse)
