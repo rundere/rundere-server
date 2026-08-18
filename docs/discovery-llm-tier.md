@@ -66,3 +66,44 @@ a passing check yields `""`.
 
 Corroboration is opt-in per resolver: the food and events resolvers don't call
 it, visa and safety do.
+
+## Synthesis (`discover/synth.py`)
+
+`synthesize_json(prompt, schema, *, base_url, system=…) -> dict | None` is the
+SYNTHESIZE step every LLM resolver shares. It reuses the `extract/llm.py` pattern
+— `/api/chat` with a JSON-schema `format` grammar, `temperature: 0`,
+`num_ctx: 16384`, thinking off — but drops the validate-and-retry loop:
+grounding is the safety net here, not a second schema gate, and the grammar
+already constrains generation. Returns `None` on any failure (no base_url,
+unreachable, non-JSON content) so a resolver degrades to an absent finding.
+
+## Food & drink resolver (`discover/resolvers/food.py`)
+
+The first LLM resolver and the template for the rest. Scope: city. Confidence:
+medium (LLM-synthesized, source-grounded). Its endpoints come from the
+constructor (`build_llm`, deployment config); the DiscoveryProfile comes from
+`ResolverContext.discovery_profile` (per-trip). Missing either endpoint → `None`.
+
+The five pipeline steps:
+
+1. **BUILD QUERIES** — `best local restaurants {city} {country}` and
+   `street food {city}` always; a budget modifier (`cheap eats` at `$`,
+   `fine dining` at `$$$$`); one query per checked drink interest (§2.2).
+2. **SEARCH** — every query through `searxng_search`, deduped by normalised URL,
+   capped at `max_snippets` (24).
+3. **SYNTHESIZE** — `synthesize_json` with a per-topic schema (`places[]` with
+   `name/type/neighborhood/price_tier/why/local_specialty/source_url`,
+   `local_dishes[]`, `allergy_warnings[]`). The prompt carries the profile's
+   dietary restrictions, cuisine dislikes, allergies, and budget ceiling, and
+   presents the SearXNG snippets as the ONLY source of truth, numbered with their
+   URLs so the model can cite `source_url` exactly.
+4. **GROUND** — `ground_items` drops any place whose `source_url` was not in the
+   SearXNG set; a defensive budget post-filter drops places tiered above the
+   ceiling. If nothing survives and there are no local dishes → `None`.
+5. **ASSEMBLE** — a `Finding` (14-day TTL) whose `body_md` leads with local
+   specialties, groups places by type (street food first), stars local
+   specialties, and appends a visible `⚠️` allergy block when present.
+
+Not yet wired into a run: `run_discovery` still executes only the deterministic
+tier synchronously. Threading the profile/nationality through the run and
+executing the LLM tier in the background job is a later phase.
