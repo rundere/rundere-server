@@ -339,6 +339,25 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-cc-result { font-size: 22px; font-weight: 600; color: var(--color-text);
   margin: 10px 0 4px; }
 
+/* Finding body markdown: headings + callouts (3.2) */
+.yn-fh { display: inline-block; margin-top: 6px; font-size: 12px;
+  font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  color: var(--color-accent); }
+.yn-fq { color: var(--color-neutral-700); font-style: italic; }
+
+/* Discovery running panel (3.2) */
+.yn-run-live { display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--color-accent); }
+.yn-run-live::first-letter { animation: yn-pulse 1.2s ease-in-out infinite; }
+.yn-run-card { padding: 14px 16px; margin-top: 4px; }
+.yn-run-phase { font-size: 13px; font-weight: 600; color: var(--color-text); }
+.yn-run-bar { height: 6px; border-radius: 3px; margin: 8px 0 6px;
+  background: var(--color-neutral-200); overflow: hidden; }
+.yn-run-bar > span { display: block; height: 100%; background: var(--color-accent);
+  transition: width 0.4s ease; }
+.yn-run-meta { font-size: 12px; color: var(--color-neutral-600); }
+@keyframes yn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
 /* Who's traveling (3.2) */
 .yn-traveler-list { list-style: none; margin: 0; padding: 0;
   display: flex; flex-direction: column; gap: 6px; }

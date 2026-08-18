@@ -104,6 +104,34 @@ The five pipeline steps:
    specialties, groups places by type (street food first), stars local
    specialties, and appends a visible `⚠️` allergy block when present.
 
-Not yet wired into a run: `run_discovery` still executes only the deterministic
-tier synchronously. Threading the profile/nationality through the run and
-executing the LLM tier in the background job is a later phase.
+## Durable background run + wiring (`app/trips/discovery_jobs.py`)
+
+"Run Discovery" now runs BOTH tiers on a single background worker (§6.1). The
+request returns immediately with a self-polling panel; deterministic findings
+land in the first few seconds and the LLM findings stream in as each resolver
+finishes.
+
+- **The `DiscoveryRun` row IS the job state.** The worker (own DB session, off
+  the request) writes `phase/done/total` and commits after each finding so the
+  poll sees them appear; it finalizes `status=done`. This is durable, unlike the
+  in-memory review job registry.
+- **Restart detection.** A row that says `running` but whose id is not in this
+  process's `_LIVE` set was orphaned by a restart; `running_run()` marks it
+  `failed` on the next poll (re-run to recover). One worker + a per-trip guard
+  means one run per trip at a time.
+- **Both tiers, one run, one prune.** Deterministic and LLM tasks are planned
+  together (`run.total` = both), executed in sequence, and the stale-draft prune
+  runs once at the end over the union of produced keys — so the LLM phase never
+  prunes the deterministic drafts, and a resolver raising mid-run is logged and
+  skipped, never a run failure.
+- **Wiring.** `POST /trips/{id}/discover` launches (guarding on a live run),
+  `GET /trips/{id}/discover/status` is the poll target, and both render the
+  extracted `_discovery_section.html`. The route threads the DiscoveryProfile
+  (`values`) and the `self` traveller's nationality into the run's
+  `ResolverContext`. The LLM endpoints come from config (`TX_SEARXNG_URL`,
+  `TX_OLLAMA_URL`); if SearXNG/Ollama are unreachable the resolvers return None
+  and the run simply carries the deterministic findings.
+
+`_render_md` (the finding-body renderer) grew to match the richer LLM output:
+alongside `**bold**` and `- ` bullets it now renders `### ` headings and `> `
+callouts (the allergy block, and the coming visa/safety verify banner).
