@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
-                        TripActivity)
+                        TripActivity, TravelerIdentity, TripTraveler)
 from app.trips import types as activity_types
 
 log = logging.getLogger("yonder.trips")
@@ -195,6 +195,7 @@ def _detail_context(session: Session, trip: Trip) -> dict:
         "has_activities": bool(acts),
         "linked_captures": _linked_captures(session, trip.id),
         **_push_state(trip),
+        **_travelers_context(session, trip.id),
         **_discovery_context(session, trip.id),
         **_packing_context(session, trip.id),
     }
@@ -214,6 +215,78 @@ def _linked_captures(session: Session, trip_id: str) -> list[dict]:
         out.append({"id": c.id, "kind": rs.kind_label(payload),
                     "headline": rs.headline(payload), "subline": rs.subline(payload)})
     return out
+
+
+# --------------------------------------------------------------- travelers (3.2)
+# Who is on this trip (D-94): a structured TripTraveler roster replacing the old
+# free-text `traveling_with` hint. Discovery reads it for each person's profile
+# and the `self` traveller's nationality (visa resolver).
+
+_ROLE_LABELS = {"self": "You", "companion": "Companion"}
+
+
+def _traveler_view(t: TravelerIdentity, role: str) -> dict:
+    return {"id": t.id, "name": t.display_name, "kind": t.kind, "role": role,
+            "role_label": _ROLE_LABELS.get(role, role.title()),
+            "nationality": t.nationality, "generic": bool(t.generic)}
+
+
+def discovery_travelers(session: Session, trip_id: str) -> list[TravelerIdentity]:
+    """The trip's travellers that discovery/planning should CONSIDER (D-100):
+    every roster member except generic guests, which are roster placeholders
+    carrying no profile or nationality. Future resolvers read the roster through
+    this helper so a guest name never leaks into a recommendation."""
+    rows = (session.query(TripTraveler)
+            .filter(TripTraveler.trip_id == trip_id).all())
+    ids = [r.traveler_id for r in rows]
+    if not ids:
+        return []
+    return (session.query(TravelerIdentity)
+            .filter(TravelerIdentity.id.in_(ids),
+                    TravelerIdentity.generic.is_(False))
+            .order_by(TravelerIdentity.display_name).all())
+
+
+def _self_identity(session: Session) -> TravelerIdentity | None:
+    return (session.query(TravelerIdentity)
+            .filter(TravelerIdentity.kind == "self")
+            .order_by(TravelerIdentity.id).first())
+
+
+def _auto_link_self(session: Session, trip_id: str) -> None:
+    """Link the `self` traveller to a trip on creation (§11.2). No-op when there
+    is no self identity yet, or the link already exists."""
+    ident = _self_identity(session)
+    if ident is None:
+        return
+    if session.get(TripTraveler, {"trip_id": trip_id,
+                                  "traveler_id": ident.id}) is None:
+        session.add(TripTraveler(trip_id=trip_id, traveler_id=ident.id,
+                                 role="self"))
+
+
+def _travelers_context(session: Session, trip_id: str) -> dict:
+    rows = (session.query(TripTraveler)
+            .filter(TripTraveler.trip_id == trip_id).all())
+    roles = {r.traveler_id: r.role for r in rows}
+    idents = ({t.id: t for t in session.query(TravelerIdentity)
+               .filter(TravelerIdentity.id.in_(roles)).all()} if roles else {})
+    # self first, then companions alphabetically. Orphan rows (identity deleted)
+    # are skipped silently.
+    travelers = [_traveler_view(idents[tid], role)
+                 for tid, role in roles.items() if tid in idents]
+    travelers.sort(key=lambda v: (v["role"] != "self", v["name"].lower()))
+    avail_q = session.query(TravelerIdentity)
+    if roles:
+        avail_q = avail_q.filter(~TravelerIdentity.id.in_(roles))
+    available = avail_q.order_by(TravelerIdentity.display_name).all()
+    return {
+        "trip_id": trip_id,
+        "travelers": travelers,
+        "travelers_available": [{"id": t.id, "name": t.display_name}
+                                for t in available],
+        "travelers_manage_url": "/admin/traveler-identity/list",
+    }
 
 
 def _adventurelog():
@@ -653,7 +726,8 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
 
 # ----------------------------------------------------------------- planning (3.1)
 
-from app.models import PackingItem, PackingPlan, PackingProfile   # noqa: E402
+from app.models import (PackingItem, PackingPlan, PackingProfile,   # noqa: E402
+                        DiscoveryProfile)
 
 # The Packing Profile form — closed vocabularies rendered as dropdowns/checkboxes
 # (D-86) so the owner never hand-writes JSON. label pairs are (value, human text).
@@ -684,6 +758,41 @@ PACK_CAT_LABELS = {"documents": "Documents", "health": "Health",
                    "clothing": "Clothing", "footwear": "Footwear",
                    "toiletries": "Toiletries", "tech": "Tech",
                    "activity": "Activity gear"}
+
+# ---- Discovery Profile vocabularies (3.2, SPEC-3.2 §2.2) --------------------
+# Constraint-first (D-87): dietary/dislikes/budget/mobility SUBTRACT or bound;
+# drink/activity interests ADD search queries. Closed vocabularies map to the
+# resolvers' SearXNG query templates; dietary allows custom strings (D-93) but
+# the form offers the standard set as checkboxes.
+DISCOVERY_DIETARY = [("vegetarian", "Vegetarian"), ("vegan", "Vegan"),
+                     ("halal", "Halal"), ("kosher", "Kosher"),
+                     ("gluten_free", "Gluten-free"), ("dairy_free", "Dairy-free")]
+DISCOVERY_DRINKS = [("craft_beer", "Craft beer"), ("distilleries", "Distilleries"),
+                    ("wineries", "Wineries"), ("coffee", "Coffee"), ("tea", "Tea"),
+                    ("non_alcoholic", "Non-alcoholic")]
+DISCOVERY_ACTIVITIES = [("markets", "Markets"), ("hidden_gems", "Hidden gems"),
+                        ("museums", "Museums"), ("outdoor", "Outdoor"),
+                        ("historical", "Historical"), ("nightlife", "Nightlife"),
+                        ("sports", "Sports"), ("shopping", "Shopping"),
+                        ("wellness", "Wellness"), ("cooking_classes", "Cooking classes"),
+                        ("live_music", "Live music"), ("architecture", "Architecture")]
+# Budget ceiling (D-88): $/$$/$$$/$$$$, 0 = no limit. Integer, a ceiling not a floor.
+DISCOVERY_BUDGET = [(0, "No limit"), (1, "$"), (2, "$$"), (3, "$$$"), (4, "$$$$")]
+DISCOVERY_MOBILITY = [("no_limits", "No limits"),
+                      ("moderate", "Moderate — some walking is fine"),
+                      ("limited", "Limited — minimal walking or stairs"),
+                      ("wheelchair", "Wheelchair accessible only")]
+
+
+def _discovery_default() -> dict:
+    """A blank profile — "show me everything, no constraints" (SPEC-3.2 §2.2)."""
+    return {
+        "food": {"dietary_restrictions": [], "cuisine_dislikes": [],
+                 "allergies": "", "budget_ceiling": 0},
+        "drink": {"interests": []},
+        "activity": {"interests": []},
+        "practical": {"mobility": "no_limits"},
+    }
 
 
 def _packing_item_view(i: PackingItem) -> dict:
@@ -879,6 +988,100 @@ def save_packing_profile(request: Request,
                                       _profile_form_ctx(request, session, saved=True))
 
 
+# ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------
+
+def _discovery_profile_row(session: Session) -> DiscoveryProfile | None:
+    """Single-user for now (D-89): the first row is the deployment-wide default,
+    same convention as _profile_row for packing."""
+    return (session.query(DiscoveryProfile)
+            .order_by(DiscoveryProfile.created_at).first())
+
+
+def _discovery_form_ctx(request: Request, session: Session,
+                        saved: bool = False) -> dict:
+    row = _discovery_profile_row(session)
+    d = _discovery_default()
+    v = {**d, **((row.values if row else None) or {})}
+    food = {**d["food"], **(v.get("food") or {})}
+    drink = {**d["drink"], **(v.get("drink") or {})}
+    activity = {**d["activity"], **(v.get("activity") or {})}
+    practical = {**d["practical"], **(v.get("practical") or {})}
+    diet = set(food.get("dietary_restrictions") or [])
+    drinks = set(drink.get("interests") or [])
+    acts = set(activity.get("interests") or [])
+    budget = food.get("budget_ceiling") or 0
+    mob = practical.get("mobility") or "no_limits"
+    return {
+        "request": request, "saved": saved,
+        "dietary": [{"value": k, "label": t, "checked": k in diet}
+                    for k, t in DISCOVERY_DIETARY],
+        "cuisine_dislikes": ", ".join(food.get("cuisine_dislikes") or []),
+        "allergies": food.get("allergies") or "",
+        "budget_opts": [{"value": k, "label": t, "checked": k == budget}
+                        for k, t in DISCOVERY_BUDGET],
+        "drinks": [{"value": k, "label": t, "checked": k in drinks}
+                   for k, t in DISCOVERY_DRINKS],
+        "activities": [{"value": k, "label": t, "checked": k in acts}
+                       for k, t in DISCOVERY_ACTIVITIES],
+        "mobility_opts": [{"value": k, "label": t, "selected": k == mob}
+                          for k, t in DISCOVERY_MOBILITY],
+    }
+
+
+@router.get("/settings/discovery-profile", response_class=HTMLResponse)
+def edit_discovery_profile(request: Request, session: Session = Depends(get_session)):
+    """The Discovery Profile editor (D-89) — peer of the Packing Profile page,
+    linked from the Administer nav. Constraint-first preferences that shape what
+    the food/activity resolvers search for. 2-segment static path so `/{trip_id}`
+    doesn't capture it."""
+    return templates.TemplateResponse(request, "discovery_profile.html",
+                                      _discovery_form_ctx(request, session))
+
+
+@router.post("/settings/discovery-profile", response_class=HTMLResponse)
+def save_discovery_profile(request: Request,
+                           dietary_restrictions: list[str] = Form(default=[]),
+                           cuisine_dislikes: str = Form(""),
+                           allergies: str = Form(""),
+                           budget_ceiling: str = Form("0"),
+                           drink_interests: list[str] = Form(default=[]),
+                           activity_interests: list[str] = Form(default=[]),
+                           mobility: str = Form("no_limits"),
+                           session: Session = Depends(get_session)):
+    try:
+        budget = int(budget_ceiling)
+    except (TypeError, ValueError):
+        budget = 0
+    if budget not in (0, 1, 2, 3, 4):
+        budget = 0
+    # Interests are closed vocabularies (they map to query templates) — filter to
+    # known keys so the blob stays clean. Dietary allows custom strings (D-93), so
+    # it is not filtered. Cuisine dislikes are free text, split on commas.
+    drinks_ok = {k for k, _ in DISCOVERY_DRINKS}
+    acts_ok = {k for k, _ in DISCOVERY_ACTIVITIES}
+    mob_ok = {k for k, _ in DISCOVERY_MOBILITY}
+    dislikes = [c.strip() for c in cuisine_dislikes.split(",") if c.strip()]
+    values = {
+        "food": {
+            "dietary_restrictions": [d.strip() for d in dietary_restrictions if d.strip()],
+            "cuisine_dislikes": dislikes,
+            "allergies": allergies.strip(),
+            "budget_ceiling": budget,
+        },
+        "drink": {"interests": [x for x in drink_interests if x in drinks_ok]},
+        "activity": {"interests": [x for x in activity_interests if x in acts_ok]},
+        "practical": {"mobility": mobility if mobility in mob_ok else "no_limits"},
+    }
+    row = _discovery_profile_row(session)
+    if row is None:
+        session.add(DiscoveryProfile(values=values))
+    else:
+        row.values = values
+    session.commit()
+    return templates.TemplateResponse(request, "discovery_profile.html",
+                                      _discovery_form_ctx(request, session, saved=True))
+
+
 @router.get("/{trip_id}/edit", response_class=HTMLResponse)
 def edit_trip(trip_id: str, request: Request, next: str = "",
               session: Session = Depends(get_session)):
@@ -921,6 +1124,8 @@ def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
     trip = Trip(source="manual")
     _save_trip_fields(trip, name, start, end, notes, adventurelog_collection_id)
     session.add(trip)
+    session.flush()                       # need trip.id for the self-traveller link
+    _auto_link_self(session, trip.id)     # §11.2 — you're on your own trip by default
     session.commit()
     return _redirect("/trips")
 
@@ -955,6 +1160,8 @@ def delete_trip(trip_id: str, session: Session = Depends(get_session)):
         # sweep the activities.
         session.query(TripActivity).filter(
             TripActivity.trip_id == trip_id).delete(synchronize_session=False)
+        session.query(TripTraveler).filter(
+            TripTraveler.trip_id == trip_id).delete(synchronize_session=False)
         # Clear the soft link from any captured items filed into this trip
         # (2.1.2) — there's no DB FK to null it for us (migration 0008).
         from app.models import TravelItem
@@ -964,6 +1171,78 @@ def delete_trip(trip_id: str, session: Session = Depends(get_session)):
         session.delete(trip)
         session.commit()
     return _redirect("/trips")
+
+
+def _travelers_section(request: Request, session: Session, trip_id: str) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request, "_travelers_section.html",
+        {"request": request, **_travelers_context(session, trip_id)})
+
+
+@router.post("/{trip_id}/travelers", response_class=HTMLResponse)
+def add_traveler(trip_id: str, request: Request, traveler_id: str = Form(""),
+                 session: Session = Depends(get_session)):
+    """Add an existing TravelerIdentity to the trip roster as a companion (the
+    `self` traveller auto-links on creation). Idempotent — a duplicate add is a
+    no-op — and swaps just the Who's-traveling section."""
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    try:
+        tid = int(traveler_id)
+    except (TypeError, ValueError):
+        tid = 0
+    ident = session.get(TravelerIdentity, tid) if tid else None
+    if ident is not None and session.get(
+            TripTraveler, {"trip_id": trip_id, "traveler_id": tid}) is None:
+        role = "self" if ident.kind == "self" else "companion"
+        session.add(TripTraveler(trip_id=trip_id, traveler_id=tid, role=role))
+        session.commit()
+    return _travelers_section(request, session, trip_id)
+
+
+@router.post("/{trip_id}/travelers/new", response_class=HTMLResponse)
+def add_guest(trip_id: str, request: Request, name: str = Form(""),
+              session: Session = Depends(get_session)):
+    """Quick-add a generic guest by name — mint a minimal TravelerIdentity
+    (kind=guest, no profile, no nationality) and link it as a companion (§11.2's
+    "+ Add new"). A guest needs no Discovery/Packing profile; those tables are
+    optional and hang off the identity later if ever wanted (D-94). Reuses an
+    existing identity of the same name rather than duplicating it (display_name
+    is unique). Blank name is a no-op."""
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    label = name.strip()
+    if label:
+        ident = (session.query(TravelerIdentity)
+                 .filter(TravelerIdentity.display_name == label).first())
+        if ident is None:
+            # generic=True: a placeholder person, ignored by discovery/planning
+            # (D-100). Reusing an existing identity never flips its flag.
+            ident = TravelerIdentity(display_name=label, kind="guest",
+                                     generic=True)
+            session.add(ident)
+            session.flush()               # need ident.id for the link
+        if session.get(TripTraveler, {"trip_id": trip_id,
+                                      "traveler_id": ident.id}) is None:
+            role = "self" if ident.kind == "self" else "companion"
+            session.add(TripTraveler(trip_id=trip_id, traveler_id=ident.id,
+                                     role=role))
+        session.commit()
+    return _travelers_section(request, session, trip_id)
+
+
+@router.post("/{trip_id}/travelers/{traveler_id}/remove", response_class=HTMLResponse)
+def remove_traveler(trip_id: str, traveler_id: int, request: Request,
+                    session: Session = Depends(get_session)):
+    """Drop a traveller from the trip roster. Swaps just the section."""
+    row = session.get(TripTraveler,
+                      {"trip_id": trip_id, "traveler_id": traveler_id})
+    if row is not None:
+        session.delete(row)
+        session.commit()
+    return _travelers_section(request, session, trip_id)
 
 
 def _push_msg(text: str) -> HTMLResponse:

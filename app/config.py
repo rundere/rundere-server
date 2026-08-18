@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     frankfurter_url: str = "https://api.frankfurter.dev/v1"
     open_meteo_url: str = "https://api.open-meteo.com/v1"
     open_meteo_archive_url: str = "https://archive-api.open-meteo.com/v1"
+    # Discovery LLM tier (Yonder 3.2, SPEC-3.2 §5). SearXNG is already in the
+    # stack (searxng-core on travel-net); its JSON API needs
+    # `search.formats: [html, json]` in settings.yml. Empty = the LLM resolvers
+    # degrade to absent findings (they require both searxng_url and ollama_url).
+    searxng_url: str = "http://searxng:8080"
 
     app_version: str = "3.1.3"
 

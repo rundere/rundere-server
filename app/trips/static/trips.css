@@ -339,6 +339,18 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-cc-result { font-size: 22px; font-weight: 600; color: var(--color-text);
   margin: 10px 0 4px; }
 
+/* Who's traveling (3.2) */
+.yn-traveler-list { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px; }
+.yn-traveler { display: flex; align-items: center; gap: 8px; }
+.yn-traveler-name { font-weight: 600; color: var(--color-text); }
+.yn-traveler-remove { margin-left: auto; }
+.yn-traveler-add { display: flex; align-items: center; gap: 8px;
+  margin-top: 10px; max-width: 360px; }
+.yn-traveler-add .input { flex: 1; }
+.yn-traveler-hint { margin: 6px 0 0; color: var(--color-neutral-600);
+  font-size: 12px; }
+
 @media (max-width: 640px) {
   .bp-trip-head-row { flex-direction: column; }
   .bp-row2 { flex-direction: column; }

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Discovery profile{% endblock %}
+{% block content %}
+<a class="bp-back" href="/trips">← All trips</a>
+
+<div class="card blueprint bp-trip-header">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <h1 class="bp-h1">Discovery profile</h1>
+  <p class="bp-trip-notes">Set these once — they shape what discovery searches for.
+    It's a filter, not a wish list: say what to <em>skip</em> (dietary, dislikes,
+    budget) and which extras to <em>add</em> (drinks, activities). Leave it blank
+    for generic "best of" results. Re-run a trip's discovery to apply changes.</p>
+</div>
+
+{% if saved %}
+<div class="card blueprint yn-note-card yn-todo yn-profile-saved">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <div class="bp-group-label">Saved ✓</div>
+  <p class="bp-trip-notes">Preferences saved. Re-run a trip's discovery to apply them.</p>
+</div>
+{% endif %}
+
+<form method="post" action="/trips/settings/discovery-profile"
+      class="card blueprint yn-profile-card">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+
+  <div class="field"><label>Dietary restrictions <span class="yn-help">— results must accommodate these</span></label>
+    <div class="yn-checkrow">
+      {% for d in dietary %}
+      <label class="yn-check"><input type="checkbox" name="dietary_restrictions" value="{{ d.value }}" {% if d.checked %}checked{% endif %}> {{ d.label }}</label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="yn-form-grid">
+    <div class="field"><label>Cuisines to avoid <span class="yn-help">— comma-separated</span></label>
+      <input class="input" type="text" name="cuisine_dislikes" value="{{ cuisine_dislikes }}"
+             placeholder="e.g. sushi, fast food"></div>
+    <div class="field"><label>Allergies <span class="yn-help">— flagged as a warning, not filtered</span></label>
+      <input class="input" type="text" name="allergies" value="{{ allergies }}"
+             placeholder="e.g. peanuts, shellfish"></div>
+  </div>
+
+  <div class="field"><label>Budget ceiling <span class="yn-help">— show this tier and below</span></label>
+    <div class="yn-checkrow">
+      {% for b in budget_opts %}
+      <label class="yn-check"><input type="radio" name="budget_ceiling" value="{{ b.value }}" {% if b.checked %}checked{% endif %}> {{ b.label }}</label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="field"><label>Drink interests <span class="yn-help">— opt-in; unchecked is not searched</span></label>
+    <div class="yn-checkrow">
+      {% for d in drinks %}
+      <label class="yn-check"><input type="checkbox" name="drink_interests" value="{{ d.value }}" {% if d.checked %}checked{% endif %}> {{ d.label }}</label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="field"><label>Activity interests <span class="yn-help">— opt-in; also the lens for suggested events</span></label>
+    <div class="yn-checkrow">
+      {% for a in activities %}
+      <label class="yn-check"><input type="checkbox" name="activity_interests" value="{{ a.value }}" {% if a.checked %}checked{% endif %}> {{ a.label }}</label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="yn-form-grid">
+    <div class="field"><label>Mobility</label>
+      <select class="input" name="mobility">
+        {% for o in mobility_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+  </div>
+
+  <div class="dialog-actions">
+    <a class="btn btn-ghost" href="/trips">Back to trips</a>
+    <button type="submit" class="btn btn-primary">Save profile</button>
+  </div>
+</form>
+{% endblock %}

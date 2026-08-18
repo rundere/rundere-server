@@ -20,7 +20,8 @@ except ImportError:
 if DEPS:
     from app.db import SessionLocal, engine
     from app.main import app
-    from app.models import Base, Trip, TripActivity
+    from app.models import (Base, Trip, TripActivity, TravelerIdentity,
+                            TripTraveler)
     from app.trips import routes as trips_routes
     from app.trips import types as activity_types
     Base.metadata.create_all(engine)
@@ -255,3 +256,212 @@ def test_activity_fields_partial_reflects_type():
     html = client.get(f"/trips/{tid}/activity/fields", params={"type": "lodging"}).text
     assert 'name="name"' in html and "Property name" in html
     assert 'name="flightNumber"' not in html          # not a lodging field
+
+
+# ------------------------------------------------------------------ travelers (3.2)
+
+def _clear_travelers():
+    with SessionLocal() as s:
+        s.query(TripTraveler).delete()
+        s.query(TravelerIdentity).delete()
+        s.query(Trip).delete()
+        s.commit()
+
+
+def _mk_identity(name, kind="guest", nationality=None):
+    with SessionLocal() as s:
+        t = TravelerIdentity(display_name=name, kind=kind, nationality=nationality)
+        s.add(t)
+        s.commit()
+        return t.id
+
+
+def test_create_trip_auto_links_self():
+    if not DEPS:
+        return
+    _clear_travelers()
+    me = _mk_identity("Me", kind="self", nationality="CA")
+    client.post("/trips", data={"name": "Solo trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "Solo trip").one().id
+        rows = s.query(TripTraveler).filter(TripTraveler.trip_id == tid).all()
+        assert len(rows) == 1
+        assert rows[0].traveler_id == me and rows[0].role == "self"
+
+
+def test_create_trip_without_self_links_no_one():
+    if not DEPS:
+        return
+    _clear_travelers()
+    _mk_identity("A guest", kind="guest")
+    client.post("/trips", data={"name": "No-self trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "No-self trip").one().id
+        assert s.query(TripTraveler).filter(
+            TripTraveler.trip_id == tid).count() == 0
+
+
+def test_detail_shows_traveler_roster():
+    if not DEPS:
+        return
+    _clear_travelers()
+    _mk_identity("Traveler One", kind="self", nationality="CA")
+    client.post("/trips", data={"name": "Roster trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "Roster trip").one().id
+    html = client.get(f"/trips/{tid}").text
+    assert "Who's traveling" in html
+    assert "Traveler One" in html and ">You<" in html
+    assert "CA" in html                                  # nationality tag
+
+
+def test_add_and_remove_companion():
+    if not DEPS:
+        return
+    _clear_travelers()
+    _mk_identity("Owner", kind="self")
+    companion = _mk_identity("Companion Carol", kind="guest")
+    client.post("/trips", data={"name": "Duo trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "Duo trip").one().id
+
+    # add the companion — the section partial comes back with both names
+    r = client.post(f"/trips/{tid}/travelers", data={"traveler_id": companion})
+    assert r.status_code == 200
+    assert "Companion Carol" in r.text and "Companion" in r.text
+    with SessionLocal() as s:
+        assert s.query(TripTraveler).filter(
+            TripTraveler.trip_id == tid).count() == 2
+
+    # a duplicate add is a no-op
+    client.post(f"/trips/{tid}/travelers", data={"traveler_id": companion})
+    with SessionLocal() as s:
+        assert s.query(TripTraveler).filter(
+            TripTraveler.trip_id == tid).count() == 2
+
+    # remove the companion — gone from the roster list (she reappears in the
+    # picker dropdown, which is correct, so assert on the roster markup itself)
+    r = client.post(f"/trips/{tid}/travelers/{companion}/remove")
+    assert r.status_code == 200
+    assert 'yn-traveler-name">Companion Carol<' not in r.text
+    with SessionLocal() as s:
+        left = s.query(TripTraveler).filter(TripTraveler.trip_id == tid).all()
+        assert len(left) == 1 and left[0].role == "self"
+
+
+def test_add_guest_by_name_mints_identity():
+    if not DEPS:
+        return
+    _clear_travelers()
+    _mk_identity("Owner4", kind="self")
+    client.post("/trips", data={"name": "Guest trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "Guest trip").one().id
+    r = client.post(f"/trips/{tid}/travelers/new", data={"name": "  Casual Pat  "})
+    assert r.status_code == 200
+    assert "Casual Pat" in r.text and "Companion" in r.text
+    with SessionLocal() as s:
+        pat = s.query(TravelerIdentity).filter(
+            TravelerIdentity.display_name == "Casual Pat").one()   # trimmed, minted
+        assert pat.kind == "guest" and pat.nationality is None
+        assert pat.generic is True                                  # D-100 placeholder
+        assert s.query(TripTraveler).filter(
+            TripTraveler.trip_id == tid).count() == 2               # self + guest
+
+
+def test_add_guest_reuses_existing_name():
+    if not DEPS:
+        return
+    _clear_travelers()
+    _mk_identity("Owner5", kind="self")
+    existing = _mk_identity("Jordan Lee", kind="guest")
+    client.post("/trips", data={"name": "Reuse trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "Reuse trip").one().id
+    client.post(f"/trips/{tid}/travelers/new", data={"name": "Jordan Lee"})
+    with SessionLocal() as s:
+        # no duplicate identity created; the existing one is linked
+        assert s.query(TravelerIdentity).filter(
+            TravelerIdentity.display_name == "Jordan Lee").count() == 1
+        jordan = s.get(TravelerIdentity, existing)
+        assert jordan.generic is False          # reuse never flips a real record
+        row = s.query(TripTraveler).filter(
+            TripTraveler.trip_id == tid,
+            TripTraveler.traveler_id == existing).one()
+        assert row.role == "companion"
+
+
+def test_discovery_travelers_excludes_generic_guests():
+    if not DEPS:
+        return
+    _clear_travelers()
+    me = _mk_identity("Owner7", kind="self", nationality="CA")
+    real = _mk_identity("Real Companion", kind="guest")     # generic defaults False
+    client.post("/trips", data={"name": "Consider trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "Consider trip").one().id
+    client.post(f"/trips/{tid}/travelers", data={"traveler_id": real})
+    client.post(f"/trips/{tid}/travelers/new", data={"name": "Placeholder Guest"})
+    with SessionLocal() as s:
+        considered = {t.display_name for t in
+                      trips_routes.discovery_travelers(s, tid)}
+        # self + the real companion are in; the generic guest is filtered out
+        assert considered == {"Owner7", "Real Companion"}
+        assert "Placeholder Guest" not in considered
+
+
+def test_add_guest_blank_name_is_noop():
+    if not DEPS:
+        return
+    _clear_travelers()
+    _mk_identity("Owner6", kind="self")
+    client.post("/trips", data={"name": "Blank trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "Blank trip").one().id
+        before = s.query(TravelerIdentity).count()
+    r = client.post(f"/trips/{tid}/travelers/new", data={"name": "   "})
+    assert r.status_code == 200
+    with SessionLocal() as s:
+        assert s.query(TravelerIdentity).count() == before          # nothing minted
+        assert s.query(TripTraveler).filter(
+            TripTraveler.trip_id == tid).count() == 1               # only self
+
+
+def test_add_traveler_rejects_bad_id():
+    if not DEPS:
+        return
+    _clear_travelers()
+    _mk_identity("Owner2", kind="self")
+    client.post("/trips", data={"name": "Guard trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "Guard trip").one().id
+    # non-numeric and non-existent ids never create a row
+    client.post(f"/trips/{tid}/travelers", data={"traveler_id": "abc"})
+    client.post(f"/trips/{tid}/travelers", data={"traveler_id": "99999"})
+    with SessionLocal() as s:
+        assert s.query(TripTraveler).filter(
+            TripTraveler.trip_id == tid).count() == 1     # only self
+
+
+def test_delete_trip_sweeps_travelers():
+    if not DEPS:
+        return
+    _clear_travelers()
+    _mk_identity("Owner3", kind="self")
+    client.post("/trips", data={"name": "Sweep trip", "start": "", "end": "",
+                                "notes": ""})
+    with SessionLocal() as s:
+        tid = s.query(Trip).filter(Trip.name == "Sweep trip").one().id
+    client.post(f"/trips/{tid}/delete")
+    with SessionLocal() as s:
+        assert s.query(TripTraveler).filter(
+            TripTraveler.trip_id == tid).count() == 0

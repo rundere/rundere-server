@@ -1,0 +1,59 @@
+<div id="travelers-section">
+<div class="bp-timeline-head">
+  <h2 class="bp-h2">Who's traveling</h2>
+  <div class="bp-head-actions">
+    <a class="btn btn-secondary bp-sm" href="{{ travelers_manage_url }}">Manage travellers</a>
+  </div>
+</div>
+
+{% if travelers %}
+<section class="bp-group">
+  <div class="card blueprint bp-daycard">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <ul class="yn-traveler-list">
+      {% for t in travelers %}
+      <li class="yn-traveler">
+        <span class="yn-traveler-name">{{ t.name }}</span>
+        <span class="tag {{ 'tag-outline' if t.role == 'self' else 'tag-neutral' }}">{{ t.role_label }}</span>
+        {% if t.generic %}<span class="tag tag-neutral" title="Generic guest — a headcount placeholder, not used for discovery or packing">guest</span>{% endif %}
+        {% if t.nationality %}<span class="tag tag-neutral" title="Nationality">{{ t.nationality }}</span>{% endif %}
+        <button class="btn btn-ghost bp-sm yn-traveler-remove"
+                hx-post="/trips/{{ trip_id }}/travelers/{{ t.id }}/remove"
+                hx-target="#travelers-section" hx-swap="outerHTML"
+                {% if t.role == 'self' %}hx-confirm="Remove yourself from this trip? Visa research needs your nationality."{% endif %}>Remove</button>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% else %}
+<div class="card blueprint bp-empty-card">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <div class="bp-empty-msg">No one added yet. Add travellers so Discovery and Packing
+    know who's going — and so visa research can read the right passport.</div>
+</div>
+{% endif %}
+
+{% if travelers_available %}
+<form class="yn-traveler-add" hx-post="/trips/{{ trip_id }}/travelers"
+      hx-target="#travelers-section" hx-swap="outerHTML">
+  <select class="input" name="traveler_id" required>
+    <option value="" disabled selected>Add someone you've saved…</option>
+    {% for a in travelers_available %}
+    <option value="{{ a.id }}">{{ a.name }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-secondary bp-sm" type="submit">Add</button>
+</form>
+{% endif %}
+
+<form class="yn-traveler-add" hx-post="/trips/{{ trip_id }}/travelers/new"
+      hx-target="#travelers-section" hx-swap="outerHTML"
+      hx-on::after-request="this.reset()">
+  <input class="input" name="name" type="text" required
+         placeholder="…or add a guest by name" autocomplete="off">
+  <button class="btn btn-secondary bp-sm" type="submit">Add guest</button>
+</form>
+<p class="yn-traveler-hint">A guest is just a name — no profile needed. Add details later in
+  <a href="{{ travelers_manage_url }}">Travellers</a> if you want.</p>
+</div>
