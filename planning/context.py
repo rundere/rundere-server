@@ -83,12 +83,16 @@ def _climate_bands(high: int | None, low: int | None,
                    rain_days: int) -> set[str]:
     bands: set[str] = set()
     if high is not None:
-        if high < 12 or (low is not None and low < 3):
-            bands.add("cold_weather")
+        if high < 12:
+            bands.add("cold_weather")           # genuinely cold days → warm layer
         elif high <= 21:
             bands.add("layering")
         else:
             bands.add("lightweight")
+        # Cold nights but mild/warm days (desert, altitude) call for a warm layer,
+        # not a parka — a 2°C night after a 20°C day is layering, not cold_weather.
+        if low is not None and low < 3 and high >= 12:
+            bands.add("layering")
     if rain_days >= 2:
         bands.add("rain_gear")
     return bands

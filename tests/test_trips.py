@@ -159,7 +159,7 @@ def test_activity_crud_and_timeline():
     tid = _mk("Activity trip", "2026-08-14", "2026-08-18")
     # create a flight
     r = client.post(f"/trips/{tid}/activity", data={
-        "type": "flight", "when": "2026-08-15T09:00", "endWhen": "2026-08-15T11:30",
+        "activity_kind": "flight", "when": "2026-08-15T09:00", "endWhen": "2026-08-15T11:30",
         "airline": "Air Canada", "flightNumber": "AC4826", "from": "YYZ", "to": "KEF",
         "sourceLink": "https://example.com/eticket"})
     assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
@@ -176,7 +176,7 @@ def test_activity_crud_and_timeline():
 
     # edit: move the flight to a new day -> starts_at + grouping follow
     r = client.post(f"/trips/{tid}/activity/{a.id}", data={
-        "type": "flight", "when": "2026-08-16T09:00", "airline": "Air Canada",
+        "activity_kind": "flight", "when": "2026-08-16T09:00", "airline": "Air Canada",
         "flightNumber": "AC4826"})
     assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
     with SessionLocal() as s:
@@ -189,14 +189,53 @@ def test_activity_crud_and_timeline():
         assert s.query(TripActivity).filter(TripActivity.trip_id == tid).count() == 0
 
 
+def test_lodging_with_type_field_saves_as_lodging_not_flight():
+    if not DEPS:
+        return
+    # Regression: the lodging detail field is named "type", same as the activity
+    # selector. Before the fix, form.get("type") returned the detail field (last
+    # duplicate), resolving to DEFAULT_TYPE=flight — every manual lodging saved as
+    # a flight. The selector is now `activity_kind`.
+    # The real post-fix form has distinct keys: activity_kind (selector) + type
+    # (lodging sub-type). Before the fix both were "type" and the selector lost.
+    tid = _mk("Lodging trip", "2026-10-05", "2026-10-12")
+    r = client.post(f"/trips/{tid}/activity", data={
+        "activity_kind": "lodging", "when": "2026-10-08T15:00",
+        "name": "Inn of the Sandpiper", "type": "hotel",
+        "address": "113 Washington Ave"})
+    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
+    with SessionLocal() as s:
+        a = s.query(TripActivity).filter(TripActivity.trip_id == tid).one()
+        assert a.type == "lodging"                      # not "flight"
+        assert a.values["name"] == "Inn of the Sandpiper"
+        assert a.values["type"] == "hotel"              # sub-type preserved
+        assert a.starts_at == "2026-10-08T15:00"
+
+    # editing a (mis-saved) activity to lodging now sticks
+    r = client.post(f"/trips/{tid}/activity/{a.id}", data={
+        "activity_kind": "lodging", "when": "2026-10-08T15:00",
+        "name": "Sandpiper", "type": "resort"})
+    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
+    with SessionLocal() as s:
+        a = s.query(TripActivity).filter(TripActivity.trip_id == tid).one()
+        assert a.type == "lodging" and a.values["type"] == "resort"
+
+
+def test_activity_fields_swap_reads_activity_kind():
+    if not DEPS:
+        return
+    html = client.get("/trips/x/activity/fields", params={"activity_kind": "lodging"}).text
+    assert "Property name" in html and 'name="name"' in html
+
+
 def test_undated_activity_groups_last():
     if not DEPS:
         return
     tid = _mk("Mixed trip", "2026-08-14", "2026-08-18")
     client.post(f"/trips/{tid}/activity",
-                data={"type": "note", "title": "Pack passports"})           # no when
+                data={"activity_kind": "note", "title": "Pack passports"})           # no when
     client.post(f"/trips/{tid}/activity",
-                data={"type": "lodging", "when": "2026-08-14T15:00", "name": "Hotel Nordljos"})
+                data={"activity_kind": "lodging", "when": "2026-08-14T15:00", "name": "Hotel Nordljos"})
     html = client.get(f"/trips/{tid}").text
     assert "Date not set" in html and "Hotel Nordljos" in html
     # the dated day-group renders before the undated bucket
@@ -253,7 +292,7 @@ def test_activity_fields_partial_reflects_type():
     if not DEPS:
         return
     tid = _mk("Partial trip")
-    html = client.get(f"/trips/{tid}/activity/fields", params={"type": "lodging"}).text
+    html = client.get(f"/trips/{tid}/activity/fields", params={"activity_kind": "lodging"}).text
     assert 'name="name"' in html and "Property name" in html
     assert 'name="flightNumber"' not in html          # not a lodging field
 

@@ -16,11 +16,15 @@ results.
 """
 from __future__ import annotations
 
+import logging
+
 from discover.grounding import ground_items, normalize_url
 from discover.places import DerivedPlace
 from discover.resolvers.base import Finding, ResolverContext
 from discover.search import searxng_search
 from discover.synth import DEFAULT_MODEL, synthesize_json
+
+log = logging.getLogger("yonder.discovery.llm")
 
 _MONTHS = ["January", "February", "March", "April", "May", "June", "July",
            "August", "September", "October", "November", "December"]
@@ -187,18 +191,27 @@ class EventsResolver:
         when = f"{month} {year}" if month and year else ""
         results = self._search(self._queries(place.city, place.country, when, interests))
         if not results:
+            log.warning("events: no SearXNG results for %s — is SearXNG reachable at "
+                        "%s with JSON format enabled?", place.label, self.searxng_url)
             return None
         out = synthesize_json(self._prompt(place, when, interests, results), _SCHEMA,
                               base_url=self.ollama_url, system=_SYSTEM,
                               model=self.model, timeout=self.timeout)
         if not out:
+            log.warning("events: Ollama returned nothing for %s — is Ollama reachable "
+                        "at %s and is %s pulled?", place.label, self.ollama_url, self.model)
             return None
         allowed = [r.url for r in results]
         impacts = ground_items(out.get("impacts") or [], allowed).kept
         suggested = ground_items(out.get("suggested") or [], allowed).kept
         other = ground_items(out.get("other") or [], allowed).kept
         if not (impacts or suggested or other):
+            log.info("events: results proposed but none grounded for %s "
+                     "(model cited URLs not in the %d search results)",
+                     place.label, len(results))
             return None
+        log.info("events: %s → %d impacts, %d suggested, %d other",
+                 place.label, len(impacts), len(suggested), len(other))
         title_by_url = {normalize_url(r.url): r.title for r in results}
         sources = self._sources([*impacts, *suggested, *other], title_by_url)
         return Finding(

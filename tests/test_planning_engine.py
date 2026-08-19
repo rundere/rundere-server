@@ -27,6 +27,33 @@ def _qty(res, iid):
     return next((i.quantity for i in res.items if i.item_id == iid), None)
 
 
+def _reason(res, iid):
+    return next((i.reason for i in res.items + res.omitted if i.item_id == iid), None)
+
+
+# ---------------------------------------------------------- reasons / climate
+
+def test_modifier_items_explain_their_trigger():
+    # A cold-weather trip: the insulated jacket says WHY it's on the list.
+    res = build_plan(_ctx(5, climate_bands={"cold_weather"}), _ITEMS)
+    assert _qty(res, "insulated_jacket") is not None
+    assert _reason(res, "insulated_jacket") == "cold days expected"
+
+
+def test_every_item_has_a_nonempty_reason():
+    res = build_plan(_ctx(6, activity_tags={"hiking"}, climate_bands={"layering"}),
+                     _ITEMS)
+    assert res.items and all((i.reason or "").strip() for i in res.items)
+
+
+def test_cold_nights_mild_days_is_layering_not_a_parka():
+    # Arizona in October: ~20°C days, ~2°C nights. Layering, not cold_weather.
+    from planning.context import _climate_bands
+    assert _climate_bands(20, 2, 0) == {"layering"}
+    assert _climate_bands(8, -1, 0) == {"cold_weather"}      # genuinely cold days
+    assert _climate_bands(26, 15, 0) == {"lightweight"}
+
+
 # ------------------------------------------------------------------ scoring
 
 def test_beach_activities_pick_the_beach_archetype():
