@@ -13,11 +13,15 @@ comes from the ResolverContext (per-trip). Missing either endpoint → None.
 """
 from __future__ import annotations
 
+import logging
+
 from discover.grounding import ground_items, normalize_url
 from discover.places import DerivedPlace
 from discover.resolvers.base import Finding, ResolverContext
 from discover.search import searxng_search
 from discover.synth import DEFAULT_MODEL, synthesize_json
+
+log = logging.getLogger("yonder.discovery.llm")
 
 # One SearXNG query per checked drink interest (§2.2). Kept to one representative
 # query each so a full profile doesn't fan out to dozens of searches (§5.2).
@@ -151,11 +155,15 @@ class FoodResolver:
         profile = ctx.discovery_profile or {}
         results = self._search(self._queries(place.city, place.country, profile))
         if not results:
+            log.warning("food: no SearXNG results for %s — is SearXNG reachable at "
+                        "%s with JSON format enabled?", place.label, self.searxng_url)
             return None                          # nothing to ground against
         out = synthesize_json(self._prompt(place, profile, results), _SCHEMA,
                               base_url=self.ollama_url, system=_SYSTEM,
                               model=self.model, timeout=self.timeout)
         if not out:
+            log.warning("food: Ollama returned nothing for %s — is Ollama reachable "
+                        "at %s and is %s pulled?", place.label, self.ollama_url, self.model)
             return None
         allowed = [r.url for r in results]
         grounded = ground_items(out.get("places") or [], allowed).kept
@@ -165,7 +173,11 @@ class FoodResolver:
         warnings = [w for w in (out.get("allergy_warnings") or [])
                     if isinstance(w, str) and w.strip()]
         if not grounded and not dishes:
+            log.info("food: %d place(s) proposed but none grounded for %s "
+                     "(model cited URLs not in the %d search results)",
+                     len(out.get("places") or []), place.label, len(results))
             return None                          # everything hallucinated / empty
+        log.info("food: %s → %d places, %d dishes", place.label, len(grounded), len(dishes))
         title_by_url = {normalize_url(r.url): r.title for r in results}
         sources = self._sources(grounded, title_by_url)
         return Finding(

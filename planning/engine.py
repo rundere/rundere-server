@@ -132,16 +132,19 @@ def _active_modifiers(ctx: PlanningContext) -> list[str]:
     return mods
 
 
-def _add(acc: dict, entry: dict, source: str, q: dict) -> None:
+def _add(acc: dict, entry: dict, source: str, q: dict,
+         trigger: str | None = None) -> None:
     """Merge one {item, qty|formula} entry into the accumulator, keeping the
-    larger quantity when an item is contributed twice."""
+    larger quantity when an item is contributed twice. The first contributor's
+    source + trigger win (the trigger is the modifier name, e.g. "cold_weather",
+    used to explain WHY an item is on the list)."""
     iid = entry["item"]
     qty = q[entry["formula"]] if "formula" in entry else int(entry.get("qty", 1))
     cur = acc.get(iid)
-    if cur is None or qty > cur["qty"]:
-        acc[iid] = {"qty": qty, "source": (cur or {}).get("source", source)}
     if cur is None:
-        acc[iid]["source"] = source
+        acc[iid] = {"qty": qty, "source": source, "trigger": trigger}
+    elif qty > cur["qty"]:
+        cur["qty"] = qty                    # keep the first source/trigger
 
 
 # ---------------------------------------------------------------- main
@@ -179,7 +182,7 @@ def build_plan(ctx: PlanningContext, items: dict) -> PlanResult:
     mods = catalog.modifiers()
     for name in _active_modifiers(ctx):
         for e in mods.get(name, []):
-            _add(acc, e, "modifier", q)
+            _add(acc, e, "modifier", q, trigger=name)
 
     # pass 4b — cultural adds
     for iid in (ctx.culture or {}).get("add_items", []):
@@ -249,18 +252,38 @@ def _mk(iid, qty, items, variant, status, *, bag=None, reason="", swap=None,
                     source=source, status=status, swap_for=swap)
 
 
+# Why a modifier fired — shown as the item's subtext so a surprising item
+# (an insulated jacket, ski gear) explains itself and a mis-trigger is visible.
+_MOD_REASONS = {
+    "cold_weather": "cold days expected",
+    "layering": "cool/variable temps — layers",
+    "lightweight": "warm weather",
+    "rain_gear": "rain in the forecast",
+    "humid": "humid climate",
+    "business": "for your business plans",
+    "hiking": "hiking on this trip",
+    "beach": "beach days",
+    "temple": "temple / religious sites",
+    "ski": "skiing",
+    "watersport": "water sports",
+    "camping": "camping",
+    "hostel": "hostel stay",
+    "road": "road trip",
+}
+
+
 def _reason(iid: str, info: dict, ctx: PlanningContext, q: dict) -> str:
     src = info["source"]
     if src == "essential":
-        return "essential"
+        return "travel essential"
     if src == "cultural":
         return "local dress / custom"
     if src == "must_have":
         return "your must-have"
     if src == "modifier":
-        return "conditions (weather/activity)"
+        return _MOD_REASONS.get(info.get("trigger"), "trip conditions")
     # template item whose qty came from a formula → explain the laundry math
     launder = (ctx.profile.get("laundry_comfort") in ("hand_wash", "machine"))
     if info["qty"] == q.get("tops") and launder and ctx.duration_days > info["qty"]:
         return f"{info['qty']} for {ctx.duration_days} days with laundry mid-trip"
-    return f"{ctx.duration_days}-day trip"
+    return f"for your {ctx.duration_days}-day trip"

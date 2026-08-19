@@ -4,7 +4,7 @@
     <form class="dialog-body" hx-post="{{ action }}" hx-target="#modal-root" hx-swap="innerHTML">
       <div class="field">
         <label>Type</label>
-        <select class="input" name="type"
+        <select class="input" name="activity_kind"
                 hx-get="/trips/{{ trip_id }}/activity/fields"
                 hx-target="#activity-fields" hx-swap="innerHTML"
                 hx-trigger="change" hx-include="this">

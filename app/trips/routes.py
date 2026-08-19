@@ -1554,12 +1554,15 @@ def new_activity(trip_id: str, request: Request,
 
 @router.get("/{trip_id}/activity/fields", response_class=HTMLResponse)
 def activity_fields(trip_id: str, request: Request,
-                    type: str = activity_types.DEFAULT_TYPE):
+                    activity_kind: str = activity_types.DEFAULT_TYPE):
     """Re-render just the dynamic field block when the type dropdown changes.
     Switching type starts from empty inputs (as in the design) — the contract
     for what a flight vs a hotel carries is different, so old values would be
-    meaningless under the new type."""
-    t = activity_types.get_type(type)
+    meaningless under the new type. The selector is `activity_kind`, NOT `type`,
+    because a detail field (lodging's sub-type) is itself named `type` and would
+    otherwise shadow the selector in the posted form (Starlette .get() returns the
+    LAST duplicate) — silently saving every manual lodging as a flight."""
+    t = activity_types.get_type(activity_kind)
     return templates.TemplateResponse(request, "_activity_fields.html", {
         "request": request, "fields": _modal_fields(t, {})})
 
@@ -1593,7 +1596,7 @@ async def create_activity(trip_id: str, request: Request,
     if trip is None:
         return HTMLResponse("", status_code=404)
     form = await request.form()
-    t = activity_types.get_type(form.get("type") or activity_types.DEFAULT_TYPE)
+    t = activity_types.get_type(form.get("activity_kind") or activity_types.DEFAULT_TYPE)
     values = _collect_values(t, form)
     a = TripActivity(trip_id=trip_id, type=t.key, values=values,
                      starts_at=values.get("when") or "")
@@ -1609,7 +1612,7 @@ async def update_activity(trip_id: str, activity_id: str, request: Request,
     if a is None or a.trip_id != trip_id:
         return HTMLResponse("", status_code=404)
     form = await request.form()
-    t = activity_types.get_type(form.get("type") or a.type)
+    t = activity_types.get_type(form.get("activity_kind") or a.type)
     values = _collect_values(t, form)
     a.type = t.key
     a.values = values

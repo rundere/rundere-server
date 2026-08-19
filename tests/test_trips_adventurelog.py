@@ -117,7 +117,7 @@ def test_push_seeds_flight_as_transportation(monkeypatch):
         return
     tid = _mk_trip("Iceland flights", "2026-09-01", "2026-09-10")
     client.post(f"/trips/{tid}/activity", data={
-        "type": "flight", "when": "2026-09-01T09:00", "endWhen": "2026-09-01T11:30",
+        "activity_kind": "flight", "when": "2026-09-01T09:00", "endWhen": "2026-09-01T11:30",
         "airline": "Air Canada", "flightNumber": "AC4826", "from": "YYZ", "to": "KEF",
         "confirmation": "ABC123", "sourceLink": "https://example.com/eticket"})
     fake = FakeAL((201, {"id": "col_flight"}, ""))
@@ -143,10 +143,10 @@ def test_push_seeds_lodging_and_note(monkeypatch):
         return
     tid = _mk_trip("Iceland stay", "2026-09-01", "2026-09-10")
     client.post(f"/trips/{tid}/activity", data={
-        "type": "lodging", "when": "2026-09-01T15:00", "endWhen": "2026-09-05T11:00",
+        "activity_kind": "lodging", "when": "2026-09-01T15:00", "endWhen": "2026-09-05T11:00",
         "name": "Hotel Nordljos", "address": "Posthusstraeti 11", "confirmation": "H-99"})
     client.post(f"/trips/{tid}/activity", data={
-        "type": "event", "when": "2026-09-02T20:00", "name": "Northern lights tour",
+        "activity_kind": "event", "when": "2026-09-02T20:00", "name": "Northern lights tour",
         "venue": "Reykjavik"})
     fake = FakeAL((201, {"id": "col_stay"}, ""))
     monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
@@ -167,10 +167,10 @@ def test_push_activity_failure_does_not_block_others(monkeypatch):
         return
     tid = _mk_trip("Partial failure", "2026-09-01", "2026-09-10")
     client.post(f"/trips/{tid}/activity", data={
-        "type": "flight", "when": "2026-09-01T09:00", "flightNumber": "AC1",
+        "activity_kind": "flight", "when": "2026-09-01T09:00", "flightNumber": "AC1",
         "from": "YYZ", "to": "KEF"})
     client.post(f"/trips/{tid}/activity", data={
-        "type": "flight", "when": "2026-09-05T09:00", "flightNumber": "AC2",
+        "activity_kind": "flight", "when": "2026-09-05T09:00", "flightNumber": "AC2",
         "from": "KEF", "to": "YYZ"})
     fake = FakeAL((201, {"id": "col_partial"}, ""))
     calls = {"n": 0}
@@ -195,7 +195,7 @@ def test_push_resolves_transportation_coordinates(monkeypatch):
         return
     tid = _mk_trip("Geocoded flights", "2026-09-01", "2026-09-10")
     client.post(f"/trips/{tid}/activity", data={
-        "type": "flight", "when": "2026-09-01T09:00", "flightNumber": "AC4826",
+        "activity_kind": "flight", "when": "2026-09-01T09:00", "flightNumber": "AC4826",
         "from": "YYZ", "to": "KEF"})
     fake = FakeAL((201, {"id": "col_geo"}, ""))
     monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
