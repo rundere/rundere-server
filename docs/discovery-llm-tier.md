@@ -104,6 +104,30 @@ The five pipeline steps:
    specialties, groups places by type (street food first), stars local
    specialties, and appends a visible `⚠️` allergy block when present.
 
+## Events & activities resolver (`discover/resolvers/events.py`)
+
+Same pipeline as food, but the output is the three-tier model (D-98). Scope:
+city. Confidence: medium. Short 7-day TTL — the most date-sensitive resolver, so
+a re-run closer to the trip yields fresher results.
+
+- **Tier 1 — impacts** (always, regardless of profile): events that affect ANY
+  traveller — religious observances, public holidays, strikes, seasonal closures.
+  Searched unconditionally (`holidays {city} {when}`, `{country} public holidays
+  {when}`, `religious observances {country} {when}`) and rendered as `> ⚠️`
+  callouts at the top; warnings, not recommendations.
+- **Tier 2 — suggested**: events/activities matching the traveller's checked
+  activity interests (the curation lens). One query per interest
+  (`{phrase} {city} {when}` + `{phrase} near {city}`). Rendered as the main list,
+  grouped under a heading per matched interest.
+- **Tier 3 — other**: results that match no interest — rendered under an "Other
+  activities" heading, available but not highlighted.
+
+Two base queries (`top things to do {city}`, `events {city} {when}`) always run so
+a blank-profile traveller still gets impacts + a populated "other" tier. The
+Ollama prompt receives the interest list and puts each result in exactly one tier;
+grounding is applied to all three. `{when}` is the trip's start month + year, or
+omitted when the trip has no dates.
+
 ## Durable background run + wiring (`app/trips/discovery_jobs.py`)
 
 "Run Discovery" now runs BOTH tiers on a single background worker (§6.1). The

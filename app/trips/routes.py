@@ -517,7 +517,7 @@ TOPIC_ORDER = ["weather", "currency", "plugs", "visa", "safety", "events",
 TOPIC_LABELS = {
     "weather": "Weather", "currency": "Currency", "plugs": "Plugs & voltage",
     "visa": "Visa & vaccination", "safety": "Safety & transport",
-    "events": "Local events", "food": "Food & drink", "language": "Language",
+    "events": "Events & activities", "food": "Food & drink", "language": "Language",
     "packing": "Packing",
 }
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
