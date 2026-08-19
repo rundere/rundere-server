@@ -26,6 +26,13 @@ class ResolverContext:
     today: str | None = None               # ISO; injected so tests are deterministic
     base_currencies: tuple[str, ...] = ("CAD", "USD")
     timeout: int = 12
+    # 3.2 (SPEC-3.2 §7): per-trip data the LLM resolvers read. Deterministic
+    # resolvers ignore them. The SearXNG/Ollama ENDPOINTS are NOT here — they are
+    # deployment config threaded through each LLM resolver's constructor (via
+    # build_llm), exactly like frankfurter_url/open_meteo_url on the deterministic
+    # tier. Only the trip-varying inputs live on the context.
+    discovery_profile: dict | None = None  # the DiscoveryProfile.values blob (§2.2)
+    nationality: str | None = None         # ISO-2, the `self` traveller's (visa)
 
 
 @dataclass

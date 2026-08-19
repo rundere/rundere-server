@@ -103,67 +103,7 @@
   </div>
 {% endif %}
 
-<div class="bp-timeline-head">
-  <h2 class="bp-h2">Discovery</h2>
-  <div class="bp-head-actions">
-    {% if discovery_has_findings %}
-    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('discovery', true)">Expand all</button>
-    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('discovery', false)">Collapse all</button>
-    {% endif %}
-    <button class="btn btn-primary" hx-post="/trips/{{ trip.id }}/discover"
-            hx-disabled-elt="this">{{ 'Re-run discovery' if discovery_has_findings else 'Run discovery' }}</button>
-  </div>
-</div>
-{% if discovery_last %}
-<p class="bp-trip-notes">Last run: <b>{{ discovery_last.status }}</b>{% if discovery_last.when %} · {{ discovery_last.when }}{% endif %} · {{ discovery_last.done }}/{{ discovery_last.total }} topics.
-  Findings stay on Yonder for review; push to AdventureLog is a later step.</p>
-{% endif %}
-
-{% if discovery_has_findings %}
-  {% for grp in discovery_topics %}
-  <details class="bp-group" data-grp="discovery" open>
-    <summary class="bp-group-label">{{ grp.label }}
-      <span class="bp-group-count">{{ grp.findings | length }}</span></summary>
-    <div class="card blueprint bp-daycard yn-findings">
-      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      {% for f in grp.findings %}
-      <div class="yn-finding yn-status-{{ f.status }}">
-        <div class="yn-finding-head">
-          <span class="tag tag-outline bp-typetag">{{ f.place_key }}</span>
-          <span class="yn-conf yn-conf-{{ f.confidence }}">{{ f.confidence }}</span>
-          {% if f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
-        </div>
-        <div class="yn-finding-body">{{ f.body }}</div>
-        {% if f.sources %}
-        <div class="yn-sources">
-          {% for s in f.sources %}
-            {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a>
-            {% else %}<span>{{ s.title }}</span>{% endif %}
-          {% endfor %}
-        </div>
-        {% endif %}
-        <div class="yn-finding-btns">
-          {% if f.is_currency and f.has_rates %}
-          <button class="btn btn-secondary bp-sm"
-                  hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/calculator" hx-target="#modal-root">Open calculator</button>
-          {% endif %}
-          <button class="btn btn-secondary bp-sm"
-                  hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun" hx-disabled-elt="this">Re-run</button>
-          <button class="btn btn-secondary bp-sm"
-                  hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">{{ 'Languages' if f.is_language else 'Edit' }}</button>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </details>
-  {% endfor %}
-{% else %}
-  <div class="card blueprint bp-empty-card">
-    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-    <div class="bp-empty-msg">No research yet. Run discovery to generate weather,
-      currency and plug briefings for this trip's destinations.</div>
-  </div>
-{% endif %}
+{% include "_discovery_section.html" %}
 
 {% include "_packing_section.html" %}
 

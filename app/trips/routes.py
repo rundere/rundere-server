@@ -517,7 +517,7 @@ TOPIC_ORDER = ["weather", "currency", "plugs", "visa", "safety", "events",
 TOPIC_LABELS = {
     "weather": "Weather", "currency": "Currency", "plugs": "Plugs & voltage",
     "visa": "Visa & vaccination", "safety": "Safety & transport",
-    "events": "Local events", "food": "Food & drink", "language": "Language",
+    "events": "Events & activities", "food": "Food & drink", "language": "Language",
     "packing": "Packing",
 }
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
@@ -532,8 +532,10 @@ def _bold_label(body_md: str | None) -> str:
 
 def _render_md(text: str | None) -> Markup:
     """Minimal, safe render of a finding's body: escape first, then a tiny
-    subset — **bold**, "- " bullets, line breaks. No markdown dependency; the
-    raw markdown is what later crosses to an AdventureLog Note."""
+    subset — **bold**, "### " headings, "> " callouts, "- " bullets, line
+    breaks. No markdown dependency; the raw markdown is what later crosses to an
+    AdventureLog Note (the LLM resolvers lean on headings/callouts, so the
+    renderer grew to match them)."""
     if not text:
         return Markup("")
     html = str(escape(text))
@@ -541,10 +543,20 @@ def _render_md(text: str | None) -> Markup:
     out = []
     for line in html.split("\n"):
         stripped = line.lstrip()
-        if stripped.startswith("- "):
-            out.append("• " + stripped[2:])
+        quote = stripped.startswith("&gt;")          # '>' escaped to '&gt;'
+        if quote:
+            stripped = stripped[4:].lstrip()
+        if stripped.startswith("### "):
+            content = f'<span class="yn-fh">{stripped[4:]}</span>'
+        elif stripped.startswith("- "):
+            content = "• " + stripped[2:]
+        elif quote:
+            content = stripped
         else:
-            out.append(line)
+            content = line
+        if quote:
+            content = f'<span class="yn-fq">{content}</span>'
+        out.append(content)
     return Markup("<br>".join(out))
 
 
@@ -584,9 +596,17 @@ def _discovery_context(session: Session, trip_id: str) -> dict:
     last = (session.query(DiscoveryRun)
             .filter(DiscoveryRun.trip_id == trip_id)
             .order_by(DiscoveryRun.started_at.desc()).first())
+    running = last is not None and last.status == "running"
+    run_progress = None
+    if running:
+        pct = int(100 * last.done / last.total) if last.total else 0
+        run_progress = {"phase": last.phase or "starting", "done": last.done,
+                        "total": last.total, "pct": pct}
     return {"discovery_topics": topic_groups,
             "discovery_has_findings": bool(findings),
-            "discovery_last": _run_view(last) if last else None}
+            "discovery_last": _run_view(last) if last else None,
+            "discovery_running": running,
+            "discovery_run": run_progress}
 
 
 def _resolvers():
@@ -597,22 +617,57 @@ def _resolvers():
         open_meteo_archive_url=settings.open_meteo_archive_url)
 
 
+def _llm_resolvers():
+    from discover.resolvers import build_llm
+    return build_llm(searxng_url=settings.searxng_url, ollama_url=settings.ollama_url,
+                     model=settings.ollama_model, timeout=settings.llm_timeout_seconds)
+
+
+def _discovery_section(request: Request, session: Session, trip: Trip) -> HTMLResponse:
+    ctx = {"request": request, "trip": {"id": trip.id},
+           **_discovery_context(session, trip.id)}
+    return templates.TemplateResponse(request, "_discovery_section.html", ctx)
+
+
 @router.post("/{trip_id}/discover", response_class=HTMLResponse)
-def run_discovery_route(trip_id: str, session: Session = Depends(get_session)):
-    """Run a Discovery pass over the trip (deterministic tier) and reload the
-    detail so the new findings show. Synchronous for now — the deterministic
-    resolvers are fast; the durable background job lands with the LLM tier."""
+def run_discovery_route(trip_id: str, request: Request,
+                        session: Session = Depends(get_session)):
+    """Launch a Discovery pass — BOTH tiers on a background worker (§6.1) — and
+    return the self-polling section. The deterministic findings land in the first
+    few seconds; the LLM findings stream in as each resolver finishes. A run is
+    already in flight for this trip? Just show its panel (one run per trip)."""
     from app.resolving import load_home_profiles
-    from discover.runner import run_discovery
+    from app.trips import discovery_jobs as dj
+    from datetime import date as _date
     trip = session.get(Trip, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    run_discovery(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), resolvers=_resolvers(),
+    if dj.running_run(session, trip_id) is None:
+        profile = _discovery_profile_row(session)
+        ident = _self_identity(session)
+        dj.launch(trip_id, resolve_airport=_airport_resolver(), geocoder=_photon(),
+                  det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(),
                   home_profiles=load_home_profiles(session),
                   excluded=_excluded_keys(session, trip_id),
-                  base_currencies=settings.base_currency_list)
-    return _redirect(f"/trips/{trip_id}")
+                  discovery_profile=(profile.values if profile else None),
+                  nationality=(ident.nationality if ident else None),
+                  base_currencies=settings.base_currency_list,
+                  today=_date.today().isoformat())
+    return _discovery_section(request, session, trip)
+
+
+@router.get("/{trip_id}/discover/status", response_class=HTMLResponse)
+def discovery_status_route(trip_id: str, request: Request,
+                           session: Session = Depends(get_session)):
+    """Poll target for the running-run panel. Reading it also settles an orphaned
+    run (restart → failed). When the run is no longer `running`, the returned
+    section carries no poll trigger, so the panel stops on its own."""
+    from app.trips import discovery_jobs as dj
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    dj.running_run(session, trip_id)          # settle orphans as a side effect
+    return _discovery_section(request, session, trip)
 
 
 def _finding_or_404(session: Session, trip_id: str, fid: str) -> DiscoveryFinding | None:

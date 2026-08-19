@@ -66,3 +66,96 @@ a passing check yields `""`.
 
 Corroboration is opt-in per resolver: the food and events resolvers don't call
 it, visa and safety do.
+
+## Synthesis (`discover/synth.py`)
+
+`synthesize_json(prompt, schema, *, base_url, system=…) -> dict | None` is the
+SYNTHESIZE step every LLM resolver shares. It reuses the `extract/llm.py` pattern
+— `/api/chat` with a JSON-schema `format` grammar, `temperature: 0`,
+`num_ctx: 16384`, thinking off — but drops the validate-and-retry loop:
+grounding is the safety net here, not a second schema gate, and the grammar
+already constrains generation. Returns `None` on any failure (no base_url,
+unreachable, non-JSON content) so a resolver degrades to an absent finding.
+
+## Food & drink resolver (`discover/resolvers/food.py`)
+
+The first LLM resolver and the template for the rest. Scope: city. Confidence:
+medium (LLM-synthesized, source-grounded). Its endpoints come from the
+constructor (`build_llm`, deployment config); the DiscoveryProfile comes from
+`ResolverContext.discovery_profile` (per-trip). Missing either endpoint → `None`.
+
+The five pipeline steps:
+
+1. **BUILD QUERIES** — `best local restaurants {city} {country}` and
+   `street food {city}` always; a budget modifier (`cheap eats` at `$`,
+   `fine dining` at `$$$$`); one query per checked drink interest (§2.2).
+2. **SEARCH** — every query through `searxng_search`, deduped by normalised URL,
+   capped at `max_snippets` (24).
+3. **SYNTHESIZE** — `synthesize_json` with a per-topic schema (`places[]` with
+   `name/type/neighborhood/price_tier/why/local_specialty/source_url`,
+   `local_dishes[]`, `allergy_warnings[]`). The prompt carries the profile's
+   dietary restrictions, cuisine dislikes, allergies, and budget ceiling, and
+   presents the SearXNG snippets as the ONLY source of truth, numbered with their
+   URLs so the model can cite `source_url` exactly.
+4. **GROUND** — `ground_items` drops any place whose `source_url` was not in the
+   SearXNG set; a defensive budget post-filter drops places tiered above the
+   ceiling. If nothing survives and there are no local dishes → `None`.
+5. **ASSEMBLE** — a `Finding` (14-day TTL) whose `body_md` leads with local
+   specialties, groups places by type (street food first), stars local
+   specialties, and appends a visible `⚠️` allergy block when present.
+
+## Events & activities resolver (`discover/resolvers/events.py`)
+
+Same pipeline as food, but the output is the three-tier model (D-98). Scope:
+city. Confidence: medium. Short 7-day TTL — the most date-sensitive resolver, so
+a re-run closer to the trip yields fresher results.
+
+- **Tier 1 — impacts** (always, regardless of profile): events that affect ANY
+  traveller — religious observances, public holidays, strikes, seasonal closures.
+  Searched unconditionally (`holidays {city} {when}`, `{country} public holidays
+  {when}`, `religious observances {country} {when}`) and rendered as `> ⚠️`
+  callouts at the top; warnings, not recommendations.
+- **Tier 2 — suggested**: events/activities matching the traveller's checked
+  activity interests (the curation lens). One query per interest
+  (`{phrase} {city} {when}` + `{phrase} near {city}`). Rendered as the main list,
+  grouped under a heading per matched interest.
+- **Tier 3 — other**: results that match no interest — rendered under an "Other
+  activities" heading, available but not highlighted.
+
+Two base queries (`top things to do {city}`, `events {city} {when}`) always run so
+a blank-profile traveller still gets impacts + a populated "other" tier. The
+Ollama prompt receives the interest list and puts each result in exactly one tier;
+grounding is applied to all three. `{when}` is the trip's start month + year, or
+omitted when the trip has no dates.
+
+## Durable background run + wiring (`app/trips/discovery_jobs.py`)
+
+"Run Discovery" now runs BOTH tiers on a single background worker (§6.1). The
+request returns immediately with a self-polling panel; deterministic findings
+land in the first few seconds and the LLM findings stream in as each resolver
+finishes.
+
+- **The `DiscoveryRun` row IS the job state.** The worker (own DB session, off
+  the request) writes `phase/done/total` and commits after each finding so the
+  poll sees them appear; it finalizes `status=done`. This is durable, unlike the
+  in-memory review job registry.
+- **Restart detection.** A row that says `running` but whose id is not in this
+  process's `_LIVE` set was orphaned by a restart; `running_run()` marks it
+  `failed` on the next poll (re-run to recover). One worker + a per-trip guard
+  means one run per trip at a time.
+- **Both tiers, one run, one prune.** Deterministic and LLM tasks are planned
+  together (`run.total` = both), executed in sequence, and the stale-draft prune
+  runs once at the end over the union of produced keys — so the LLM phase never
+  prunes the deterministic drafts, and a resolver raising mid-run is logged and
+  skipped, never a run failure.
+- **Wiring.** `POST /trips/{id}/discover` launches (guarding on a live run),
+  `GET /trips/{id}/discover/status` is the poll target, and both render the
+  extracted `_discovery_section.html`. The route threads the DiscoveryProfile
+  (`values`) and the `self` traveller's nationality into the run's
+  `ResolverContext`. The LLM endpoints come from config (`TX_SEARXNG_URL`,
+  `TX_OLLAMA_URL`); if SearXNG/Ollama are unreachable the resolvers return None
+  and the run simply carries the deterministic findings.
+
+`_render_md` (the finding-body renderer) grew to match the richer LLM output:
+alongside `**bold**` and `- ` bullets it now renders `### ` headings and `> `
+callouts (the allergy block, and the coming visa/safety verify banner).
