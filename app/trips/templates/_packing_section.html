@@ -13,8 +13,25 @@
   </div>
 </div>
 {% if packing_when %}
-<p class="bp-trip-notes">Plan: {% for a in packing_archetypes %}<b>{{ a.label }}</b>{% if not loop.last %} + {% endif %}{% endfor %}
-  · {{ packing_when }}. Held on Yonder; the AdventureLog Checklist push comes later.</p>
+<div class="yn-arch-row">
+  <span class="yn-arch-lbl">Trip type{% if packing_manual %} <span class="yn-arch-manual">· adjusted</span>{% endif %}:</span>
+  {% for a in packing_archetypes %}
+  <span class="yn-arch-chip">{{ a.label }}<button class="yn-arch-x" title="Remove {{ a.label }}"
+      hx-post="/trips/{{ trip.id }}/pack/archetypes/remove"
+      hx-vals='{"archetype_id": "{{ a.id }}"}'
+      hx-target="#packing-section" hx-swap="outerHTML" hx-disabled-elt="this">×</button></span>
+  {% endfor %}
+  {% if packing_archetype_options %}
+  <select class="input yn-arch-add" name="archetype_id"
+          hx-post="/trips/{{ trip.id }}/pack/archetypes/add"
+          hx-target="#packing-section" hx-swap="outerHTML" hx-trigger="change">
+    <option value="" disabled selected>+ Add trip type…</option>
+    {% for o in packing_archetype_options %}<option value="{{ o.id }}">{{ o.label }}</option>{% endfor %}
+  </select>
+  {% endif %}
+</div>
+<p class="bp-trip-notes yn-arch-note">Adjust the trip type above and the plan re-generates —
+  your ticked-off items are kept. Generated {{ packing_when }}.</p>
 {% endif %}
 
 {% if packing_warnings %}

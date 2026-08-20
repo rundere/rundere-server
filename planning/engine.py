@@ -55,9 +55,23 @@ class PlanResult:
 
 # ---------------------------------------------------------------- pass 2: score
 
+def _climate_ok(archetype_id: str, bands: set[str]) -> bool:
+    """Gate archetypes on climate so a warm trip never pulls in ski gear (the
+    NM-in-October bug: cold_ski was selected for a 28°C trip, dumping a parka +
+    beanie + winter boots alongside the beach items). cold_ski needs a genuinely
+    cold band; beach is dropped when it's cold. Everything else is climate-neutral."""
+    if archetype_id == "cold_ski":
+        return "cold_weather" in bands
+    if archetype_id == "beach":
+        return "cold_weather" not in bands
+    return True
+
+
 def _score_archetypes(ctx: PlanningContext) -> list[dict]:
     scored = []
     for a in catalog.archetypes():
+        if not _climate_ok(a["id"], ctx.climate_bands):
+            continue                              # climate-incompatible → never chosen
         s = 0
         s += 2 * len(ctx.activity_tags & set(a["activities"]))
         if ctx.accommodation & set(a["accommodation"]):
@@ -70,8 +84,8 @@ def _score_archetypes(ctx: PlanningContext) -> list[dict]:
     scored.sort(key=lambda x: x["score"], reverse=True)
     top = [a for a in scored if a["score"] > 0][:2]
     if not top:                                   # nothing matched → sensible default
-        top = [next(a for a in scored if a["id"] == "city_break")]
-        top[0] = dict(top[0], score=0)
+        top = [next(a for a in catalog.archetypes() if a["id"] == "city_break")]
+        top = [{"id": "city_break", "label": top[0]["label"], "score": 0}]
     return top
 
 
@@ -149,17 +163,33 @@ def _add(acc: dict, entry: dict, source: str, q: dict,
 
 # ---------------------------------------------------------------- main
 
-def build_plan(ctx: PlanningContext, items: dict) -> PlanResult:
+def all_archetypes() -> list[dict]:
+    """[{id, label}] for the whole catalog — the picker's option list."""
+    return [{"id": a["id"], "label": a["label"]} for a in catalog.archetypes()]
+
+
+def _forced_archetypes(ids: list[str]) -> list[dict]:
+    by_id = {a["id"]: a for a in catalog.archetypes()}
+    return [{"id": i, "label": by_id[i]["label"], "score": None}
+            for i in ids if i in by_id]
+
+
+def build_plan(ctx: PlanningContext, items: dict, *,
+               force_archetypes: list[str] | None = None) -> PlanResult:
     """Run passes 2–8 and return the plan. `items` is the active catalog
-    (catalog.items(session))."""
+    (catalog.items(session)). `force_archetypes` overrides auto-detection with the
+    operator's explicit choice (D-98-style confirmable guess)."""
     res = PlanResult()
     prof = ctx.profile or default_profile()
     variant = prof.get("clothing_variant", "neutral")
     constraints = set(prof.get("style_constraints") or [])
     strict = prof.get("cultural_strictness", "strict") == "strict"
 
-    # pass 2 — archetypes
-    res.archetypes = _score_archetypes(ctx)
+    # pass 2 — archetypes (operator override wins over auto-detection)
+    if force_archetypes:
+        res.archetypes = _forced_archetypes(force_archetypes)
+    else:
+        res.archetypes = _score_archetypes(ctx)
     chosen = {a["id"] for a in res.archetypes}
 
     # pass 5 (compute first — assembly needs the formula values)
@@ -176,7 +206,7 @@ def build_plan(ctx: PlanningContext, items: dict) -> PlanResult:
     for a in catalog.archetypes():
         if a["id"] in chosen:
             for e in a["base_items"]:
-                _add(acc, e, "template", q)
+                _add(acc, e, "template", q, trigger=a["id"])
 
     # pass 4 — modifiers (climate/activity/accommodation/transport)
     mods = catalog.modifiers()
@@ -272,6 +302,19 @@ _MOD_REASONS = {
 }
 
 
+# Why an archetype's base item is on the list — its subtext when nothing more
+# specific (laundry math) applies.
+_ARCHETYPE_REASONS = {
+    "beach": "for a beach trip",
+    "cold_ski": "for cold-weather / ski",
+    "business": "for business",
+    "backpacking": "for backpacking",
+    "road_trip": "for a road trip",
+    "cultural": "for cultural sites",
+    "city_break": "for a city trip",
+}
+
+
 def _reason(iid: str, info: dict, ctx: PlanningContext, q: dict) -> str:
     src = info["source"]
     if src == "essential":
@@ -282,8 +325,10 @@ def _reason(iid: str, info: dict, ctx: PlanningContext, q: dict) -> str:
         return "your must-have"
     if src == "modifier":
         return _MOD_REASONS.get(info.get("trigger"), "trip conditions")
-    # template item whose qty came from a formula → explain the laundry math
+    # template item from an archetype's base kit → explain the laundry math for
+    # formula-quantified tops, else name the archetype that pulled it in.
     launder = (ctx.profile.get("laundry_comfort") in ("hand_wash", "machine"))
     if info["qty"] == q.get("tops") and launder and ctx.duration_days > info["qty"]:
         return f"{info['qty']} for {ctx.duration_days} days with laundry mid-trip"
-    return f"for your {ctx.duration_days}-day trip"
+    return _ARCHETYPE_REASONS.get(info.get("trigger"),
+                                  f"for your {ctx.duration_days}-day trip")

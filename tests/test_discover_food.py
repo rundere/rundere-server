@@ -77,6 +77,12 @@ def test_queries_fine_dining_at_top_tier():
     assert not any("cheap eats" in q for q in qs)
 
 
+def test_baseline_drink_query_always_present():
+    # even with no drink interests, a drink query runs so it's never food-only
+    qs = _resolver()._queries("Lisbon", "PT", {})
+    assert "best bars and cafes Lisbon" in qs
+
+
 # ------------------------------------------------------------- full pipeline
 
 def test_resolve_builds_grounded_finding(monkeypatch):
@@ -111,6 +117,21 @@ def test_resolve_builds_grounded_finding(monkeypatch):
     # sources are the grounded places' urls, deduped, titled from the results
     assert {s["url"] for s in f.sources} == {"https://a.example/tasca",
                                              "https://b.example/cafe"}
+
+
+def test_render_includes_address_and_map_link(monkeypatch):
+    _stub_search(monkeypatch, [SearchResult("https://a.ex/t", "Tasca", "x")])
+    _stub_synth(monkeypatch, {
+        "places": [{"name": "Tasca do Bairro", "type": "restaurant",
+                    "neighborhood": "Alfama", "address": "Rua do Bairro 12",
+                    "price_tier": 2, "why": "petiscos", "local_specialty": True,
+                    "source_url": "https://a.ex/t"}],
+        "local_dishes": [], "allergy_warnings": [],
+    })
+    f = _resolver().resolve(_place(), _ctx({}))
+    assert "Rua do Bairro 12" in f.body_md                        # address shown
+    assert "[map ↗](https://www.google.com/maps/search/?api=1&query=" in f.body_md
+    assert "Tasca%20do%20Bairro" in f.body_md                     # name in the query
 
 
 def test_resolve_drops_invented_places(monkeypatch):

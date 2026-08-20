@@ -56,10 +56,28 @@ def _upsert_item(session: Session, plan: PackingPlan, trip_id: str, pi) -> None:
     row.updated_at = _now()
 
 
+def _latest_manual_archetypes(session: Session, trip_id: str) -> list | None:
+    """The operator's last archetype override for this trip, to carry forward
+    across a plain re-generate so the choice sticks."""
+    prev = (session.query(PackingPlan)
+            .filter(PackingPlan.trip_id == trip_id)
+            .order_by(PackingPlan.generated_at.desc()).first())
+    return (prev.manual_archetypes if prev else None) or None
+
+
 def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
-                  home_profiles: list = (), today: str | None = None) -> PackingPlan:
-    """Generate and persist a Packing Plan for `trip`. Returns the committed row."""
-    plan = PackingPlan(trip_id=trip.id, status="running", generated_at=_now())
+                  home_profiles: list = (), today: str | None = None,
+                  manual_archetypes: list | None = None) -> PackingPlan:
+    """Generate and persist a Packing Plan for `trip`. Returns the committed row.
+
+    `manual_archetypes` is the operator's explicit archetype choice. Pass it to
+    force a set; pass None (a plain re-generate) and the last override is carried
+    forward. An explicit empty list resets to auto-detection."""
+    if manual_archetypes is None:
+        manual_archetypes = _latest_manual_archetypes(session, trip.id)
+    override = [a for a in (manual_archetypes or []) if a] or None
+    plan = PackingPlan(trip_id=trip.id, status="running", generated_at=_now(),
+                       manual_archetypes=override)
     session.add(plan)
     session.flush()
     try:
@@ -75,7 +93,7 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
         ctx = derive_context(acts, derived, weather, start_date=trip.start_date,
                              end_date=trip.end_date, profile=load_profile(session),
                              home_countries=home_countries)
-        result = build_plan(ctx, catalog.items(session))
+        result = build_plan(ctx, catalog.items(session), force_archetypes=override)
 
         plan.archetypes = result.archetypes
         plan.context = ctx.snapshot()

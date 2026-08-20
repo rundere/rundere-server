@@ -53,6 +53,19 @@ def _interest_label(key: str) -> str:
     return _ACTIVITY_PHRASES.get(key, key.replace("_", " ")).title()
 
 
+def _dedupe(items: list[dict]) -> list[dict]:
+    """Drop items with a duplicate (case/space-insensitive) name — the model is
+    told not to repeat, but several calendar sources describe the same holiday, so
+    belt-and-suspenders."""
+    seen, out = set(), []
+    for it in items:
+        key = " ".join((it.get("name") or "").lower().split())
+        if key and key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out
+
+
 _ITEM = {
     "name": {"type": "string"},
     "date_range": {"type": ["string", "null"]},
@@ -69,46 +82,37 @@ _SCHEMA = {
                 "required": ["name", "effect", "source_url"],
             },
         },
-        "suggested": {
+        "notable": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
                     **_ITEM,
-                    "type": {"type": "string", "enum": ["event", "venue", "activity"]},
-                    "matched_interest": {"type": "string"},
+                    "matched_interest": {"type": ["string", "null"]},
                     "why": {"type": "string"},
                 },
-                "required": ["name", "type", "matched_interest", "why", "source_url"],
-            },
-        },
-        "other": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    **_ITEM,
-                    "type": {"type": "string", "enum": ["event", "venue", "activity"]},
-                    "category": {"type": "string"},
-                    "why": {"type": "string"},
-                },
-                "required": ["name", "type", "category", "why", "source_url"],
+                "required": ["name", "why", "source_url"],
             },
         },
     },
-    "required": ["impacts", "suggested", "other"],
+    "required": ["impacts", "notable"],
 }
 
 _SYSTEM = (
-    "You are a local events & activities guide. Work ONLY from the search results "
-    "provided — never invent an event, venue, or URL, and copy each item's exact "
-    "source_url. Split your answer into three groups: (1) impacts — anything that "
-    "would affect ANY traveller during these dates regardless of their interests "
-    "(religious observances, public holidays, strikes, major closures); these are "
-    "warnings, not recommendations. (2) suggested — events/activities that match "
-    "one of the traveller's stated interests; set matched_interest to the one it "
-    "matches. (3) other — everything else worth knowing that matches no interest. "
-    "Put each result in exactly one group.")
+    "You are a local events & activities guide. From the search results, EXTRACT "
+    "the actual named events, festivals, holidays, and attractions — do NOT list a "
+    "website, a calendar, a 'list of holidays' page, a vacation package, or a "
+    "school calendar as an item. If a result is a holiday calendar, extract the "
+    "specific holidays it names that fall during the travel dates. DE-DUPLICATE: "
+    "the same event from several sources is ONE item; never repeat a name. Copy "
+    "each item's exact source_url from the list. Return two groups: (1) impacts — "
+    "specific dated public/religious holidays, closures, or strikes during the "
+    "travel window that affect any traveller (name the actual holiday and its date, "
+    "e.g. 'Columbus Day — Oct 12'), not the calendar website; (2) notable — "
+    "specific, named events and attractions worth a traveller's time (a festival, a "
+    "landmark, a market, a venue), most notable first. When a notable item matches "
+    "one of the traveller's stated interests, set matched_interest to it, else "
+    "null. Skip generic 'things to do' aggregators and ads.")
 
 
 class EventsResolver:
@@ -174,9 +178,11 @@ class EventsResolver:
             lines.append(f"[{i}] {r.title} — {r.url}")
             if r.snippet:
                 lines.append(f"    {r.snippet}")
-        lines += ["", "Return JSON with impacts[], suggested[], other[]. For each "
-                  "suggested item set matched_interest to the interest it matches. "
-                  "Copy every source_url exactly from the list above."]
+        lines += ["", "Return JSON with impacts[] and notable[]. Extract concrete "
+                  "named events/holidays/attractions — never list a calendar or "
+                  "listing website. De-duplicate. Set matched_interest on a notable "
+                  "item only when it matches a stated interest, else null. Copy every "
+                  "source_url exactly from the list above."]
         return "\n".join(lines)
 
     # -- resolve ------------------------------------------------------------
@@ -202,25 +208,24 @@ class EventsResolver:
                         "at %s and is %s pulled?", place.label, self.ollama_url, self.model)
             return None
         allowed = [r.url for r in results]
-        impacts = ground_items(out.get("impacts") or [], allowed).kept
-        suggested = ground_items(out.get("suggested") or [], allowed).kept
-        other = ground_items(out.get("other") or [], allowed).kept
-        if not (impacts or suggested or other):
+        impacts = _dedupe(ground_items(out.get("impacts") or [], allowed).kept)
+        notable = _dedupe(ground_items(out.get("notable") or [], allowed).kept)
+        if not (impacts or notable):
             log.info("events: results proposed but none grounded for %s "
                      "(model cited URLs not in the %d search results)",
                      place.label, len(results))
             return None
-        log.info("events: %s → %d impacts, %d suggested, %d other",
-                 place.label, len(impacts), len(suggested), len(other))
+        log.info("events: %s → %d impacts, %d notable", place.label,
+                 len(impacts), len(notable))
         title_by_url = {normalize_url(r.url): r.title for r in results}
-        sources = self._sources([*impacts, *suggested, *other], title_by_url)
+        sources = self._sources([*impacts, *notable], title_by_url)
         return Finding(
             topic=self.topic, scope=self.scope, place_key=place.city_key,
             resolver="events.searxng+ollama", confidence="medium",
             ttl_seconds=604_800,                 # 7 days — most date-sensitive
             sources=sources,
-            data={"impacts": impacts, "suggested": suggested, "other": other},
-            body_md=self._render(place, impacts, suggested, other))
+            data={"impacts": impacts, "notable": notable},
+            body_md=self._render(place, impacts, notable))
 
     @staticmethod
     def _sources(items: list[dict], title_by_url: dict) -> list[dict]:
@@ -234,28 +239,34 @@ class EventsResolver:
         return out
 
     def _render(self, place: DerivedPlace, impacts: list[dict],
-                suggested: list[dict], other: list[dict]) -> str:
+                notable: list[dict]) -> str:
         out = [f"**{place.label}** — events & activities", ""]
         if impacts:
+            out.append("### Heads-up while you're there")
             for im in impacts:
                 dr = f" ({im['date_range']})" if im.get("date_range") else ""
                 out.append(f"> ⚠️ **{im.get('name', '?')}**{dr} — "
                            f"{im.get('effect', '').strip()}")
             out.append("")
-        if suggested:
+        if notable:
+            # Group only by REAL matched interests; everything else (incl. the
+            # no-interest case) falls under one neutral "Notable" heading.
+            valid = {k for k, _ in _ACTIVITY_PHRASES.items()}
             by_interest: dict[str, list[dict]] = {}
-            for s in suggested:
-                by_interest.setdefault(s.get("matched_interest") or "other", []).append(s)
+            general: list[dict] = []
+            for n in notable:
+                mi = n.get("matched_interest")
+                (by_interest.setdefault(mi, []) if mi in valid else general).append(n)
             for interest, items in by_interest.items():
                 out.append(f"### {_interest_label(interest)}")
-                for s in items:
-                    out.append(self._line(s))
+                for n in items:
+                    out.append(self._line(n))
                 out.append("")
-        if other:
-            out.append("### Other activities")
-            for o in other:
-                out.append(self._line(o))
-            out.append("")
+            if general:
+                out.append("### Notable events & activities")
+                for n in general:
+                    out.append(self._line(n))
+                out.append("")
         return "\n".join(out).rstrip()
 
     @staticmethod

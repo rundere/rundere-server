@@ -421,6 +421,11 @@ class PackingPlan(Base):
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
     status: Mapped[str] = mapped_column(String(12), default="running", index=True)
     archetypes: Mapped[dict | None] = mapped_column(JsonCol)   # chosen + scores
+    # 3.2.1: the operator's explicit archetype choice (list of ids), overriding
+    # auto-detection — Banff can be ski OR city depending on the trip, so the guess
+    # is confirmable/adjustable. NULL/empty = auto-detect; carried forward across
+    # plain re-generates so the choice sticks.
+    manual_archetypes: Mapped[list | None] = mapped_column(JsonCol)
     context: Mapped[dict | None] = mapped_column(JsonCol)      # derived inputs snapshot
     warnings: Mapped[list | None] = mapped_column(JsonCol)
     tasks: Mapped[list | None] = mapped_column(JsonCol)        # in-trip actions

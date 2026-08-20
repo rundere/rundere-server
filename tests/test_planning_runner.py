@@ -57,6 +57,56 @@ def _gen(tid):
                              geocoder=_NoGeo()).id
 
 
+def test_manual_archetypes_persist_and_carry_forward():
+    if not DEPS:
+        return
+    tid = _trip()
+    with SessionLocal() as s:
+        generate_plan(s, s.get(Trip, tid), resolve_airport=_airports,
+                      geocoder=_NoGeo(), manual_archetypes=["cold_ski"])
+    with SessionLocal() as s:
+        plan = (s.query(PackingPlan).filter_by(trip_id=tid)
+                .order_by(PackingPlan.generated_at.desc()).first())
+        assert plan.manual_archetypes == ["cold_ski"]
+        assert [a["id"] for a in plan.archetypes] == ["cold_ski"]   # override won
+        keys = {i.item_key for i in s.query(PackingItem).filter_by(trip_id=tid).all()}
+        assert any("insulated_jacket" in k for k in keys)
+    # a plain re-generate keeps the choice
+    with SessionLocal() as s:
+        generate_plan(s, s.get(Trip, tid), resolve_airport=_airports, geocoder=_NoGeo())
+    with SessionLocal() as s:
+        plan = (s.query(PackingPlan).filter_by(trip_id=tid)
+                .order_by(PackingPlan.generated_at.desc()).first())
+        assert plan.manual_archetypes == ["cold_ski"]
+    # an explicit empty set resets to auto-detection
+    with SessionLocal() as s:
+        generate_plan(s, s.get(Trip, tid), resolve_airport=_airports,
+                      geocoder=_NoGeo(), manual_archetypes=[])
+    with SessionLocal() as s:
+        plan = (s.query(PackingPlan).filter_by(trip_id=tid)
+                .order_by(PackingPlan.generated_at.desc()).first())
+        assert plan.manual_archetypes is None
+
+
+def test_archetype_add_remove_routes(monkeypatch):
+    if not DEPS:
+        return
+    import app.trips.routes as tr
+    monkeypatch.setattr(tr, "_airport_resolver", lambda: _airports)
+    monkeypatch.setattr(tr, "_photon", lambda: _NoGeo())
+    tid = _trip()
+    with SessionLocal() as s:                        # seed an initial (auto) plan
+        generate_plan(s, s.get(Trip, tid), resolve_airport=_airports, geocoder=_NoGeo())
+    r = _client.post(f"/trips/{tid}/pack/archetypes/add", data={"archetype_id": "cold_ski"})
+    assert r.status_code == 200 and "Insulated jacket" in r.text
+    with SessionLocal() as s:
+        plan = (s.query(PackingPlan).filter_by(trip_id=tid)
+                .order_by(PackingPlan.generated_at.desc()).first())
+        assert "cold_ski" in (plan.manual_archetypes or [])
+    r = _client.post(f"/trips/{tid}/pack/archetypes/remove", data={"archetype_id": "cold_ski"})
+    assert r.status_code == 200 and "Insulated jacket" not in r.text
+
+
 def test_generate_persists_a_plan_with_essentials():
     if not DEPS:
         return

@@ -521,6 +521,7 @@ TOPIC_LABELS = {
     "packing": "Packing",
 }
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
+_MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
 
 
 def _bold_label(body_md: str | None) -> str:
@@ -538,7 +539,15 @@ def _render_md(text: str | None) -> Markup:
     renderer grew to match them)."""
     if not text:
         return Markup("")
-    html = str(escape(text))
+    # Stash [text](http…url) links before escaping so their href survives intact,
+    # then re-insert them as safe anchors at the end (href + text escaped).
+    links: list[tuple[str, str]] = []
+
+    def _stash(m):
+        links.append((m.group(1), m.group(2)))
+        return f"\x00L{len(links) - 1}\x00"
+
+    html = str(escape(_MD_LINK.sub(_stash, text)))
     html = _MD_BOLD.sub(r"<strong>\1</strong>", html)
     out = []
     for line in html.split("\n"):
@@ -557,7 +566,12 @@ def _render_md(text: str | None) -> Markup:
         if quote:
             content = f'<span class="yn-fq">{content}</span>'
         out.append(content)
-    return Markup("<br>".join(out))
+    joined = "<br>".join(out)
+    for i, (label, url) in enumerate(links):
+        anchor = (f'<a href="{escape(url)}" target="_blank" rel="noopener">'
+                  f'{escape(label)}</a>')
+        joined = joined.replace(f"\x00L{i}\x00", anchor)
+    return Markup(joined)
 
 
 def _finding_view(f: DiscoveryFinding) -> dict:
@@ -863,6 +877,10 @@ def _packing_context(session: Session, trip_id: str) -> dict:
     plan = (session.query(PackingPlan)
             .filter(PackingPlan.trip_id == trip_id)
             .order_by(PackingPlan.generated_at.desc()).first())
+    from planning.engine import all_archetypes as _all_archetypes
+    _all_arch = _all_archetypes()
+    chosen_arch = (plan.archetypes if plan else None) or []
+    chosen_ids = {a.get("id") for a in chosen_arch}
     included = [i for i in items if i.status in ("draft", "packed")]
     omitted = [i for i in items if i.status == "omitted"]
     grouped: dict[str, list] = {}
@@ -885,7 +903,10 @@ def _packing_context(session: Session, trip_id: str) -> dict:
         "packing_has": bool(included),
         "packing_warnings": (plan.warnings if plan else None) or [],
         "packing_tasks": (plan.tasks if plan else None) or [],
-        "packing_archetypes": (plan.archetypes if plan else None) or [],
+        "packing_archetypes": chosen_arch,
+        "packing_archetype_options": [a for a in _all_arch
+                                      if a["id"] not in chosen_ids],
+        "packing_manual": bool(plan and plan.manual_archetypes),
         "packing_when": plan.generated_at.strftime("%Y-%m-%d %H:%M")
         if plan and plan.generated_at else "",
         "packing_failed": bool(plan and plan.status == "failed"),
@@ -905,6 +926,57 @@ def generate_packing_plan_route(trip_id: str,
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), home_profiles=load_home_profiles(session))
     return _redirect(f"/trips/{trip_id}")
+
+
+def _current_archetype_ids(session: Session, trip_id: str) -> list[str]:
+    plan = (session.query(PackingPlan).filter(PackingPlan.trip_id == trip_id)
+            .order_by(PackingPlan.generated_at.desc()).first())
+    return [a.get("id") for a in ((plan.archetypes if plan else None) or [])
+            if a.get("id")]
+
+
+def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
+                                ids: list[str]) -> HTMLResponse:
+    from app.resolving import load_home_profiles
+    from planning.runner import generate_plan
+    generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                  geocoder=_photon(), home_profiles=load_home_profiles(session),
+                  manual_archetypes=ids)
+    return templates.TemplateResponse(request, "_packing_section.html",
+        {"request": request, "trip": {"id": trip.id},
+         **_packing_context(session, trip.id)})
+
+
+@router.post("/{trip_id}/pack/archetypes/add", response_class=HTMLResponse)
+def add_archetype_route(trip_id: str, request: Request, archetype_id: str = Form(""),
+                        session: Session = Depends(get_session)):
+    """Add a trip type to the packing plan and re-generate with the operator's
+    explicit set (auto-detection stays as the starting suggestion)."""
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    valid = {a["id"] for a in _pack_all_archetypes()}
+    ids = _current_archetype_ids(session, trip_id)
+    if archetype_id in valid and archetype_id not in ids:
+        ids.append(archetype_id)
+    return _regenerate_with_archetypes(request, session, trip, ids)
+
+
+@router.post("/{trip_id}/pack/archetypes/remove", response_class=HTMLResponse)
+def remove_archetype_route(trip_id: str, request: Request, archetype_id: str = Form(""),
+                           session: Session = Depends(get_session)):
+    """Remove a trip type and re-generate. Removing the last one resets to
+    auto-detection on the next generate."""
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    ids = [i for i in _current_archetype_ids(session, trip_id) if i != archetype_id]
+    return _regenerate_with_archetypes(request, session, trip, ids)
+
+
+def _pack_all_archetypes():
+    from planning.engine import all_archetypes
+    return all_archetypes()
 
 
 def _pack_count_oob(session: Session, trip_id: str, category: str) -> str:

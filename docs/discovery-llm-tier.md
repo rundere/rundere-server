@@ -104,29 +104,36 @@ The five pipeline steps:
    specialties, groups places by type (street food first), stars local
    specialties, and appends a visible `⚠️` allergy block when present.
 
+Each place also renders its **address** (when a snippet gives one) and a **`map ↗`
+deeplink** — a Google Maps *search* URL built from name + address/city. It is a
+plain formatted URL, not an API call (no quota, no geocoding), so it costs nothing
+and opens the Maps app on mobile. A baseline `best bars and cafes {city}` query
+always runs so a finding is never food-only even when no drink interests are
+checked. Markdown links are rendered by `_render_md`, which linkifies only
+`http(s)` URLs (a `javascript:` URL is left inert).
+
 ## Events & activities resolver (`discover/resolvers/events.py`)
 
-Same pipeline as food, but the output is the three-tier model (D-98). Scope:
-city. Confidence: medium. Short 7-day TTL — the most date-sensitive resolver, so
-a re-run closer to the trip yields fresher results.
+Same pipeline as food. Scope: city. Confidence: medium. Short 7-day TTL — the
+most date-sensitive resolver. Output is **two tiers** (revised in 3.2.1 after the
+three-tier model produced a wall of calendar-website noise):
 
-- **Tier 1 — impacts** (always, regardless of profile): events that affect ANY
-  traveller — religious observances, public holidays, strikes, seasonal closures.
-  Searched unconditionally (`holidays {city} {when}`, `{country} public holidays
-  {when}`, `religious observances {country} {when}`) and rendered as `> ⚠️`
-  callouts at the top; warnings, not recommendations.
-- **Tier 2 — suggested**: events/activities matching the traveller's checked
-  activity interests (the curation lens). One query per interest
-  (`{phrase} {city} {when}` + `{phrase} near {city}`). Rendered as the main list,
-  grouped under a heading per matched interest.
-- **Tier 3 — other**: results that match no interest — rendered under an "Other
-  activities" heading, available but not highlighted.
+- **Impacts**: specific dated public/religious holidays, closures, or strikes
+  during the travel window that affect any traveller — rendered as `> ⚠️`
+  callouts. The prompt insists on the actual holiday + date ("Columbus Day —
+  Oct 12"), never the calendar website.
+- **Notable**: specific named events and attractions worth a traveller's time
+  (a festival, a landmark, a market). Grouped under a heading per matched
+  activity interest when one applies, otherwise a single "Notable events &
+  activities" list — so a blank profile still gets the notable stuff, not an
+  empty section.
 
-Two base queries (`top things to do {city}`, `events {city} {when}`) always run so
-a blank-profile traveller still gets impacts + a populated "other" tier. The
-Ollama prompt receives the interest list and puts each result in exactly one tier;
-grounding is applied to all three. `{when}` is the trip's start month + year, or
-omitted when the trip has no dates.
+The key fix is in the **prompt**: the model must EXTRACT named events/holidays
+from the results, never list a calendar/aggregator/listing website, ad, or school
+calendar as an item — and de-duplicate (a `_dedupe` pass by normalised name is the
+backstop). Queries are unchanged (holiday + base + per-interest); `{when}` is the
+trip's start month + year, or omitted when the trip has no dates. The noisy
+"other" tier was dropped entirely.
 
 ## Durable background run + wiring (`app/trips/discovery_jobs.py`)
 

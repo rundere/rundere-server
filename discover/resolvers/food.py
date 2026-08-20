@@ -61,6 +61,7 @@ _SCHEMA = {
                     "name": {"type": "string"},
                     "type": {"type": "string", "enum": _PLACE_TYPES},
                     "neighborhood": {"type": ["string", "null"]},
+                    "address": {"type": ["string", "null"]},
                     "price_tier": {"type": "integer", "minimum": 1, "maximum": 4},
                     "why": {"type": "string"},
                     "local_specialty": {"type": "boolean"},
@@ -95,7 +96,11 @@ class FoodResolver:
         food = (profile or {}).get("food") or {}
         drink = (profile or {}).get("drink") or {}
         place = f"{city} {country}".strip() if country else city
-        qs = [f"best local restaurants {place}", f"street food {city}"]
+        # Baseline: restaurants + street food + a drink query ALWAYS, so a
+        # food & drink finding never comes back food-only. Checked drink interests
+        # add targeted queries (breweries, wineries, …) on top.
+        qs = [f"best local restaurants {place}", f"street food {city}",
+              f"best bars and cafes {city}"]
         budget = food.get("budget_ceiling") or 0
         if budget == 1:
             qs.append(f"cheap eats {city}")
@@ -143,7 +148,8 @@ class FoodResolver:
             if r.snippet:
                 lines.append(f"    {r.snippet}")
         lines += ["", "Return JSON with places[], local_dishes[], allergy_warnings[]. "
-                  "Copy each place's source_url exactly from the list above."]
+                  "Copy each place's source_url exactly from the list above, and set "
+                  "address to the street address when a snippet gives one (else null)."]
         return "\n".join(lines)
 
     # -- resolve ------------------------------------------------------------
@@ -190,6 +196,17 @@ class FoodResolver:
             body_md=self._render(place, grounded, dishes, warnings))
 
     @staticmethod
+    def _map_url(p: dict, city: str | None) -> str:
+        """A Google Maps SEARCH deeplink (a plain URL, no API call / no quota) —
+        the friendliest 'find it' link on mobile. Query is the place name plus its
+        address when known, else the city."""
+        import urllib.parse
+        loc = (p.get("address") or "").strip() or (city or "")
+        q = ", ".join(x for x in (p.get("name", ""), loc) if x)
+        return "https://www.google.com/maps/search/?api=1&query=" + \
+            urllib.parse.quote(q)
+
+    @staticmethod
     def _apply_budget(places: list[dict], ceiling: int) -> list[dict]:
         """Belt-and-suspenders on the prompt's budget instruction: with a ceiling
         set, drop places the model tiered above it."""
@@ -229,8 +246,11 @@ class FoodResolver:
                 tier = "$" * p["price_tier"] if isinstance(p.get("price_tier"), int) else ""
                 hood = f" · {p['neighborhood']}" if p.get("neighborhood") else ""
                 star = " ⭐" if p.get("local_specialty") else ""
+                addr = (p.get("address") or "").strip()
+                addr_part = f" · {addr}" if addr else ""
                 out.append(f"- **{p.get('name', '?')}**{star} ({tier}{hood}) — "
-                           f"{p.get('why', '').strip()}")
+                           f"{p.get('why', '').strip()}{addr_part} "
+                           f"[map ↗]({self._map_url(p, place.city)})")
             out.append("")
         if warnings:
             out.append("> ⚠️ **Allergy check** — these mention ingredients you flagged:")
