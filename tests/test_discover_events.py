@@ -156,6 +156,18 @@ def test_interests_reach_the_prompt(monkeypatch):
     assert "Cooking Classes" in cap["prompt"] and "Architecture" in cap["prompt"]
 
 
+def test_exact_trip_window_reaches_the_prompt(monkeypatch):
+    _stub_search(monkeypatch, [SearchResult("https://a.ex", "A", "s")])
+    cap = {}
+    _stub_synth(monkeypatch, {"impacts": [], "notable": []}, capture=cap)
+    # trip Oct 2–11 (not just "October") so the model can exclude Oct 12 holidays
+    _resolver().resolve(_place(), ResolverContext(
+        start_date="2026-10-02", end_date="2026-10-11",
+        discovery_profile={"activity": {"interests": []}}))
+    assert "October 2, 2026" in cap["prompt"] and "October 11, 2026" in cap["prompt"]
+    assert "inclusive" in cap["prompt"].lower()
+
+
 # ------------------------------------------------------------- degrade paths
 
 def test_none_without_endpoints():
