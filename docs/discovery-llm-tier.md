@@ -131,9 +131,20 @@ three-tier model produced a wall of calendar-website noise):
 The key fix is in the **prompt**: the model must EXTRACT named events/holidays
 from the results, never list a calendar/aggregator/listing website, ad, or school
 calendar as an item — and de-duplicate (a `_dedupe` pass by normalised name is the
-backstop). Queries are unchanged (holiday + base + per-interest); `{when}` is the
-trip's start month + year, or omitted when the trip has no dates. The noisy
-"other" tier was dropped entirely.
+backstop). The noisy "other" tier was dropped entirely.
+
+Two further refinements (3.2.2), from live output:
+
+- **Exact date window.** The SEARCH queries use the broad `{month} {year}`, but
+  the SYNTHESIS prompt is given the trip's exact `start–end` dates ("October 2,
+  2026 to October 11, 2026") and told impacts must fall INSIDE that window — a
+  holiday the day after they leave is omitted. Without this the model dumped every
+  holiday for the whole month/year.
+- **No padding.** The prompt tells the model to prefer a short, real list to a
+  long guessed one — an empty `notable` list is fine, never invent a vague "local
+  festival". The grounded event-listing links still surface as the finding's
+  sources, so "where to find events" is covered even when specific events aren't
+  extractable.
 
 ## Durable background run + wiring (`app/trips/discovery_jobs.py`)
 

@@ -78,9 +78,11 @@ def test_queries_fine_dining_at_top_tier():
 
 
 def test_baseline_drink_query_always_present():
-    # even with no drink interests, a drink query runs so it's never food-only
+    # even with no drink interests, drink queries run so it's never food-only and
+    # notable breweries/distilleries surface without opting in
     qs = _resolver()._queries("Lisbon", "PT", {})
     assert "best bars and cafes Lisbon" in qs
+    assert "best breweries and distilleries Lisbon" in qs
 
 
 # ------------------------------------------------------------- full pipeline

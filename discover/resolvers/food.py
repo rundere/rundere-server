@@ -48,7 +48,10 @@ _SYSTEM = (
     "you return MUST carry the exact source_url of the search result it came from. "
     "Honour the traveller's constraints: do not recommend cuisines on their avoid "
     "list, keep within their budget ceiling, and flag (do not exclude) anything "
-    "that may involve a listed allergen. Prefer local specialties over chains.")
+    "that may involve a listed allergen. Prefer local specialties over chains. "
+    "Return a MIX: not only restaurants — include the notable bars, breweries, "
+    "distilleries, cafés, and markets the results surface (a well-known local "
+    "distillery or brewery belongs on the list). Type each place accurately.")
 
 _SCHEMA = {
     "type": "object",
@@ -96,11 +99,13 @@ class FoodResolver:
         food = (profile or {}).get("food") or {}
         drink = (profile or {}).get("drink") or {}
         place = f"{city} {country}".strip() if country else city
-        # Baseline: restaurants + street food + a drink query ALWAYS, so a
-        # food & drink finding never comes back food-only. Checked drink interests
-        # add targeted queries (breweries, wineries, …) on top.
+        # Baseline: restaurants + street food + drink queries ALWAYS, so a
+        # food & drink finding never comes back food-only and notable breweries /
+        # distilleries surface without opting in. Checked drink interests add more
+        # targeted queries on top.
         qs = [f"best local restaurants {place}", f"street food {city}",
-              f"best bars and cafes {city}"]
+              f"best bars and cafes {city}",
+              f"best breweries and distilleries {city}"]
         budget = food.get("budget_ceiling") or 0
         if budget == 1:
             qs.append(f"cheap eats {city}")

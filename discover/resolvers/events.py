@@ -49,6 +49,17 @@ def _month_year(start_date: str | None) -> tuple[str | None, int | None]:
         return None, None
 
 
+def _fmt_date(iso: str | None) -> str:
+    """'2026-10-02' -> 'October 2, 2026', or '' if unparseable."""
+    if not iso:
+        return ""
+    try:
+        y, m, d = iso.split("-")
+        return f"{_MONTHS[int(m) - 1]} {int(d)}, {int(y)}"
+    except (ValueError, IndexError):
+        return ""
+
+
 def _interest_label(key: str) -> str:
     return _ACTIVITY_PHRASES.get(key, key.replace("_", " ")).title()
 
@@ -102,17 +113,17 @@ _SYSTEM = (
     "You are a local events & activities guide. From the search results, EXTRACT "
     "the actual named events, festivals, holidays, and attractions — do NOT list a "
     "website, a calendar, a 'list of holidays' page, a vacation package, or a "
-    "school calendar as an item. If a result is a holiday calendar, extract the "
-    "specific holidays it names that fall during the travel dates. DE-DUPLICATE: "
-    "the same event from several sources is ONE item; never repeat a name. Copy "
-    "each item's exact source_url from the list. Return two groups: (1) impacts — "
-    "specific dated public/religious holidays, closures, or strikes during the "
-    "travel window that affect any traveller (name the actual holiday and its date, "
-    "e.g. 'Columbus Day — Oct 12'), not the calendar website; (2) notable — "
-    "specific, named events and attractions worth a traveller's time (a festival, a "
-    "landmark, a market, a venue), most notable first. When a notable item matches "
-    "one of the traveller's stated interests, set matched_interest to it, else "
-    "null. Skip generic 'things to do' aggregators and ads.")
+    "school calendar as an item. If a result is a holiday calendar, extract ONLY "
+    "the specific holidays that fall INSIDE the traveller's exact date window — a "
+    "holiday outside those dates (even the day after they leave) must be omitted. "
+    "DE-DUPLICATE: the same event from several sources is ONE item; never repeat a "
+    "name. Copy each item's exact source_url from the list. Return two groups: (1) "
+    "impacts — public/religious holidays, closures, or strikes that fall inside the "
+    "window, named with the date; (2) notable — specific, named events (with dates) "
+    "and concrete named attractions worth the trip, most notable first. Prefer a "
+    "SHORT, real list to a long guessed one — never invent a vague 'local festival' "
+    "to pad it; an empty notable list is fine. When a notable item matches a stated "
+    "interest, set matched_interest to it, else null. Skip aggregators and ads.")
 
 
 class EventsResolver:
@@ -165,11 +176,12 @@ class EventsResolver:
                         return results
         return results
 
-    def _prompt(self, place: DerivedPlace, when: str, interests: list[str],
-                results) -> str:
+    def _prompt(self, place: DerivedPlace, start: str, end: str,
+                interests: list[str], results) -> str:
         lines = [f"City: {place.label}"]
-        if when:
-            lines.append(f"Travel dates: around {when}")
+        if start and end:
+            lines.append(f"Travel window: {start} to {end} (inclusive). This is the "
+                         "ONLY window that matters.")
         labels = [_interest_label(i) for i in interests]
         lines.append("Traveller interests: "
                      + (", ".join(labels) if labels else "none stated"))
@@ -178,11 +190,16 @@ class EventsResolver:
             lines.append(f"[{i}] {r.title} — {r.url}")
             if r.snippet:
                 lines.append(f"    {r.snippet}")
-        lines += ["", "Return JSON with impacts[] and notable[]. Extract concrete "
-                  "named events/holidays/attractions — never list a calendar or "
-                  "listing website. De-duplicate. Set matched_interest on a notable "
-                  "item only when it matches a stated interest, else null. Copy every "
-                  "source_url exactly from the list above."]
+        window = (f" that fall inside {start}–{end}" if start and end else "")
+        lines += ["", "Return JSON with impacts[] and notable[]. impacts: ONLY "
+                  f"public/religious holidays, closures, or strikes{window} — omit "
+                  "any dated outside the window (a holiday the day after they leave "
+                  "does NOT count). notable: specific named events (include the date) "
+                  "and concrete named venues/attractions worth the trip. Do NOT pad "
+                  "with vague, undated, or invented 'local festival' entries — a few "
+                  "real ones beat a long generic list; return an empty notable list "
+                  "rather than guessing. Never list a calendar/listing website as an "
+                  "item. De-duplicate. Copy every source_url exactly from above."]
         return "\n".join(lines)
 
     # -- resolve ------------------------------------------------------------
@@ -194,13 +211,14 @@ class EventsResolver:
         profile = ctx.discovery_profile or {}
         interests = ((profile.get("activity") or {}).get("interests")) or []
         month, year = _month_year(ctx.start_date)
-        when = f"{month} {year}" if month and year else ""
+        when = f"{month} {year}" if month and year else ""    # broad, for SEARCH
+        start, end = _fmt_date(ctx.start_date), _fmt_date(ctx.end_date)
         results = self._search(self._queries(place.city, place.country, when, interests))
         if not results:
             log.warning("events: no SearXNG results for %s — is SearXNG reachable at "
                         "%s with JSON format enabled?", place.label, self.searxng_url)
             return None
-        out = synthesize_json(self._prompt(place, when, interests, results), _SCHEMA,
+        out = synthesize_json(self._prompt(place, start, end, interests, results), _SCHEMA,
                               base_url=self.ollama_url, system=_SYSTEM,
                               model=self.model, timeout=self.timeout)
         if not out:
