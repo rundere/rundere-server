@@ -213,3 +213,15 @@ def test_render_md_handles_headings_and_callouts():
     assert '<span class="yn-fq">⚠️ <strong>Warn</strong> this</span>' in html  # callout
     assert '<span class="yn-fq">• egg</span>' in html              # bulleted callout
     assert "###" not in html and "&gt;" not in html                # no raw markdown
+
+
+def test_render_md_renders_safe_links():
+    if not DEPS:
+        return
+    from app.trips.routes import _render_md
+    html = str(_render_md("- **Tasca** — good [map ↗](https://maps.example/?q=a&b=1)"))
+    assert '<a href="https://maps.example/?q=a&amp;b=1" target="_blank"' in html
+    assert "rel=\"noopener\">map ↗</a>" in html
+    # a javascript: url is NOT linkified (regex only matches http/https)
+    raw = str(_render_md("[x](javascript:alert(1))"))
+    assert "<a" not in raw and "javascript:alert(1)" in raw

@@ -2,7 +2,7 @@
 
 Fully offline: SearXNG search and Ollama synthesis stubbed at the module
 boundary. Covers query construction (impact + base + per-interest), the
-impacts/suggested/other split, grounding, rendering, and the degrade paths.
+impacts/notable split, grounding, rendering, and the degrade paths.
 """
 import sys
 from pathlib import Path
@@ -74,7 +74,7 @@ def test_queries_without_dates_have_no_trailing_space():
 
 # ------------------------------------------------------------- full pipeline
 
-def test_resolve_builds_three_tiers(monkeypatch):
+def test_resolve_builds_two_tiers(monkeypatch):
     results = [
         SearchResult("https://a.ex/semana", "Semana Santa", "processions"),
         SearchResult("https://b.ex/flamenco", "Flamenco show", "nightly"),
@@ -85,49 +85,65 @@ def test_resolve_builds_three_tiers(monkeypatch):
         "impacts": [{"name": "Semana Santa", "date_range": "Apr 1-8",
                      "effect": "processions close central streets",
                      "source_url": "https://a.ex/semana"}],
-        "suggested": [{"name": "Flamenco show", "date_range": None, "type": "event",
-                       "matched_interest": "live_music", "why": "nightly tablao",
-                       "source_url": "https://b.ex/flamenco"}],
-        "other": [{"name": "Water park", "date_range": None, "type": "activity",
-                   "category": "family", "why": "day trip",
-                   "source_url": "https://c.ex/park"}],
+        "notable": [
+            {"name": "Flamenco show", "date_range": None, "matched_interest": "live_music",
+             "why": "nightly tablao", "source_url": "https://b.ex/flamenco"},
+            {"name": "Water park", "date_range": None, "matched_interest": None,
+             "why": "day trip", "source_url": "https://c.ex/park"},
+        ],
     })
     f = _resolver().resolve(_place(), _ctx(["live_music"]))
     assert f is not None
     assert f.topic == "events" and f.place_key == "ES:Seville"
     assert f.confidence == "medium" and f.ttl_seconds == 604_800
-    assert len(f.data["impacts"]) == 1 and len(f.data["suggested"]) == 1
-    assert len(f.data["other"]) == 1
-    # rendering: impact as a callout, suggested under its interest heading, other section
+    assert len(f.data["impacts"]) == 1 and len(f.data["notable"]) == 2
+    assert "other" not in f.data                       # noisy tier dropped
+    # impact callout; interest-matched item under its heading; the rest under Notable
     assert "⚠️" in f.body_md and "Semana Santa" in f.body_md
     assert "### Live Music" in f.body_md and "Flamenco show" in f.body_md
-    assert "### Other activities" in f.body_md and "Water park" in f.body_md
+    assert "### Notable events & activities" in f.body_md and "Water park" in f.body_md
 
 
-def test_impacts_shown_even_with_no_interests(monkeypatch):
-    _stub_search(monkeypatch, [SearchResult("https://a.ex/hol", "Holiday", "closed")])
+def test_no_interests_puts_everything_under_notable(monkeypatch):
+    _stub_search(monkeypatch, [SearchResult("https://a.ex/f", "Fiesta", "big")])
     _stub_synth(monkeypatch, {
-        "impacts": [{"name": "May Day", "date_range": "May 1",
-                     "effect": "shops closed", "source_url": "https://a.ex/hol"}],
-        "suggested": [], "other": [],
+        "impacts": [],
+        "notable": [{"name": "Balloon Fiesta", "date_range": "Oct 3-11",
+                     "matched_interest": None, "why": "world's largest",
+                     "source_url": "https://a.ex/f"}],
     })
-    f = _resolver().resolve(_place(), _ctx([]))       # blank profile
-    assert f is not None and "May Day" in f.body_md
-    assert f.data["suggested"] == []
+    f = _resolver().resolve(_place(), _ctx([]))        # blank profile
+    assert f is not None and "Balloon Fiesta" in f.body_md
+    assert "### Notable events & activities" in f.body_md   # no weird "None Stated"
+
+
+def test_dedupes_repeated_event_names(monkeypatch):
+    _stub_search(monkeypatch, [SearchResult("https://a.ex/1", "A", ""),
+                               SearchResult("https://b.ex/2", "B", "")])
+    _stub_synth(monkeypatch, {
+        "impacts": [],
+        "notable": [
+            {"name": "Balloon Fiesta", "matched_interest": None, "why": "x",
+             "source_url": "https://a.ex/1"},
+            {"name": "balloon  fiesta", "matched_interest": None, "why": "dup",
+             "source_url": "https://b.ex/2"},
+        ],
+    })
+    f = _resolver().resolve(_place(), _ctx([]))
+    assert len(f.data["notable"]) == 1                 # case/space-insensitive dedupe
 
 
 def test_resolve_drops_invented_items(monkeypatch):
     _stub_search(monkeypatch, [SearchResult("https://real.ex/x", "Real", "y")])
     _stub_synth(monkeypatch, {
         "impacts": [],
-        "suggested": [{"name": "Real Fest", "type": "event", "matched_interest": "museums",
-                       "why": "grounded", "source_url": "https://real.ex/x"},
-                      {"name": "Fake Fest", "type": "event", "matched_interest": "museums",
-                       "why": "invented", "source_url": "https://made-up.ex/no"}],
-        "other": [],
+        "notable": [{"name": "Real Fest", "matched_interest": "museums",
+                     "why": "grounded", "source_url": "https://real.ex/x"},
+                    {"name": "Fake Fest", "matched_interest": "museums",
+                     "why": "invented", "source_url": "https://made-up.ex/no"}],
     })
     f = _resolver().resolve(_place(), _ctx(["museums"]))
-    assert [s["name"] for s in f.data["suggested"]] == ["Real Fest"]
+    assert [s["name"] for s in f.data["notable"]] == ["Real Fest"]
 
 
 def test_interests_reach_the_prompt(monkeypatch):
@@ -135,7 +151,7 @@ def test_interests_reach_the_prompt(monkeypatch):
     cap = {}
     _stub_synth(monkeypatch, {"impacts": [{"name": "X", "effect": "y",
                               "source_url": "https://a.ex"}],
-                              "suggested": [], "other": []}, capture=cap)
+                              "notable": []}, capture=cap)
     _resolver().resolve(_place(), _ctx(["cooking_classes", "architecture"]))
     assert "Cooking Classes" in cap["prompt"] and "Architecture" in cap["prompt"]
 
@@ -149,7 +165,7 @@ def test_none_without_endpoints():
 
 def test_none_without_city(monkeypatch):
     _stub_search(monkeypatch, [SearchResult("https://a.ex", "A", "s")])
-    _stub_synth(monkeypatch, {"impacts": [], "suggested": [], "other": []})
+    _stub_synth(monkeypatch, {"impacts": [], "notable": []})
     assert _resolver().resolve(
         DerivedPlace(country="ES", city=None, lat=None, lon=None), _ctx()) is None
 
@@ -161,5 +177,5 @@ def test_none_when_no_results(monkeypatch):
 
 def test_none_when_all_empty(monkeypatch):
     _stub_search(monkeypatch, [SearchResult("https://a.ex", "A", "s")])
-    _stub_synth(monkeypatch, {"impacts": [], "suggested": [], "other": []})
+    _stub_synth(monkeypatch, {"impacts": [], "notable": []})
     assert _resolver().resolve(_place(), _ctx()) is None

@@ -54,6 +54,38 @@ def test_cold_nights_mild_days_is_layering_not_a_parka():
     assert _climate_bands(26, 15, 0) == {"lightweight"}
 
 
+def test_cold_ski_not_selected_for_a_warm_trip():
+    # The NM bug: cold_ski was chosen at 28°C, dumping a parka into a beach plan.
+    res = build_plan(_ctx(10, climate_bands={"lightweight", "rain_gear"},
+                          temp_high_c=28), _ITEMS)
+    assert "cold_ski" not in {a["id"] for a in res.archetypes}
+    assert _qty(res, "insulated_jacket") is None            # no parka
+    assert _qty(res, "winter_boots") is None
+
+
+def test_cold_ski_allowed_when_actually_cold():
+    res = build_plan(_ctx(7, activity_tags={"ski"}, accommodation={"cabin"},
+                          climate_bands={"cold_weather"}, temp_high_c=-4), _ITEMS)
+    assert "cold_ski" in {a["id"] for a in res.archetypes}
+
+
+def test_force_archetypes_overrides_autodetection():
+    # A warm trip the operator declares a ski trip → cold kit, auto-detect ignored.
+    res = build_plan(_ctx(6, climate_bands={"lightweight"}, temp_high_c=27),
+                     _ITEMS, force_archetypes=["cold_ski"])
+    assert [a["id"] for a in res.archetypes] == ["cold_ski"]
+    assert _qty(res, "insulated_jacket") is not None
+
+
+def test_template_reason_names_the_archetype():
+    # sandals is a beach-archetype base item → its reason names the archetype
+    # (swimwear/sunscreen come from the beach *modifier*, so they say "beach days").
+    res = build_plan(_ctx(7, activity_tags={"beach"}, accommodation={"resort"}),
+                     _ITEMS)
+    assert _reason(res, "sandals") == "for a beach trip"
+    assert _reason(res, "swimwear") == "beach days"        # modifier, not archetype
+
+
 # ------------------------------------------------------------------ scoring
 
 def test_beach_activities_pick_the_beach_archetype():
