@@ -146,6 +146,30 @@ Two further refinements (3.2.2), from live output:
   sources, so "where to find events" is covered even when specific events aren't
   extractable.
 
+## Safety & transport resolver (`discover/resolvers/safety.py`)
+
+Scope: city. Confidence: medium; 30-day TTL (slow-changing). **Transport-first** —
+the resolver's priority is the practical "how do I get around" answer: what public
+transit exists and how to pay for it, which ride-hailing apps actually operate in
+that city, the apps to install, and the airport transfer. Safety is the secondary
+block: a brief, non-alarmist summary, concrete advisories, and common scams.
+
+- **Corroboration (D-66).** Safety advisories are grounded per-item and the block
+  is corroborated — `corroborate()` counts distinct advisory domains; under 2 and
+  the safety section renders under the `verify_banner()`. Transport is medium-
+  confidence: the block is kept only when at least one of its `source_urls` is in
+  the SearXNG set.
+- **Accuracy guard.** The prompt insists ride-hailing lists name only apps that
+  operate in *that* city (no Bolt/Grab for a US city) — a live failure that the
+  prompt fixed.
+- Queries: `travel safety {country} {year}`, `scams to avoid {city}`,
+  `getting around {city} public transit`, `ride hailing apps {city}`,
+  `{city} airport to city center transport`, `best transport apps {city}`.
+
+**Visa & entry (§3.3) is intentionally not built.** Entry rules are high-liability,
+change constantly, and are passport/purpose-specific — they belong to official
+government sources. `TravelerIdentity.nationality` stays for possible future use.
+
 ## Durable background run + wiring (`app/trips/discovery_jobs.py`)
 
 "Run Discovery" now runs BOTH tiers on a single background worker (§6.1). The

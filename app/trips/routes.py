@@ -163,6 +163,7 @@ def _activity_display(a: TripActivity) -> dict:
         "multi_day": multi_day,
         "span_label": ("→ " + fmt_date_short(end_when)) if multi_day else "",
         "fields": activity_types.detail_fields(a.type, v),
+        "map_url": activity_types.map_url(a.type, v),
     }
 
 

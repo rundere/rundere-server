@@ -13,11 +13,12 @@ from discover.resolvers.events import EventsResolver
 from discover.resolvers.food import FoodResolver
 from discover.resolvers.language import LanguageResolver
 from discover.resolvers.plugs import PlugsResolver
+from discover.resolvers.safety import SafetyResolver
 from discover.resolvers.weather import WeatherResolver
 
 __all__ = ["Finding", "Resolver", "ResolverContext", "build_deterministic",
            "build_llm", "PlugsResolver", "CurrencyResolver", "WeatherResolver",
-           "LanguageResolver", "FoodResolver", "EventsResolver"]
+           "LanguageResolver", "FoodResolver", "EventsResolver", "SafetyResolver"]
 
 
 def build_deterministic(*, frankfurter_url: str = "https://api.frankfurter.dev/v1",
@@ -40,5 +41,7 @@ def build_llm(*, searxng_url: str, ollama_url: str,
         FoodResolver(searxng_url=searxng_url, ollama_url=ollama_url,
                      model=model, timeout=timeout),
         EventsResolver(searxng_url=searxng_url, ollama_url=ollama_url,
+                       model=model, timeout=timeout),
+        SafetyResolver(searxng_url=searxng_url, ollama_url=ollama_url,
                        model=model, timeout=timeout),
     ]
