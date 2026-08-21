@@ -1,7 +1,11 @@
-<div id="packing-section">
+<div id="packing-section" class="yn-sec">
 {% set trip_id = trip.id %}
+<span id="sec-packing" class="yn-anchor"></span>
 <div class="bp-timeline-head">
-  <h2 class="bp-h2">Packing</h2>
+  <div class="yn-sec-title">
+    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Packing">▾</button>
+    <h2 class="bp-h2">Packing</h2>
+  </div>
   <div class="bp-head-actions">
     {% if packing_has %}
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('packing', true)">Expand all</button>
@@ -12,6 +16,7 @@
             hx-disabled-elt="this">{{ 'Re-generate' if packing_has else 'Generate packing plan' }}</button>
   </div>
 </div>
+<div class="yn-sec-body">
 {% if packing_when %}
 <div class="yn-arch-row">
   <span class="yn-arch-lbl">Trip type{% if packing_manual %} <span class="yn-arch-manual">· adjusted</span>{% endif %}:</span>
@@ -97,4 +102,5 @@
       right-sized list built from this trip's destinations, weather and activities.</div>
   </div>
 {% endif %}
+</div>
 </div>

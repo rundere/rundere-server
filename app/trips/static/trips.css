@@ -345,6 +345,39 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
   color: var(--color-accent); }
 .yn-fq { color: var(--color-neutral-700); font-style: italic; }
 
+/* Trip page navigation: jump bar, collapsible sections, live filter (3.2.3) */
+.yn-jump { position: sticky; top: 0; z-index: 6; display: flex; flex-wrap: wrap;
+  align-items: center; justify-content: space-between; gap: 10px 16px;
+  padding: 8px 2px; margin: 0 0 8px; background: var(--color-bg);
+  border-bottom: 1px solid var(--color-divider); }
+.yn-jump-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.yn-jump-links a { color: var(--color-neutral-700); text-decoration: none; font-weight: 600; }
+.yn-jump-links a:hover { color: var(--color-accent); }
+.yn-jump-tools { display: flex; align-items: center; gap: 8px; }
+.yn-jump-filter { min-height: 32px; min-width: 170px; max-width: 240px; }
+.yn-anchor { display: block; height: 0; scroll-margin-top: 72px; }
+.yn-sec { scroll-margin-top: 72px; }
+.yn-sec-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.yn-sec-caret { border: none; background: none; cursor: pointer; padding: 2px 4px;
+  font-size: 13px; line-height: 1; color: var(--color-neutral-600);
+  transition: transform 0.15s; }
+.yn-sec-caret:hover { color: var(--color-text); }
+.yn-sec.collapsed .yn-sec-caret { transform: rotate(-90deg); }
+.yn-sec.collapsed .yn-sec-body { display: none; }
+.yn-hidden { display: none !important; }
+
+/* Discovery findings collapse per city */
+details.yn-finding > summary.yn-finding-head { cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: 8px; }
+details.yn-finding > summary.yn-finding-head::-webkit-details-marker { display: none; }
+.yn-finding-caret { font-size: 11px; color: var(--color-neutral-600);
+  transition: transform 0.15s; display: inline-block; flex-shrink: 0; }
+details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .yn-sec-caret, .yn-finding-caret { transition: none; }
+}
+
 /* Packing archetype chips (3.2.1) */
 .yn-arch-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   margin: 10px 0 4px; }

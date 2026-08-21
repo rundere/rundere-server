@@ -1,9 +1,13 @@
-<div id="discovery-section"
+<div id="discovery-section" class="yn-sec"
      {% if discovery_running %}hx-get="/trips/{{ trip.id }}/discover/status"
      hx-trigger="load delay:1500ms, every 2s" hx-target="#discovery-section"
      hx-swap="outerHTML"{% endif %}>
+<span id="sec-discovery" class="yn-anchor"></span>
 <div class="bp-timeline-head">
-  <h2 class="bp-h2">Discovery</h2>
+  <div class="yn-sec-title">
+    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Discovery">▾</button>
+    <h2 class="bp-h2">Discovery</h2>
+  </div>
   <div class="bp-head-actions">
     {% if discovery_has_findings %}
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('discovery', true)">Expand all</button>
@@ -18,6 +22,7 @@
     {% endif %}
   </div>
 </div>
+<div class="yn-sec-body">
 
 {% if discovery_running %}
 <div class="card blueprint yn-run-card">
@@ -44,12 +49,13 @@
     <div class="card blueprint bp-daycard yn-findings">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       {% for f in grp.findings %}
-      <div class="yn-finding yn-status-{{ f.status }}">
-        <div class="yn-finding-head">
+      <details class="yn-finding yn-status-{{ f.status }} yn-filterable" data-grp="discovery" open>
+        <summary class="yn-finding-head">
+          <span class="bp-chevron yn-finding-caret">▸</span>
           <span class="tag tag-outline bp-typetag">{{ f.place_key }}</span>
           <span class="yn-conf yn-conf-{{ f.confidence }}">{{ f.confidence }}</span>
           {% if f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
-        </div>
+        </summary>
         <div class="yn-finding-body">{{ f.body }}</div>
         {% if f.sources %}
         <div class="yn-sources">
@@ -69,7 +75,7 @@
           <button class="btn btn-secondary bp-sm"
                   hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">{{ 'Languages' if f.is_language else 'Edit' }}</button>
         </div>
-      </div>
+      </details>
       {% endfor %}
     </div>
   </details>
@@ -81,4 +87,5 @@
       currency, plugs, food and more for this trip's destinations.</div>
   </div>
 {% endif %}
+</div>
 </div>

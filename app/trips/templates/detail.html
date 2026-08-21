@@ -33,10 +33,29 @@
   </div>
 </div>
 
+<div class="yn-jump">
+  <nav class="yn-jump-links">
+    <a href="#sec-travelers">Travellers</a>
+    <a href="#sec-timeline">Timeline</a>
+    <a href="#sec-discovery">Discovery</a>
+    <a href="#sec-packing">Packing</a>
+  </nav>
+  <div class="yn-jump-tools">
+    <input class="input yn-jump-filter" type="search" oninput="ynFilter(this.value)"
+           placeholder="Filter — city, topic, item…" aria-label="Filter this trip">
+    <button class="btn btn-ghost bp-sm" type="button" onclick="ynAll(true)">Expand all</button>
+    <button class="btn btn-ghost bp-sm" type="button" onclick="ynAll(false)">Collapse all</button>
+  </div>
+</div>
+
 {% include "_travelers_section.html" %}
 
+<section class="yn-sec" id="sec-timeline">
 <div class="bp-timeline-head">
-  <h2 class="bp-h2">Timeline</h2>
+  <div class="yn-sec-title">
+    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Timeline">▾</button>
+    <h2 class="bp-h2">Timeline</h2>
+  </div>
   <div class="bp-head-actions">
     {% if has_activities %}
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('timeline', true)">Expand all</button>
@@ -46,10 +65,11 @@
             hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
   </div>
 </div>
+<div class="yn-sec-body">
 
 {% if has_activities %}
   {% for day in day_groups %}
-  <details class="bp-group" data-grp="timeline" open>
+  <details class="bp-group yn-filterable" data-grp="timeline" open>
     <summary class="bp-group-label">{{ day.label }}
       <span class="bp-group-count">{{ day.activities | length }}</span></summary>
     <div class="card blueprint bp-daycard">
@@ -102,20 +122,27 @@
             hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
   </div>
 {% endif %}
+</div>
+</section>
 
 {% include "_discovery_section.html" %}
 
 {% include "_packing_section.html" %}
 
 {% if linked_captures %}
+<section class="yn-sec" id="sec-captures">
 <div class="bp-timeline-head">
-  <h2 class="bp-h2">Linked captures</h2>
+  <div class="yn-sec-title">
+    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Linked captures">▾</button>
+    <h2 class="bp-h2">Linked captures</h2>
+  </div>
 </div>
+<div class="yn-sec-body">
 <section class="bp-group">
   <div class="card blueprint bp-daycard">
     <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
     {% for c in linked_captures %}
-    <div class="yn-actrow">
+    <div class="yn-actrow yn-filterable">
       <span class="tag tag-outline bp-typetag">{{ c.kind }}</span>
       <div class="bp-act-main">
         <div class="bp-act-title">{{ c.headline }}</div>
@@ -128,12 +155,56 @@
 <p class="bp-trip-notes">Items you linked to this trip from the
   <a href="/review?bucket=all">review queue</a>. This is an in-house link,
   independent of AdventureLog.</p>
+</div>
+</section>
 {% endif %}
 
 <script>
+// Collapse one section (the caret on its header).
+function ynSec(btn) {
+  var s = btn.closest('.yn-sec');
+  if (s) s.classList.toggle('collapsed');
+}
+// Per-section "Expand/Collapse all" for its sub-groups; also un-collapses the
+// section so the result is visible.
 function ynToggleAll(grp, open) {
-  document.querySelectorAll('details.bp-group[data-grp="' + grp + '"]')
+  var host = document.querySelector('[data-grp="' + grp + '"]');
+  var sec = (host && host.closest('.yn-sec')) || document;
+  sec.querySelectorAll('details.bp-group[data-grp="' + grp + '"], details.yn-finding')
+    .forEach(function (d) { d.open = open; });
+  if (sec.classList && open) sec.classList.remove('collapsed');
+}
+// Page-level: every section + every collapsible group/finding.
+function ynAll(open) {
+  document.querySelectorAll('.yn-sec')
+    .forEach(function (s) { s.classList.toggle('collapsed', !open); });
+  document.querySelectorAll('details.bp-group, details.yn-finding')
     .forEach(function (d) { d.open = open; });
 }
+// Live filter: hide anything (a city finding, a day, a packing row, a traveller)
+// that doesn't contain the query; reveal + open matches; hide now-empty groups.
+function ynFilter(q) {
+  q = (q || '').trim().toLowerCase();
+  document.querySelectorAll('.yn-filterable').forEach(function (el) {
+    var hit = !q || el.textContent.toLowerCase().indexOf(q) !== -1;
+    el.classList.toggle('yn-hidden', !hit);
+    if (hit && q) {
+      var d = el.closest('details'); if (d) d.open = true;
+      var s = el.closest('.yn-sec'); if (s) s.classList.remove('collapsed');
+    }
+  });
+  document.querySelectorAll('details.bp-group, .yn-sec').forEach(function (c) {
+    if (c.classList.contains('yn-filterable')) return;
+    var vis = Array.prototype.some.call(
+      c.querySelectorAll('.yn-filterable'),
+      function (el) { return !el.classList.contains('yn-hidden'); });
+    c.classList.toggle('yn-hidden', !!q && !vis);
+  });
+}
+// Re-apply an active filter after an HTMX swap re-renders a section.
+document.body.addEventListener('htmx:afterSettle', function () {
+  var box = document.querySelector('.yn-jump-filter');
+  if (box && box.value) ynFilter(box.value);
+});
 </script>
 {% endblock %}
