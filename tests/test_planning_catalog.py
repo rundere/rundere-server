@@ -92,3 +92,24 @@ def test_owner_edit_survives_reseed():
     with SessionLocal() as s:
         catalog.seed_catalog(s)                     # a later startup re-seed
         assert s.get(PackingCatalogItem, "jeans").label == "Owner-renamed jeans"
+
+
+def test_new_catalog_item_auto_slugs_id_from_label():
+    # Regression: SQLAdmin drops the PK from the create form, so a new item was
+    # inserted with id=NULL -> NotNullViolation. id now auto-derives from label.
+    if not DEPS:
+        return
+    with SessionLocal() as s:
+        s.query(PackingCatalogItem).delete()
+        s.add(PackingCatalogItem(label="Car Phone Mount", category="tech"))
+        s.commit()
+        rows = s.query(PackingCatalogItem).all()
+        assert len(rows) == 1 and rows[0].id == "car_phone_mount"
+        # an explicit id (the seed path) is still honoured
+        s.add(PackingCatalogItem(id="quick_dry_top", label="Quick-dry top",
+                                 category="clothing"))
+        s.commit()
+        assert s.get(PackingCatalogItem, "quick_dry_top") is not None
+    with SessionLocal() as s:                       # restore the shared catalog
+        s.query(PackingCatalogItem).delete()
+        catalog.seed_catalog(s)

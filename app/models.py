@@ -26,6 +26,21 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _slug(text: str | None) -> str:
+    """A stable snake_case key from a label — "Car Phone Mount" -> "car_phone_mount"
+    — matching the seed catalog's id convention. Falls back to a uuid fragment when
+    the text has no usable characters."""
+    import re
+    s = re.sub(r"[^a-z0-9]+", "_", (text or "").strip().lower()).strip("_")
+    return s[:64] or ("item_" + _uuid()[:8])
+
+
+def _slug_from_label(ctx) -> str:
+    """Column default: derive `id` from the row's `label` on insert (used by
+    PackingCatalogItem, whose PK is a slug the owner shouldn't have to type)."""
+    return _slug(ctx.get_current_parameters().get("label"))
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -475,7 +490,12 @@ class PackingCatalogItem(Base):
     archetype reference)."""
     __tablename__ = "packing_catalog_items"
 
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # Owner-facing PK is a slug referenced by archetypes.json. The seed sets it
+    # from items.json keys; a NEW item added in the admin auto-derives it from the
+    # label (SQLAdmin drops the PK from the create form, so it would otherwise
+    # insert NULL — the D-84 catalog-add bug).
+    id: Mapped[str] = mapped_column(String(64), primary_key=True,
+                                    default=_slug_from_label)
     label: Mapped[str] = mapped_column(String(128))
     category: Mapped[str] = mapped_column(String(16), index=True)
     bag: Mapped[str] = mapped_column(String(12), default="carry_on")   # carry_on|checked

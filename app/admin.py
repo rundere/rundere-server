@@ -199,8 +199,11 @@ def mount_admin(app, engine) -> None:
                                 models.PackingCatalogItem.label]
         column_default_sort = "category"
         page_size = 200
-        # Edit the human fields; `variants`/`updated_at` stay off the form.
-        form_columns = ["id", "label", "category", "bag", "weight_g", "tags", "enabled"]
+        # Edit the human fields. `id` is auto-derived from the label on create
+        # (its slug, e.g. "Car Phone Mount" -> car_phone_mount) — SQLAdmin drops
+        # the PK from the create form, so listing it here would just insert NULL.
+        # `variants`/`updated_at` stay off the form.
+        form_columns = ["label", "category", "bag", "weight_g", "tags", "enabled"]
         form_overrides = {"tags": LinesField, "category": wtforms.SelectField,
                           "bag": wtforms.SelectField}
         form_args = {
@@ -212,8 +215,6 @@ def mount_admin(app, engine) -> None:
             # checked, so carry-on is the safe default for a new item.
             "bag": {"choices": [("carry_on", "carry-on"), ("checked", "checked")],
                     "default": "carry_on"},
-            "id": {"description": "Stable key referenced by archetypes "
-                   "(lowercase, no spaces), e.g. quick_dry_top."},
         }
 
     # NB: PackingProfile has NO SQLAdmin view on purpose — it's edited through the
