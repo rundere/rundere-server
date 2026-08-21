@@ -1,10 +1,15 @@
-<div id="travelers-section">
+<div id="travelers-section" class="yn-sec">
+<span id="sec-travelers" class="yn-anchor"></span>
 <div class="bp-timeline-head">
-  <h2 class="bp-h2">Who's traveling</h2>
+  <div class="yn-sec-title">
+    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Who's traveling">▾</button>
+    <h2 class="bp-h2">Who's traveling</h2>
+  </div>
   <div class="bp-head-actions">
     <a class="btn btn-secondary bp-sm" href="{{ travelers_manage_url }}">Manage travellers</a>
   </div>
 </div>
+<div class="yn-sec-body">
 
 {% if travelers %}
 <section class="bp-group">
@@ -12,7 +17,7 @@
     <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
     <ul class="yn-traveler-list">
       {% for t in travelers %}
-      <li class="yn-traveler">
+      <li class="yn-traveler yn-filterable">
         <span class="yn-traveler-name">{{ t.name }}</span>
         <span class="tag {{ 'tag-outline' if t.role == 'self' else 'tag-neutral' }}">{{ t.role_label }}</span>
         {% if t.generic %}<span class="tag tag-neutral" title="Generic guest — a headcount placeholder, not used for discovery or packing">guest</span>{% endif %}
@@ -56,4 +61,5 @@
 </form>
 <p class="yn-traveler-hint">A guest is just a name — no profile needed. Add details later in
   <a href="{{ travelers_manage_url }}">Travellers</a> if you want.</p>
+</div>
 </div>
