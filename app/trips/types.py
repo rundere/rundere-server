@@ -210,6 +210,51 @@ def type_options() -> list[dict]:
     return [{"value": t.key, "label": t.label} for t in _TYPES]
 
 
+# Which value(s) locate each activity type on a map. A road trip is special:
+# it prefers the shared Google Maps *directions* URL. Everything else builds a
+# Maps SEARCH deeplink from a place string (a plain URL — no API call / quota).
+def _maps_search(query: str) -> str:
+    import urllib.parse
+    return "https://www.google.com/maps/search/?api=1&query=" + \
+        urllib.parse.quote(query)
+
+
+_MAP_QUERY: dict[str, Callable[[dict], str | None]] = {
+    "flight": lambda v: (f"{v['from']} airport" if v.get("from") else None),
+    "train": lambda v: (f"{v['from']} train station" if v.get("from") else None),
+    "carRental": lambda v: v.get("pickupLocation") or None,
+    "lodging": lambda v: _join(v.get("name", ""), v.get("address", ""), sep=", ") or None,
+    "tour": lambda v: v.get("location") or v.get("name") or None,
+    "event": lambda v: _join(v.get("venue", ""), v.get("name", "") if not v.get("venue") else "") or None,
+    "dining": lambda v: _join(v.get("name", ""), v.get("address", ""), sep=", ") or None,
+    "cruise": lambda v: (f"{v['departurePort']} cruise terminal"
+                         if v.get("departurePort") else None),
+}
+
+
+def _is_maps_url(url: str) -> bool:
+    u = (url or "").lower()
+    return u.startswith("http") and (
+        "google." in u and "/maps" in u or "maps.app.goo.gl" in u
+        or "goo.gl/maps" in u)
+
+
+def map_url(activity_type: str, values: dict) -> str | None:
+    """A 'find on map' link for one timeline activity, or None when it has no
+    locatable field. Flight → departure airport; lodging/restaurant → the
+    property; event → the venue; road trip → the shared directions URL if there is
+    one, else a search on the route text."""
+    v = values or {}
+    if activity_type == "drive":
+        link = (v.get("sourceLink") or "").strip()
+        if _is_maps_url(link):
+            return link
+        return _maps_search(v["route"]) if v.get("route") else None
+    fn = _MAP_QUERY.get(activity_type)
+    q = fn(v) if fn else None
+    return _maps_search(q) if q else None
+
+
 def detail_fields(activity_type: str, values: dict) -> list[dict]:
     """Labelled, non-empty fields for the expanded row, in declaration order,
     with the long free-text fields pushed to the end. `when` is excluded (it is

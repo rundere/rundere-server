@@ -282,6 +282,34 @@ def test_detail_fields_excludes_when_flags_link():
     assert link["is_link"] is True
 
 
+def test_activity_map_url_per_type():
+    if not DEPS:
+        return
+    m = activity_types.map_url
+    # flight -> departure airport search
+    u = m("flight", {"from": "YYZ", "to": "LIS"})
+    assert u.startswith("https://www.google.com/maps/search/") and "YYZ%20airport" in u
+    # lodging -> name + address
+    assert "Sandpiper" in m("lodging", {"name": "Inn of the Sandpiper", "address": "113 Washington"})
+    # event -> venue
+    assert "Meow%20Wolf" in m("event", {"name": "Show", "venue": "Meow Wolf"})
+    # restaurant -> name + address
+    assert "Geronimo" in m("dining", {"name": "Geronimo", "address": "724 Canyon Rd"})
+    # train -> station; cruise -> port
+    assert "station" in m("train", {"from": "Gare du Nord"})
+    assert "terminal" in m("cruise", {"departurePort": "Miami"})
+    # road trip prefers a shared Google Maps directions URL
+    assert m("drive", {"sourceLink": "https://www.google.com/maps/dir/A/B"}) == \
+        "https://www.google.com/maps/dir/A/B"
+    # road trip without a maps url falls back to searching the route
+    assert "Toronto" in m("drive", {"route": "Toronto to Montreal",
+                                    "sourceLink": "https://example.com/doc.pdf"})
+    # note has no location
+    assert m("note", {"title": "Pack passports"}) is None
+    # a locationless lodging returns None
+    assert m("lodging", {}) is None
+
+
 def test_unknown_type_falls_back():
     if not DEPS:
         return

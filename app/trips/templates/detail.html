@@ -102,6 +102,9 @@
           </div>
           {% endif %}
           <div class="bp-act-btns">
+            {% if act.map_url %}
+            <a class="btn btn-secondary bp-sm" href="{{ act.map_url }}" target="_blank" rel="noopener">Map&nbsp;↗</a>
+            {% endif %}
             <button class="btn btn-secondary bp-sm"
                     hx-get="/trips/{{ trip.id }}/activity/{{ act.id }}/edit" hx-target="#modal-root">Edit</button>
             <button class="btn btn-ghost bp-sm"
