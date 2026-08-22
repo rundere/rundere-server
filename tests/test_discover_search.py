@@ -48,6 +48,35 @@ def test_drops_empty_url_rows(monkeypatch):
     assert [r.url for r in out] == ["https://ok.example"]
 
 
+def test_empty_result_is_retried(monkeypatch):
+    # SearXNG can come back 200-but-empty when its engines flake — one empty
+    # response is retried, and the second (non-empty) one is used.
+    calls = {"n": 0}
+
+    def flaky(url, timeout=12, retries=1):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"results": []}                # transient empty
+        return {"results": [{"url": "https://ok.example", "title": "t", "content": "c"}]}
+
+    monkeypatch.setattr(search_mod, "get_json", flaky)
+    out = searxng_search("q", base_url="http://searxng:8080", retries=1)
+    assert calls["n"] == 2                          # retried once
+    assert [r.url for r in out] == ["https://ok.example"]
+
+
+def test_persistently_empty_gives_up(monkeypatch):
+    calls = {"n": 0}
+
+    def always_empty(url, timeout=12, retries=1):
+        calls["n"] += 1
+        return {"results": []}
+
+    monkeypatch.setattr(search_mod, "get_json", always_empty)
+    out = searxng_search("q", base_url="http://searxng:8080", retries=1)
+    assert out == [] and calls["n"] == 2            # retried once, then gave up
+
+
 def test_builds_json_query(monkeypatch):
     seen = {}
 

@@ -151,6 +151,56 @@ def test_rerun_prunes_stale_drafts():
         assert got == {("plugs", "CA"), ("weather", "CA:Toronto")}   # CH drafts pruned
 
 
+_FLAKY = {"fail": False}
+
+
+class _FlakyCityResolver:
+    """A city-scope resolver that returns a finding when healthy and NOTHING when
+    flaky — stands in for the federated events/food/safety tier whose live search
+    can come back empty on any given run."""
+    topic = "events"
+    scope = "city"
+
+    def resolve(self, place, ctx):
+        if _FLAKY["fail"]:
+            return None
+        return Finding(topic=self.topic, scope=self.scope,
+                       place_key=place.city_key or place.country,
+                       body_md=f"events for {place.label}", resolver="fake")
+
+
+def _run_resolvers(trip_id, resolvers, excluded=frozenset()):
+    with SessionLocal() as s:
+        trip = s.get(Trip, trip_id)
+        run = run_discovery(s, trip, resolve_airport=_airports, geocoder=_NoGeo(),
+                            resolvers=resolvers, excluded=excluded, today="2026-08-14")
+        return run.id
+
+
+def test_flaky_empty_run_keeps_last_good_finding():
+    # The regression behind "cities vanish on re-run": a resolver that produced a
+    # finding last run but comes back empty this run must NOT lose the finding —
+    # the place is still on the trip, so the last-good draft is preserved.
+    if not DEPS:
+        return
+    tid = _fresh_trip()
+    r = _FlakyCityResolver()
+    _FLAKY["fail"] = False
+    try:
+        _run_resolvers(tid, [r])                    # both cities get an events finding
+        with SessionLocal() as s:
+            assert s.query(DiscoveryFinding).filter_by(
+                trip_id=tid, topic="events").count() == 2
+        _FLAKY["fail"] = True
+        _run_resolvers(tid, [r])                    # every resolve returns None now
+        with SessionLocal() as s:
+            # places still in scope → last-good findings preserved, not pruned
+            assert s.query(DiscoveryFinding).filter_by(
+                trip_id=tid, topic="events").count() == 2
+    finally:
+        _FLAKY["fail"] = False
+
+
 def test_prune_keeps_human_touched_findings():
     if not DEPS:
         return

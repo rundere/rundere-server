@@ -38,11 +38,19 @@ def searxng_search(query: str, *, base_url: str | None, categories: str = "gener
         return []
     url = f"{base_url.rstrip('/')}/search?" + qs(
         q=query, format="json", categories=categories, language=language)
-    data = get_json(url, timeout=timeout, retries=retries)
-    if not isinstance(data, dict):
-        return []
+    # SearXNG federates live engines: a query can come back 200-but-EMPTY when the
+    # engines it fanned out to all timed out or rate-limited that instant — usually
+    # transient. get_json only retries on a hard error, so retry an empty-but-ok
+    # response here too, to cut the run-to-run flakiness that drops a whole city.
+    for attempt in range(retries + 1):
+        data = get_json(url, timeout=timeout, retries=retries)
+        results = data.get("results") if isinstance(data, dict) else None
+        if results:
+            break
+        if attempt >= retries:
+            return []
     out: list[SearchResult] = []
-    for item in (data.get("results") or []):
+    for item in (results or []):
         if not isinstance(item, dict):
             continue
         u = (item.get("url") or "").strip()

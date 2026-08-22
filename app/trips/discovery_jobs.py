@@ -27,7 +27,8 @@ from app.db import SessionLocal
 from app.models import DiscoveryRun, Trip, TripActivity
 from discover.places import derive_locations
 from discover.resolvers import ResolverContext
-from discover.runner import _plan_tasks, _prune_stale_drafts, _upsert
+from discover.runner import (_in_scope_keys, _plan_tasks, _prune_stale_drafts,
+                            _upsert)
 
 log = logging.getLogger("yonder.discovery.jobs")
 
@@ -119,7 +120,6 @@ def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
                 phrasebook=langdata.phrasebook(s), regional_map=langdata.regional_map(s),
                 generated_languages=langdata.generated_languages(s))
 
-            produced: set[tuple[str, str]] = set()
             done = 0
             for resolver, place in [*det_tasks, *llm_tasks]:
                 run.phase = f"{resolver.topic} · {place.label}"
@@ -133,13 +133,12 @@ def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
                     finding = None
                 if finding is not None:
                     _upsert(s, run, trip_id, finding)
-                    produced.add((finding.topic, finding.place_key))
                     langdata.persist_finding_generated(s, finding.data)
                 done += 1
                 run.done = done
                 s.commit()                       # stream the finding in
 
-            _prune_stale_drafts(s, trip_id, produced)
+            _prune_stale_drafts(s, trip_id, _in_scope_keys(derived))
             run.done = run.total
             run.status = "done"
             run.phase = "done"
