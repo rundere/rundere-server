@@ -70,8 +70,10 @@
           <button class="btn btn-secondary bp-sm"
                   hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/calculator" hx-target="#modal-root">Open calculator</button>
           {% endif %}
+          {% if f.rerunnable %}
           <button class="btn btn-secondary bp-sm"
                   hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun" hx-disabled-elt="this">Re-run</button>
+          {% endif %}
           <button class="btn btn-secondary bp-sm"
                   hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">{{ 'Languages' if f.is_language else 'Edit' }}</button>
         </div>

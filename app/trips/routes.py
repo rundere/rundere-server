@@ -583,6 +583,11 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         "body": _render_md(f.body_md), "sources": f.sources or [],
         "is_currency": f.topic == "currency",
         "is_language": f.topic == "language",
+        # Deterministic language detection is a pure function of country — a
+        # per-finding re-run can't produce anything new, it can only clobber a
+        # manual Languages pick, so it isn't offered. The Languages picker is the
+        # tool for those; other topics keep Re-run.
+        "rerunnable": f.topic not in ("language", "language_local"),
         "has_rates": bool(data.get("rates")),
     }
 
@@ -699,6 +704,10 @@ def rerun_finding_route(trip_id: str, fid: str,
     f = _finding_or_404(session, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
+    # Language findings aren't re-runnable (see _finding_view) — never let a
+    # stale/forged POST overwrite a manual Languages pick.
+    if f.topic in ("language", "language_local"):
+        return _redirect(f"/trips/{trip_id}")
     rerun_finding(session, f, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
                   base_currencies=settings.base_currency_list)

@@ -119,6 +119,11 @@ class LanguageResolver:
         try:
             from babel.languages import get_official_languages
             codes = get_official_languages(country)
+            if not codes:
+                # Countries with no *de jure* official language (the US, e.g.)
+                # return () here — fall back to the de facto official language(s)
+                # so they resolve to English instead of flagging as "unknown".
+                codes = get_official_languages(country, de_facto=True)
         except Exception:
             codes = ()
 
@@ -136,7 +141,8 @@ class LanguageResolver:
                 topic=self.topic, scope=self.scope, place_key=country,
                 resolver="language.static", confidence="flagged", sources=_SOURCE,
                 body_md=f"Couldn't determine the official language(s) for "
-                        f"**{country}**. Use Edit to pick one or more languages.")
+                        f"**{country}**. Use the **Languages** button to pick one "
+                        f"or more.")
 
         body, data, confidence = build_language_body(place.label, langs, official=True)
         return Finding(
