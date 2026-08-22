@@ -102,15 +102,35 @@ def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> No
     existing.generated_at = _now()
 
 
+def _in_scope_keys(derived: DerivedLocations) -> set[str]:
+    """Every place_key still in the trip's scope — the country key and the city
+    key of each derived place. A finding whose place_key is in here belongs to a
+    place that is still on the trip; one that isn't belongs to a place that was
+    excluded or removed."""
+    keys: set[str] = set()
+    for p in derived.places:
+        if p.country:
+            keys.add(p.country)
+        if p.city_key:
+            keys.add(p.city_key)
+    return keys
+
+
 def _prune_stale_drafts(session: Session, trip_id: str,
-                        produced: set[tuple[str, str]]) -> None:
-    """Delete DRAFT findings the latest run did not produce — the place was
-    excluded, an activity was removed, or it no longer geocodes. Human-touched
-    findings (approved/edited/rejected) are always kept."""
+                        in_scope_keys: set[str]) -> None:
+    """Delete a DRAFT finding only when its PLACE has left the trip — excluded in
+    the viewer, or its activity removed / no longer geocodes.
+
+    A place that is STILL in scope but produced nothing this run (a flaky
+    SearXNG/LLM pass — the events/food/safety tier federates live search, which is
+    inherently non-deterministic) KEEPS its last-good draft. A finding is only ever
+    replaced by a newer result via _upsert, never deleted because one run came back
+    empty — otherwise a good result silently vanishes on the next re-run.
+    Human-touched findings (approved/edited/rejected) are always kept."""
     for f in (session.query(DiscoveryFinding)
               .filter(DiscoveryFinding.trip_id == trip_id,
                       DiscoveryFinding.status == "draft").all()):
-        if (f.topic, f.place_key) not in produced:
+        if f.place_key not in in_scope_keys:
             session.delete(f)
 
 
@@ -211,7 +231,6 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
         run.total = len(tasks)
         session.flush()
 
-        produced: set[tuple[str, str]] = set()
         for i, (resolver, place) in enumerate(tasks):
             run.phase = f"{resolver.topic} · {place.label}"
             run.done = i
@@ -224,12 +243,11 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
                 finding = None
             if finding is not None:
                 _upsert(session, run, trip.id, finding)
-                produced.add((finding.topic, finding.place_key))
                 from discover import langdata
                 langdata.persist_finding_generated(session, finding.data)
             session.flush()
 
-        _prune_stale_drafts(session, trip.id, produced)
+        _prune_stale_drafts(session, trip.id, _in_scope_keys(derived))
         run.done = len(tasks)
         run.status = "done"
         run.phase = "done"

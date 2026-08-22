@@ -1,6 +1,6 @@
 [project]
 name = "yonder"
-version = "3.6.0"
+version = "3.6.1"
 description = "Yonder — travel documents -> AirTrail + AdventureLog."
 requires-python = ">=3.12"
 dependencies = [
