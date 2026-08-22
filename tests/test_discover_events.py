@@ -61,6 +61,31 @@ def test_impact_and_base_queries_always_present():
     assert qs.index("top things to do Seville") < qs.index("holidays Seville April 2026")
 
 
+def test_fallback_pass_surfaces_attractions_when_primary_empty(monkeypatch):
+    # A smaller town with no dated events: the primary (events-shaped) pass grounds
+    # nothing, so the broader tourism-shaped fallback must still surface the city's
+    # attractions instead of the city dropping out entirely.
+    ATTR = "https://attractions.example/caverns"
+    _FALLBACK = ("attraction", "tourism", "points of interest", "landmarks",
+                 "day trips", "best things to do in")
+
+    def fake_search(query, *, base_url, timeout=12):
+        if any(w in query for w in _FALLBACK):
+            return [SearchResult(ATTR, "Glendale Caverns", "a famous cavern")]
+        return [SearchResult("https://cal.example/x", "Holiday calendar", "generic")]
+
+    monkeypatch.setattr(events_mod, "searxng_search", fake_search)
+    # The model always proposes the attraction; it only GROUNDS on the fallback
+    # pass, where ATTR is actually in the search results.
+    monkeypatch.setattr(events_mod, "synthesize_json", lambda *a, **k: {
+        "impacts": [],
+        "notable": [{"name": "Glendale Caverns", "why": "iconic", "source_url": ATTR}]})
+    f = _resolver().resolve(_place("Glendale", "US"), _ctx())
+    assert f is not None
+    assert "Glendale Caverns" in f.body_md
+    assert any(s["url"] == ATTR for s in f.sources)
+
+
 def test_search_round_robin_does_not_starve_events(monkeypatch):
     # The regression: three holiday queries returned 10 hits each and, under the
     # old greedy fill, exhausted the 28-snippet budget before the events query ran
