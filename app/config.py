@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     # degrade to absent findings (they require both searxng_url and ollama_url).
     searxng_url: str = "http://searxng:8080"
 
-    app_version: str = "3.5.0"
+    app_version: str = "3.5.1"
 
     @property
     def base_currency_list(self) -> tuple[str, ...]:

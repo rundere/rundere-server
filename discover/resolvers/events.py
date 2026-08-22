@@ -120,10 +120,12 @@ _SYSTEM = (
     "name. Copy each item's exact source_url from the list. Return two groups: (1) "
     "impacts — public/religious holidays, closures, or strikes that fall inside the "
     "window, named with the date; (2) notable — specific, named events (with dates) "
-    "and concrete named attractions worth the trip, most notable first. Prefer a "
-    "SHORT, real list to a long guessed one — never invent a vague 'local festival' "
-    "to pad it; an empty notable list is fine. When a notable item matches a stated "
-    "interest, set matched_interest to it, else null. Skip aggregators and ads.")
+    "and concrete named attractions worth the trip, most notable first. ALWAYS "
+    "include the city's marquee, signature festivals and major events that occur "
+    "during the window — a famous annual festival happening while they're there is "
+    "exactly the point; never omit a real, well-known one out of caution. Do NOT "
+    "invent a vague 'local festival' to pad the list. When a notable item matches a "
+    "stated interest, set matched_interest to it, else null. Skip aggregators and ads.")
 
 
 class EventsResolver:
@@ -143,12 +145,16 @@ class EventsResolver:
     def _queries(self, city: str, country: str | None, when: str,
                  interests: list[str]) -> list[str]:
         c = country or ""
+        # Events/festivals FIRST — they're the primary value and were being
+        # starved by the holiday queries under the old greedy fill. A dedicated
+        # "festivals" query targets marquee annual events (Balloon Fiesta, etc.).
         qs = [
+            f"top things to do {city}",
+            f"events {city} {when}".strip(),
+            f"festivals {city} {when}".strip(),
             f"holidays {city} {when}".strip(),
             f"{c} public holidays {when}".strip(),
             f"religious observances {c} {when}".strip(),
-            f"top things to do {city}",
-            f"events {city} {when}".strip(),
         ]
         for interest in interests:
             phrase = _ACTIVITY_PHRASES.get(interest)
@@ -164,16 +170,31 @@ class EventsResolver:
         return out
 
     def _search(self, queries: list[str]):
+        """Round-robin the queries into the snippet budget so EVERY query type is
+        represented — one hit from each query, then the second from each, etc. The
+        old greedy fill let the first queries monopolise the 28-snippet cap, which
+        starved the events/festivals queries and dropped signature events like the
+        Balloon Fiesta before they ever reached Ollama."""
+        per_query = [searxng_search(q, base_url=self.searxng_url, timeout=self.timeout)
+                     for q in queries]
         seen: set[str] = set()
         results = []
-        for q in queries:
-            for r in searxng_search(q, base_url=self.searxng_url, timeout=self.timeout):
-                key = normalize_url(r.url)
+        depth = 0
+        while len(results) < self.max_snippets:
+            advanced = False
+            for lst in per_query:
+                if depth >= len(lst):
+                    continue
+                advanced = True
+                key = normalize_url(lst[depth].url)
                 if key and key not in seen:
                     seen.add(key)
-                    results.append(r)
+                    results.append(lst[depth])
                     if len(results) >= self.max_snippets:
-                        return results
+                        break
+            if not advanced:
+                break
+            depth += 1
         return results
 
     def _prompt(self, place: DerivedPlace, start: str, end: str,
@@ -195,11 +216,12 @@ class EventsResolver:
                   f"public/religious holidays, closures, or strikes{window} — omit "
                   "any dated outside the window (a holiday the day after they leave "
                   "does NOT count). notable: specific named events (include the date) "
-                  "and concrete named venues/attractions worth the trip. Do NOT pad "
-                  "with vague, undated, or invented 'local festival' entries — a few "
-                  "real ones beat a long generic list; return an empty notable list "
-                  "rather than guessing. Never list a calendar/listing website as an "
-                  "item. De-duplicate. Copy every source_url exactly from above."]
+                  "and concrete named venues/attractions worth the trip — ALWAYS "
+                  "include the marquee/signature festivals and major events running "
+                  "during the window (do not omit a famous one out of caution). Do "
+                  "NOT pad with vague, undated, or invented 'local festival' entries. "
+                  "Never list a calendar/listing website as an item. De-duplicate. "
+                  "Copy every source_url exactly from above."]
         return "\n".join(lines)
 
     # -- resolve ------------------------------------------------------------
