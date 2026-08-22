@@ -114,5 +114,20 @@
     "toilet": {"t": "トイレはどこですか？", "p": "toire wa doko desu ka"},
     "help": {"t": "助けて！", "p": "tasukete"},
     "cheers": {"t": "乾杯！", "p": "kanpai"}
+  },
+  "hi": {
+    "hello": {"t": "नमस्ते", "p": "namaste"},
+    "goodbye": {"t": "नमस्ते", "p": "namaste"},
+    "please": {"t": "कृपया", "p": "kripaya"},
+    "thanks": {"t": "धन्यवाद", "p": "dhanyavaad"},
+    "yes": {"t": "हाँ", "p": "haan"},
+    "no": {"t": "नहीं", "p": "nahin"},
+    "excuse": {"t": "सुनिए", "p": "suniye"},
+    "sorry": {"t": "माफ़ कीजिए", "p": "maaf kijiye"},
+    "speak_english": {"t": "क्या आप अंग्रेज़ी बोलते हैं?", "p": "kya aap angrezi bolte hain"},
+    "dont_understand": {"t": "मैं नहीं समझा", "p": "main nahin samjha"},
+    "how_much": {"t": "यह कितने का है?", "p": "yah kitne ka hai"},
+    "toilet": {"t": "शौचालय कहाँ है?", "p": "shauchalay kahan hai"},
+    "help": {"t": "मदद!", "p": "madad"}
   }
 }

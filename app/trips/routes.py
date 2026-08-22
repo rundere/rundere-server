@@ -514,12 +514,13 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
 # --------------------------------------------------------------- discovery (3.0)
 
 TOPIC_ORDER = ["weather", "currency", "plugs", "visa", "safety", "events",
-               "food", "language", "language_local", "packing"]
+               "food", "language", "language_regional", "language_local", "packing"]
 TOPIC_LABELS = {
     "weather": "Weather", "currency": "Currency", "plugs": "Plugs & voltage",
     "visa": "Visa & vaccination", "safety": "Safety & transport",
     "events": "Events & activities", "food": "Food & drink", "language": "Language",
-    "language_local": "Local phrases & register", "packing": "Packing",
+    "language_regional": "Regional language", "language_local": "Local phrases & register",
+    "packing": "Packing",
 }
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
@@ -583,11 +584,11 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         "body": _render_md(f.body_md), "sources": f.sources or [],
         "is_currency": f.topic == "currency",
         "is_language": f.topic == "language",
-        # Deterministic language detection is a pure function of country — a
-        # per-finding re-run can't produce anything new, it can only clobber a
-        # manual Languages pick, so it isn't offered. The Languages picker is the
-        # tool for those; other topics keep Re-run.
-        "rerunnable": f.topic not in ("language", "language_local"),
+        # Language findings aren't per-finding re-runnable: national detection is
+        # a pure function of country (re-run can only clobber a manual Languages
+        # pick), and the regional/local overlays key on the trip's places. The
+        # Languages picker is the tool for those; other topics keep Re-run.
+        "rerunnable": not f.topic.startswith("language"),
         "has_rates": bool(data.get("rates")),
     }
 
@@ -706,7 +707,7 @@ def rerun_finding_route(trip_id: str, fid: str,
         return HTMLResponse("", status_code=404)
     # Language findings aren't re-runnable (see _finding_view) — never let a
     # stale/forged POST overwrite a manual Languages pick.
-    if f.topic in ("language", "language_local"):
+    if f.topic.startswith("language"):
         return _redirect(f"/trips/{trip_id}")
     rerun_finding(session, f, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
