@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "purpose": "Region-awareness for the language resolver (SPEC-3.2 §5, region refinement / D-69 lifted). Maps a country + geocoded region/state NAME to the language(s) spoken there BEYOND the national official set — so a trip to Bengaluru surfaces Kannada, Barcelona surfaces Catalan, etc. Keyed by ISO-2 country → lower-cased region name (as the Photon geocode returns it) → ISO-639-1/3 language codes. National languages are subtracted at resolve time, so listing a national language here is harmless. Curated, extend freely; a region not listed simply yields no regional finding.",
+    "source": "Official/scheduled regional languages by administrative subdivision (Wikipedia constitutional/statutory language lists); human-curated."
+  },
+  "IN": {
+    "karnataka": ["kn"],
+    "tamil nadu": ["ta"],
+    "kerala": ["ml"],
+    "west bengal": ["bn"],
+    "maharashtra": ["mr"],
+    "telangana": ["te"],
+    "andhra pradesh": ["te"],
+    "gujarat": ["gu"],
+    "punjab": ["pa"],
+    "odisha": ["or"],
+    "assam": ["as"],
+    "goa": ["kok"]
+  },
+  "ES": {
+    "catalonia": ["ca"],
+    "cataluña": ["ca"],
+    "catalunya": ["ca"],
+    "valencian community": ["ca"],
+    "comunidad valenciana": ["ca"],
+    "balearic islands": ["ca"],
+    "galicia": ["gl"],
+    "basque country": ["eu"],
+    "país vasco": ["eu"],
+    "euskadi": ["eu"]
+  },
+  "CA": {
+    "quebec": ["fr"],
+    "québec": ["fr"]
+  },
+  "BE": {
+    "flanders": ["nl"],
+    "vlaanderen": ["nl"],
+    "wallonia": ["fr"],
+    "wallonie": ["fr"]
+  },
+  "CH": {
+    "ticino": ["it"],
+    "graubünden": ["rm"],
+    "grisons": ["rm"]
+  },
+  "IT": {
+    "south tyrol": ["de"],
+    "trentino-alto adige": ["de"],
+    "aosta valley": ["fr"],
+    "valle d'aosta": ["fr"]
+  },
+  "GB": {
+    "wales": ["cy"]
+  },
+  "CN": {
+    "guangdong": ["yue"],
+    "tibet": ["bo"],
+    "tibet autonomous region": ["bo"]
+  },
+  "FI": {
+    "åland": ["sv"],
+    "aland": ["sv"]
+  }
+}

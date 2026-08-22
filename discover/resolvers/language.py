@@ -59,6 +59,26 @@ def _lang_name(code: str) -> str:
         return code
 
 
+def official_language_codes(country: str) -> list[str]:
+    """Distinct base ISO-639-1 codes officially spoken in `country`, de-facto
+    fallback and all (shared by the national resolver and the regional one, which
+    subtracts these so it never re-lists a national language)."""
+    try:
+        from babel.languages import get_official_languages
+        codes = get_official_languages(country) or \
+            get_official_languages(country, de_facto=True)
+    except Exception:
+        codes = ()
+    out: list[str] = []
+    seen: set[str] = set()
+    for c in codes:
+        base = _base_lang(c)
+        if base not in seen:
+            seen.add(base)
+            out.append(base)
+    return out
+
+
 def supported_languages() -> list[tuple[str, str]]:
     """(code, display name) for every language with a vetted phrasebook — the
     options offered by the manual language picker (Edit on a language finding)."""
