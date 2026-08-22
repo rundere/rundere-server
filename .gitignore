@@ -56,3 +56,6 @@ SPEC-1.1-web-capture.md
 # operator deployment copy (real paths/secrets) — the repo keeps the generic
 # portainer-stack.yml reference instead
 yonder-stack.yml
+
+# Local Claude Code tooling config
+.claude/
