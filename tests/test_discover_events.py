@@ -55,6 +55,31 @@ def test_impact_and_base_queries_always_present():
     assert "religious observances ES April 2026" in qs
     assert "top things to do Seville" in qs
     assert "events Seville April 2026" in qs
+    assert "festivals Seville April 2026" in qs
+    # Events/things-to-do lead, holidays follow — so the round-robin fills the
+    # snippet budget with event results before holiday results.
+    assert qs.index("top things to do Seville") < qs.index("holidays Seville April 2026")
+
+
+def test_search_round_robin_does_not_starve_events(monkeypatch):
+    # The regression: three holiday queries returned 10 hits each and, under the
+    # old greedy fill, exhausted the 28-snippet budget before the events query ran
+    # — so a signature event (the Balloon Fiesta) never reached Ollama. Round-robin
+    # must let the events query contribute regardless of its position.
+    def fake_search(query, *, base_url, timeout=12):
+        if query.startswith(("holidays", "ES public", "religious")):
+            return [SearchResult(f"https://cal.example/{query[:4]}/{i}",
+                                 "Holiday calendar", "generic") for i in range(10)]
+        if query.startswith("events"):
+            return [SearchResult("https://PHX.example/fiesta",
+                                 "Balloon Fiesta 2026", "Oct 3–11 balloons")]
+        return [SearchResult(f"https://ttd.example/{query[:6]}/{i}",
+                             "Things to do", "misc") for i in range(3)]
+    monkeypatch.setattr(events_mod, "searxng_search", fake_search)
+    r = _resolver(max_snippets=28)
+    results = r._search(r._queries("Phoenix", "US", "October 2026", []))
+    urls = [x.url for x in results]
+    assert "https://PHX.example/fiesta" in urls          # survived the budget
 
 
 def test_interest_queries_added_per_checked_interest():
