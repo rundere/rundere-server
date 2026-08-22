@@ -54,6 +54,18 @@ def _base_lang(code: str) -> str:
     return code.split("_")[0].split("-")[0]
 
 
+def _distinct_base(codes) -> list[str]:
+    """Base language codes, de-duplicated, original order preserved."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for c in codes:
+        base = _base_lang(c)
+        if base not in seen:
+            seen.add(base)
+            out.append(base)
+    return out
+
+
 def _lang_name(code: str) -> str:
     try:
         from babel import Locale
@@ -91,11 +103,41 @@ def supported_languages(phrasebook: dict | None = None) -> list[tuple[str, str]]
     return sorted(((c, _lang_name(c)) for c in codes), key=lambda cn: cn[1])
 
 
+def _render_one_language(code: str, name: str, book_src: dict, sections: list,
+                         data_langs: list, *, widely: bool = False) -> bool:
+    """Append one language's phrasebook (or its 'not yet' note) to `sections`;
+    record it in `data_langs`. Returns whether it contributed a phrasebook."""
+    entry_rec = {"code": code, "name": name, "has_phrasebook": False,
+                 "widely_spoken": widely}
+    if code == "en":
+        data_langs.append(entry_rec)
+        sections += [f"**{name}** — spoken here, no phrasebook needed.", ""]
+        return False
+    book = book_src.get(code)
+    entry_rec["has_phrasebook"] = bool(book)
+    data_langs.append(entry_rec)
+    sections.append(f"**{name}**")
+    if book:
+        for key, plabel in PHRASE_KEYS:
+            e = book.get(key)
+            if e:
+                pron = f" · {e['p']}" if e.get("p") else ""
+                sections.append(f"- {plabel} — **{e['t']}**{pron}")
+    else:
+        sections.append(f"- A vetted phrasebook for {name} isn't in Yonder's "
+                        f"dataset yet.")
+    sections.append("")
+    return bool(book)
+
+
 def build_language_body(label: str, codes: list[str], *, official: bool = True,
+                        also_codes: list[str] | None = None,
                         phrasebook: dict | None = None) -> tuple[str, dict, str]:
-    """Render the phrasebook body for a given language-code list — shared by the
-    auto resolver (CLDR-detected codes) and the manual picker (Edit). Reads the
-    injected (DB-backed) phrasebook when given, else the JSON seed. Returns
+    """Render the phrasebook body for a language-code list — shared by the auto
+    resolver (CLDR-detected codes) and the manual picker (Edit). `also_codes` are
+    languages that aren't *de jure* official but are widely spoken (French in
+    Morocco, Swiss German in Switzerland), rendered under a separate heading. Reads
+    the injected (DB-backed) phrasebook when given, else the JSON seed. Returns
     (body_md, data, confidence)."""
     book_src = phrasebook if phrasebook is not None else _PHRASES
     names = [(c, _lang_name(c)) for c in codes]
@@ -106,28 +148,20 @@ def build_language_body(label: str, codes: list[str], *, official: bool = True,
     header = (f"**{label}** — {qual}language{'s' if len(names) > 1 else ''}: "
               f"{', '.join(n for _, n in names)}.")
     sections = [header, ""]
-    data_langs = []
+    data_langs: list[dict] = []
     any_book = False
-
     for code, name in names:
-        if code == "en":
-            data_langs.append({"code": code, "name": name, "has_phrasebook": False})
-            sections += [f"**{name}** — spoken here, no phrasebook needed.", ""]
-            continue
-        book = book_src.get(code)
-        data_langs.append({"code": code, "name": name, "has_phrasebook": bool(book)})
-        sections.append(f"**{name}**")
-        if book:
-            any_book = True
-            for key, plabel in PHRASE_KEYS:
-                entry = book.get(key)
-                if entry:
-                    pron = f" · {entry['p']}" if entry.get("p") else ""
-                    sections.append(f"- {plabel} — **{entry['t']}**{pron}")
-        else:
-            sections.append(f"- A vetted phrasebook for {name} isn't in Yonder's "
-                            f"dataset yet.")
+        any_book = _render_one_language(code, name, book_src, sections,
+                                        data_langs, widely=False) or any_book
+
+    also = [(c, _lang_name(c)) for c in (also_codes or []) if c not in codes]
+    if also:
+        sections.append(f"**Also widely spoken:** {', '.join(n for _, n in also)} "
+                        "(not an official language, but common day to day).")
         sections.append("")
+        for code, name in also:
+            any_book = _render_one_language(code, name, book_src, sections,
+                                            data_langs, widely=True) or any_book
 
     sections.append("_Everyday phrases are standard forms; local greetings and "
                     "slang vary by region (added later by the research tier)._")
@@ -145,23 +179,22 @@ class LanguageResolver:
             return None
         try:
             from babel.languages import get_official_languages
-            codes = get_official_languages(country)
-            if not codes:
+            de_jure = get_official_languages(country)
+            de_facto = get_official_languages(country, de_facto=True)
+            if not de_jure:
                 # Countries with no *de jure* official language (the US, e.g.)
-                # return () here — fall back to the de facto official language(s)
-                # so they resolve to English instead of flagging as "unknown".
-                codes = get_official_languages(country, de_facto=True)
+                # return () — the de facto set IS the official set for them.
+                de_jure = de_facto
         except Exception:
-            codes = ()
+            de_jure = de_facto = ()
 
         # Distinct base languages, official order preserved.
-        langs: list[str] = []
-        seen: set[str] = set()
-        for c in codes:
-            base = _base_lang(c)
-            if base not in seen:
-                seen.add(base)
-                langs.append(base)
+        langs = _distinct_base(de_jure)
+        # De-facto languages that aren't de jure official — widely spoken but not
+        # official (French in Morocco, Swiss German in Switzerland). Surfaced under
+        # "Also widely spoken" so they're not lost (the earlier de-jure-only rule
+        # hid French from every Morocco trip).
+        widely = [c for c in _distinct_base(de_facto) if c not in langs]
 
         if not langs:
             return Finding(
@@ -172,7 +205,8 @@ class LanguageResolver:
                         f"or more.")
 
         body, data, confidence = build_language_body(
-            place.label, langs, official=True, phrasebook=ctx.phrasebook)
+            place.label, langs, official=True, also_codes=widely,
+            phrasebook=ctx.phrasebook)
         return Finding(
             topic=self.topic, scope=self.scope, place_key=country,
             resolver="language.static", confidence=confidence, sources=_SOURCE,
