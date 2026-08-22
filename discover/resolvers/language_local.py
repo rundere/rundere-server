@@ -41,7 +41,8 @@ def _official_languages(country: str | None) -> list[str]:
     try:
         from babel import Locale
         from babel.languages import get_official_languages
-        codes = get_official_languages(country)
+        codes = get_official_languages(country) or \
+            get_official_languages(country, de_facto=True)
     except Exception:
         return []
     seen: set[str] = set()

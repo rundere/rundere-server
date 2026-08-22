@@ -50,6 +50,16 @@ def test_english_country_needs_no_phrasebook():
     assert "Bonjour" in f.body_md
 
 
+def test_defacto_official_language_resolves_not_flagged():
+    # The US has no *de jure* official language — get_official_languages('US')
+    # returns () — but English is de facto official. It must resolve to English,
+    # not flag as "couldn't determine".
+    f = _R.resolve(DerivedPlace("US", "Phoenix", 35.1, -106.6), _CTX)
+    assert f.confidence != "flagged"
+    assert "no phrasebook needed" in f.body_md          # English, spoken here
+    assert "Couldn't determine" not in f.body_md
+
+
 def test_unknown_country_is_flagged():
     f = _R.resolve(DerivedPlace("ZZ", None, None, None), _CTX)
     assert f.confidence == "flagged"
