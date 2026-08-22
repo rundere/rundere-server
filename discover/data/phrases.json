@@ -129,5 +129,20 @@
     "how_much": {"t": "यह कितने का है?", "p": "yah kitne ka hai"},
     "toilet": {"t": "शौचालय कहाँ है?", "p": "shauchalay kahan hai"},
     "help": {"t": "मदद!", "p": "madad"}
+  },
+  "ar": {
+    "hello": {"t": "مرحبا", "p": "marhaban"},
+    "goodbye": {"t": "مع السلامة", "p": "ma'a as-salama"},
+    "please": {"t": "من فضلك", "p": "min fadlik"},
+    "thanks": {"t": "شكرا", "p": "shukran"},
+    "yes": {"t": "نعم", "p": "na'am"},
+    "no": {"t": "لا", "p": "la"},
+    "excuse": {"t": "عفوا", "p": "afwan"},
+    "sorry": {"t": "آسف", "p": "aasif"},
+    "speak_english": {"t": "هل تتحدث الإنجليزية؟", "p": "hal tatahaddath al-injliziyya"},
+    "dont_understand": {"t": "لا أفهم", "p": "la afham"},
+    "how_much": {"t": "بكم هذا؟", "p": "bikam hatha"},
+    "toilet": {"t": "أين الحمام؟", "p": "ayna al-hammam"},
+    "help": {"t": "النجدة!", "p": "an-najda"}
   }
 }

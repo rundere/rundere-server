@@ -24,9 +24,14 @@ def test_multilingual_country_lists_all_official_languages():
     assert "German" in f.body_md and "French" in f.body_md and "Italian" in f.body_md
     # L2: a vetted phrase from each.
     assert "Danke" in f.body_md and "Bonjour" in f.body_md and "Ciao" in f.body_md
-    codes = {l["code"] for l in f.data["languages"]}
-    assert codes == {"de", "fr", "it"}
-    assert all(l["has_phrasebook"] for l in f.data["languages"])
+    official = {l["code"] for l in f.data["languages"] if not l["widely_spoken"]}
+    assert official == {"de", "fr", "it"}
+    assert all(l["has_phrasebook"] for l in f.data["languages"]
+               if not l["widely_spoken"])
+    # Swiss German is de-facto (not de jure) → surfaced as "also widely spoken".
+    gsw = next(l for l in f.data["languages"] if l["code"] == "gsw")
+    assert gsw["widely_spoken"] and not gsw["has_phrasebook"]
+    assert "Also widely spoken" in f.body_md
 
 
 def test_japanese_includes_script_and_romaji():
@@ -35,12 +40,25 @@ def test_japanese_includes_script_and_romaji():
 
 
 def test_language_without_phrasebook_is_noted_not_guessed():
-    # Morocco → Arabic + Tamazight; neither is in the vetted dataset.
+    # Morocco → Arabic (vetted) + Central Atlas Tamazight (NOT in the dataset).
+    # Tamazight must get the honest "not yet" note, never a guessed translation.
     f = _R.resolve(DerivedPlace("MA", "Harar", 31.6, -8.0), _CTX)
-    assert "Arabic" in f.body_md
+    tzm = next(l for l in f.data["languages"] if l["code"] == "tzm")
+    assert tzm["has_phrasebook"] is False
     assert "isn't in Yonder's dataset" in f.body_md
-    assert f.confidence == "medium"          # no phrasebook available
-    assert all(not l["has_phrasebook"] for l in f.data["languages"])
+
+
+def test_morocco_surfaces_arabic_phrases_and_widely_spoken_french():
+    # The reported gap: MA showed Arabic-as-official but no phrases, and hid French.
+    f = _R.resolve(DerivedPlace("MA", "Harar", 31.6, -8.0), _CTX)
+    assert f.confidence == "high"                     # Arabic now has a phrasebook
+    assert "مرحبا" in f.body_md                        # Arabic hello (vetted)
+    ar = next(l for l in f.data["languages"] if l["code"] == "ar")
+    assert ar["has_phrasebook"] and not ar["widely_spoken"]
+    # French is de-facto (not de jure) → "also widely spoken", with its phrases.
+    fr = next(l for l in f.data["languages"] if l["code"] == "fr")
+    assert fr["widely_spoken"] and fr["has_phrasebook"]
+    assert "Also widely spoken" in f.body_md and "Bonjour" in f.body_md
 
 
 def test_english_country_needs_no_phrasebook():
