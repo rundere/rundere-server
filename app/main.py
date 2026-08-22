@@ -76,6 +76,12 @@ def startup() -> None:
             seed_catalog(session)
         except Exception:                   # pragma: no cover
             log.exception("packing catalog seed failed; Planning may be empty")
+        try:
+            from discover import langdata
+            langdata.seed_phrasebook_rows(session)
+            langdata.seed_regional_rows(session)
+        except Exception:                   # pragma: no cover
+            log.exception("language data seed failed; discovery uses JSON fallback")
     try:
         from app.admin import mount_admin
         mount_admin(app, engine)

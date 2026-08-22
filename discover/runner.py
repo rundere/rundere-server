@@ -147,9 +147,13 @@ def rerun_finding(session: Session, finding, *, resolve_airport, geocoder,
     place = _find_place(derived, finding.scope, finding.place_key)
     if place is None:
         return None
+    from discover import langdata
     ctx = ResolverContext(start_date=trip.start_date, end_date=trip.end_date,
                           today=today or date.today().isoformat(),
-                          base_currencies=tuple(base_currencies))
+                          base_currencies=tuple(base_currencies),
+                          phrasebook=langdata.phrasebook(session),
+                          regional_map=langdata.regional_map(session),
+                          generated_languages=langdata.generated_languages(session))
     fresh = resolver.resolve(place, ctx)
     if fresh is None:
         return None
@@ -190,10 +194,14 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
         if excluded:
             derived.places = [p for p in derived.places
                               if p.place_key not in excluded]
+        from discover import langdata
         ctx = ResolverContext(
             start_date=trip.start_date, end_date=trip.end_date,
             today=today or date.today().isoformat(),
-            base_currencies=tuple(base_currencies))
+            base_currencies=tuple(base_currencies),
+            phrasebook=langdata.phrasebook(session),
+            regional_map=langdata.regional_map(session),
+            generated_languages=langdata.generated_languages(session))
 
         tasks, home_skipped = _plan_tasks(derived, resolvers,
                                           list(home_profiles or []), trip.start_date)
@@ -217,6 +225,8 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
             if finding is not None:
                 _upsert(session, run, trip.id, finding)
                 produced.add((finding.topic, finding.place_key))
+                from discover import langdata
+                langdata.persist_finding_generated(session, finding.data)
             session.flush()
 
         _prune_stale_drafts(session, trip.id, produced)

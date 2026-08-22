@@ -725,9 +725,10 @@ def edit_finding(trip_id: str, fid: str, request: Request,
     # list) — every other topic edits as markdown.
     if f.topic == "language":
         from discover.resolvers.language import supported_languages
+        from discover import langdata
         chosen = {l.get("code") for l in (f.data or {}).get("languages", [])}
         options = [{"code": c, "name": n, "checked": c in chosen}
-                   for c, n in supported_languages()]
+                   for c, n in supported_languages(langdata.phrasebook(session))]
         return templates.TemplateResponse(request, "_language_edit.html", {
             "request": request, "trip_id": trip_id, "fid": fid,
             "place_key": f.place_key, "options": options})
@@ -748,9 +749,10 @@ def save_finding(trip_id: str, fid: str, body: str = Form(""),
         # Rebuild the phrasebook from the picked languages (a manual override,
         # not "official"); marking edited protects it from a whole-trip re-run.
         from discover.resolvers.language import build_language_body
+        from discover import langdata
         label = _bold_label(f.body_md) or f.place_key
         f.body_md, f.data, f.confidence = build_language_body(
-            label, langs, official=False)
+            label, langs, official=False, phrasebook=langdata.phrasebook(session))
     else:
         f.body_md = body
     f.status = "edited"
