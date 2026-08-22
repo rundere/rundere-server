@@ -514,12 +514,12 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
 # --------------------------------------------------------------- discovery (3.0)
 
 TOPIC_ORDER = ["weather", "currency", "plugs", "visa", "safety", "events",
-               "food", "language", "packing"]
+               "food", "language", "language_local", "packing"]
 TOPIC_LABELS = {
     "weather": "Weather", "currency": "Currency", "plugs": "Plugs & voltage",
     "visa": "Visa & vaccination", "safety": "Safety & transport",
     "events": "Events & activities", "food": "Food & drink", "language": "Language",
-    "packing": "Packing",
+    "language_local": "Local phrases & register", "packing": "Packing",
 }
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
