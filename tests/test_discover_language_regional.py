@@ -111,3 +111,36 @@ def test_vetted_still_works_without_llm_endpoints():
 def test_unmapped_country_returns_none():
     f = _resolver().resolve(_place("JP", "Osaka", "Osaka"), _ctx())
     assert f is None
+
+
+# ------------------------------------------------------------- ctx-injected DB data
+
+def test_stored_generated_phrasebook_is_reused_not_regenerated(monkeypatch):
+    # ctx carries a DB-backed phrasebook with a previously-GENERATED Kannada book
+    # (kn in generated_languages). The resolver must reuse it (flagged) and NOT
+    # regenerate — nor mark it for persistence again.
+    def _boom(*a, **k):
+        raise AssertionError("must not regenerate a stored phrasebook")
+    monkeypatch.setattr(lr_mod, "synthesize_json", _boom)
+    ctx = ResolverContext(
+        today="2026-08-22",
+        phrasebook={"kn": {"hello": {"t": "ನಮಸ್ಕಾರ", "p": "namaskara"}}},
+        regional_map={"IN": {"karnataka": ["kn"]}},
+        generated_languages=frozenset({"kn"}))
+    f = _resolver().resolve(_place(), ctx)
+    assert f is not None and f.confidence == "flagged"
+    assert "ನಮಸ್ಕಾರ" in f.body_md
+    assert f.data["languages"][0]["generated"] is True
+    assert f.data["generated_phrasebooks"] == {}      # nothing fresh to persist
+
+
+def test_fresh_generation_is_returned_for_persistence(monkeypatch):
+    _stub_gen(monkeypatch, [
+        {"key": "hello", "text": "ನಮಸ್ಕಾರ", "pronunciation": "namaskara"}])
+    ctx = ResolverContext(today="2026-08-22", phrasebook={},
+                          regional_map={"IN": {"karnataka": ["kn"]}},
+                          generated_languages=frozenset())
+    f = _resolver().resolve(_place(), ctx)
+    # the freshly-generated book is handed to the job to persist
+    assert "kn" in f.data["generated_phrasebooks"]
+    assert f.data["generated_phrasebooks"]["kn"]["hello"]["t"] == "ನಮಸ್ಕಾರ"

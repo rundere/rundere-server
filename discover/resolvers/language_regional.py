@@ -30,26 +30,20 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 
+from discover import langdata
 from discover.grounding import normalize_url
 from discover.places import DerivedPlace
 from discover.resolvers.base import Finding, ResolverContext
-from discover.resolvers.language import (PHRASE_KEYS, _PHRASES, _lang_name,
+from discover.resolvers.language import (PHRASE_KEYS, _lang_name,
                                         official_language_codes)
 from discover.search import searxng_search
 from discover.synth import DEFAULT_MODEL, synthesize_json
 
 log = logging.getLogger("yonder.discovery.llm")
 
-_MAP_PATH = Path(__file__).resolve().parent.parent / "data" / "regional_languages.json"
 _KEY_LABELS = dict(PHRASE_KEYS)
 _KEYSET = {k for k, _ in PHRASE_KEYS}
-
-
-def _load_map() -> dict:
-    with open(_MAP_PATH, encoding="utf-8") as fh:
-        return {k: v for k, v in json.load(fh).items() if not k.startswith("_")}
 
 
 _GEN_SCHEMA = {
@@ -92,16 +86,15 @@ class RegionalLanguageResolver:
         self.model = model
         self.timeout = timeout
         self.max_snippets = max_snippets
-        self._map = _load_map()
 
     # -- which languages ----------------------------------------------------
-    def _regional_codes(self, place: DerivedPlace) -> list[str]:
+    def _regional_codes(self, place: DerivedPlace, rmap: dict) -> list[str]:
         """Regional language codes for the place, national languages removed."""
         country = (place.country or "").upper()
         region = (place.region or "").strip().lower()
         if not country or not region:
             return []
-        codes = (self._map.get(country) or {}).get(region) or []
+        codes = (rmap.get(country) or {}).get(region) or []
         national = set(official_language_codes(country))
         out, seen = [], set()
         for c in codes:
@@ -169,20 +162,34 @@ class RegionalLanguageResolver:
 
     # -- resolve ------------------------------------------------------------
     def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:
-        codes = self._regional_codes(place)
+        rmap = ctx.regional_map if ctx.regional_map is not None \
+            else langdata.regional_map(None)
+        codes = self._regional_codes(place, rmap)
         if not codes:
             return None                          # no regional language beyond national
+
+        book_src = ctx.phrasebook if ctx.phrasebook is not None \
+            else langdata.seed_phrasebook()
+        gen_langs = ctx.generated_languages or frozenset()
 
         entries: list[dict] = []                 # {code, name, book, generated}
         sources: list[dict] = []
         seen_src: set[str] = set()
+        fresh_generated: dict[str, dict] = {}    # lang -> book, for the job to persist
         any_generated = any_missing = False
         for code in codes:
             name = _lang_name(code)
-            vetted = _PHRASES.get(code)
-            if vetted:
-                entries.append({"code": code, "name": name, "book": vetted,
+            stored = book_src.get(code)
+            if stored and code not in gen_langs:
+                entries.append({"code": code, "name": name, "book": stored,
                                 "generated": False})
+                continue
+            if stored and code in gen_langs:
+                # A previously-generated book already in the DB — reuse it (still
+                # flagged), never regenerate what's stored and possibly owner-edited.
+                entries.append({"code": code, "name": name, "book": stored,
+                                "generated": True})
+                any_generated = True
                 continue
             gen = self._generate(name, ctx)
             if gen:
@@ -190,6 +197,7 @@ class RegionalLanguageResolver:
                 entries.append({"code": code, "name": name, "book": book,
                                 "generated": True})
                 any_generated = True
+                fresh_generated[code] = book
                 for r in results:
                     k = normalize_url(r.url)
                     if k and k not in seen_src:
@@ -203,7 +211,10 @@ class RegionalLanguageResolver:
         confidence = "flagged" if (any_generated or any_missing) else "high"
         data = {"languages": [{"code": e["code"], "name": e["name"],
                                "has_phrasebook": bool(e["book"]),
-                               "generated": e["generated"]} for e in entries]}
+                               "generated": e["generated"]} for e in entries],
+                # Consumed by the discovery job to persist newly-generated books as
+                # `generated` PhrasebookPhrase rows (reusable + promotable).
+                "generated_phrasebooks": fresh_generated}
         log.info("language_regional: %s → %s (generated=%s)", place.label,
                  [e["code"] for e in entries], any_generated)
         return Finding(

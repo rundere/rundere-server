@@ -6,6 +6,7 @@ import wtforms
 from sqladmin import Admin, ModelView
 
 from app import models
+from discover.resolvers.language import PHRASE_KEYS as _PHRASE_KEYS
 
 
 class LinesField(wtforms.TextAreaField):
@@ -221,9 +222,80 @@ def mount_admin(app, engine) -> None:
     # structured form at /trips/settings/packing-profile (Administer → Packing
     # profile), not a raw-JSON table (D-86).
 
+    class PhrasebookPhraseAdmin(ModelView, model=models.PhrasebookPhrase):
+        name = "Phrasebook Phrase"
+        name_plural = "Phrasebook"
+        # The editable traveller phrasebook (3.6): seeded from phrases.json, then
+        # managed here. One row per (language, phrase key). `source` marks vetted
+        # vs generated — flip a generated row to `vetted` to PROMOTE an
+        # LLM-generated phrasebook into the trusted set. `id` auto-derives from
+        # lang_code:phrase_key on create (SQLAdmin drops the PK from the form).
+        column_list = [models.PhrasebookPhrase.lang_code,
+                       models.PhrasebookPhrase.phrase_key,
+                       models.PhrasebookPhrase.text,
+                       models.PhrasebookPhrase.pronunciation,
+                       models.PhrasebookPhrase.source,
+                       models.PhrasebookPhrase.enabled,
+                       models.PhrasebookPhrase.updated_at]
+        column_labels = {"lang_code": "Language", "phrase_key": "Phrase",
+                         "pronunciation": "Pronunciation"}
+        column_searchable_list = [models.PhrasebookPhrase.lang_code,
+                                  models.PhrasebookPhrase.phrase_key,
+                                  models.PhrasebookPhrase.source]
+        column_sortable_list = [models.PhrasebookPhrase.lang_code,
+                                models.PhrasebookPhrase.phrase_key,
+                                models.PhrasebookPhrase.source]
+        column_default_sort = "lang_code"
+        page_size = 200
+        form_columns = ["lang_code", "phrase_key", "text", "pronunciation",
+                        "source", "enabled"]
+        form_overrides = {"phrase_key": wtforms.SelectField,
+                          "source": wtforms.SelectField}
+        form_args = {
+            "lang_code": {"description": "ISO language code, e.g. hi, kn, de."},
+            "phrase_key": {"choices": [(k, f"{k} — {lbl}")
+                                       for k, lbl in _PHRASE_KEYS]},
+            "text": {"description": "The phrase in the language's own script."},
+            "pronunciation": {"description": "Simple romanised pronunciation."},
+            "source": {"choices": [("vetted", "vetted — trusted"),
+                                   ("generated", "generated — from the LLM, review")],
+                       "default": "vetted",
+                       "description": "Flip generated → vetted to promote it."},
+        }
+
+    class RegionalLanguageAdmin(ModelView, model=models.RegionalLanguage):
+        name = "Regional Language"
+        name_plural = "Regional Languages"
+        # The editable region→language map (3.6): seeded from
+        # regional_languages.json. One row per (country, region, language) — the
+        # regional resolver surfaces these for a city in that region, beyond the
+        # national official set. Region is matched case-insensitively.
+        column_list = [models.RegionalLanguage.country,
+                       models.RegionalLanguage.region,
+                       models.RegionalLanguage.lang_code,
+                       models.RegionalLanguage.enabled,
+                       models.RegionalLanguage.updated_at]
+        column_labels = {"country": "Country (ISO-2)", "region": "Region/state",
+                         "lang_code": "Language"}
+        column_searchable_list = [models.RegionalLanguage.country,
+                                  models.RegionalLanguage.region,
+                                  models.RegionalLanguage.lang_code]
+        column_sortable_list = [models.RegionalLanguage.country,
+                                models.RegionalLanguage.region]
+        column_default_sort = "country"
+        page_size = 200
+        form_columns = ["country", "region", "lang_code", "enabled"]
+        form_args = {
+            "country": {"description": "ISO-2 country code, e.g. IN, ES, CA."},
+            "region": {"description": "State/province name as geocoded, "
+                       "e.g. Karnataka (matched case-insensitively)."},
+            "lang_code": {"description": "ISO language code, e.g. kn, ca, fr."},
+        }
+
     for view in (TravelItemAdmin, ItemKeyAdmin, IngestBatchAdmin,
                  CommitAttemptAdmin, SourceRuleAdmin, ApiKeyAdmin,
                  ArtifactAdmin, TravelerIdentityAdmin,
                  RuleSettingAdmin, TripAdmin, TripActivityAdmin,
-                 PackingCatalogItemAdmin):
+                 PackingCatalogItemAdmin, PhrasebookPhraseAdmin,
+                 RegionalLanguageAdmin):
         admin.add_view(view)

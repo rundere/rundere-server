@@ -33,6 +33,12 @@ class ResolverContext:
     # tier. Only the trip-varying inputs live on the context.
     discovery_profile: dict | None = None  # the DiscoveryProfile.values blob (§2.2)
     nationality: str | None = None         # ISO-2, the `self` traveller's (visa)
+    # 3.6: the editable language datasets (discover/langdata), loaded from the DB
+    # once per run and injected here. None → the resolver falls back to the JSON
+    # seed (tests / standalone), so resolvers never need a DB session themselves.
+    phrasebook: dict | None = None         # {lang: {key: {t, p}}} — every phrase
+    regional_map: dict | None = None       # {country: {region_lower: [lang]}}
+    generated_languages: frozenset = frozenset()   # langs whose phrases are generated-only
 
 
 @dataclass

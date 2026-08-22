@@ -110,11 +110,14 @@ def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
                           "home_skipped": home_skipped, "excluded": sorted(excluded)}
             s.commit()
 
+            from discover import langdata
             ctx = ResolverContext(
                 start_date=trip.start_date, end_date=trip.end_date,
                 today=today or date.today().isoformat(),
                 base_currencies=tuple(base_currencies),
-                discovery_profile=discovery_profile, nationality=nationality)
+                discovery_profile=discovery_profile, nationality=nationality,
+                phrasebook=langdata.phrasebook(s), regional_map=langdata.regional_map(s),
+                generated_languages=langdata.generated_languages(s))
 
             produced: set[tuple[str, str]] = set()
             done = 0
@@ -131,6 +134,7 @@ def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
                 if finding is not None:
                     _upsert(s, run, trip_id, finding)
                     produced.add((finding.topic, finding.place_key))
+                    langdata.persist_finding_generated(s, finding.data)
                 done += 1
                 run.done = done
                 s.commit()                       # stream the finding in

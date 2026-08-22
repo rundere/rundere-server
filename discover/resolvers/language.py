@@ -40,9 +40,12 @@ _SOURCE = [{"title": "Official languages: CLDR/Babel · phrases: Wikivoyage (CC 
 
 def _load() -> dict:
     with open(_DATA, encoding="utf-8") as fh:
-        return json.load(fh)
+        return {k: v for k, v in json.load(fh).items() if not k.startswith("_")}
 
 
+# The JSON default — the fallback when no DB-backed phrasebook is injected (tests
+# / pre-seed). At runtime the resolvers receive the editable phrasebook via the
+# ResolverContext / an explicit arg (discover/langdata), so this is only the seed.
 _PHRASES = _load()
 
 
@@ -79,18 +82,22 @@ def official_language_codes(country: str) -> list[str]:
     return out
 
 
-def supported_languages() -> list[tuple[str, str]]:
-    """(code, display name) for every language with a vetted phrasebook — the
-    options offered by the manual language picker (Edit on a language finding)."""
-    codes = [k for k in _PHRASES if not k.startswith("_")]
+def supported_languages(phrasebook: dict | None = None) -> list[tuple[str, str]]:
+    """(code, display name) for every language with a phrasebook — the options
+    offered by the manual language picker (Edit on a language finding). Reads the
+    injected (DB-backed) phrasebook when given, else the JSON seed."""
+    book = phrasebook if phrasebook is not None else _PHRASES
+    codes = [k for k in book if not k.startswith("_")]
     return sorted(((c, _lang_name(c)) for c in codes), key=lambda cn: cn[1])
 
 
-def build_language_body(label: str, codes: list[str], *, official: bool = True
-                        ) -> tuple[str, dict, str]:
+def build_language_body(label: str, codes: list[str], *, official: bool = True,
+                        phrasebook: dict | None = None) -> tuple[str, dict, str]:
     """Render the phrasebook body for a given language-code list — shared by the
-    auto resolver (CLDR-detected codes) and the manual picker (Edit). Returns
+    auto resolver (CLDR-detected codes) and the manual picker (Edit). Reads the
+    injected (DB-backed) phrasebook when given, else the JSON seed. Returns
     (body_md, data, confidence)."""
+    book_src = phrasebook if phrasebook is not None else _PHRASES
     names = [(c, _lang_name(c)) for c in codes]
     if not names:
         return ("_No languages selected._", {"languages": []}, "flagged")
@@ -107,7 +114,7 @@ def build_language_body(label: str, codes: list[str], *, official: bool = True
             data_langs.append({"code": code, "name": name, "has_phrasebook": False})
             sections += [f"**{name}** — spoken here, no phrasebook needed.", ""]
             continue
-        book = _PHRASES.get(code)
+        book = book_src.get(code)
         data_langs.append({"code": code, "name": name, "has_phrasebook": bool(book)})
         sections.append(f"**{name}**")
         if book:
@@ -164,7 +171,8 @@ class LanguageResolver:
                         f"**{country}**. Use the **Languages** button to pick one "
                         f"or more.")
 
-        body, data, confidence = build_language_body(place.label, langs, official=True)
+        body, data, confidence = build_language_body(
+            place.label, langs, official=True, phrasebook=ctx.phrasebook)
         return Finding(
             topic=self.topic, scope=self.scope, place_key=country,
             resolver="language.static", confidence=confidence, sources=_SOURCE,

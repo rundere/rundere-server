@@ -41,6 +41,20 @@ def _slug_from_label(ctx) -> str:
     return _slug(ctx.get_current_parameters().get("label"))
 
 
+def _phrase_id(ctx) -> str:
+    """PhrasebookPhrase PK on insert: `{lang}:{key}` (one phrase per lang+key)."""
+    p = ctx.get_current_parameters()
+    return f"{(p.get('lang_code') or '').strip().lower()}:{(p.get('phrase_key') or '').strip()}"
+
+
+def _region_lang_id(ctx) -> str:
+    """RegionalLanguage PK on insert: `{country}:{region}:{lang}`."""
+    p = ctx.get_current_parameters()
+    return (f"{(p.get('country') or '').strip().upper()}:"
+            f"{(p.get('region') or '').strip().lower()}:"
+            f"{(p.get('lang_code') or '').strip().lower()}")
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -505,6 +519,59 @@ class PackingCatalogItem(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PhrasebookPhrase(Base):
+    """Yonder 3.6 — the traveller phrasebook as EDITABLE data.
+
+    Seeded from discover/data/phrases.json at startup (JSON = shipped default,
+    same idempotent contract as the packing catalog); thereafter the DB is truth
+    and the owner edits phrases in the admin. ONE row per (language, phrase key).
+
+    `source` distinguishes the human-VETTED skeleton (L2) from LLM-GENERATED
+    fallbacks — regional languages the vetted set lacks (Kannada, etc.). Generated
+    rows are PERSISTED so (a) the owner can review and PROMOTE them to `vetted`
+    with one edit, turning the fallback into a curation pipeline, and (b) a re-run
+    REUSES them instead of regenerating. Resolvers render generated phrases under a
+    flag; a vetted row is rendered plain."""
+    __tablename__ = "phrasebook_phrases"
+
+    # PK is `{lang}:{key}` (e.g. "de:hello"); auto-derived on an admin create,
+    # since SQLAdmin drops the PK from the create form (would insert NULL).
+    id: Mapped[str] = mapped_column(String(48), primary_key=True, default=_phrase_id)
+    lang_code: Mapped[str] = mapped_column(String(12), index=True)
+    phrase_key: Mapped[str] = mapped_column(String(24))
+    text: Mapped[str] = mapped_column(String(200))
+    pronunciation: Mapped[str | None] = mapped_column(String(200), default="")
+    source: Mapped[str] = mapped_column(String(12), default="vetted")   # vetted|generated
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (UniqueConstraint("lang_code", "phrase_key",
+                                       name="uq_phrasebook_lang_key"),)
+
+
+class RegionalLanguage(Base):
+    """Yonder 3.6 — the region→language map as EDITABLE data.
+
+    Seeded from discover/data/regional_languages.json at startup; thereafter
+    owner-edited in the admin. ONE row per (country, region, language). The
+    regional-language resolver surfaces these for a city whose geocoded region
+    matches, BEYOND the national official set (Karnataka→Kannada, etc.). `region`
+    is stored as entered and lower-cased at read time, so the owner types
+    "Karnataka", not "karnataka"."""
+    __tablename__ = "regional_languages"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True,
+                                    default=_region_lang_id)
+    country: Mapped[str] = mapped_column(String(2), index=True)
+    region: Mapped[str] = mapped_column(String(64))
+    lang_code: Mapped[str] = mapped_column(String(12))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (UniqueConstraint("country", "region", "lang_code",
+                                       name="uq_regional_lang"),)
 
 
 class DiscoveryExclusion(Base):
