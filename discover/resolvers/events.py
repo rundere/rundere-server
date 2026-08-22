@@ -169,6 +169,15 @@ class EventsResolver:
                 out.append(q)
         return out
 
+    def _fallback_queries(self, city: str, when: str) -> list[str]:
+        """Broader, tourism-shaped queries tried ONLY when the primary pass grounds
+        nothing — a smaller town may have no dated 'events' but still real
+        attractions worth surfacing (Glendale Caverns, a plaza, a historic site).
+        Cast wider so the city gets a finding instead of silently dropping out."""
+        return [f"{city} attractions", f"best things to do in {city}",
+                f"{city} tourism", f"visit {city} points of interest",
+                f"museums and landmarks {city}", f"day trips from {city}"]
+
     def _search(self, queries: list[str]):
         """Round-robin the queries into the snippet budget so EVERY query type is
         represented — one hit from each query, then the second from each, etc. The
@@ -224,6 +233,26 @@ class EventsResolver:
                   "Copy every source_url exactly from above."]
         return "\n".join(lines)
 
+    def _extract(self, place: DerivedPlace, start: str, end: str,
+                 interests: list[str], queries: list[str]):
+        """One pass: search → synthesize → ground. Returns (impacts, notable,
+        results) with results kept for source attribution, or None when the search
+        itself came back empty."""
+        results = self._search(queries)
+        if not results:
+            return None
+        out = synthesize_json(self._prompt(place, start, end, interests, results),
+                              _SCHEMA, base_url=self.ollama_url, system=_SYSTEM,
+                              model=self.model, timeout=self.timeout)
+        if not out:
+            log.warning("events: Ollama returned nothing for %s — is Ollama reachable "
+                        "at %s and is %s pulled?", place.label, self.ollama_url, self.model)
+            return [], [], results
+        allowed = [r.url for r in results]
+        impacts = _dedupe(ground_items(out.get("impacts") or [], allowed).kept)
+        notable = _dedupe(ground_items(out.get("notable") or [], allowed).kept)
+        return impacts, notable, results
+
     # -- resolve ------------------------------------------------------------
     def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:
         if not self.searxng_url or not self.ollama_url:
@@ -235,24 +264,29 @@ class EventsResolver:
         month, year = _month_year(ctx.start_date)
         when = f"{month} {year}" if month and year else ""    # broad, for SEARCH
         start, end = _fmt_date(ctx.start_date), _fmt_date(ctx.end_date)
-        results = self._search(self._queries(place.city, place.country, when, interests))
-        if not results:
-            log.warning("events: no SearXNG results for %s — is SearXNG reachable at "
-                        "%s with JSON format enabled?", place.label, self.searxng_url)
-            return None
-        out = synthesize_json(self._prompt(place, start, end, interests, results), _SCHEMA,
-                              base_url=self.ollama_url, system=_SYSTEM,
-                              model=self.model, timeout=self.timeout)
-        if not out:
-            log.warning("events: Ollama returned nothing for %s — is Ollama reachable "
-                        "at %s and is %s pulled?", place.label, self.ollama_url, self.model)
-            return None
-        allowed = [r.url for r in results]
-        impacts = _dedupe(ground_items(out.get("impacts") or [], allowed).kept)
-        notable = _dedupe(ground_items(out.get("notable") or [], allowed).kept)
+
+        primary = self._extract(
+            place, start, end, interests,
+            self._queries(place.city, place.country, when, interests))
+        impacts, notable, results = primary or ([], [], [])
         if not (impacts or notable):
-            log.info("events: results proposed but none grounded for %s "
-                     "(model cited URLs not in the %d search results)",
+            # Nothing grounded on the events-shaped pass — retry with broader,
+            # tourism-shaped queries before giving up, so a smaller town still
+            # surfaces its attractions instead of vanishing.
+            fb = self._extract(place, start, end, interests,
+                               self._fallback_queries(place.city, when))
+            if fb is not None:
+                f_impacts, f_notable, f_results = fb
+                if f_impacts or f_notable:
+                    log.info("events: primary empty, fallback surfaced %s",
+                             place.label)
+                    impacts, notable, results = f_impacts, f_notable, f_results
+        if not results:
+            log.warning("events: no SearXNG results for %s (primary+fallback) — is "
+                        "SearXNG reachable at %s?", place.label, self.searxng_url)
+            return None
+        if not (impacts or notable):
+            log.info("events: nothing grounded for %s after fallback (%d results)",
                      place.label, len(results))
             return None
         log.info("events: %s → %d impacts, %d notable", place.label,

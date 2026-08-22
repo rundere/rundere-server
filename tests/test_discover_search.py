@@ -10,8 +10,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import pytest
+
 import discover.search as search_mod
 from discover.search import SearchResult, searxng_search
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sleep(monkeypatch):
+    """Never actually wait out the empty-result backoff in tests — the widening
+    gaps are real seconds. Tests that assert on the gaps re-patch _sleep with a
+    recorder, which takes precedence within their own body."""
+    monkeypatch.setattr(search_mod, "_sleep", lambda s: None)
 
 
 def _fake(results):
@@ -49,23 +59,27 @@ def test_drops_empty_url_rows(monkeypatch):
 
 
 def test_empty_result_is_retried(monkeypatch):
-    # SearXNG can come back 200-but-empty when its engines flake — one empty
-    # response is retried, and the second (non-empty) one is used.
+    # SearXNG can come back 200-but-empty when its engines flake — an empty
+    # response is retried, and the first non-empty one is used.
     calls = {"n": 0}
+    monkeypatch.setattr(search_mod, "_sleep", lambda s: None)
 
     def flaky(url, timeout=12, retries=1):
         calls["n"] += 1
-        if calls["n"] == 1:
-            return {"results": []}                # transient empty
+        if calls["n"] < 3:
+            return {"results": []}                # two transient empties
         return {"results": [{"url": "https://ok.example", "title": "t", "content": "c"}]}
 
     monkeypatch.setattr(search_mod, "get_json", flaky)
-    out = searxng_search("q", base_url="http://searxng:8080", retries=1)
-    assert calls["n"] == 2                          # retried once
+    out = searxng_search("q", base_url="http://searxng:8080")
+    assert calls["n"] == 3                          # retried until it hit results
     assert [r.url for r in out] == ["https://ok.example"]
 
 
-def test_persistently_empty_gives_up(monkeypatch):
+def test_retries_use_a_widening_backoff(monkeypatch):
+    # 3 retries by default, each after a widening gap — up to 4 attempts.
+    gaps = []
+    monkeypatch.setattr(search_mod, "_sleep", lambda s: gaps.append(s))
     calls = {"n": 0}
 
     def always_empty(url, timeout=12, retries=1):
@@ -73,8 +87,23 @@ def test_persistently_empty_gives_up(monkeypatch):
         return {"results": []}
 
     monkeypatch.setattr(search_mod, "get_json", always_empty)
-    out = searxng_search("q", base_url="http://searxng:8080", retries=1)
-    assert out == [] and calls["n"] == 2            # retried once, then gave up
+    out = searxng_search("q", base_url="http://searxng:8080")
+    assert out == [] and calls["n"] == 4            # initial + 3 retries
+    assert gaps == [2.0, 5.0, 12.0]                 # widening
+    assert gaps == sorted(gaps)
+
+
+def test_custom_backoff_controls_retry_count(monkeypatch):
+    monkeypatch.setattr(search_mod, "_sleep", lambda s: None)
+    calls = {"n": 0}
+
+    def always_empty(url, timeout=12, retries=1):
+        calls["n"] += 1
+        return {"results": []}
+
+    monkeypatch.setattr(search_mod, "get_json", always_empty)
+    out = searxng_search("q", base_url="http://searxng:8080", backoff=(0.0,))
+    assert out == [] and calls["n"] == 2            # one retry, then gave up
 
 
 def test_builds_json_query(monkeypatch):
