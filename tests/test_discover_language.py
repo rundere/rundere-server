@@ -34,6 +34,18 @@ def test_multilingual_country_lists_all_official_languages():
     assert "Also widely spoken" in f.body_md
 
 
+def test_prior_generated_language_is_flagged_not_shown_as_vetted():
+    # A previously-generated national language living in the DB phrasebook must be
+    # flagged in the deterministic finding — never shown as if it were vetted.
+    ctx = ResolverContext(phrasebook={"ar": {"hello": {"t": "مرحبا", "p": "marhaban"}}},
+                          generated_languages=frozenset({"ar"}))
+    f = _R.resolve(DerivedPlace("MA", "Harar", 31.6, -8.0), ctx)
+    assert f.confidence == "flagged"
+    assert "generated — verify" in f.body_md
+    ar = next(l for l in f.data["languages"] if l["code"] == "ar")
+    assert ar["generated"] is True
+
+
 def test_japanese_includes_script_and_romaji():
     f = _R.resolve(DerivedPlace("JP", "Tokyo", 35.6, 139.7), _CTX)
     assert "こんにちは" in f.body_md and "konnichiwa" in f.body_md
