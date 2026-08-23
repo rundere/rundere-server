@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import discover.phrasegen as pg_mod
 import discover.resolvers.language_regional as lr_mod
 from discover.resolvers.language_regional import RegionalLanguageResolver
 from discover.resolvers.base import ResolverContext
@@ -32,11 +33,12 @@ def _place(country="IN", city="Bengaluru", region="Karnataka"):
 
 
 def _stub_gen(monkeypatch, book, results=None):
-    """Stub the SearXNG+Ollama generation to return a fixed phrasebook."""
+    """Stub the SearXNG+Ollama generation (now in discover.phrasegen) to return a
+    fixed phrasebook."""
     results = results or [SearchResult("https://a.org/kn", "Kannada phrases", "namaskara")]
-    monkeypatch.setattr(lr_mod, "searxng_search",
+    monkeypatch.setattr(pg_mod, "searxng_search",
                         lambda q, *, base_url, timeout=12: results)
-    monkeypatch.setattr(lr_mod, "synthesize_json",
+    monkeypatch.setattr(pg_mod, "synthesize_json",
                         lambda *a, **k: {"phrases": book})
 
 
@@ -72,7 +74,7 @@ def test_vetted_regional_language_needs_no_generation(monkeypatch):
     # and NOT be flagged, without calling the generator.
     def _boom(*a, **k):
         raise AssertionError("generation must not run for a vetted language")
-    monkeypatch.setattr(lr_mod, "synthesize_json", _boom)
+    monkeypatch.setattr(pg_mod, "synthesize_json", _boom)
     f = _resolver().resolve(_place("IT", "Bolzano", "South Tyrol"), _ctx())
     assert f is not None
     assert f.confidence == "high"                    # vetted → not flagged
@@ -81,7 +83,7 @@ def test_vetted_regional_language_needs_no_generation(monkeypatch):
 
 
 def test_generation_failure_falls_back_to_note(monkeypatch):
-    monkeypatch.setattr(lr_mod, "searxng_search", lambda q, *, base_url, timeout=12: [])
+    monkeypatch.setattr(pg_mod, "searxng_search", lambda q, *, base_url, timeout=12: [])
     f = _resolver().resolve(_place(), _ctx())         # Kannada, no search results
     assert f is not None
     assert f.confidence == "flagged"
@@ -121,7 +123,7 @@ def test_stored_generated_phrasebook_is_reused_not_regenerated(monkeypatch):
     # regenerate — nor mark it for persistence again.
     def _boom(*a, **k):
         raise AssertionError("must not regenerate a stored phrasebook")
-    monkeypatch.setattr(lr_mod, "synthesize_json", _boom)
+    monkeypatch.setattr(pg_mod, "synthesize_json", _boom)
     ctx = ResolverContext(
         today="2026-08-22",
         phrasebook={"kn": {"hello": {"t": "ನಮಸ್ಕಾರ", "p": "namaskara"}}},

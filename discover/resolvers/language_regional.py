@@ -33,45 +33,14 @@ import logging
 
 from discover import langdata
 from discover.grounding import normalize_url
+from discover.phrasegen import generate_phrasebook
 from discover.places import DerivedPlace
 from discover.resolvers.base import Finding, ResolverContext
 from discover.resolvers.language import (PHRASE_KEYS, _lang_name,
                                         official_language_codes)
-from discover.search import searxng_search
-from discover.synth import DEFAULT_MODEL, synthesize_json
+from discover.synth import DEFAULT_MODEL
 
 log = logging.getLogger("yonder.discovery.llm")
-
-_KEY_LABELS = dict(PHRASE_KEYS)
-_KEYSET = {k for k, _ in PHRASE_KEYS}
-
-
-_GEN_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "phrases": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "key": {"type": "string", "enum": sorted(_KEYSET)},
-                    "text": {"type": "string"},
-                    "pronunciation": {"type": "string"},
-                },
-                "required": ["key", "text"],
-            },
-        },
-    },
-    "required": ["phrases"],
-}
-
-_GEN_SYSTEM = (
-    "You build a short traveller phrasebook for one language, using the search "
-    "results as reference. For each requested phrase key, give the phrase in the "
-    "language's OWN native script and a simple romanised pronunciation. Only "
-    "include a phrase you can determine with confidence from the sources — OMIT "
-    "any you are unsure of rather than guessing. Never invent a phrase. A short, "
-    "correct list beats a long, doubtful one.")
 
 
 class RegionalLanguageResolver:
@@ -103,62 +72,13 @@ class RegionalLanguageResolver:
                 out.append(c)
         return out
 
-    # -- generation (the L3 pipeline, for un-vetted regional languages) -----
-    def _search(self, lang_name: str):
-        queries = [
-            f"{lang_name} basic phrases with pronunciation for travellers",
-            f"how to say hello thank you please in {lang_name}",
-            f"{lang_name} phrasebook english",
-        ]
-        seen, results = set(), []
-        for q in queries:
-            for r in searxng_search(q, base_url=self.searxng_url, timeout=self.timeout):
-                key = normalize_url(r.url)
-                if key and key not in seen:
-                    seen.add(key)
-                    results.append(r)
-                    if len(results) >= self.max_snippets:
-                        return results
-        return results
-
-    def _gen_prompt(self, lang_name: str, results) -> str:
-        wanted = ", ".join(f"{k} ({lbl})" for k, lbl in PHRASE_KEYS)
-        lines = [f"Language: {lang_name}", "",
-                 f"Phrase keys to fill (omit any you're unsure of): {wanted}", "",
-                 "Search results (reference):"]
-        for i, r in enumerate(results, 1):
-            lines.append(f"[{i}] {r.title} — {r.url}")
-            if r.snippet:
-                lines.append(f"    {r.snippet}")
-        lines += ["", "Return JSON: phrases[] of {key, text (native script), "
-                  "pronunciation}. Native script in text, romanisation in "
-                  "pronunciation. Only phrases you're confident of."]
-        return "\n".join(lines)
-
+    # -- generation (shared with the national generator) --------------------
     def _generate(self, lang_name: str, ctx: ResolverContext):
-        """Return (book, results) — book is {key: {t, p}} — or None. Best-effort;
-        any failure degrades to None (the language falls back to a note)."""
-        if not self.searxng_url or not self.ollama_url:
-            return None
-        results = self._search(lang_name)
-        if not results:
-            return None
-        out = synthesize_json(self._gen_prompt(lang_name, results), _GEN_SCHEMA,
-                              base_url=self.ollama_url, system=_GEN_SYSTEM,
-                              model=self.model, timeout=self.timeout)
-        if not out:
-            return None
-        book: dict[str, dict] = {}
-        for item in (out.get("phrases") or []):
-            if not isinstance(item, dict):
-                continue
-            key = item.get("key")
-            text = (item.get("text") or "").strip()
-            if key in _KEYSET and text and key not in book:
-                book[key] = {"t": text, "p": (item.get("pronunciation") or "").strip()}
-        if not book:
-            return None
-        return book, results
+        """Generate a flagged phrasebook for a regional language the vetted set
+        lacks. Returns (book, results) or None. Delegates to the shared generator."""
+        return generate_phrasebook(
+            lang_name, searxng_url=self.searxng_url, ollama_url=self.ollama_url,
+            model=self.model, timeout=self.timeout, max_snippets=self.max_snippets)
 
     # -- resolve ------------------------------------------------------------
     def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:

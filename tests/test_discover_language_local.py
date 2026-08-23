@@ -88,6 +88,30 @@ def test_resolve_builds_register_overlay(monkeypatch):
     assert "German" in cap["prompt"]
 
 
+def test_fallback_pass_surfaces_register_when_primary_empty(monkeypatch):
+    # The register-specific queries ground nothing (Harar Darija is elusive by
+    # exact name); the broader language-name-led fallback must still surface a
+    # greeting instead of the register card vanishing.
+    GREET = "https://darija.example/salam"
+    _FB = ("common local phrases", "how do people greet", "useful everyday",
+           "greetings and everyday", "how to say hello and thank you")
+
+    def fake_search(query, *, base_url, timeout=12):
+        if any(w in query for w in _FB):
+            return [SearchResult(GREET, "Darija greetings", "Salam / Labas")]
+        return [SearchResult("https://x.example/1", "unrelated", "x")]
+
+    monkeypatch.setattr(ll_mod, "searxng_search", fake_search)
+    # The model always proposes the greeting; it only GROUNDS on the fallback pass.
+    monkeypatch.setattr(ll_mod, "synthesize_json", lambda *a, **k: {
+        "register_summary": "", "expressions": [], "etiquette": [],
+        "greetings": [{"phrase": "Salam", "meaning": "hi", "source_url": GREET}]})
+    f = _resolver().resolve(_place("Harar", "MA"), _ctx())
+    assert f is not None
+    assert "Salam" in f.body_md
+    assert any(s["url"] == GREET for s in f.sources)
+
+
 def test_invented_greeting_is_dropped(monkeypatch):
     results = [SearchResult("https://real.org/ch", "real", "Grüezi"),
                SearchResult("https://b.com/zh", "slang", "x")]

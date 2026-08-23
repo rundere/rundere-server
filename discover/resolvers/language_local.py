@@ -132,6 +132,19 @@ class LanguageLocalResolver:
             f"language etiquette {city}",
         ]
 
+    def _fallback_queries(self, place: DerivedPlace, langs: list[str]) -> list[str]:
+        """Broader queries tried when the register-specific pass grounds nothing —
+        lean on the base language name(s) and generic phrasing so a city whose
+        exact-name searches came up dry (Harar's Darija, say) still yields
+        something instead of the register card vanishing."""
+        label = place.label
+        qs = [f"common local phrases {label}", f"how do people greet in {label}",
+              f"useful everyday phrases {label}"]
+        for name in (langs or [])[:2]:
+            qs.append(f"{name} greetings and everyday phrases")
+            qs.append(f"how to say hello and thank you in {name}")
+        return qs
+
     def _search(self, queries: list[str]):
         seen: set[str] = set()
         results = []
@@ -161,19 +174,12 @@ class LanguageLocalResolver:
                   "include distinctively local content; empty lists are fine."]
         return "\n".join(lines)
 
-    # -- resolve ------------------------------------------------------------
-    def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:
-        if not self.searxng_url or not self.ollama_url:
-            return None                          # degrade: LLM tier not configured
-        if not place.city:
-            return None                          # city-scope only
-        results = self._search(self._queries(place.city, place.country))
+    def _extract(self, place: DerivedPlace, langs: list[str], queries: list[str]):
+        """One pass: search → synthesize → ground. Returns (greetings, expressions,
+        summary, etiquette, results), or None when the search came back empty."""
+        results = self._search(queries)
         if not results:
-            log.warning("language_local: no SearXNG results for %s — is SearXNG "
-                        "reachable at %s with JSON format enabled?",
-                        place.label, self.searxng_url)
             return None
-        langs = _official_languages(place.country)
         out = synthesize_json(self._prompt(place, langs, results), _SCHEMA,
                               base_url=self.ollama_url, system=_SYSTEM,
                               model=self.model, timeout=self.timeout)
@@ -181,19 +187,44 @@ class LanguageLocalResolver:
             log.warning("language_local: Ollama returned nothing for %s — is Ollama "
                         "reachable at %s and is %s pulled?",
                         place.label, self.ollama_url, self.model)
-            return None
-
+            return [], [], "", [], results
         allowed = [r.url for r in results]
         greetings = ground_items(out.get("greetings") or [], allowed).kept
         expressions = ground_items(out.get("expressions") or [], allowed).kept
         summary = (out.get("register_summary") or "").strip()
         etiquette = [e for e in (out.get("etiquette") or [])
                      if isinstance(e, str) and e.strip()]
-        # A register overlay with neither a greeting nor a summary adds nothing to
-        # the L1/L2 skeleton — degrade to no finding rather than an empty card.
+        return greetings, expressions, summary, etiquette, results
+
+    # -- resolve ------------------------------------------------------------
+    def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:
+        if not self.searxng_url or not self.ollama_url:
+            return None                          # degrade: LLM tier not configured
+        if not place.city:
+            return None                          # city-scope only
+        langs = _official_languages(place.country)
+        primary = self._extract(place, langs,
+                                self._queries(place.city, place.country))
+        greetings, expressions, summary, etiquette, results = \
+            primary or ([], [], "", [], [])
+        # A register overlay with neither a greeting nor a summary adds nothing —
+        # retry with broader, language-name-led queries before giving up.
         if not greetings and not summary:
-            log.info("language_local: nothing grounded for %s (%d results)",
-                     place.label, len(results))
+            fb = self._extract(place, langs, self._fallback_queries(place, langs))
+            if fb is not None:
+                f_g, f_e, f_s, f_et, f_r = fb
+                if f_g or f_s:
+                    log.info("language_local: primary empty, fallback surfaced %s",
+                             place.label)
+                    greetings, expressions, summary, etiquette, results = \
+                        f_g, f_e, f_s, f_et, f_r
+        if not results:
+            log.warning("language_local: no SearXNG results for %s (primary+fallback)"
+                        " — is SearXNG reachable at %s?", place.label, self.searxng_url)
+            return None
+        if not greetings and not summary:
+            log.info("language_local: nothing grounded for %s after fallback (%d "
+                     "results)", place.label, len(results))
             return None
         log.info("language_local: %s → %d greetings, %d expressions",
                  place.label, len(greetings), len(expressions))
