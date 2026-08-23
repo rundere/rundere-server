@@ -1,0 +1,16 @@
+<div class="card blueprint yn-note-card {% if failed %}yn-warn{% else %}yn-todo{% endif %}">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <div class="bp-group-label">{{ action }} {% if not failed %}done ✓{% else %}finished with issues{% endif %}</div>
+  <p class="bp-trip-notes">
+    {% if action == 'Pull' %}
+      Pulled <b>{{ created }}</b> record{{ '' if created == 1 else 's' }} into the Timeline.
+    {% else %}
+      Created <b>{{ created }}</b>, updated <b>{{ updated }}</b> of {{ total }} selected.
+    {% endif %}
+    {% if failed %} <b>{{ failed }}</b> failed — see the server log.{% endif %}
+  </p>
+  <div class="dialog-actions">
+    <a class="btn btn-secondary" href="/trips/{{ trip_id }}/adventurelog">Refresh</a>
+    <a class="btn btn-ghost" href="/trips/{{ trip_id }}">Back to trip</a>
+  </div>
+</div>

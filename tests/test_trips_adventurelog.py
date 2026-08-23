@@ -54,6 +54,34 @@ class FakeAL:
         self.notes.append(body)
         return (201, {"id": f"note_{len(self.notes)}"}, "")
 
+    # Sync-page push (3.8) dedups against the collection's existing objects and can
+    # update in place. An empty collection here means every push is a fresh create.
+    def get_collection(self, collection_id):
+        return (200, {"transportations": [], "lodging": [], "notes": []}, "")
+
+    def update_transportation(self, rid, body):
+        self.transportations.append(body)
+        return (200, {}, "")
+
+    def update_lodging(self, rid, body):
+        self.lodging.append(body)
+        return (200, {}, "")
+
+    def update_note(self, rid, body):
+        self.notes.append(body)
+        return (200, {}, "")
+
+
+def _sync_push_all(tid):
+    """Push every one of the trip's activities via the 3.8 sync endpoint (the home
+    of the activity→AdventureLog mapping since the create-collection button stopped
+    seeding). Returns the HTTP response."""
+    from app.models import TripActivity
+    with SessionLocal() as s:
+        ids = [f"activity:{a.id}" for a in
+               s.query(TripActivity).filter_by(trip_id=tid).all()]
+    return client.post(f"/trips/{tid}/adventurelog/push", data={"item_ids": ids})
+
 
 class FakeAirport:
     def __init__(self, iata, lat, lon, icao=None):
@@ -115,7 +143,8 @@ def test_push_creates_public_collection_and_links(monkeypatch):
 def test_push_seeds_flight_as_transportation(monkeypatch):
     if not DEPS:
         return
-    tid = _mk_trip("Iceland flights", "2026-09-01", "2026-09-10")
+    tid = _mk_trip("Iceland flights", "2026-09-01", "2026-09-10",
+                   collection_id="col_flight")
     client.post(f"/trips/{tid}/activity", data={
         "activity_kind": "flight", "when": "2026-09-01T09:00", "endWhen": "2026-09-01T11:30",
         "airline": "Air Canada", "flightNumber": "AC4826", "from": "YYZ", "to": "KEF",
@@ -123,8 +152,8 @@ def test_push_seeds_flight_as_transportation(monkeypatch):
     fake = FakeAL((201, {"id": "col_flight"}, ""))
     monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
     _no_geocoding(monkeypatch)
-    r = client.post(f"/trips/{tid}/push-adventurelog")
-    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
+    r = _sync_push_all(tid)
+    assert r.status_code == 200
     assert len(fake.transportations) == 1
     body = fake.transportations[0]
     assert body["type"] == "plane"
@@ -135,13 +164,14 @@ def test_push_seeds_flight_as_transportation(monkeypatch):
     assert body["is_public"] is True
     assert body["collection"] == "col_flight"
     assert "ABC123" in body["description"]
+    assert "yonder:activity:" in body["description"]      # ownership marker stamped
     assert fake.lodging == [] and fake.notes == []
 
 
 def test_push_seeds_lodging_and_note(monkeypatch):
     if not DEPS:
         return
-    tid = _mk_trip("Iceland stay", "2026-09-01", "2026-09-10")
+    tid = _mk_trip("Iceland stay", "2026-09-01", "2026-09-10", collection_id="col_stay")
     client.post(f"/trips/{tid}/activity", data={
         "activity_kind": "lodging", "when": "2026-09-01T15:00", "endWhen": "2026-09-05T11:00",
         "name": "Hotel Nordljos", "address": "Posthusstraeti 11", "confirmation": "H-99"})
@@ -151,8 +181,8 @@ def test_push_seeds_lodging_and_note(monkeypatch):
     fake = FakeAL((201, {"id": "col_stay"}, ""))
     monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
     _no_geocoding(monkeypatch)
-    r = client.post(f"/trips/{tid}/push-adventurelog")
-    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
+    r = _sync_push_all(tid)
+    assert r.status_code == 200
     assert len(fake.lodging) == 1
     lodge = fake.lodging[0]
     assert lodge["name"] == "Hotel Nordljos" and lodge["reservation_number"] == "H-99"
@@ -165,7 +195,8 @@ def test_push_seeds_lodging_and_note(monkeypatch):
 def test_push_activity_failure_does_not_block_others(monkeypatch):
     if not DEPS:
         return
-    tid = _mk_trip("Partial failure", "2026-09-01", "2026-09-10")
+    tid = _mk_trip("Partial failure", "2026-09-01", "2026-09-10",
+                   collection_id="col_partial")
     client.post(f"/trips/{tid}/activity", data={
         "activity_kind": "flight", "when": "2026-09-01T09:00", "flightNumber": "AC1",
         "from": "YYZ", "to": "KEF"})
@@ -183,17 +214,15 @@ def test_push_activity_failure_does_not_block_others(monkeypatch):
     fake.create_transportation = flaky_create_transportation
     monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
     _no_geocoding(monkeypatch)
-    r = client.post(f"/trips/{tid}/push-adventurelog")
-    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"     # collection link still succeeds
+    r = _sync_push_all(tid)
+    assert r.status_code == 200                                  # one bad item doesn't abort
     assert len(fake.transportations) == 1                       # second flight still pushed
-    with SessionLocal() as s:
-        assert s.get(Trip, tid).adventurelog_collection_id == "col_partial"
 
 
 def test_push_resolves_transportation_coordinates(monkeypatch):
     if not DEPS:
         return
-    tid = _mk_trip("Geocoded flights", "2026-09-01", "2026-09-10")
+    tid = _mk_trip("Geocoded flights", "2026-09-01", "2026-09-10", collection_id="col_geo")
     client.post(f"/trips/{tid}/activity", data={
         "activity_kind": "flight", "when": "2026-09-01T09:00", "flightNumber": "AC4826",
         "from": "YYZ", "to": "KEF"})
@@ -208,8 +237,8 @@ def test_push_resolves_transportation_coordinates(monkeypatch):
     fake_photon = FakePhoton(photon_result)
     monkeypatch.setattr(trips_routes, "_photon", lambda: fake_photon)
 
-    r = client.post(f"/trips/{tid}/push-adventurelog")
-    assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
+    r = _sync_push_all(tid)
+    assert r.status_code == 200
     body = fake.transportations[0]
     assert body["origin_latitude"] == 43.68 and body["origin_longitude"] == -79.63
     assert body["destination_latitude"] == 63.98 and body["destination_longitude"] == -22.61
@@ -274,8 +303,9 @@ def test_detail_renders_link_when_public_url_set(monkeypatch):
     monkeypatch.setattr(settings, "adventurelog_public_url", "https://al.example.com")
     tid = _mk_trip("Linked view", "2026-01-01", "2026-01-05", collection_id="col_9")
     html = client.get(f"/trips/{tid}").text
+    # A linked trip now leads with the managed sync page, plus a direct "View".
+    assert f'/trips/{tid}/adventurelog' in html and "AdventureLog sync" in html
     assert 'href="https://al.example.com/collections/col_9"' in html
-    assert "View in AdventureLog" in html
 
 
 def test_push_button_disabled_without_dates(monkeypatch):

@@ -1,0 +1,19 @@
+<div class="card blueprint yn-note-card yn-warn">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <div class="bp-group-label">⚠️ These notes already exist in AdventureLog</div>
+  <p class="bp-trip-notes">Pushing will <b>overwrite</b> the matching note(s) in place.
+    The other selected items (transport, lodging, new notes) will push normally.</p>
+  <ul class="yn-warn-list">
+    {% for c in collisions %}
+    <li><b>{{ c.label }}</b> — matches existing note “{{ c.existing }}”</li>
+    {% endfor %}
+  </ul>
+  <form hx-post="/trips/{{ trip_id }}/adventurelog/push" hx-target="#al-result" hx-swap="innerHTML">
+    {% for iid in item_ids %}<input type="hidden" name="item_ids" value="{{ iid }}">{% endfor %}
+    <input type="hidden" name="confirm" value="1">
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('al-result').innerHTML=''">Cancel</button>
+      <button type="submit" class="btn btn-primary" hx-disabled-elt="this">Push anyway (overwrite)</button>
+    </div>
+  </form>
+</div>
