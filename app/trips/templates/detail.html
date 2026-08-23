@@ -12,10 +12,11 @@
       {% if trip.has_notes %}<p class="bp-trip-notes">{{ trip.notes }}</p>{% endif %}
     </div>
     <div class="bp-trip-actions">
-      {% if trip.adventurelog_url %}
-        <a class="btn btn-secondary" href="{{ trip.adventurelog_url }}" target="_blank" rel="noopener">↗ View in AdventureLog</a>
-      {% elif trip.adventurelog_collection_id %}
-        <span class="tag tag-neutral">AdventureLog: {{ trip.adventurelog_collection_id }}</span>
+      {% if trip.adventurelog_collection_id %}
+        <a class="btn btn-secondary" href="/trips/{{ trip.id }}/adventurelog">⇄ AdventureLog sync</a>
+        {% if trip.adventurelog_url %}
+        <a class="btn btn-ghost" href="{{ trip.adventurelog_url }}" target="_blank" rel="noopener">↗ View</a>
+        {% endif %}
       {% elif al_show_push %}
         <button class="btn btn-secondary" {% if not al_can_push %}disabled title="{{ al_push_reason }}"{% endif %}
                 hx-post="/trips/{{ trip.id }}/push-adventurelog"

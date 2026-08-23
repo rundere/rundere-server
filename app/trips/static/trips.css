@@ -422,3 +422,20 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
   .bp-row2 { flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { .bp-chevron { transition: none; } }
+
+/* AdventureLog sync (3.8) — push/pull tables + note-collision warning list */
+.yn-table-wrap { overflow-x: auto; margin: 0.5rem 0 0.25rem; }
+.yn-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.yn-table th, .yn-table td {
+  text-align: left; padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--color-divider); vertical-align: top;
+}
+.yn-table th {
+  font-family: var(--font-heading); font-weight: 600; font-size: 0.8rem;
+  text-transform: uppercase; letter-spacing: 0.03em; color: var(--color-text);
+  opacity: 0.7;
+}
+.yn-table tbody tr:hover { background: var(--color-bg); }
+.yn-table td:first-child, .yn-table th:first-child { width: 1.5rem; }
+.yn-warn-list { margin: 0.5rem 0 0.75rem; padding-left: 1.2rem; }
+.yn-warn-list li { margin: 0.2rem 0; }

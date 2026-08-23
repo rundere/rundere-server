@@ -1567,17 +1567,16 @@ def _push_activities(client, collection_id: str, trip_id: str,
 
 @router.post("/{trip_id}/push-adventurelog", response_class=HTMLResponse)
 def push_adventurelog(trip_id: str, session: Session = Depends(get_session)):
-    """Create a PUBLIC AdventureLog collection from this trip, seed it with the
-    trip's activities, and link it.
+    """Create a PUBLIC AdventureLog collection from this trip and link it — the
+    collection ONLY, empty. Pushing the trip's activities and discovery findings
+    into it is done afterwards from the managed sync page (/adventurelog), which
+    deduplicates against what's already there. (Before 3.8 this route also did a
+    one-shot activity push; that moved to the sync page so even the first push is
+    selective and dup-safe.)
 
     Public by default so the collection can be direct-linked from outside
-    AdventureLog (owner requirement). Idempotent on the collection itself: a
-    trip already linked is left alone — we never create a second collection
-    for the same trip. The activity push is one-shot at creation time, not an
-    ongoing sync — AdventureLog has no server-side dedup on transportations/
-    lodging/notes, so re-running this against an already-linked trip would
-    duplicate everything rather than reconcile it.
-    """
+    AdventureLog. Idempotent on the collection itself: a trip already linked is
+    left alone — we never create a second collection for the same trip."""
     trip = session.get(Trip, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
@@ -1599,13 +1598,309 @@ def push_adventurelog(trip_id: str, session: Session = Depends(get_session)):
     trip.adventurelog_collection_id = collection_id
     trip.source = trip.source or "manual"
     session.commit()
-
-    activities = (session.query(TripActivity)
-                  .filter(TripActivity.trip_id == trip_id)
-                  .order_by(TripActivity.starts_at).all())
-    if activities:
-        _push_activities(client, collection_id, trip_id, activities)
     return _redirect(f"/trips/{trip_id}")
+
+
+# ------------------------------------------------- AdventureLog sync (3.8, push/pull)
+#
+# Ownership markers, embedded in an object's description (transport/lodging) or
+# content (note), let a re-push MATCH what Yonder already wrote instead of
+# duplicating it (AdventureLog has no server-side dedup). A finding keys on its
+# topic+place; an activity keys on its stable id. The two prefixes also keep a
+# Yonder-pushed note distinct from a trip-prep-skill note for the same topic.
+_MARKER_RE = re.compile(r"<!--\s*(yonder:[^\s>]+)\s*-->")
+# AdventureLog transport enum → the Yonder Timeline type, for PULL. Lossy on the
+# way back ("car" was drive OR carRental on push) — car defaults to drive.
+_AL_TO_YONDER_TRANSPORT = {"plane": "flight", "train": "train", "car": "drive",
+                           "boat": "cruise", "bus": "drive", "bike": "drive",
+                           "walking": "drive", "other": "drive"}
+
+
+def _activity_marker(activity_id: str) -> str:
+    return f"yonder:activity:{activity_id}"
+
+
+def _discovery_marker(topic: str, place_key: str) -> str:
+    return f"yonder:discovery:{topic}:{place_key}"
+
+
+def _activity_target_kind(atype: str) -> str:
+    """The AdventureLog object a Yonder activity type becomes."""
+    if atype in _AL_TRANSPORT_TYPE:
+        return "transportation"
+    if atype == "lodging":
+        return "lodging"
+    return "note"
+
+
+def _inject_marker(kind: str, body: dict, marker: str) -> dict:
+    """Stamp the ownership marker into the object's text field so a later push can
+    find it. Notes carry it in `content`, transport/lodging in `description`."""
+    field = "content" if kind == "note" else "description"
+    existing = (body.get(field) or "").strip()
+    body[field] = f"{existing}\n\n<!-- {marker} -->".strip() if existing \
+        else f"<!-- {marker} -->"
+    return body
+
+
+def _finding_note_body(finding: DiscoveryFinding, collection_id: str) -> dict:
+    """One discovery finding → an AdventureLog Note body (SPEC-3.2 §8)."""
+    name = f"{TOPIC_LABELS.get(finding.topic, finding.topic)} — {finding.place_key}"
+    return {"name": name, "content": finding.body_md or "",
+            "is_public": True, "collection": collection_id}
+
+
+def _al_collection_index(client, collection_id: str) -> dict:
+    """Scan the collection's embedded objects for Yonder ownership markers →
+    {marker: {"kind", "id", "name"}}. The basis for dedup on push."""
+    idx: dict[str, dict] = {}
+    try:
+        status, data, raw = client.get_collection(collection_id)
+    except Exception:
+        return idx
+    if not isinstance(data, dict):
+        return idx
+    for arr_key, kind, field in (("transportations", "transportation", "description"),
+                                 ("lodging", "lodging", "description"),
+                                 ("notes", "note", "content")):
+        for rec in (data.get(arr_key) or []):
+            if not isinstance(rec, dict):
+                continue
+            m = _MARKER_RE.search(rec.get(field) or "")
+            if m:
+                idx[m.group(1)] = {"kind": kind, "id": str(rec.get("id")),
+                                   "name": rec.get("name") or ""}
+    return idx
+
+
+def _from_al_iso(value: str | None) -> str:
+    """AdventureLog explicit-UTC ISO → the Yonder `when` shape ("YYYY-MM-DD" or
+    "YYYY-MM-DDTHH:MM"), dropping a midnight time."""
+    if not value:
+        return ""
+    v = value.replace("Z", "")
+    if "T" not in v:
+        return v[:10]
+    date_p, time_p = v[:10], v[11:16]
+    return date_p if time_p in ("", "00:00") else f"{date_p}T{time_p}"
+
+
+def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
+    """Map an AdventureLog transportation/lodging record onto a Yonder TripActivity
+    (a Timeline item). Notes have no Timeline equivalent and are never pulled."""
+    def _clean(text):
+        return _MARKER_RE.sub("", text or "").strip()
+    if kind == "transportation":
+        ytype = _AL_TO_YONDER_TRANSPORT.get((rec.get("type") or "").lower(), "drive")
+        values = {"from": rec.get("start_code") or rec.get("from_location") or "",
+                  "to": rec.get("end_code") or rec.get("to_location") or "",
+                  "when": _from_al_iso(rec.get("date")),
+                  "endWhen": _from_al_iso(rec.get("end_date")),
+                  "confirmation": rec.get("reservation_number") or "",
+                  "notes": _clean(rec.get("description")),
+                  "sourceLink": rec.get("link") or ""}
+        if ytype == "flight" and rec.get("flight_number"):
+            values["flightNumber"] = rec["flight_number"]
+    else:                                                # lodging
+        ytype = "lodging"
+        values = {"name": rec.get("name") or "",
+                  "when": _from_al_iso(rec.get("check_in")),
+                  "endWhen": _from_al_iso(rec.get("check_out")),
+                  "address": rec.get("location") or "",
+                  "confirmation": rec.get("reservation_number") or "",
+                  "type": rec.get("type") or "", "notes": _clean(rec.get("description")),
+                  "sourceLink": rec.get("link") or ""}
+    values = {k: v for k, v in values.items() if v}
+    return TripActivity(trip_id=trip_id, type=ytype, values=values,
+                        starts_at=values.get("when") or "")
+
+
+def _al_airports_photon():
+    airtrail = _airtrail()
+    airports = {}
+    if airtrail is not None:
+        try:
+            airports = airtrail.airport_reference()
+        except Exception:
+            log.warning("adventurelog-sync: AirTrail airport reference unavailable")
+    return airports, _photon(), {}
+
+
+def _al_sync_ctx(session: Session, trip: Trip, client) -> dict:
+    """Everything the sync page renders: pushable Yonder items (with a per-item
+    'already there?' flag) and pullable AdventureLog records."""
+    cid = trip.adventurelog_collection_id
+    index = _al_collection_index(client, cid)
+    push_items = []
+    for a in (session.query(TripActivity).filter(TripActivity.trip_id == trip.id)
+              .order_by(TripActivity.starts_at).all()):
+        t = activity_types.get_type(a.type)
+        kind = _activity_target_kind(a.type)
+        push_items.append({"id": f"activity:{a.id}", "source": "Timeline",
+                           "label": t.title(a.values or {}) or a.type,
+                           "kind": kind.title(),
+                           "exists": _activity_marker(a.id) in index})
+    for f in (session.query(DiscoveryFinding)
+              .filter(DiscoveryFinding.trip_id == trip.id).all()):
+        push_items.append({"id": f"discovery:{f.id}", "source": "Discovery",
+                           "label": f"{TOPIC_LABELS.get(f.topic, f.topic)} — {f.place_key}",
+                           "kind": "Note",
+                           "exists": _discovery_marker(f.topic, f.place_key) in index})
+    pull_rows = []
+    try:
+        status, data, raw = client.get_collection(cid)
+    except Exception:
+        data = None
+    if isinstance(data, dict):
+        for rec in (data.get("transportations") or []):
+            pull_rows.append({"id": f"transportation:{rec.get('id')}",
+                              "kind": "Transportation", "name": rec.get("name") or "—",
+                              "date": (rec.get("date") or "")[:10],
+                              "detail": f"{rec.get('from_location') or '?'} → "
+                                        f"{rec.get('to_location') or '?'}"})
+        for rec in (data.get("lodging") or []):
+            pull_rows.append({"id": f"lodging:{rec.get('id')}", "kind": "Lodging",
+                              "name": rec.get("name") or "—",
+                              "date": (rec.get("check_in") or "")[:10],
+                              "detail": rec.get("location") or ""})
+    return {"trip": {"id": trip.id, "name": trip.name},
+            "push_items": push_items, "pull_rows": pull_rows,
+            "adventurelog_url": _collection_url(cid)}
+
+
+@router.get("/{trip_id}/adventurelog", response_class=HTMLResponse)
+def adventurelog_sync_page(trip_id: str, request: Request,
+                           session: Session = Depends(get_session)):
+    trip = session.get(Trip, trip_id)
+    if trip is None or not trip.adventurelog_collection_id:
+        return _redirect(f"/trips/{trip_id}")
+    client = _adventurelog()
+    if client is None:
+        return HTMLResponse("AdventureLog isn't configured on this server.",
+                            status_code=503)
+    ctx = {"request": request, **_al_sync_ctx(session, trip, client)}
+    return templates.TemplateResponse(request, "adventurelog.html", ctx)
+
+
+def _build_push_plan(session, trip, item_ids, collection_id, airports, photon, cache):
+    """(kind, body, marker, is_note, label) for each selected item, markers stamped."""
+    plan = []
+    for raw in item_ids:
+        source, _, ident = raw.partition(":")
+        if source == "activity":
+            a = session.get(TripActivity, ident)
+            if a is None or a.trip_id != trip.id:
+                continue
+            kind, body = _al_body_for_activity(a, collection_id, airports, photon, cache)
+            marker = _activity_marker(a.id)
+            label = activity_types.get_type(a.type).title(a.values or {}) or a.type
+        elif source == "discovery":
+            f = session.get(DiscoveryFinding, ident)
+            if f is None or f.trip_id != trip.id:
+                continue
+            kind, body = "note", _finding_note_body(f, collection_id)
+            marker = _discovery_marker(f.topic, f.place_key)
+            label = f"{TOPIC_LABELS.get(f.topic, f.topic)} — {f.place_key}"
+        else:
+            continue
+        _inject_marker(kind, body, marker)
+        plan.append({"kind": kind, "body": body, "marker": marker,
+                     "is_note": kind == "note", "label": label})
+    return plan
+
+
+@router.post("/{trip_id}/adventurelog/push", response_class=HTMLResponse)
+def adventurelog_push(trip_id: str, request: Request,
+                      item_ids: list[str] = Form(default=[]),
+                      confirm: str = Form(""),
+                      session: Session = Depends(get_session)):
+    """Push selected Timeline activities + discovery findings into the collection,
+    deduplicated by ownership marker. Transport/lodging update in place silently on
+    a match; a Note that matches an existing note needs an explicit confirm (the
+    warning panel) before it overwrites."""
+    trip = session.get(Trip, trip_id)
+    if trip is None or not trip.adventurelog_collection_id:
+        return HTMLResponse("", status_code=404)
+    client = _adventurelog()
+    if client is None:
+        return _push_msg("AdventureLog isn't configured on this server.")
+    cid = trip.adventurelog_collection_id
+    index = _al_collection_index(client, cid)
+    airports, photon, cache = _al_airports_photon()
+    plan = _build_push_plan(session, trip, item_ids, cid, airports, photon, cache)
+
+    # Note collisions need confirmation unless already confirmed.
+    collisions = [{"label": p["label"], "existing": index[p["marker"]]["name"]}
+                  for p in plan if p["is_note"] and p["marker"] in index]
+    if collisions and confirm != "1":
+        return templates.TemplateResponse(request, "_al_push_confirm.html", {
+            "request": request, "trip_id": trip_id, "collisions": collisions,
+            "item_ids": item_ids})
+
+    created = updated = failed = 0
+    creators = {"transportation": client.create_transportation,
+                "lodging": client.create_lodging, "note": client.create_note}
+    updaters = {"transportation": client.update_transportation,
+                "lodging": client.update_lodging, "note": client.update_note}
+    for p in plan:
+        hit = index.get(p["marker"])
+        try:
+            if hit:
+                status, parsed, raw = updaters[p["kind"]](hit["id"], p["body"])
+            else:
+                status, parsed, raw = creators[p["kind"]](p["body"])
+            if status >= 400:
+                failed += 1
+                log.warning("adventurelog-push: %s rejected (HTTP %s): %s",
+                            p["kind"], status, raw[:200])
+            elif hit:
+                updated += 1
+            else:
+                created += 1
+        except Exception:
+            failed += 1
+            log.exception("adventurelog-push: %s failed for trip %s", p["kind"], trip_id)
+    return templates.TemplateResponse(request, "_al_sync_result.html", {
+        "request": request, "trip_id": trip_id, "action": "Push",
+        "created": created, "updated": updated, "failed": failed,
+        "total": len(plan)})
+
+
+@router.post("/{trip_id}/adventurelog/pull", response_class=HTMLResponse)
+def adventurelog_pull(trip_id: str, request: Request,
+                      record_ids: list[str] = Form(default=[]),
+                      session: Session = Depends(get_session)):
+    """Pull selected AdventureLog transport/lodging records into the Yonder
+    Timeline as TripActivities. No dedup — Yonder is first-party (owner decision);
+    re-pulling a record just adds another Timeline item."""
+    trip = session.get(Trip, trip_id)
+    if trip is None or not trip.adventurelog_collection_id:
+        return HTMLResponse("", status_code=404)
+    client = _adventurelog()
+    if client is None:
+        return _push_msg("AdventureLog isn't configured on this server.")
+    try:
+        status, data, raw = client.get_collection(trip.adventurelog_collection_id)
+    except Exception as ex:
+        return _push_msg(f"AdventureLog request failed: {ex}")
+    by_id = {}
+    if isinstance(data, dict):
+        for rec in (data.get("transportations") or []):
+            by_id[f"transportation:{rec.get('id')}"] = ("transportation", rec)
+        for rec in (data.get("lodging") or []):
+            by_id[f"lodging:{rec.get('id')}"] = ("lodging", rec)
+    pulled = 0
+    for rid in record_ids:
+        hit = by_id.get(rid)
+        if hit is None:
+            continue
+        kind, rec = hit
+        session.add(_al_record_to_activity(rec, kind, trip.id))
+        pulled += 1
+    session.commit()
+    return templates.TemplateResponse(request, "_al_sync_result.html", {
+        "request": request, "trip_id": trip_id, "action": "Pull",
+        "created": pulled, "updated": 0, "failed": 0, "total": len(record_ids)})
 
 
 # ----------------------------------------------------------------- activities

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}AdventureLog sync{% endblock %}
+{% block content %}
+<a class="bp-back" href="/trips/{{ trip.id }}">← {{ trip.name }}</a>
+
+<div class="card blueprint bp-trip-header">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <h1 class="bp-h1">AdventureLog sync</h1>
+  <p class="bp-trip-notes">Move data between this trip and its linked AdventureLog
+    collection. <b>Push</b> sends Yonder items over (deduplicated — a re-push
+    updates in place, never duplicates). <b>Pull</b> brings AdventureLog transport
+    &amp; lodging back into the Yonder Timeline.
+    {% if adventurelog_url %}<a href="{{ adventurelog_url }}" target="_blank" rel="noopener">↗ Open the collection</a>.{% endif %}</p>
+</div>
+
+<div id="al-result"></div>
+
+<!-- ------------------------------------------------------------------ PUSH -->
+<form hx-post="/trips/{{ trip.id }}/adventurelog/push" hx-target="#al-result"
+      hx-swap="innerHTML" class="card blueprint yn-profile-card">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <div class="bp-group-label">Push to AdventureLog <span class="bp-group-count">{{ push_items | length }}</span></div>
+  {% if push_items %}
+  <div class="yn-table-wrap">
+    <table class="yn-table">
+      <thead><tr><th></th><th>Item</th><th>From</th><th>Becomes</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for it in push_items %}
+        <tr>
+          <td><input type="checkbox" name="item_ids" value="{{ it.id }}"></td>
+          <td><b>{{ it.label }}</b></td>
+          <td>{{ it.source }}</td>
+          <td>{{ it.kind }}</td>
+          <td>{% if it.exists %}<span class="tag tag-neutral">already there — will update</span>
+              {% else %}<span class="tag tag-outline">new</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="dialog-actions">
+    <button type="submit" class="btn btn-primary" hx-disabled-elt="this">Push selected</button>
+  </div>
+  {% else %}
+  <p class="bp-trip-notes">Nothing to push yet — add Timeline activities or run Discovery first.</p>
+  {% endif %}
+</form>
+
+<!-- ------------------------------------------------------------------ PULL -->
+<form hx-post="/trips/{{ trip.id }}/adventurelog/pull" hx-target="#al-result"
+      hx-swap="innerHTML" class="card blueprint yn-profile-card">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <div class="bp-group-label">Pull to Yonder Timeline <span class="bp-group-count">{{ pull_rows | length }}</span></div>
+  <p class="bp-trip-notes">Transport &amp; lodging only — Notes have no Timeline
+    equivalent in Yonder, so they can't be pulled back.</p>
+  {% if pull_rows %}
+  <div class="yn-table-wrap">
+    <table class="yn-table">
+      <thead><tr><th></th><th>Type</th><th>Name</th><th>Date</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for r in pull_rows %}
+        <tr>
+          <td><input type="checkbox" name="record_ids" value="{{ r.id }}"></td>
+          <td>{{ r.kind }}</td>
+          <td><b>{{ r.name }}</b></td>
+          <td>{{ r.date }}</td>
+          <td>{{ r.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="dialog-actions">
+    <button type="submit" class="btn btn-primary" hx-disabled-elt="this">Pull selected</button>
+  </div>
+  {% else %}
+  <p class="bp-trip-notes">No transport or lodging in the AdventureLog collection to pull.</p>
+  {% endif %}
+</form>
+{% endblock %}
