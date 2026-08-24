@@ -1,18 +1,21 @@
 # Yonder
 
-**Version 2.2.1** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/yonder/releases)
+**Version 3.8.1** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/yonder/releases)
 
 Yonder turns travel documents — booking emails, calendar invites, PDF
 confirmations, and Google Maps directions — into clean records in your
 self-hosted travel apps: **flights → [AirTrail](https://github.com/johanohly/AirTrail)**,
 **trips & places → [AdventureLog](https://github.com/seanmorley15/AdventureLog)** —
-and into **Yonder's own built-in trips**, a first-party trip system it writes to
-alongside the others.
+and into **Yonder's own built-in trips**, a first-party trip system with its own
+timeline, pre-trip research (**Discovery**) and packing plans (**Planning**), that
+Yonder writes to alongside the others.
 
 It is a self-hosted FastAPI service. You *capture* travel items from where you
 already read them (Gmail, Google Calendar, Maps), Yonder extracts and resolves
 the structured facts, you review them in a web queue, and it commits them to
-your trackers. Nothing is auto-posted without passing through review.
+your trackers. Nothing is auto-posted without passing through review. The root
+URL (`/`) is a dashboard: what's next, what the review queue looks like right
+now, and quick links into every surface.
 
 ---
 
@@ -54,6 +57,45 @@ D-11) — nothing is sent to a cloud model.
 
 ---
 
+## Yonder's own Trips
+
+Since v2.0, Yonder isn't just a pipe to AirTrail/AdventureLog — trips are also a
+first-party feature at **`/trips`**, with their own day-by-day timeline
+(flights, lodging, drives, notes — added by hand or linked from a capture),
+a traveller roster (self + guests, per-trip), and two capabilities layered on
+top:
+
+- **Discovery** (v3.0–3.2) — a self-contained, local pre-trip research pass over
+  nine topics (weather, currency + a per-trip calculator, plugs & voltage,
+  visa & vaccination, safety & transport, events & activities, food & drink,
+  language, packing). A **deterministic tier** (Frankfurter for currency,
+  Open-Meteo for weather, a plugs/language reference) needs no extra service;
+  an optional **LLM tier** (visa, safety, events, food, and regional/local
+  language) runs entirely locally through **SearXNG** web search + your
+  **Ollama** model — nothing leaves your network. Findings are reviewed,
+  editable, and re-runnable per topic. A **Discovery Profile**
+  (`/trips/settings/discovery-profile`) captures dietary needs, drink/activity
+  interests, budget and mobility constraints so the LLM tier searches for
+  things you'd actually want.
+- **Planning** (v3.1) — turns the trip + its Discovery findings into a
+  **Packing Plan**: a bag-assigned, categorized checklist derived from trip
+  length, climate, and detected trip types (beach, business, hiking, …), tuned
+  by a **Packing Profile** (`/trips/settings/packing-profile` — bag size,
+  laundry comfort, style, must-have items). Pack/unpack/omit items inline; a
+  removed item can always be brought back.
+- **AdventureLog managed sync** (v3.8) — once a Yonder trip is pushed to
+  AdventureLog as a collection, `/trips/{id}/adventurelog` is a two-way,
+  dedup-aware sync surface: **push** selected timeline activities and approved
+  Discovery findings into that collection (ownership markers keep re-pushing
+  idempotent — updates in place, never duplicates), or **pull** AdventureLog's
+  own transportation/lodging records into the Yonder timeline.
+
+Trips work with or without AdventureLog/AirTrail configured — captured items
+can link straight to a Yonder trip (independent of any AdventureLog
+collection), so the in-house trip system is never a second-class citizen.
+
+---
+
 ## Prerequisites
 
 ### Hard prerequisites (Yonder will not run without these)
@@ -74,7 +116,15 @@ D-11) — nothing is sent to a cloud model.
 | **[Ollama](https://ollama.com/)** + a model (`qwen3:14b`) | LLM extractor for free-form text | Structured sources (JSON-LD/iCal/PDF/Maps) still work; unstructured items go to review unparsed |
 | **[Photon](https://github.com/komoot/photon)** (self-hosted geocoder) | Address → coordinates without Google quota (D-22) | Geocoding unavailable; places needing lookup stall in review |
 | **AirTrail's own Postgres** (read-only) | Committing flights to airports you've **never flown before** (D-50) — supplies internal airport id/coords/tz | A flight to a never-flown airport is refused at commit |
+| **[SearXNG](https://github.com/searxng/searxng)** (self-hosted metasearch) + Ollama | Discovery's **LLM tier** — visa, safety, events, food & drink, and regional/local language findings | Discovery still runs its deterministic tier (weather/currency/plugs/language basics); the four search-backed topics are simply absent |
 | **CrowdSec bouncer** | Hardens the public `/ingest` route | Route works; less abuse protection |
+
+Discovery's deterministic tier also calls two free, keyless public APIs —
+[Frankfurter](https://frankfurter.dev/) (currency) and
+[Open-Meteo](https://open-meteo.com/) (weather) — over the open internet by
+default; both are overridable (`TX_FRANKFURTER_URL`, `TX_OPEN_METEO_URL`,
+`TX_OPEN_METEO_ARCHIVE_URL`) if you'd rather point at a self-hosted mirror to
+keep Yonder fully local.
 
 ### How to find each prerequisite / credential
 
@@ -85,6 +135,7 @@ D-11) — nothing is sent to a cloud model.
   `postgresql://airtrail:<password>@airtrail_db:5432/airtrail`. Yonder's container must share a Docker network with that DB.
 - **Ollama** — `docker`-run Ollama on `travel-net`/`traefik-net`, then `ollama pull qwen3:14b`. Point `TX_OLLAMA_URL` at it.
 - **Photon** — self-host the Photon container with an OpenStreetMap index; point `TX_PHOTON_URL` at it.
+- **SearXNG** — self-host with its JSON API enabled (`search.formats: [html, json]` in `settings.yml`); point `TX_SEARXNG_URL` at it. Needed only for Discovery's LLM-tier topics (visa/safety/events/food/regional language) — it also requires Ollama.
 - **Yonder `/ingest` API keys** — you create these yourself with the CLI (see [First-run setup](#3-first-run-setup)); one per capture client.
 
 ---
@@ -113,7 +164,7 @@ docker compose -f docker-compose.dev.yml up -d --build
 versioned artifact rather than building locally:
 
 ```bash
-docker pull ghcr.io/jeeves5454/yonder:latest   # or a pinned :2.2.1
+docker pull ghcr.io/jeeves5454/yonder:latest   # or a pinned :3.8.1
 ```
 
 The package is private; give Portainer a registry credential (Registries → Add →
@@ -210,6 +261,11 @@ Extraction reuses the JSON-LD reader for web pages (most booking pages embed sch
 
 ## Daily workflow
 
+0. **Open the dashboard** — the app's root URL (`/`, e.g. `https://yonder.home.example/`)
+   is a home page: the trip coming up next, a live snapshot of the review
+   pipeline (needs you / waiting / ready / approved / logged), today's capture
+   activity, and quick links into Capture, Review, Trips, and every settings
+   page. It's the front door — start here.
 1. **Capture** — click the add-on button on an email/event, or use `/capture` for a web page or Maps drive. The item is stored immediately and never processed inline.
 2. **Process** — extract stored batches into `TravelItem`s:
    ```bash
@@ -225,6 +281,10 @@ Extraction reuses the JSON-LD reader for web pages (most booking pages embed sch
    ```bash
    docker exec yonder python -m app.cli commit
    ```
+6. **Trips (optional)** — open `/trips` to see the timeline take shape, run
+   **Discovery** for a pre-trip briefing, generate a **Packing Plan**, and (if
+   the trip is linked to AdventureLog) sync activities and findings both ways
+   from `/trips/{id}/adventurelog`.
 
 ---
 
@@ -261,12 +321,18 @@ deployment stack.
 | `TX_OLLAMA_URL` | `http://ollama:11434` | Local LLM extractor endpoint |
 | `TX_OLLAMA_MODEL` | `qwen3:14b` | LLM model (OQ-08) |
 | `TX_LLM_TIMEOUT_SECONDS` | `600` | LLM call timeout |
-| `TX_ADVENTURELOG_URL` | `http://adventurelog-server:80` | AdventureLog base URL |
+| `TX_ADVENTURELOG_URL` | `http://adventurelog-server:80` | AdventureLog base URL (internal, container-to-container) |
 | `TX_ADVENTURELOG_API_KEY` | `""` | AdventureLog API token |
+| `TX_ADVENTURELOG_PUBLIC_URL` | `""` | AdventureLog's browser-facing base URL, used to link directly to a trip's collection from the Yonder UI. Empty = no link rendered |
 | `TX_AIRTRAIL_URL` | `http://airtrail:3000` | AirTrail base URL |
 | `TX_AIRTRAIL_TOKEN` | `""` | AirTrail API token |
 | `TX_AIRTRAIL_DB_URL` | `""` | AirTrail Postgres, read-only (D-50) |
 | `TX_PHOTON_URL` | `http://photon:2322` | Self-hosted geocoder (D-22) |
+| `TX_DISCOVERY_BASE_CURRENCIES` | `CAD,USD` | Home currencies Discovery's currency resolver/calculator convert FROM (D-65) |
+| `TX_FRANKFURTER_URL` | `https://api.frankfurter.dev/v1` | Currency-rate source for Discovery (public, keyless; overridable for a self-hosted mirror) |
+| `TX_OPEN_METEO_URL` | `https://api.open-meteo.com/v1` | Forecast weather source for Discovery |
+| `TX_OPEN_METEO_ARCHIVE_URL` | `https://archive-api.open-meteo.com/v1` | Historical weather source for Discovery (trips beyond the forecast window) |
+| `TX_SEARXNG_URL` | `http://searxng:8080` | Metasearch backend for Discovery's LLM tier (visa/safety/events/food/regional language). Empty = those topics degrade to absent findings |
 | `TX_FORWARDED_ALLOW_IPS` | `*` | Trust Traefik's `X-Forwarded-Proto` |
 
 ---
@@ -286,11 +352,21 @@ python3 rules.py --docs > RULES.md
 ## Project layout
 
 ```
-app/            FastAPI service: /health, /ingest, /capture (web capture page),
-                /admin (SQLAdmin), review queue, cli.py, processing.py
+app/            FastAPI service
+  dashboard.py    the root ("/") dashboard — next trip, pipeline snapshot,
+                  capture activity, quick links (v3.8.1)
+  review/         the review queue (HTMX + Jinja), Home Profiles editor
+  trips/          Yonder's own trips: timeline, travellers, Discovery,
+                  Planning, AdventureLog managed sync
+  main.py         router wiring: /health, /ingest, /capture, /admin (SQLAdmin)
+  cli.py          operational CLI: create-key, process, resolve, commit, ...
+  processing.py, resolving.py, committing.py   the pipeline stages
 extract/        extractor chain, in try-order (D-10/D-27):
                 jsonld -> ical -> pdf -> maps_url -> web -> llm (Ollama, D-11)
 resolve/        keys.py (A5 canonical keys), collections.py (A6 ladder)
+discover/       Discovery (v3.0-3.2): deterministic + LLM resolvers per topic,
+                location derivation, the durable run/finding pipeline
+planning/       Planning (v3.1): the Packing Plan engine, catalog, profiles
 adapters/       target writers: adventurelog.py, airtrail.py, airtrail_db.py
 rules.py        rule registry + engine (57 rules, tri-state toggles — D-25)
 validation.py   schema gate (real jsonschema)
@@ -299,12 +375,14 @@ alembic/        migrations (baseline 0001)
 capture/        gmail-addon/, gcal-addon/ (Apps Script); maps-n8n/ (deprecated,
                 superseded by the built-in /capture page in v1.2)
 tests/          pytest suite + samples.json regression corpus
-docs/           A5/A6 specs, home-profiles.example.json
+docs/           A5/A6 specs, home-profiles.example.json, the setup/usage guide
 scripts/        extract_eval.py — run the chain over dumped real payloads
 ```
 
-The design specs in `docs/` (A5 canonical keys, A6 collection resolution) and
-the generated `RULES.md` explain the resolution and rule behaviour in depth.
+The design specs (`docs/A5-canonical-keys.md`, `docs/A6-collection-resolution.md`,
+`SPEC-3-discovery.md`, `SPEC-3.1-planning.md`, `SPEC-3.2-discovery-llm.md`) and
+the generated `RULES.md` explain the resolution, Discovery/Planning, and rule
+behaviour in depth.
 
 Inline `D-NN` / `RULE-NN` / `OQ-NN` codes throughout the code and capture docs
 are provenance markers for decisions, rules, and open questions tracked in the

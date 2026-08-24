@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="dash">
+
+    <div class="dash-hero">
+      <div>
+        <h1>Yonder</h1>
+        <p>Travel documents in, clean trip records out — capture, review, and
+          your trips, all in one place.</p>
+      </div>
+      <div class="dash-hero-actions">
+        <a class="act tiny" href="/capture">＋ Capture something</a>
+        <a class="act tiny" href="/trips/new?next=/trips">＋ New trip</a>
+        <a class="act tiny primary" href="/review">Open review queue</a>
+      </div>
+    </div>
+
+    <div class="dash-section">
+      <h2>What's next</h2>
+      {% if next_trip %}
+      <a class="dash-trip" href="/trips/{{ next_trip.id }}">
+        {% if next_trip.in_progress %}
+        <span class="pill ok">In progress</span>
+        {% else %}
+        <span class="pill">{{ next_trip.days_until }} day{{ 's' if next_trip.days_until != 1 else '' }}</span>
+        {% endif %}
+        <div>
+          <div class="t-name">{{ next_trip.name }}</div>
+          <div class="t-dates">{{ next_trip.start }}{% if next_trip.end %} → {{ next_trip.end }}{% endif %}</div>
+        </div>
+        <span class="t-count">{{ upcoming_count }} more upcoming · {{ trip_count }} total →</span>
+      </a>
+      {% else %}
+      <div class="dash-empty">
+        <span>No trip coming up yet.</span>
+        <a class="act tiny" href="/trips/new?next=/trips">＋ Plan a trip</a>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="dash-section">
+      <h2>Review pipeline</h2>
+      <div class="dash-stages">
+        <a class="dash-stage {{ 'blocked' if counts.attention else 'muted' }}" href="/review?bucket=attention">
+          <b>{{ counts.attention }}</b><span>need you</span>
+        </a>
+        <a class="dash-stage {{ '' if counts.waiting else 'muted' }}" href="/review?bucket=waiting">
+          <b>{{ counts.waiting }}</b><span>waiting for a trip</span>
+        </a>
+        <a class="dash-stage" href="/review?bucket=ready">
+          <b>{{ counts.ready }}</b><span>ready to approve</span>
+        </a>
+        <a class="dash-stage {{ '' if counts.staged else 'muted' }}" href="/review?bucket=staged">
+          <b>{{ counts.staged }}</b><span>approved</span>
+        </a>
+        <a class="dash-stage muted" href="/review?bucket=logged">
+          <b>{{ counts.logged }}</b><span>logged</span>
+        </a>
+        <a class="dash-stage muted" href="/review?bucket=all">
+          <b>{{ counts.all }}</b><span>total</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="dash-section">
+      <h2>Capture activity</h2>
+      <div class="dash-row">
+        <div class="dash-stat"><b>{{ capture.today }}</b><span>captured today</span></div>
+        <div class="dash-stat"><b>{{ capture.awaiting }}</b><span>awaiting processing</span></div>
+        <div class="dash-stat"><b>{{ capture.needs_review }}</b><span>couldn't be read</span></div>
+        <div class="dash-stat"><b>{{ capture.total }}</b><span>captured all-time</span></div>
+      </div>
+    </div>
+
+    <div class="dash-section">
+      <h2>Go to</h2>
+      <div class="dash-links">
+        <a class="dash-card" href="/capture">
+          <div class="ico">📥</div>
+          <div class="name">Capture</div>
+          <div class="desc">Bookmarklet, paste a page, or a Maps drive</div>
+        </a>
+        <a class="dash-card" href="/review">
+          <div class="ico">🗂️</div>
+          <div class="name">Review</div>
+          <div class="desc">Check, correct, and approve captured items</div>
+        </a>
+        <a class="dash-card" href="/trips">
+          <div class="ico">🧭</div>
+          <div class="name">Trips</div>
+          <div class="desc">Timelines, discovery briefings, packing plans</div>
+        </a>
+        <a class="dash-card admin" href="/review/home">
+          <div class="ico">🏠</div>
+          <div class="name">Home profiles</div>
+          <div class="desc">Where "home" is, so it's never logged as a trip</div>
+        </a>
+        <a class="dash-card admin" href="/trips/settings/packing-profile">
+          <div class="ico">🎒</div>
+          <div class="name">Packing profile</div>
+          <div class="desc">Bag, laundry, style — shapes every packing plan</div>
+        </a>
+        <a class="dash-card admin" href="/trips/settings/discovery-profile">
+          <div class="ico">🔎</div>
+          <div class="name">Discovery profile</div>
+          <div class="desc">Diet, drinks, activities — shapes trip briefings</div>
+        </a>
+        <a class="dash-card admin" href="/admin/traveler-identity/list">
+          <div class="ico">🧑‍🤝‍🧑</div>
+          <div class="name">Travellers</div>
+          <div class="desc">Who's who — self and guests</div>
+        </a>
+        <a class="dash-card admin" href="/admin/rule-setting/list">
+          <div class="ico">📏</div>
+          <div class="name">Rules</div>
+          <div class="desc">Enforce / audit / off, per rule</div>
+        </a>
+        <a class="dash-card admin" href="/admin/">
+          <div class="ico">🗄️</div>
+          <div class="name">Tables</div>
+          <div class="desc">Raw admin over every table</div>
+        </a>
+      </div>
+    </div>
+
+    <div class="dash-section">
+      <h2>Targets configured</h2>
+      <div class="dash-row">
+        <div class="dash-stat"><b>{{ 'On' if have_adventurelog else 'Off' }}</b><span>AdventureLog</span></div>
+        <div class="dash-stat"><b>{{ 'On' if have_airtrail else 'Off' }}</b><span>AirTrail</span></div>
+        <div class="dash-stat"><b>Yonder</b><span>always on — built-in trips</span></div>
+      </div>
+    </div>
+
+    <p style="color:var(--ink-3);font-size:12px;margin:0">Yonder v{{ version }} · <a href="/about">About</a></p>
+
+  </div>
+</div>
+{% endblock %}

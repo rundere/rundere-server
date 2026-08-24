@@ -26,6 +26,7 @@ app.include_router(ingest_router)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from app.capture import router as capture_router  # noqa: E402
+from app.dashboard import router as dashboard_router  # noqa: E402
 from app.review.home import router as home_router  # noqa: E402
 from app.review.routes import router as review_router  # noqa: E402
 from app.trips.routes import router as trips_router  # noqa: E402
@@ -34,6 +35,10 @@ app.include_router(review_router)
 app.include_router(home_router)
 app.include_router(capture_router)
 app.include_router(trips_router)
+# Root ("/") is the dashboard — registered last so it never shadows a router
+# above that also owns "/" behaviour; there is none today, but this keeps the
+# one true landing route obvious to find.
+app.include_router(dashboard_router)
 app.mount("/review/static",
           StaticFiles(directory=str(Path(__file__).parent / "review" / "static")),
           name="review-static")
