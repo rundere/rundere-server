@@ -218,6 +218,35 @@ def mount_admin(app, engine) -> None:
                     "default": "carry_on"},
         }
 
+    class BagAdmin(ModelView, model=models.Bag):
+        name = "Bag"
+        name_plural = "Bag Inventory"
+        # The owner's actual bags (3 backpacks, a carry-on, a checked suitcase —
+        # with real capacities) — parallel to and independent from the packing
+        # catalog above (what goes IN a bag). Seeded empty on purpose (unlike the
+        # catalog, there's no universal default bag inventory). Once bags exist
+        # here, the per-trip packing item "bag" dropdown lists THESE instead of
+        # the generic carry-on/checked/backpack categories. Retire a bag you no
+        # longer own with `enabled` rather than deleting it — a PackingItem
+        # still pointing at a deleted (not just disabled) row falls back to
+        # showing the raw id, same as an orphaned PackingCatalogItem reference.
+        column_list = [models.Bag.label, models.Bag.kind, models.Bag.capacity,
+                       models.Bag.enabled]
+        column_searchable_list = [models.Bag.label, models.Bag.kind]
+        column_sortable_list = [models.Bag.kind, models.Bag.label]
+        column_default_sort = "kind"
+        page_size = 200
+        # `id` auto-derives from the label on create (its slug), same as the
+        # packing catalog — SQLAdmin drops the PK from the create form.
+        form_columns = ["label", "kind", "capacity", "enabled"]
+        form_overrides = {"kind": wtforms.SelectField}
+        form_args = {
+            "kind": {"choices": [("backpack", "backpack"), ("suitcase", "suitcase"),
+                                 ("personal_item", "personal item")],
+                     "default": "backpack"},
+            "capacity": {"description": 'Freeform, e.g. "40L" or "22in carry-on".'},
+        }
+
     # NB: PackingProfile has NO SQLAdmin view on purpose — it's edited through the
     # structured form at /trips/settings/packing-profile (Administer → Packing
     # profile), not a raw-JSON table (D-86).
@@ -296,6 +325,6 @@ def mount_admin(app, engine) -> None:
                  CommitAttemptAdmin, SourceRuleAdmin, ApiKeyAdmin,
                  ArtifactAdmin, TravelerIdentityAdmin,
                  RuleSettingAdmin, TripAdmin, TripActivityAdmin,
-                 PackingCatalogItemAdmin, PhrasebookPhraseAdmin,
+                 PackingCatalogItemAdmin, BagAdmin, PhrasebookPhraseAdmin,
                  RegionalLanguageAdmin):
         admin.add_view(view)

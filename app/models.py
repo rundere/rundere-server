@@ -480,7 +480,11 @@ class PackingItem(Base):
     label: Mapped[str] = mapped_column(String(128))
     category: Mapped[str] = mapped_column(String(16), index=True)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
-    bag: Mapped[str | None] = mapped_column(String(12))             # carry_on | checked
+    # carry_on | checked | backpack (the engine's generic guess), OR a specific
+    # Bag.id once the owner has a bag inventory and assigns one to this line —
+    # single column, widened (was 12) to hold a Bag slug id alongside the
+    # generic values (see Bag below).
+    bag: Mapped[str | None] = mapped_column(String(64))
     reason: Mapped[str | None] = mapped_column(String(256))
     source: Mapped[str | None] = mapped_column(String(16))          # template|modifier|must_have|...
     swap_for: Mapped[str | None] = mapped_column(String(128))
@@ -522,6 +526,31 @@ class PackingCatalogItem(Base):
     tags: Mapped[list | None] = mapped_column(JsonCol, default=list)
     variants: Mapped[dict | None] = mapped_column(JsonCol, default=dict)  # {masc,fem,neutral}
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class Bag(Base):
+    """Yonder 3.9.2 — the owner's actual bag inventory (the 3 backpacks, the
+    carry-on, the checked suitcase — with real capacities), parallel to and
+    independent from what goes IN a bag (PackingItem/PackingCatalogItem). Not
+    the Packing Profile (that's trip-preference config, D-73..D-85) — this is
+    a plain inventory, managed in the admin like PackingCatalogItem (D-84).
+
+    `id` is a slug from the label (same convention as PackingCatalogItem) so a
+    PackingItem can soft-link to a specific bag via its own `bag` column
+    (generic carry_on/checked/backpack until the owner has bags to assign,
+    then a real Bag.id) without a second column."""
+    __tablename__ = "bags"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True,
+                                    default=_slug_from_label)
+    label: Mapped[str] = mapped_column(String(64))          # "Osprey Farpoint 40"
+    kind: Mapped[str] = mapped_column(String(16), default="backpack",
+                                      index=True)            # backpack|suitcase|personal_item
+    capacity: Mapped[str | None] = mapped_column(String(32))  # "40L", "22in carry-on", freeform
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
 

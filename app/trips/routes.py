@@ -810,7 +810,7 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
 # ----------------------------------------------------------------- planning (3.1)
 
 from app.models import (PackingItem, PackingPlan, PackingProfile,   # noqa: E402
-                        DiscoveryProfile)
+                        DiscoveryProfile, Bag)
 
 # The Packing Profile form — closed vocabularies rendered as dropdowns/checkboxes
 # (D-86) so the owner never hand-writes JSON. label pairs are (value, human text).
@@ -883,10 +883,48 @@ PACK_BAG_OPTS = [("backpack", "backpack"), ("carry_on", "carry-on"),
 _PACK_BAG_LABELS = dict(PACK_BAG_OPTS)
 
 
-def _packing_item_view(i: PackingItem) -> dict:
+def _bag_inventory(session: Session) -> list[Bag]:
+    return (session.query(Bag).filter(Bag.enabled.is_(True))
+            .order_by(Bag.kind, Bag.label).all())
+
+
+def _bag_option_label(b: Bag) -> str:
+    return f"{b.label} · {b.capacity}" if b.capacity else b.label
+
+
+def _bag_options(session: Session) -> list[dict]:
+    """The per-item bag dropdown's choices: the owner's real bag inventory
+    (Admin → Bag Inventory) once they have one, else the generic carry-on /
+    checked / backpack categories — the zero-setup default, same DB-is-truth
+    -else-fallback pattern as the packing catalog (D-84)."""
+    rows = _bag_inventory(session)
+    if rows:
+        return [{"value": b.id, "label": _bag_option_label(b)} for b in rows]
+    return [{"value": v, "label": t} for v, t in PACK_BAG_OPTS]
+
+
+def _bag_valid_values(session: Session) -> set[str]:
+    """Everything a `bag` field may legally be set to: the generic values
+    (always valid, so old rows/tests keep working even once an inventory
+    exists) plus any currently-enabled Bag id."""
+    return set(_PACK_BAG_LABELS) | {b.id for b in _bag_inventory(session)}
+
+
+def _bag_label_lookup(session: Session) -> dict[str, str]:
+    """id/generic-value -> display label, for rendering an item's CURRENT
+    bag even if it's since been disabled/deleted, or is a legacy generic
+    value no longer offered once a real inventory exists — never silently
+    mislabel a row just because it fell out of the active option list."""
+    lookup = dict(_PACK_BAG_LABELS)
+    for b in session.query(Bag).all():           # incl. disabled: still label it
+        lookup[b.id] = _bag_option_label(b)
+    return lookup
+
+
+def _packing_item_view(i: PackingItem, bag_labels: dict[str, str]) -> dict:
     return {"id": i.id, "label": i.label, "category": i.category,
             "quantity": i.quantity, "bag": i.bag,
-            "bag_label": _PACK_BAG_LABELS.get(i.bag, i.bag or "checked"),
+            "bag_label": bag_labels.get(i.bag, i.bag or "checked"),
             "reason": i.reason, "source": i.source, "status": i.status,
             "swap_for": i.swap_for, "packed": i.status == "packed",
             "edited": i.edited}
@@ -904,6 +942,7 @@ def _packing_context(session: Session, trip_id: str) -> dict:
     chosen_ids = {a.get("id") for a in chosen_arch}
     included = [i for i in items if i.status in ("draft", "packed")]
     omitted = [i for i in items if i.status == "omitted"]
+    bag_labels = _bag_label_lookup(session)
     grouped: dict[str, list] = {}
     for i in included:
         grouped.setdefault(i.category, []).append(i)
@@ -915,12 +954,13 @@ def _packing_context(session: Session, trip_id: str) -> dict:
             # NB: key is "rows", not "items" — Jinja's `grp.items` would resolve
             # to the dict's built-in items() method, not this list.
             cats.append({"category": cat, "label": PACK_CAT_LABELS.get(cat, cat),
-                         "rows": [_packing_item_view(r) for r in rows],
+                         "rows": [_packing_item_view(r, bag_labels) for r in rows],
                          "packed": sum(1 for r in rows if r.status == "packed"),
                          "total": len(rows)})
     return {
         "packing_cats": cats,
-        "packing_omitted": [_packing_item_view(i) for i in omitted],
+        "packing_omitted": [_packing_item_view(i, bag_labels) for i in omitted],
+        "packing_bag_options": _bag_options(session),
         "packing_has": bool(included),
         "packing_warnings": (plan.warnings if plan else None) or [],
         "packing_tasks": (plan.tasks if plan else None) or [],
@@ -1015,7 +1055,8 @@ def _pack_count_oob(session: Session, trip_id: str, category: str) -> str:
 def _pack_item_row(request: Request, trip_id: str, session: Session,
                    i: PackingItem) -> HTMLResponse:
     row_html = templates.env.get_template("_packing_item.html").render(
-        trip_id=trip_id, i=_packing_item_view(i))
+        trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
+        packing_bag_options=_bag_options(session))
     return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category))
 
 
@@ -1043,12 +1084,14 @@ def packing_item_qty(trip_id: str, item_id: str, request: Request,
 @router.post("/{trip_id}/pack-item/{item_id}/bag", response_class=HTMLResponse)
 def packing_item_bag(trip_id: str, item_id: str, request: Request,
                      bag: str = Form(...), session: Session = Depends(get_session)):
-    """Which bag this line goes in — backpack / carry-on / checked — set per
-    item, per trip, independent of the catalog's default load-out."""
+    """Which bag this line goes in — a specific bag from the owner's inventory
+    (Admin → Bag Inventory) once they have one, else the generic backpack /
+    carry-on / checked categories — set per item, per trip, independent of the
+    catalog's default load-out."""
     i = session.get(PackingItem, item_id)
     if i is None or i.trip_id != trip_id:
         return HTMLResponse("", status_code=404)
-    if bag not in _PACK_BAG_LABELS:
+    if bag not in _bag_valid_values(session):
         return HTMLResponse("", status_code=400)
     i.bag = bag
     i.edited = True
@@ -1102,7 +1145,9 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
                                           {"request": request, "trip": trip,
                                            **_packing_context(session, trip_id)})
     row_html = "" if action == "remove" else templates.env.get_template(
-        "_packing_item.html").render(trip_id=trip_id, i=_packing_item_view(i))
+        "_packing_item.html").render(
+            trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
+            packing_bag_options=_bag_options(session))
     return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category))
 
 
@@ -1118,7 +1163,8 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
     if trip is None:
         return HTMLResponse("", status_code=404)
     label = label.strip()[:128]
-    if category not in PACK_CAT_LABELS or not label or bag not in _PACK_BAG_LABELS:
+    if (category not in PACK_CAT_LABELS or not label
+            or bag not in _bag_valid_values(session)):
         return HTMLResponse("", status_code=400)
     item = PackingItem(trip_id=trip_id, item_key=f"custom:{uuid.uuid4().hex}",
                        label=label, category=category,

@@ -21,9 +21,16 @@
     <select class="input yn-pack-bag-select" name="bag" title="Which bag this goes in"
             hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/bag"
             hx-trigger="change" hx-target="closest .yn-pack-row" hx-swap="outerHTML">
-      <option value="backpack" {% if i.bag == 'backpack' %}selected{% endif %}>backpack</option>
-      <option value="carry_on" {% if i.bag == 'carry_on' %}selected{% endif %}>carry-on</option>
-      <option value="checked" {% if i.bag != 'backpack' and i.bag != 'carry_on' %}selected{% endif %}>checked</option>
+      {% set opt_values = packing_bag_options | map(attribute='value') | list %}
+      {% if i.bag not in opt_values %}
+      {# a stale value (disabled/deleted bag, or a legacy generic once an
+         inventory replaced the fallback set) — show it so nothing silently
+         switches; picking a real option below replaces it. #}
+      <option value="{{ i.bag }}" selected>{{ i.bag_label }}</option>
+      {% endif %}
+      {% for o in packing_bag_options %}
+      <option value="{{ o.value }}" {% if i.bag == o.value %}selected{% endif %}>{{ o.label }}</option>
+      {% endfor %}
     </select>
     <button class="btn btn-ghost bp-sm yn-pack-remove"
             hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/remove"

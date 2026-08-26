@@ -12,7 +12,7 @@ try:
     from fastapi.testclient import TestClient
     from app.db import SessionLocal, engine
     from app.main import app
-    from app.models import (Base, PackingItem, PackingPlan, Trip, TripActivity)
+    from app.models import (Base, Bag, PackingItem, PackingPlan, Trip, TripActivity)
     from planning.runner import generate_plan
     Base.metadata.create_all(engine)
     _client = TestClient(app)
@@ -333,3 +333,94 @@ def test_add_custom_item_rejects_bad_category_or_bag():
                      data={"category": "clothing", "label": "X",
                            "quantity": "1", "bag": "not-a-bag"})
     assert r.status_code == 400
+
+
+def _clear_bags():
+    with SessionLocal() as s:
+        s.query(Bag).delete()
+        s.commit()
+
+
+def test_bag_dropdown_falls_back_to_generic_with_no_inventory():
+    """Zero-setup default: no Bag rows yet → the item template's dropdown
+    (rendered via the row-returning routes) still offers the generic three."""
+    if not DEPS:
+        return
+    _clear_bags()
+    tid = _trip()
+    _gen(tid)
+    with SessionLocal() as s:
+        iid = s.query(PackingItem).filter_by(
+            trip_id=tid, item_key="documents:passport").one().id
+    r = _client.post(f"/trips/{tid}/pack-item/{iid}/qty", data={"quantity": "1"})
+    assert 'value="backpack"' in r.text and 'value="carry_on"' in r.text
+    assert 'value="checked"' in r.text
+
+
+def test_bag_dropdown_lists_real_inventory_once_it_exists():
+    """Once the owner has real bags (Admin -> Bag Inventory), the per-item
+    dropdown should offer THOSE, not the generic categories — the owner's own
+    framing: bag tracking is separate from what goes in the bag."""
+    if not DEPS:
+        return
+    _clear_bags()
+    try:
+        with SessionLocal() as s:
+            s.add(Bag(label="Osprey Farpoint 40", kind="backpack", capacity="40L"))
+            s.add(Bag(label="Away Carry-On", kind="suitcase", capacity="22in"))
+            s.commit()
+        tid = _trip()
+        _gen(tid)
+        with SessionLocal() as s:
+            iid = s.query(PackingItem).filter_by(
+                trip_id=tid, item_key="documents:passport").one().id
+        r = _client.post(f"/trips/{tid}/pack-item/{iid}/qty", data={"quantity": "1"})
+        assert "Osprey Farpoint 40" in r.text and "Away Carry-On" in r.text
+        assert 'value="backpack"' not in r.text        # generic set replaced
+
+        # assign the real bag; it persists and shows a proper label
+        with SessionLocal() as s:
+            bag_id = s.query(Bag).filter_by(label="Osprey Farpoint 40").one().id
+        r = _client.post(f"/trips/{tid}/pack-item/{iid}/bag", data={"bag": bag_id})
+        assert r.status_code == 200
+        with SessionLocal() as s:
+            i = s.get(PackingItem, iid)
+            assert i.bag == bag_id and i.edited is True
+        r = _client.post(f"/trips/{tid}/pack-item/{iid}/qty", data={"quantity": "2"})
+        assert "Osprey Farpoint 40" in r.text            # label resolved, not the raw id
+
+        # junk / disabled-elsewhere ids are still rejected
+        r = _client.post(f"/trips/{tid}/pack-item/{iid}/bag",
+                         data={"bag": "not-a-real-bag-id"})
+        assert r.status_code == 400
+    finally:
+        _clear_bags()
+
+
+def test_bag_label_survives_retiring_a_bag():
+    """Retire a bag with `enabled=False` (the admin's documented way to retire
+    a catalog/inventory row without orphaning references, same convention as
+    PackingCatalogItem) — an item still pointing at it must keep showing its
+    real label, not the raw id, even though it's dropped from the dropdown."""
+    if not DEPS:
+        return
+    _clear_bags()
+    try:
+        with SessionLocal() as s:
+            b = Bag(label="Retired Duffel", kind="backpack")
+            s.add(b); s.commit()
+            bag_id = b.id
+        tid = _trip()
+        _gen(tid)
+        with SessionLocal() as s:
+            iid = s.query(PackingItem).filter_by(
+                trip_id=tid, item_key="documents:passport").one().id
+        _client.post(f"/trips/{tid}/pack-item/{iid}/bag", data={"bag": bag_id})
+        with SessionLocal() as s:
+            s.query(Bag).filter_by(id=bag_id).update({"enabled": False})
+            s.commit()
+        r = _client.get(f"/trips/{tid}")
+        assert r.status_code == 200
+        assert "Retired Duffel" in r.text                # still labeled, not raw id
+    finally:
+        _clear_bags()
