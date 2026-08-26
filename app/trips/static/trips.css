@@ -324,15 +324,21 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
   color: #fff; border-color: var(--color-accent); }
 .yn-pack-row.yn-packed .yn-pack-label-input { text-decoration: line-through;
   color: var(--color-neutral-600); }
-.yn-pack-main { flex: 1; min-width: 0; }
+.yn-pack-main { flex: 1; min-width: 90px; }
 .yn-pack-row.yn-edited .yn-pack-label-input { color: var(--color-accent-700); }
 .yn-pack-label-input { font-size: 15px; font-weight: 600; color: var(--color-text);
   border: 1px solid transparent; background: none; padding: 2px 4px; margin: -2px -4px;
-  border-radius: 4px; width: 100%; font-family: inherit; }
+  border-radius: 4px; width: 100%; box-sizing: border-box; font-family: inherit; }
 .yn-pack-label-input:hover { border-color: var(--color-neutral-300); }
 .yn-pack-label-input:focus { border-color: var(--color-accent); outline: none;
   background: var(--color-surface); }
 .yn-pack-reason { font-size: 13px; color: var(--color-neutral-600); margin-top: 1px; }
+/* Wraps qty/bag/remove as one unit. `contents` on wide screens means it's invisible
+   to layout — those three stay direct flex children of .yn-pack-row exactly as
+   before; only the <=640px rule below turns it into a real (wrapping) flex group,
+   so the label never gets crushed for room on a narrow screen (verified live in a
+   375px viewport — .yn-pack-main measured 8px wide before this fix). */
+.yn-pack-controls { display: contents; }
 .yn-pack-qty-input { flex-shrink: 0; width: 46px; font-size: 13px; text-align: center;
   padding: 4px 2px; min-height: auto; }
 .yn-pack-bag-select { flex-shrink: 0; width: auto; font-size: 12px; min-height: auto;
@@ -341,11 +347,21 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-pack-row.yn-omitted .yn-pack-label { text-decoration: line-through; }
 .yn-pack-add { display: flex; align-items: center; gap: 8px; padding: 10px 16px;
   border-top: 1px dashed var(--color-neutral-300); }
-.yn-pack-add-label { flex: 1; font-size: 13px; min-height: auto; padding: 5px 8px; }
+.yn-pack-add input[type="hidden"] { display: none; }   /* not a flex item / no gap */
+.yn-pack-add-label { flex: 1; min-width: 90px; font-size: 13px; min-height: auto;
+  padding: 5px 8px; }
 .yn-pack-add-qty { flex-shrink: 0; width: 46px; font-size: 13px; text-align: center;
   padding: 5px 2px; min-height: auto; }
 .yn-pack-add-bag { flex-shrink: 0; width: auto; font-size: 12px; min-height: auto;
   padding: 5px 6px; }
+
+@media (max-width: 640px) {
+  .yn-pack-row { flex-wrap: wrap; row-gap: 6px; }
+  .yn-pack-controls { display: flex; align-items: center; gap: 8px;
+    flex: 1 1 100%; justify-content: flex-end; }
+  .yn-pack-add { flex-wrap: wrap; row-gap: 6px; }
+  .yn-pack-add-label { flex: 1 1 100%; }
+}
 
 /* ---- discovery: currency calculator ---- */
 .yn-cc { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
