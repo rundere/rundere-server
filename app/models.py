@@ -169,6 +169,51 @@ class ApiKey(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class User(Base):
+    """A human account (Yonder 4.0 Phase 1a, SPEC-4 D-111). Yonder had no users
+    before 4.0; this is the identity all of API/MCP/web authenticate as.
+
+    Dual-source (D-111): `auth_source` is local | oidc | proxy. Local carries a
+    scrypt `password_hash`; oidc/proxy carry `external_subject` and a null hash.
+    `token_version` is the revocation lever — bumping it invalidates every
+    outstanding access/web/refresh token for this user ("sign out everywhere").
+    `traveler_id` (D-112) links the account to the existing self/guest roster
+    (TravelerIdentity) so there is no parallel identity concept. Per-user data
+    isolation is a LATER phase (2); Phase 1 only establishes who you are.
+    """
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(255))
+    password_hash: Mapped[str | None] = mapped_column(String(255))  # null for oidc/proxy
+    auth_source: Mapped[str] = mapped_column(String(16), default="local")  # local|oidc|proxy
+    external_subject: Mapped[str | None] = mapped_column(String(255), index=True)  # oidc sub / proxy:<name>
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)  # -> traveler_identities.id
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RefreshToken(Base):
+    """A rotating refresh token for the mobile/API flow (SPEC-4 D-111). The
+    opaque secret is shown to the client once; only its sha256 is stored, so a
+    DB leak cannot mint sessions. Consumed-and-rotated on every refresh; a
+    token is revocable individually (revoked_at) or en masse via User.token_version.
+    Web sessions use a JWT cookie instead and don't create rows here."""
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    user_agent: Mapped[str | None] = mapped_column(String(256))
+
+
 class Artifact(Base):
     """Immutable content-addressed originals (D-15, Paperless pattern).
     Bytes live on disk under artifacts_dir/<sha256>; this row is the index."""

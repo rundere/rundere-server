@@ -53,6 +53,30 @@ class Settings(BaseSettings):
     # degrade to absent findings (they require both searxng_url and ollama_url).
     searxng_url: str = "http://searxng:8080"
 
+    # Auth (Yonder 4.0 Phase 1a, SPEC-4 Workstream B). Dependency-free HS256
+    # JWT + scrypt (app/authn.py). auth_required is the master switch: OFF by
+    # default so existing single-user deployments keep working untouched until
+    # the operator creates a user and opts in (TX_AUTH_REQUIRED=true). The 4.0
+    # test stack turns it ON.
+    auth_required: bool = False
+    # HS256 signing key. MUST be set in prod (empty => a process-ephemeral key,
+    # so tokens do not survive a restart — a loud dev-only fallback).
+    jwt_secret: str = ""
+    jwt_access_ttl_seconds: int = 1800              # mobile/API access token (30 min)
+    jwt_refresh_ttl_seconds: int = 60 * 60 * 24 * 90  # mobile refresh token (90 days)
+    jwt_web_ttl_seconds: int = 60 * 60 * 24 * 7     # web cookie session (7 days)
+    auth_cookie_name: str = "yonder_session"
+    # Secure cookie (https only). Prod is behind Traefik TLS => keep True; the
+    # test stack talks plain http on :8140 => set TX_AUTH_COOKIE_SECURE=false.
+    auth_cookie_secure: bool = True
+    # Trusted reverse-proxy identity (D-113). OFF by default. When on, a request
+    # carrying the proxy's identity header (e.g. Authentik's X-Authentik-Username)
+    # auto-provisions/links a User — so an Authentik-fronted LAN needs no second
+    # login. Only trust this where a proxy actually sets it and strips client copies.
+    auth_proxy_header_trust: bool = False
+    auth_proxy_header: str = "X-Authentik-Username"
+    auth_proxy_auto_admin: bool = False             # never grant admin from a header by default
+
     app_version: str = "3.9.2"
 
     @property

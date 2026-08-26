@@ -3,6 +3,11 @@
     python -m app.cli create-key <client-name>     # prints the key ONCE
     python -m app.cli revoke-key <client-name>
     python -m app.cli list-keys
+    python -m app.cli create-user <username> [--admin] [--password PW]  # 4.0 auth
+    python -m app.cli set-password <username> [--password PW]
+    python -m app.cli make-admin <username> [--revoke]
+    python -m app.cli link-traveler <username> <traveler_id>
+    python -m app.cli list-users
     python -m app.cli process [--no-llm] [--limit N]   # extract received batches
     python -m app.cli import-home <file.json>          # bootstrap home_profiles;
                                                       # manage them in /admin after
@@ -25,6 +30,104 @@ from datetime import datetime, timezone
 from app import auth
 from app.db import SessionLocal
 from app.models import ApiKey
+
+
+def _opt(args: list[str], name: str, default=None):
+    return args[args.index(name) + 1] if name in args else default
+
+
+def _user_cmd(session, cmd: str, args: list[str]) -> int:
+    """Yonder 4.0 auth (SPEC-4 Phase 1a) user administration.
+
+        create-user <username> [--admin] [--password PW] [--email E] [--traveler ID]
+        set-password <username> [--password PW]
+        make-admin  <username> [--revoke]
+        link-traveler <username> <traveler_id>
+        list-users
+    """
+    import getpass
+
+    from app import authn
+    from app.models import TravelerIdentity, User
+
+    def _read_password(supplied):
+        if supplied:
+            return supplied
+        p1 = getpass.getpass("password: ")
+        if p1 != getpass.getpass("confirm : "):
+            print("passwords did not match")
+            return None
+        return p1
+
+    if cmd == "list-users":
+        rows = session.query(User).order_by(User.username).all()
+        if not rows:
+            print("no users yet — create one with: create-user <username> --admin")
+        for u in rows:
+            flags = ",".join(f for f, on in
+                             (("admin", u.is_admin), ("inactive", not u.is_active)) if on)
+            print(f"{u.username:24} {u.auth_source:6} traveler={u.traveler_id} "
+                  f"[{flags or 'user'}] last_login={u.last_login_at}")
+        return 0
+
+    if not args:
+        print(_user_cmd.__doc__)
+        return 2
+    username = args[0]
+    user = session.query(User).filter_by(username=username).one_or_none()
+
+    if cmd == "create-user":
+        if user is not None:
+            print(f"user {username!r} already exists (use set-password / make-admin)")
+            return 1
+        pw = _read_password(_opt(args, "--password"))
+        if pw is None:
+            return 1
+        traveler_id = _opt(args, "--traveler")
+        user = User(username=username, email=_opt(args, "--email"),
+                    password_hash=authn.hash_password(pw), auth_source="local",
+                    is_admin="--admin" in args,
+                    traveler_id=int(traveler_id) if traveler_id else None)
+        session.add(user)
+        session.commit()
+        print(f"created user {username!r}"
+              + (" (admin)" if user.is_admin else "")
+              + (f", linked to traveler {traveler_id}" if traveler_id else ""))
+        return 0
+
+    if user is None:
+        print(f"no user {username!r}")
+        return 1
+
+    if cmd == "set-password":
+        pw = _read_password(_opt(args, "--password"))
+        if pw is None:
+            return 1
+        user.password_hash = authn.hash_password(pw)
+        user.token_version += 1        # invalidate existing sessions on a reset
+        session.commit()
+        print(f"password updated for {username!r} (existing sessions signed out)")
+        return 0
+
+    if cmd == "make-admin":
+        user.is_admin = "--revoke" not in args
+        session.commit()
+        print(f"{username!r} is now {'a regular user' if '--revoke' in args else 'an admin'}")
+        return 0
+
+    if cmd == "link-traveler":
+        if len(args) < 2:
+            print("usage: link-traveler <username> <traveler_id>")
+            return 2
+        tid = int(args[1])
+        if session.get(TravelerIdentity, tid) is None:
+            print(f"no traveler with id {tid} (see /admin -> Travellers)")
+            return 1
+        user.traveler_id = tid
+        session.commit()
+        print(f"linked {username!r} to traveler {tid}")
+        return 0
+    return 2
 
 
 def main(argv: list[str]) -> int:
@@ -65,6 +168,9 @@ def main(argv: list[str]) -> int:
             for r in session.query(ApiKey).all():
                 state = "REVOKED" if r.revoked_at else "active"
                 print(f"{r.client_name:30} {state:8} last_used={r.last_used_at}")
+        elif cmd in ("create-user", "set-password", "make-admin", "list-users",
+                     "link-traveler"):
+            return _user_cmd(session, cmd, args)
         elif cmd == "import-home":
             # Home profiles are per-deployment personal config and are MANAGED
             # IN THE ADMIN UI (/admin -> Home Profiles). This importer exists
