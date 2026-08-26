@@ -1,14 +1,29 @@
-{# One packing checklist row. Returned on its own by the pack/unpack action so the
-   check-off swaps in place (no page reload). #}
-<div class="yn-pack-row yn-filterable{% if i.packed %} yn-packed{% endif %}">
+{# One packing checklist row. Returned on its own by the pack/unpack/qty/bag/
+   label actions so an inline edit swaps in place (no page reload). Quantity,
+   bag and label edits here are per-trip only — they never touch the master
+   packing catalog, only this trip's generated row. #}
+<div class="yn-pack-row yn-filterable{% if i.packed %} yn-packed{% endif %}{% if i.edited %} yn-edited{% endif %}">
   <button class="yn-pack-check" aria-label="{{ 'Packed' if i.packed else 'Mark packed' }}"
           hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/{{ 'unpack' if i.packed else 'pack' }}"
           hx-target="closest .yn-pack-row" hx-swap="outerHTML">{{ '✓' if i.packed else '' }}</button>
   <div class="yn-pack-main">
-    <div class="yn-pack-label">{{ i.label }}{% if i.quantity > 1 %} <span class="yn-pack-qty">× {{ i.quantity }}</span>{% endif %}</div>
+    <input class="yn-pack-label-input" name="label" value="{{ i.label }}"
+           title="Rename this item for this trip"
+           hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/label"
+           hx-trigger="change" hx-target="closest .yn-pack-row" hx-swap="outerHTML">
     {% if i.reason %}<div class="yn-pack-reason">{{ i.reason }}</div>{% endif %}
   </div>
-  <span class="tag tag-neutral yn-pack-bag">{{ 'carry-on' if i.bag == 'carry_on' else 'checked' }}</span>
+  <input type="number" class="yn-pack-qty-input" name="quantity" min="1" max="99"
+         value="{{ i.quantity }}" title="How many for this trip"
+         hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/qty"
+         hx-trigger="change" hx-target="closest .yn-pack-row" hx-swap="outerHTML">
+  <select class="input yn-pack-bag-select" name="bag" title="Which bag this goes in"
+          hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/bag"
+          hx-trigger="change" hx-target="closest .yn-pack-row" hx-swap="outerHTML">
+    <option value="backpack" {% if i.bag == 'backpack' %}selected{% endif %}>backpack</option>
+    <option value="carry_on" {% if i.bag == 'carry_on' %}selected{% endif %}>carry-on</option>
+    <option value="checked" {% if i.bag != 'backpack' and i.bag != 'carry_on' %}selected{% endif %}>checked</option>
+  </select>
   <button class="btn btn-ghost bp-sm yn-pack-remove"
           hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/remove"
           hx-target="closest .yn-pack-row" hx-swap="outerHTML">Remove</button>

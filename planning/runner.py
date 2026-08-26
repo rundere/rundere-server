@@ -39,7 +39,7 @@ def load_profile(session: Session) -> dict:
 def _upsert_item(session: Session, plan: PackingPlan, trip_id: str, pi) -> None:
     row = (session.query(PackingItem)
            .filter_by(trip_id=trip_id, item_key=pi.item_key).first())
-    if row is not None and row.status in ("packed", "removed"):
+    if row is not None and (row.status in ("packed", "removed") or row.edited):
         return                              # human decision — never clobbered
     if row is None:
         row = PackingItem(trip_id=trip_id, item_key=pi.item_key)
@@ -105,10 +105,11 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
             _upsert_item(session, plan, trip.id, pi)
             produced.add(pi.item_key)
         # prune stale drafts/omitted the latest run didn't produce (item removed,
-        # place excluded, activity changed) — keep packed/removed.
+        # place excluded, activity changed) — keep packed/removed/edited.
         for row in (session.query(PackingItem)
                     .filter(PackingItem.trip_id == trip.id,
-                            PackingItem.status.in_(("draft", "omitted"))).all()):
+                            PackingItem.status.in_(("draft", "omitted")),
+                            PackingItem.edited.is_(False)).all()):
             if row.item_key not in produced:
                 session.delete(row)
 

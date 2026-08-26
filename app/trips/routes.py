@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from datetime import date, datetime
 from pathlib import Path
 
@@ -877,11 +878,18 @@ def _discovery_default() -> dict:
     }
 
 
+PACK_BAG_OPTS = [("backpack", "backpack"), ("carry_on", "carry-on"),
+                 ("checked", "checked")]
+_PACK_BAG_LABELS = dict(PACK_BAG_OPTS)
+
+
 def _packing_item_view(i: PackingItem) -> dict:
     return {"id": i.id, "label": i.label, "category": i.category,
-            "quantity": i.quantity, "bag": i.bag, "reason": i.reason,
-            "source": i.source, "status": i.status, "swap_for": i.swap_for,
-            "packed": i.status == "packed"}
+            "quantity": i.quantity, "bag": i.bag,
+            "bag_label": _PACK_BAG_LABELS.get(i.bag, i.bag or "checked"),
+            "reason": i.reason, "source": i.source, "status": i.status,
+            "swap_for": i.swap_for, "packed": i.status == "packed",
+            "edited": i.edited}
 
 
 def _packing_context(session: Session, trip_id: str) -> dict:
@@ -1004,6 +1012,68 @@ def _pack_count_oob(session: Session, trip_id: str, category: str) -> str:
             f'hx-swap-oob="true">{packed}/{len(rows)}</span>')
 
 
+def _pack_item_row(request: Request, trip_id: str, session: Session,
+                   i: PackingItem) -> HTMLResponse:
+    row_html = templates.env.get_template("_packing_item.html").render(
+        trip_id=trip_id, i=_packing_item_view(i))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category))
+
+
+# NB: these three (qty/bag/label) MUST be registered before the generic
+# .../{action} route below — FastAPI/Starlette match routes in registration
+# order, and .../{item_id}/{action} is shaped identically to .../{item_id}/qty,
+# so it would swallow these requests first (as "qty"/"bag"/"label" not being a
+# recognized action → a 400) if it came first.
+@router.post("/{trip_id}/pack-item/{item_id}/qty", response_class=HTMLResponse)
+def packing_item_qty(trip_id: str, item_id: str, request: Request,
+                     quantity: int = Form(...),
+                     session: Session = Depends(get_session)):
+    """A line-item edit (not a master-catalog change): tweak how many of this
+    item this trip needs — "2 pairs of jeans" doesn't always mean 2. Marks the
+    row `edited` so a later re-generate never overwrites it back."""
+    i = session.get(PackingItem, item_id)
+    if i is None or i.trip_id != trip_id:
+        return HTMLResponse("", status_code=404)
+    i.quantity = max(1, min(99, quantity))
+    i.edited = True
+    session.commit()
+    return _pack_item_row(request, trip_id, session, i)
+
+
+@router.post("/{trip_id}/pack-item/{item_id}/bag", response_class=HTMLResponse)
+def packing_item_bag(trip_id: str, item_id: str, request: Request,
+                     bag: str = Form(...), session: Session = Depends(get_session)):
+    """Which bag this line goes in — backpack / carry-on / checked — set per
+    item, per trip, independent of the catalog's default load-out."""
+    i = session.get(PackingItem, item_id)
+    if i is None or i.trip_id != trip_id:
+        return HTMLResponse("", status_code=404)
+    if bag not in _PACK_BAG_LABELS:
+        return HTMLResponse("", status_code=400)
+    i.bag = bag
+    i.edited = True
+    session.commit()
+    return _pack_item_row(request, trip_id, session, i)
+
+
+@router.post("/{trip_id}/pack-item/{item_id}/label", response_class=HTMLResponse)
+def packing_item_label(trip_id: str, item_id: str, request: Request,
+                       label: str = Form(...),
+                       session: Session = Depends(get_session)):
+    """Rename a line in place — e.g. swap "Jeans" for "Slacks" without touching
+    the master packing catalog."""
+    i = session.get(PackingItem, item_id)
+    if i is None or i.trip_id != trip_id:
+        return HTMLResponse("", status_code=404)
+    label = label.strip()[:128]
+    if not label:
+        return HTMLResponse("", status_code=400)
+    i.label = label
+    i.edited = True
+    session.commit()
+    return _pack_item_row(request, trip_id, session, i)
+
+
 @router.post("/{trip_id}/pack-item/{item_id}/{action}", response_class=HTMLResponse)
 def packing_item_action(trip_id: str, item_id: str, action: str, request: Request,
                         session: Session = Depends(get_session)):
@@ -1034,6 +1104,30 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
     row_html = "" if action == "remove" else templates.env.get_template(
         "_packing_item.html").render(trip_id=trip_id, i=_packing_item_view(i))
     return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category))
+
+
+@router.post("/{trip_id}/pack-item/add", response_class=HTMLResponse)
+def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
+                     label: str = Form(...), quantity: int = Form(1),
+                     bag: str = Form("checked"),
+                     session: Session = Depends(get_session)):
+    """Add a custom line to a category — the other half of a line-item edit
+    ("remove the jeans, add a pair of slacks instead") that doesn't fit into
+    editing an existing row. Never touched by a re-generate (`edited=True`)."""
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    label = label.strip()[:128]
+    if category not in PACK_CAT_LABELS or not label or bag not in _PACK_BAG_LABELS:
+        return HTMLResponse("", status_code=400)
+    item = PackingItem(trip_id=trip_id, item_key=f"custom:{uuid.uuid4().hex}",
+                       label=label, category=category,
+                       quantity=max(1, min(99, quantity)), bag=bag,
+                       source="custom", status="draft", edited=True)
+    session.add(item)
+    session.commit()
+    return templates.TemplateResponse(request, "_packing_section.html",
+        {"request": request, "trip": trip, **_packing_context(session, trip_id)})
 
 
 def _profile_row(session: Session) -> PackingProfile | None:

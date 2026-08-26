@@ -213,3 +213,123 @@ def test_check_off_is_inline_not_a_reload():
     assert "<html" not in r.text.lower()           # a fragment, not a page
     with SessionLocal() as s:
         assert s.get(PackingItem, iid).status == "packed"
+
+
+def test_quantity_edit_is_inline_and_survives_regenerate():
+    """A line-item edit ("2 pairs of jeans" → 1) is per-trip, not a catalog
+    change — it must stick through the next Packing Plan re-generate."""
+    if not DEPS:
+        return
+    tid = _trip()
+    _gen(tid)
+    with SessionLocal() as s:
+        iid = s.query(PackingItem).filter_by(
+            trip_id=tid, item_key="documents:passport").one().id
+    r = _client.post(f"/trips/{tid}/pack-item/{iid}/qty", data={"quantity": "3"})
+    assert r.status_code == 200
+    assert "<html" not in r.text.lower()
+    with SessionLocal() as s:
+        i = s.get(PackingItem, iid)
+        assert i.quantity == 3 and i.edited is True
+    _gen(tid)                                       # re-generate
+    with SessionLocal() as s:
+        i = s.get(PackingItem, iid)
+        assert i.quantity == 3                       # not reset by the engine
+        assert s.query(PackingItem).filter_by(
+            trip_id=tid, item_key="documents:passport").count() == 1  # not duped
+
+
+def test_quantity_edit_is_clamped():
+    if not DEPS:
+        return
+    tid = _trip()
+    _gen(tid)
+    with SessionLocal() as s:
+        iid = s.query(PackingItem).filter_by(
+            trip_id=tid, item_key="documents:passport").one().id
+    _client.post(f"/trips/{tid}/pack-item/{iid}/qty", data={"quantity": "0"})
+    with SessionLocal() as s:
+        assert s.get(PackingItem, iid).quantity == 1  # clamped, not 0/negative
+
+
+def test_bag_edit_accepts_backpack_and_rejects_junk():
+    if not DEPS:
+        return
+    tid = _trip()
+    _gen(tid)
+    with SessionLocal() as s:
+        iid = s.query(PackingItem).filter_by(
+            trip_id=tid, item_key="documents:passport").one().id
+    r = _client.post(f"/trips/{tid}/pack-item/{iid}/bag", data={"bag": "backpack"})
+    assert r.status_code == 200
+    with SessionLocal() as s:
+        i = s.get(PackingItem, iid)
+        assert i.bag == "backpack" and i.edited is True
+    r = _client.post(f"/trips/{tid}/pack-item/{iid}/bag", data={"bag": "duffel"})
+    assert r.status_code == 400
+    with SessionLocal() as s:
+        assert s.get(PackingItem, iid).bag == "backpack"  # rejected, unchanged
+    _gen(tid)
+    with SessionLocal() as s:
+        assert s.get(PackingItem, iid).bag == "backpack"  # survives regenerate
+
+
+def test_label_edit_renames_the_line_without_touching_the_catalog():
+    if not DEPS:
+        return
+    from planning import catalog
+    catalog_label_before = catalog.seed_items()["passport"]["label"]
+    tid = _trip()
+    _gen(tid)
+    with SessionLocal() as s:
+        iid = s.query(PackingItem).filter_by(
+            trip_id=tid, item_key="documents:passport").one().id
+    r = _client.post(f"/trips/{tid}/pack-item/{iid}/label",
+                     data={"label": "Passport + photocopy"})
+    assert r.status_code == 200
+    with SessionLocal() as s:
+        assert s.get(PackingItem, iid).label == "Passport + photocopy"
+    assert catalog.seed_items()["passport"]["label"] == catalog_label_before  # untouched
+    r = _client.post(f"/trips/{tid}/pack-item/{iid}/label", data={"label": "   "})
+    assert r.status_code == 400                     # blank rejected
+
+
+def test_add_custom_item_survives_regenerate_and_can_be_removed():
+    """The other half of a line-item edit — swap "Jeans" for "1 pair of jeans +
+    1 pair of slacks" by adding a custom line the engine never produced."""
+    if not DEPS:
+        return
+    tid = _trip()
+    _gen(tid)
+    r = _client.post(f"/trips/{tid}/pack-item/add",
+                     data={"category": "clothing", "label": "Slacks",
+                           "quantity": "1", "bag": "carry_on"})
+    assert r.status_code == 200
+    assert "Slacks" in r.text
+    with SessionLocal() as s:
+        custom = s.query(PackingItem).filter_by(
+            trip_id=tid, label="Slacks", source="custom").one()
+        assert custom.edited is True and custom.bag == "carry_on"
+        cid = custom.id
+    _gen(tid)                                        # re-generate: not pruned
+    with SessionLocal() as s:
+        assert s.get(PackingItem, cid) is not None
+    r = _client.post(f"/trips/{tid}/pack-item/{cid}/remove")
+    assert r.status_code == 200
+    with SessionLocal() as s:
+        assert s.get(PackingItem, cid).status == "removed"
+
+
+def test_add_custom_item_rejects_bad_category_or_bag():
+    if not DEPS:
+        return
+    tid = _trip()
+    _gen(tid)
+    r = _client.post(f"/trips/{tid}/pack-item/add",
+                     data={"category": "not-a-category", "label": "X",
+                           "quantity": "1", "bag": "checked"})
+    assert r.status_code == 400
+    r = _client.post(f"/trips/{tid}/pack-item/add",
+                     data={"category": "clothing", "label": "X",
+                           "quantity": "1", "bag": "not-a-bag"})
+    assert r.status_code == 400
