@@ -485,6 +485,11 @@ class PackingItem(Base):
     source: Mapped[str | None] = mapped_column(String(16))          # template|modifier|must_have|...
     swap_for: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(12), default="draft")  # draft|packed|removed|omitted
+    # A human hand-edit (quantity/bag/label/a fully custom line) — orthogonal to
+    # `status`. Once true, a re-generate never overwrites or prunes this row,
+    # the same durability `packed`/`removed` already get (D-63 review-survives-
+    # regeneration), so e.g. a quantity tweak on a still-"draft" row sticks.
+    edited: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)

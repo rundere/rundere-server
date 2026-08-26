@@ -66,6 +66,20 @@
     <div class="card blueprint bp-daycard yn-findings">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       {% for i in grp.rows %}{% include "_packing_item.html" %}{% endfor %}
+      <form class="yn-pack-add" hx-post="/trips/{{ trip.id }}/pack-item/add"
+            hx-target="#packing-section" hx-swap="outerHTML">
+        <input type="hidden" name="category" value="{{ grp.category }}">
+        <input class="input yn-pack-add-label" name="label" maxlength="128"
+               placeholder="+ Add item…" required>
+        <input type="number" class="input yn-pack-add-qty" name="quantity"
+               min="1" max="99" value="1" title="Quantity">
+        <select class="input yn-pack-add-bag" name="bag" title="Which bag">
+          <option value="backpack">backpack</option>
+          <option value="carry_on">carry-on</option>
+          <option value="checked" selected>checked</option>
+        </select>
+        <button class="btn btn-ghost bp-sm" type="submit">Add</button>
+      </form>
     </div>
   </details>
   {% endfor %}

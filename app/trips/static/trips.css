@@ -322,15 +322,30 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-pack-check:hover { border-color: var(--color-accent); }
 .yn-pack-row.yn-packed .yn-pack-check { background: var(--color-accent);
   color: #fff; border-color: var(--color-accent); }
-.yn-pack-row.yn-packed .yn-pack-label { text-decoration: line-through;
+.yn-pack-row.yn-packed .yn-pack-label-input { text-decoration: line-through;
   color: var(--color-neutral-600); }
 .yn-pack-main { flex: 1; min-width: 0; }
-.yn-pack-label { font-size: 15px; font-weight: 600; color: var(--color-text); }
-.yn-pack-qty { font-weight: 500; color: var(--color-accent-700); }
+.yn-pack-row.yn-edited .yn-pack-label-input { color: var(--color-accent-700); }
+.yn-pack-label-input { font-size: 15px; font-weight: 600; color: var(--color-text);
+  border: 1px solid transparent; background: none; padding: 2px 4px; margin: -2px -4px;
+  border-radius: 4px; width: 100%; font-family: inherit; }
+.yn-pack-label-input:hover { border-color: var(--color-neutral-300); }
+.yn-pack-label-input:focus { border-color: var(--color-accent); outline: none;
+  background: var(--color-surface); }
 .yn-pack-reason { font-size: 13px; color: var(--color-neutral-600); margin-top: 1px; }
-.yn-pack-bag { flex-shrink: 0; font-size: 11px; }
+.yn-pack-qty-input { flex-shrink: 0; width: 46px; font-size: 13px; text-align: center;
+  padding: 4px 2px; min-height: auto; }
+.yn-pack-bag-select { flex-shrink: 0; width: auto; font-size: 12px; min-height: auto;
+  padding: 4px 6px; }
 .yn-pack-row.yn-omitted { opacity: .7; }
 .yn-pack-row.yn-omitted .yn-pack-label { text-decoration: line-through; }
+.yn-pack-add { display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+  border-top: 1px dashed var(--color-neutral-300); }
+.yn-pack-add-label { flex: 1; font-size: 13px; min-height: auto; padding: 5px 8px; }
+.yn-pack-add-qty { flex-shrink: 0; width: 46px; font-size: 13px; text-align: center;
+  padding: 5px 2px; min-height: auto; }
+.yn-pack-add-bag { flex-shrink: 0; width: auto; font-size: 12px; min-height: auto;
+  padding: 5px 6px; }
 
 /* ---- discovery: currency calculator ---- */
 .yn-cc { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
