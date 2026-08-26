@@ -1,6 +1,6 @@
 # SPEC-4 — Yonder 4.0 "Companion" (iOS Mobile App + API + Auth + MCP)
 
-Status: **approved, not yet started** (2026-08-26). This is the **mature-release milestone**: a deliberately large, multi-version 4.x line built **quality over speed**, developed prod-safe and locally, with the repository **made public at launch**. Decisions recorded as **D-94+** (bottom of this file); pointer entry in `DECISIONS.md`.
+Status: **approved, not yet started** (2026-08-26). This is the **mature-release milestone**: a deliberately large, multi-version 4.x line built **quality over speed**, developed prod-safe and locally, with the repository **made public at launch**. Decisions recorded as **D-110+** (bottom of this file); pointer entry in `DECISIONS.md`.
 
 ## Context
 
@@ -112,12 +112,12 @@ Offline writing / bidirectional sync; external/APNs push (in-app notifications a
 
 ---
 
-## Decisions (D-94+)
+## Decisions (D-110+)
 
-- **D-94 — Yonder 4.0 is the mobile "Companion" release; MCP folds in.** The mobile app requires a JSON API + real auth; a built-in MCP server over those APIs is a natural extension, so the previously-planned standalone 4.0 (MCP) becomes Workstream E here rather than its own major. (owner, 2026-08-26)
-- **D-95 — Dual/pluggable auth, one Yonder token.** Support a simple in-house account system (for homelabs with no SSO) AND an OIDC client, both minting the same Yonder-issued JWT so app/MCP/web never branch on backend. Rejected: OIDC-only (excludes SSO-less homelabs); in-house-only (owner has Authentik). (owner, 2026-08-26)
-- **D-96 — Full per-user isolation, steadily migrated; sharing at trip level.** Null `owner_id` = open-share for existing rows (no backfill); net-new rows owned; Trips shared via `trip_members`; child rows inherit trip visibility; `User.traveler_id → TravelerIdentity`. Chosen over shared-data-only because the owner wants real isolation, done carefully. (owner, 2026-08-26)
-- **D-97 — Read-only offline.** The mobile cache is a one-way pull snapshot; every write requires connectivity. Deliberately excludes a sync engine / conflict resolution — the review→resolve→commit pipeline makes offline writes genuinely hard and not worth v1. (owner, 2026-08-26)
-- **D-98 — Three TLS trust modes + multi-endpoint.** The app supports bare-IP, step-ca-root, and public-CA server profiles, selectable in settings — covers the homelab's private CA and a public endpoint without forcing one model. (owner, 2026-08-26)
-- **D-99 — AltStore sideload before TestFlight.** Ship via free-Apple-ID sideload first (accepting ~weekly re-sign) to avoid the $99/yr cost until the app proves worth it. A Mac (owner's MacBook Air) is required to build/sign regardless; iOS work is Phase 5+, after all server workstreams. (owner, 2026-08-26)
-- **D-100 — Prod-safe parallel dev; public at launch.** Develop 4.x on a parallel Portainer test stack from local image builds, production 3.9.x untouched; keep GitHub private and defer GHCR publish; make the repo public and tag `v4.0.0` only at the "mature" launch, after a secrets/README/license pre-public checklist. (owner, 2026-08-26)
+- **D-110 — Yonder 4.0 is the mobile "Companion" release; MCP folds in.** The mobile app requires a JSON API + real auth; a built-in MCP server over those APIs is a natural extension, so the previously-planned standalone 4.0 (MCP) becomes Workstream E here rather than its own major. (owner, 2026-08-26)
+- **D-111 — Dual/pluggable auth, one Yonder token.** Support a simple in-house account system (for homelabs with no SSO) AND an OIDC client, both minting the same Yonder-issued JWT so app/MCP/web never branch on backend. Rejected: OIDC-only (excludes SSO-less homelabs); in-house-only (owner has Authentik). (owner, 2026-08-26)
+- **D-112 — Full per-user isolation, steadily migrated; sharing at trip level.** Null `owner_id` = open-share for existing rows (no backfill); net-new rows owned; Trips shared via `trip_members`; child rows inherit trip visibility; `User.traveler_id → TravelerIdentity`. Chosen over shared-data-only because the owner wants real isolation, done carefully. (owner, 2026-08-26)
+- **D-113 — Read-only offline.** The mobile cache is a one-way pull snapshot; every write requires connectivity. Deliberately excludes a sync engine / conflict resolution — the review→resolve→commit pipeline makes offline writes genuinely hard and not worth v1. (owner, 2026-08-26)
+- **D-114 — Three TLS trust modes + multi-endpoint.** The app supports bare-IP, step-ca-root, and public-CA server profiles, selectable in settings — covers the homelab's private CA and a public endpoint without forcing one model. (owner, 2026-08-26)
+- **D-115 — AltStore sideload before TestFlight.** Ship via free-Apple-ID sideload first (accepting ~weekly re-sign) to avoid the $99/yr cost until the app proves worth it. A Mac (owner's MacBook Air) is required to build/sign regardless; iOS work is Phase 5+, after all server workstreams. (owner, 2026-08-26)
+- **D-116 — Prod-safe parallel dev; public at launch.** Develop 4.x on a parallel Portainer test stack from local image builds, production 3.9.x untouched; keep GitHub private and defer GHCR publish; make the repo public and tag `v4.0.0` only at the "mature" launch, after a secrets/README/license pre-public checklist. (owner, 2026-08-26)
