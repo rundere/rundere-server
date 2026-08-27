@@ -214,6 +214,21 @@ class RefreshToken(Base):
     user_agent: Mapped[str | None] = mapped_column(String(256))
 
 
+class PasswordResetToken(Base):
+    """One-time password-reset link (Phase 1a.1, D-117). Only the sha256 of the
+    opaque token is stored; the link carries the plaintext. Single-use (used_at)
+    and time-boxed (expires_at). Emailed when SMTP is configured, otherwise an
+    admin generates and hands over the link from the Users page."""
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Artifact(Base):
     """Immutable content-addressed originals (D-15, Paperless pattern).
     Bytes live on disk under artifacts_dir/<sha256>; this row is the index."""

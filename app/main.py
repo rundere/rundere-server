@@ -21,10 +21,13 @@ app = FastAPI(title="Yonder", version=settings.app_version,
               docs_url=None, redoc_url=None)   # no public API docs surface
 app.include_router(ingest_router)
 
-# Auth (Yonder 4.0 Phase 1a): login/logout + the /api/v1/auth token flow.
+# Auth (Yonder 4.0 Phase 1a): login/logout + the /api/v1/auth token flow, plus
+# onboarding (first-run setup, register, password reset, Administer → Users).
+from app.accounts_routes import router as accounts_router  # noqa: E402
 from app.authn_routes import router as authn_router  # noqa: E402
 
 app.include_router(authn_router)
+app.include_router(accounts_router)
 
 
 # --- Auth gate (SPEC-4 Workstream B) --------------------------------------
@@ -33,9 +36,12 @@ app.include_router(authn_router)
 # operator creates a user and opts in. ON => every human-UI and /api route
 # needs an authenticated user; /admin additionally requires is_admin. /ingest,
 # /capture (self-authenticated), static, and the login/token endpoints stay open.
-_PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico"}
+# Onboarding endpoints (setup/register/reset) are public; /users is admin-only.
+_PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
+                 "/setup", "/register", "/forgot"}
 _PUBLIC_PREFIX = ("/ingest", "/capture", "/review/static", "/trips/static",
-                  "/api/v1/auth/")
+                  "/api/v1/auth/", "/reset/")
+_ADMIN_PREFIX = ("/admin", "/users")
 
 
 def _is_public(path: str) -> bool:
@@ -59,12 +65,16 @@ async def auth_gate(request, call_next):
         user = authn.resolve_user(session, request)
         if user is not None:
             session.expunge(user)
+        no_users = user is None and authn.user_count(session) == 0
     is_api = path.startswith("/api/")
     if user is None:
+        # First-run: nobody exists yet → send humans to create the first admin.
+        if no_users and not is_api:
+            return RedirectResponse("/setup", status_code=303)
         if is_api:
             return JSONResponse({"detail": "authentication required"}, status_code=401)
         return RedirectResponse(f"/login?next={quote(path)}", status_code=303)
-    if path.startswith("/admin") and not user.is_admin:
+    if path.startswith(_ADMIN_PREFIX) and not user.is_admin:
         msg = "admin only"
         return (JSONResponse({"detail": msg}, status_code=403) if is_api
                 else HTMLResponse(f"<h1>403 — {msg}</h1>", status_code=403))

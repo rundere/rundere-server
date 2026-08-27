@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Request
 
 from app.config import settings
-from app.models import RefreshToken, User
+from app.models import PasswordResetToken, RefreshToken, TravelerIdentity, User
 
 # A process-stable fallback key so dev/first-run works before TX_JWT_SECRET is
 # set. Prod MUST set the secret (else tokens die on every restart).
@@ -274,4 +274,80 @@ def current_user(request: "Request") -> "User":
     user = current_user_optional(request)
     if user is None:
         raise HTTPException(status_code=401, detail="authentication required")
+    return user
+
+
+def require_admin(request: "Request") -> "User":
+    """FastAPI dependency: require an authenticated admin (403 otherwise)."""
+    from fastapi import HTTPException
+    user = current_user(request)
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="admin only")
+    return user
+
+
+# --------------------------------------------------------------------------- onboarding (D-117)
+def user_count(session) -> int:
+    return session.query(User).count()
+
+
+def create_user(session, username: str, password: str | None = None, *,
+                email: str | None = None, is_admin: bool = False,
+                auth_source: str = "local", traveler_id: int | None = None,
+                external_subject: str | None = None) -> User:
+    user = User(username=username.strip(), email=(email or "").strip() or None,
+                password_hash=hash_password(password) if password else None,
+                is_admin=is_admin, auth_source=auth_source,
+                traveler_id=traveler_id, external_subject=external_subject)
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def resolve_traveler(session, *, traveler_id: str | int | None,
+                     new_name: str | None, kind: str = "guest") -> int | None:
+    """Onboarding traveller link (D-117: pick existing OR create new). A non-empty
+    `new_name` mints a TravelerIdentity; else an existing id is used as given."""
+    if new_name and new_name.strip():
+        traveler = TravelerIdentity(display_name=new_name.strip(), kind=kind)
+        session.add(traveler)
+        session.commit()
+        session.refresh(traveler)
+        return traveler.id
+    if traveler_id in (None, "", "none"):
+        return None
+    return int(traveler_id)
+
+
+def create_reset_token(session, user: User) -> str:
+    opaque = "yrst_" + secrets.token_hex(32)
+    session.add(PasswordResetToken(
+        user_id=user.id, token_hash=_hash_opaque(opaque),
+        expires_at=_now() + timedelta(seconds=settings.password_reset_ttl_seconds)))
+    session.commit()
+    return opaque
+
+
+def peek_reset_token(session, opaque: str) -> User | None:
+    """Validate a reset token WITHOUT consuming it (for rendering the reset form)."""
+    row = session.query(PasswordResetToken).filter_by(token_hash=_hash_opaque(opaque)).one_or_none()
+    if row is None or row.used_at is not None or _now() > _as_aware(row.expires_at):
+        return None
+    return session.get(User, row.user_id)
+
+
+def consume_reset_token(session, opaque: str, new_password: str) -> User | None:
+    """Validate + spend the token, set the new password, and sign the user out
+    everywhere (token_version bump). Returns the user or None if invalid."""
+    row = session.query(PasswordResetToken).filter_by(token_hash=_hash_opaque(opaque)).one_or_none()
+    if row is None or row.used_at is not None or _now() > _as_aware(row.expires_at):
+        return None
+    user = session.get(User, row.user_id)
+    if user is None:
+        return None
+    user.password_hash = hash_password(new_password)
+    user.token_version += 1
+    row.used_at = _now()
+    session.commit()
     return user

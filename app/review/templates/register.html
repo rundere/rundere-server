@@ -1,0 +1,19 @@
+{% extends "authcard.html" %}
+{% block title %}Create account{% endblock %}
+{% block body %}
+<form class="card" method="post" action="/register">
+  <div class="brand"><h1>Yonder</h1><span>create account</span></div>
+  <p class="sub">Set up your Yonder login.</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <label for="username">Username</label>
+  <input id="username" name="username" autocomplete="username" autofocus
+         value="{{ username or '' }}" required>
+  <label for="email">Email <span style="text-transform:none;color:var(--ink-3)">(optional, for password resets)</span></label>
+  <input id="email" name="email" type="email" autocomplete="email">
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" required>
+  {% include "_traveler_picker.html" %}
+  <button type="submit">Create account</button>
+  <div class="links"><a href="/login">Back to sign in</a></div>
+</form>
+{% endblock %}

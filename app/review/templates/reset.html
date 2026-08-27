@@ -1,0 +1,19 @@
+{% extends "authcard.html" %}
+{% block title %}Set a new password{% endblock %}
+{% block body %}
+<form class="card" method="post" action="/reset/{{ token }}">
+  <div class="brand"><h1>Yonder</h1><span>new password</span></div>
+  {% if not valid %}
+    <div class="err">This reset link is invalid or has expired.</div>
+    <div class="links"><a href="/forgot">Request a new link</a></div>
+  {% else %}
+    <p class="sub">Set a new password{% if username %} for <strong>{{ username }}</strong>{% endif %}.</p>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <label for="password">New password</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" autofocus required>
+    <label for="confirm">Confirm password</label>
+    <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+    <button type="submit">Set password</button>
+  {% endif %}
+</form>
+{% endblock %}

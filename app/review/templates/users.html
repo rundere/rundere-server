@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <span class="pagetitle">Users &amp; access</span>
+    <span class="lockhint">Registration: {{ "open" if registration_open else "closed (admin-invite)" }}</span>
+  </div></div>
+
+  {% if msg %}<div class="saved-note">{{ msg }}</div>{% endif %}
+  {% if err %}<div class="violations">{{ err }}</div>{% endif %}
+  {% if link %}<div class="saved-note">One-time reset link for <strong>{{ link_for }}</strong>
+    (valid ~1 hour) — copy and hand it over:<br><code style="word-break:break-all">{{ link }}</code></div>{% endif %}
+
+  <div class="home-wrap">
+    <div class="home-list">
+      <h3>Accounts</h3>
+      <table class="htab">
+        <thead><tr><th>User</th><th>Source</th><th>Traveller</th><th>Role</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for u in users %}
+          <tr>
+            <td>{{ u.username }}{% if u.email %}<div class="mono">{{ u.email }}</div>{% endif %}</td>
+            <td class="mono">{{ u.auth_source }}</td>
+            <td>{{ tmap[u.traveler_id].display_name if u.traveler_id in tmap else "—" }}</td>
+            <td>{{ "admin" if u.is_admin else "user" }}{% if u.id == me.id %} (you){% endif %}</td>
+            <td>{{ "active" if u.is_active else "inactive" }}</td>
+          </tr>
+          <tr><td colspan="5" style="padding-top:0">
+            <div class="rowacts" style="flex-wrap:wrap;gap:8px">
+              <form method="post" action="/users/{{ u.id }}/admin" style="display:inline">
+                <button class="act tiny" type="submit">{{ "Revoke admin" if u.is_admin else "Make admin" }}</button></form>
+              <form method="post" action="/users/{{ u.id }}/active" style="display:inline">
+                <button class="act tiny" type="submit">{{ "Deactivate" if u.is_active else "Activate" }}</button></form>
+              <form method="post" action="/users/{{ u.id }}/reset-link" style="display:inline">
+                <button class="act tiny" type="submit">Reset link</button></form>
+            </div>
+            <details style="margin-top:8px">
+              <summary style="cursor:pointer;color:var(--ink-2);font-size:12.5px">Set password / traveller…</summary>
+              <form method="post" action="/users/{{ u.id }}/password" class="lookup-row" style="margin-top:8px">
+                <input name="password" type="password" placeholder="new password" required>
+                <button class="act tiny" type="submit">Set password</button>
+              </form>
+              <form method="post" action="/users/{{ u.id }}/traveler" class="lookup-row" style="margin-top:8px">
+                <select name="traveler_id" style="flex:1">
+                  <option value="none">— none —</option>
+                  {% for t in travelers %}<option value="{{ t.id }}"
+                    {% if t.id == u.traveler_id %}selected{% endif %}>{{ t.display_name }} ({{ t.kind }})</option>{% endfor %}
+                </select>
+                <input name="new_traveler" placeholder="or new name">
+                <button class="act tiny" type="submit">Link</button>
+              </form>
+            </details>
+          </td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="home-form">
+      <h3>Add a user</h3>
+      <form method="post" action="/users/create">
+        <div class="field"><label>Username</label><input name="username" required></div>
+        <div class="field"><label>Password</label><input name="password" type="password" required></div>
+        <div class="field"><label>Email</label><input name="email" type="email" placeholder="optional"></div>
+        <div class="field"><label>Admin</label><input type="checkbox" name="is_admin" value="1" style="width:auto"></div>
+        <div class="field"><label>Traveller</label>
+          <select name="traveler_id">
+            <option value="none">— none / create new —</option>
+            {% for t in travelers %}<option value="{{ t.id }}">{{ t.display_name }} ({{ t.kind }})</option>{% endfor %}
+          </select></div>
+        <div class="field"><label>…or new</label><input name="new_traveler" placeholder="new traveller name"></div>
+        <button class="act primary" type="submit" style="margin-top:12px">Create user</button>
+      </form>
+      <p class="why" style="margin-top:12px">Each account maps to one traveller — pick who
+        they are, or add a new person to the roster.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

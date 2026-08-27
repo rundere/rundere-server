@@ -77,6 +77,25 @@ class Settings(BaseSettings):
     auth_proxy_header: str = "X-Authentik-Username"
     auth_proxy_auto_admin: bool = False             # never grant admin from a header by default
 
+    # Onboarding (Phase 1a.1, D-117). First-run always lets you create the first
+    # admin while the users table is empty; after that, registration is closed
+    # unless this is turned on. Admins always create accounts from Administer →
+    # Users regardless.
+    auth_registration_open: bool = False
+    password_reset_ttl_seconds: int = 3600          # reset-link validity (1 hour)
+    # Optional SMTP for password-reset emails. Without it, /forgot tells the user
+    # to contact an admin, and admins mint a copy-paste reset link from the Users
+    # page. We email a reset LINK, never a password.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_starttls: bool = True
+    # Absolute base (e.g. https://yonder.home.example) for links in emails. Empty
+    # => derive from the request that triggered the reset.
+    public_base_url: str = ""
+
     app_version: str = "3.9.2"
 
     @property

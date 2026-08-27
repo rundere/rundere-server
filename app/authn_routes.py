@@ -42,11 +42,14 @@ def _user_public(u: User) -> dict:
 # --------------------------------------------------------------------------- web
 @router.get("/login", response_class=HTMLResponse)
 def login_form(request: Request, next: str = "/", error: str | None = None,
-               session: Session = Depends(get_session)):
+               msg: str | None = None, session: Session = Depends(get_session)):
+    from app.config import settings
     if authn.resolve_user(session, request) is not None:
         return RedirectResponse(_safe_next(next), status_code=303)
     return templates.TemplateResponse(request, "login.html",
-                                      {"next": _safe_next(next), "error": error})
+                                      {"next": _safe_next(next), "error": error,
+                                       "msg": msg,
+                                       "registration_open": settings.auth_registration_open})
 
 
 @router.post("/login")

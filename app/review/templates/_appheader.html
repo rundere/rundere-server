@@ -2,6 +2,7 @@
    ONE product with two sections — Action (the daily Review surface) and
    Administer (config). Active item is derived from the request path. #}
 {% set p = (request.url.path if request else '') %}
+{% set cu = request.state.user if request else none %}
 <header class="appbar">
   <a class="wordmark" href="/" style="text-decoration:none">Yonder
     <span>self-hosted</span></a>
@@ -16,11 +17,16 @@
     <a href="/trips/settings/packing-profile" class="{{ 'on' if 'packing-profile' in p else '' }}">Packing&nbsp;profile</a>
     <a href="/trips/settings/discovery-profile" class="{{ 'on' if 'discovery-profile' in p else '' }}">Discovery&nbsp;profile</a>
     <a href="/admin/traveler-identity/list" class="{{ 'on' if 'traveler-identity' in p else '' }}">Travellers</a>
+    {% if cu and cu.is_admin %}<a href="/users" class="{{ 'on' if p.startswith('/users') else '' }}">Users</a>{% endif %}
     <a href="/admin/rule-setting/list" class="{{ 'on' if 'rule-setting' in p else '' }}">Rules</a>
     <a href="/admin/" class="{{ 'on' if p.startswith('/admin') and 'traveler-identity' not in p and 'rule-setting' not in p else '' }}">Tables</a>
     <a href="/about" class="{{ 'on' if p.startswith('/about') else '' }}">About</a>
   </nav>
   <span class="grow"></span>
+  {% if cu %}<form method="post" action="/logout" style="margin:0">
+    <button class="theme" type="submit" title="Sign out {{ cu.username }}"
+            aria-label="Sign out" style="width:auto;padding:0 8px">{{ cu.username }} · sign out</button>
+  </form>{% endif %}
   <button class="theme" type="button" onclick="txToggleTheme()"
           title="Toggle light / dark" aria-label="Toggle theme">◐</button>
 </header>
