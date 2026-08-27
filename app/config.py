@@ -96,6 +96,21 @@ class Settings(BaseSettings):
     # => derive from the request that triggered the reset.
     public_base_url: str = ""
 
+    # OIDC / external SSO (Phase 1b, D-118). Yonder is an OAuth2/OIDC *client*
+    # (Authorization Code + PKCE) against Authentik/Keycloak/etc. First login
+    # provisions a User (auth_source=oidc) and mints the SAME Yonder session —
+    # one uniform token flow (D-111). OFF until issuer + client creds are set.
+    oidc_enabled: bool = False
+    oidc_issuer: str = ""                    # .../.well-known/openid-configuration lives under here
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_scopes: str = "openid email profile"
+    oidc_redirect_url: str = ""              # override; else {base}/oidc/callback
+    oidc_display_name: str = "SSO"           # login-button label
+    oidc_username_claim: str = "preferred_username"
+    oidc_auto_create: bool = True            # provision a User on first SSO login
+    oidc_admin_group: str = ""               # a `groups` claim value that grants admin (optional)
+
     app_version: str = "3.9.2"
 
     @property

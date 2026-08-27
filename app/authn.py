@@ -202,6 +202,36 @@ def _proxy_identity(request) -> str | None:
     return None
 
 
+def provision_oidc_user(session, *, sub: str, username: str, email: str | None = None,
+                        is_admin: bool = False) -> User | None:
+    """Find-or-provision the User for an OIDC subject (Phase 1b, D-118). Matches
+    on external_subject `oidc:<sub>` (or a same-named local account being adopted
+    by SSO). Returns None if the user is unknown and auto-create is off."""
+    subject = f"oidc:{sub}"
+    user = session.query(User).filter(
+        (User.external_subject == subject) | (User.username == username)
+    ).one_or_none()
+    if user is None:
+        if not settings.oidc_auto_create:
+            return None
+        user = User(username=username, email=email, auth_source="oidc",
+                    external_subject=subject, is_admin=is_admin)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return user
+    # Existing account: adopt the SSO subject, fill a missing email, and allow an
+    # UP-grade to admin from the mapped group — never an automatic downgrade.
+    if user.external_subject is None:
+        user.external_subject = subject
+    if email and not user.email:
+        user.email = email
+    if is_admin and not user.is_admin:
+        user.is_admin = True
+    session.commit()
+    return user
+
+
 def resolve_proxy_user(session, request) -> User | None:
     """D-113: trust the reverse proxy's identity header (Authentik etc.) and
     auto-provision/link a User. Only reached when auth_proxy_header_trust is on

@@ -46,10 +46,13 @@ def login_form(request: Request, next: str = "/", error: str | None = None,
     from app.config import settings
     if authn.resolve_user(session, request) is not None:
         return RedirectResponse(_safe_next(next), status_code=303)
+    from app import oidc
     return templates.TemplateResponse(request, "login.html",
                                       {"next": _safe_next(next), "error": error,
                                        "msg": msg,
-                                       "registration_open": settings.auth_registration_open})
+                                       "registration_open": settings.auth_registration_open,
+                                       "oidc_enabled": oidc.enabled(),
+                                       "oidc_name": settings.oidc_display_name})
 
 
 @router.post("/login")

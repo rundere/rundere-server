@@ -25,9 +25,11 @@ app.include_router(ingest_router)
 # onboarding (first-run setup, register, password reset, Administer → Users).
 from app.accounts_routes import router as accounts_router  # noqa: E402
 from app.authn_routes import router as authn_router  # noqa: E402
+from app.oidc_routes import router as oidc_router  # noqa: E402
 
 app.include_router(authn_router)
 app.include_router(accounts_router)
+app.include_router(oidc_router)
 
 
 # --- Auth gate (SPEC-4 Workstream B) --------------------------------------
@@ -40,7 +42,7 @@ app.include_router(accounts_router)
 _PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
                  "/setup", "/register", "/forgot"}
 _PUBLIC_PREFIX = ("/ingest", "/capture", "/review/static", "/trips/static",
-                  "/api/v1/auth/", "/reset/")
+                  "/api/v1/auth/", "/reset/", "/oidc/")
 _ADMIN_PREFIX = ("/admin", "/users")
 
 
