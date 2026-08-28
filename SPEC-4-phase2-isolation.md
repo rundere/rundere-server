@@ -152,6 +152,19 @@ reserved).
   only their own captures; `owner`'s private trip hidden from `companion` until
   shared.
 
+## Decisions
+
+- **D-124 — Admin sees platform + the traveller roster only; travel is personal.**
+  An admin administers the platform and sets up user↔traveller links — nothing
+  more. The admin UI (SQLAdmin) surfaces only platform-config tables (rules,
+  source rules, packing catalog, bags, phrasebook, regional languages, API keys)
+  plus the **de-duplicated traveller roster** (names, for linking — the only
+  user-entered item surfaced to an admin). NO personal travel data — trips, trip
+  activities, captures/TravelItems, ingest batches, commit attempts, item keys,
+  artifacts, packing, discovery — is exposed in any admin UI; it lives in the
+  database only (the operator's last-resort access). Generic placeholder guests
+  are excluded from the traveller selection. (owner, 2026-08-28)
+
 ## Decisions (D-119–D-121)
 
 - **D-119 — Resolver-minted trips are open (NULL owner).** The commit-stage mint

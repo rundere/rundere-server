@@ -37,7 +37,13 @@ def _now():
 
 
 def _travelers(session: Session) -> list[TravelerIdentity]:
-    return session.query(TravelerIdentity).order_by(TravelerIdentity.display_name).all()
+    """The de-duplicated traveller roster surfaced to the admin for user↔traveller
+    linking (D-124) — the ONLY user-entered item an admin sees in the UI. Names
+    are already unique in the schema; generic placeholder guests (roster stand-ins,
+    not real people) are excluded from selection."""
+    return (session.query(TravelerIdentity)
+            .filter(TravelerIdentity.generic.is_(False))
+            .order_by(TravelerIdentity.display_name).all())
 
 
 def _base_url(request: Request) -> str:

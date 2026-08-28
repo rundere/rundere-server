@@ -67,26 +67,12 @@ def mount_admin(app, engine) -> None:
     admin = Admin(app, engine, title="Yonder")
     _theme(admin)
 
-    class TravelItemAdmin(ModelView, model=models.TravelItem):
-        column_list = [models.TravelItem.id, models.TravelItem.item_type,
-                       models.TravelItem.canonical_key, models.TravelItem.batch_id,
-                       models.TravelItem.created_at]
-        can_create = False          # items enter via the pipeline, not the admin
-
-    class ItemKeyAdmin(ModelView, model=models.ItemKey):
-        column_list = [models.ItemKey.item_id, models.ItemKey.key, models.ItemKey.kind]
-
-    class IngestBatchAdmin(ModelView, model=models.IngestBatch):
-        column_list = [models.IngestBatch.id, models.IngestBatch.status,
-                       models.IngestBatch.received_at,
-                       models.IngestBatch.declared_segment_count]
-        can_create = False
-
-    class CommitAttemptAdmin(ModelView, model=models.CommitAttempt):
-        column_list = [models.CommitAttempt.item_id, models.CommitAttempt.target,
-                       models.CommitAttempt.response_status,
-                       models.CommitAttempt.attempted_at]
-        can_create = can_edit = False       # verbatim evidence (D-19)
+    # 4.0 Phase 2 (D-124): the admin UI surfaces ONLY platform administration and
+    # the traveller roster (for linking a user to a traveller). NO personal travel
+    # data — captures (TravelItem), ingest batches, commit attempts, item keys,
+    # artifacts, trips, or trip activities — is exposed here. Those remain in the
+    # database only. Travel is deeply personal; an admin administers the platform,
+    # they do not browse anyone's trips (owner privacy directive, 2026-08-28).
 
     class SourceRuleAdmin(ModelView, model=models.SourceRule):
         column_list = [models.SourceRule.name, models.SourceRule.enabled,
@@ -98,11 +84,6 @@ def mount_admin(app, engine) -> None:
         column_details_exclude_list = [models.ApiKey.key_hash]
         can_create = False          # creation happens via CLI so the plaintext
                                     # is shown exactly once
-
-    class ArtifactAdmin(ModelView, model=models.Artifact):
-        column_list = [models.Artifact.sha256, models.Artifact.content_type,
-                       models.Artifact.size_bytes, models.Artifact.created_at]
-        can_create = can_edit = can_delete = False      # immutable (D-15)
 
     class RuleSettingAdmin(ModelView, model=models.RuleSetting):
         name = "Rule Setting"
@@ -161,24 +142,6 @@ def mount_admin(app, engine) -> None:
                      "description": "Exactly one traveller is 'self' (the "
                      "AirTrail account holder); everyone else is a guest."},
         }
-
-    class TripAdmin(ModelView, model=models.Trip):
-        name = "Trip"
-        name_plural = "Trips"
-        # The Trips surface (/trips) is the real editor; this raw view is the
-        # D-18 table explorer, useful for spotting seeded rows by source.
-        column_list = [models.Trip.name, models.Trip.start_date,
-                       models.Trip.end_date, models.Trip.source,
-                       models.Trip.external_ref, models.Trip.updated_at]
-        column_labels = {"external_ref": "External ref"}
-        column_default_sort = ("start_date", True)
-
-    class TripActivityAdmin(ModelView, model=models.TripActivity):
-        name = "Trip Activity"
-        name_plural = "Trip Activities"
-        column_list = [models.TripActivity.trip_id, models.TripActivity.type,
-                       models.TripActivity.starts_at,
-                       models.TripActivity.updated_at]
 
     class PackingCatalogItemAdmin(ModelView, model=models.PackingCatalogItem):
         name = "Packing Item"
@@ -321,10 +284,11 @@ def mount_admin(app, engine) -> None:
             "lang_code": {"description": "ISO language code, e.g. kn, ca, fr."},
         }
 
-    for view in (TravelItemAdmin, ItemKeyAdmin, IngestBatchAdmin,
-                 CommitAttemptAdmin, SourceRuleAdmin, ApiKeyAdmin,
-                 ArtifactAdmin, TravelerIdentityAdmin,
-                 RuleSettingAdmin, TripAdmin, TripActivityAdmin,
+    # Platform administration + the traveller roster only (D-124). ApiKey stays
+    # (revoking a compromised ingest key is platform admin, and keys are minted
+    # by CLI); it never shows the key itself, only client name + status.
+    for view in (SourceRuleAdmin, ApiKeyAdmin, TravelerIdentityAdmin,
+                 RuleSettingAdmin,
                  PackingCatalogItemAdmin, BagAdmin, PhrasebookPhraseAdmin,
                  RegionalLanguageAdmin):
         admin.add_view(view)
