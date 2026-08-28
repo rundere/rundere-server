@@ -168,7 +168,10 @@ reserved).
   underwear. Only editors (travellers/owner/admin) generate packing, and each
   sees only their own. Existing plans (user_id NULL) stay legacy/shared until
   regenerated (steady migration). Discovery findings remain trip-level shared.
-  (owner, 2026-08-28)
+  The **PackingProfile is per-traveller** (its `traveler_id` — the D-82 hook):
+  generation loads the viewing user's own profile via their traveller, and the
+  Administer → Packing profile page edits *your own* profile (admin-managing
+  another traveller's profile is a later enhancement). (owner, 2026-08-28)
 - **D-122 — Trip access is two-tier: travellers (who are users) get implicit FULL
   access; explicit shares are VIEW-ONLY.** A trip's TripTraveler roster drives
   access — a traveller tied to a user sees & edits the trip automatically (add

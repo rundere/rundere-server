@@ -236,7 +236,7 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         **_push_state(trip),
         **_travelers_context(session, trip.id),
         **_discovery_context(session, trip.id),
-        **_packing_context(session, trip.id),
+        **_packing_context(session, trip.id, user.id if user else None),
         **_sharing_context(session, trip, user),
     }
 
@@ -1002,11 +1002,19 @@ def _packing_item_view(i: PackingItem, bag_labels: dict[str, str]) -> dict:
             "edited": i.edited}
 
 
-def _packing_context(session: Session, trip_id: str) -> dict:
+def _pack_identity(request):
+    """(user_id, traveler_id) for the viewing user — packing is per-user (D-123).
+    Both None when auth is off → the legacy shared plan."""
+    u = scope.user_of(request)
+    return (u.id if u else None), (getattr(u, "traveler_id", None) if u else None)
+
+
+def _packing_context(session: Session, trip_id: str, user_id=None) -> dict:
     items = (session.query(PackingItem)
-             .filter(PackingItem.trip_id == trip_id).all())
+             .filter(PackingItem.trip_id == trip_id,
+                     PackingItem.user_id == user_id).all())
     plan = (session.query(PackingPlan)
-            .filter(PackingPlan.trip_id == trip_id)
+            .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
             .order_by(PackingPlan.generated_at.desc()).first())
     from planning.engine import all_archetypes as _all_archetypes
     _all_arch = _all_archetypes()
@@ -1056,13 +1064,16 @@ def generate_packing_plan_route(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
+    uid, tid = _pack_identity(request)
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_home_profiles(session))
+                  geocoder=_photon(), home_profiles=load_home_profiles(session),
+                  user_id=uid, traveler_id=tid)
     return _redirect(f"/trips/{trip_id}")
 
 
-def _current_archetype_ids(session: Session, trip_id: str) -> list[str]:
-    plan = (session.query(PackingPlan).filter(PackingPlan.trip_id == trip_id)
+def _current_archetype_ids(session: Session, trip_id: str, user_id=None) -> list[str]:
+    plan = (session.query(PackingPlan)
+            .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
             .order_by(PackingPlan.generated_at.desc()).first())
     return [a.get("id") for a in ((plan.archetypes if plan else None) or [])
             if a.get("id")]
@@ -1072,12 +1083,13 @@ def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
                                 ids: list[str]) -> HTMLResponse:
     from app.resolving import load_home_profiles
     from planning.runner import generate_plan
+    uid, tid = _pack_identity(request)
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), home_profiles=load_home_profiles(session),
-                  manual_archetypes=ids)
+                  manual_archetypes=ids, user_id=uid, traveler_id=tid)
     return templates.TemplateResponse(request, "_packing_section.html",
         {"request": request, "trip": {"id": trip.id},
-         **_packing_context(session, trip.id)})
+         **_packing_context(session, trip.id, uid)})
 
 
 @router.post("/{trip_id}/pack/archetypes/add", response_class=HTMLResponse)
@@ -1089,7 +1101,7 @@ def add_archetype_route(trip_id: str, request: Request, archetype_id: str = Form
     if trip is None:
         return HTMLResponse("", status_code=404)
     valid = {a["id"] for a in _pack_all_archetypes()}
-    ids = _current_archetype_ids(session, trip_id)
+    ids = _current_archetype_ids(session, trip_id, _pack_identity(request)[0])
     if archetype_id in valid and archetype_id not in ids:
         ids.append(archetype_id)
     return _regenerate_with_archetypes(request, session, trip, ids)
@@ -1103,7 +1115,7 @@ def remove_archetype_route(trip_id: str, request: Request, archetype_id: str = F
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    ids = [i for i in _current_archetype_ids(session, trip_id) if i != archetype_id]
+    ids = [i for i in _current_archetype_ids(session, trip_id, _pack_identity(request)[0]) if i != archetype_id]
     return _regenerate_with_archetypes(request, session, trip, ids)
 
 
@@ -1112,11 +1124,13 @@ def _pack_all_archetypes():
     return all_archetypes()
 
 
-def _pack_count_oob(session: Session, trip_id: str, category: str) -> str:
+def _pack_count_oob(session: Session, trip_id: str, category: str, user_id=None) -> str:
     """An out-of-band swap for a category's packed/total badge, so an inline
-    row change keeps the header count honest without a page reload."""
+    row change keeps the header count honest without a page reload. Scoped to the
+    user's own items (D-123)."""
     rows = (session.query(PackingItem)
             .filter(PackingItem.trip_id == trip_id,
+                    PackingItem.user_id == user_id,
                     PackingItem.category == category,
                     PackingItem.status.in_(("draft", "packed"))).all())
     packed = sum(1 for r in rows if r.status == "packed")
@@ -1129,7 +1143,7 @@ def _pack_item_row(request: Request, trip_id: str, session: Session,
     row_html = templates.env.get_template("_packing_item.html").render(
         trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
         packing_bag_options=_bag_options(session))
-    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category, i.user_id))
 
 
 # NB: these three (qty/bag/label) MUST be registered before the generic
@@ -1145,7 +1159,8 @@ def packing_item_qty(trip_id: str, item_id: str, request: Request,
     item this trip needs — "2 pairs of jeans" doesn't always mean 2. Marks the
     row `edited` so a later re-generate never overwrites it back."""
     i = session.get(PackingItem, item_id)
-    if i is None or i.trip_id != trip_id:
+    uid = _pack_identity(request)[0]
+    if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
     i.quantity = max(1, min(99, quantity))
     i.edited = True
@@ -1161,7 +1176,8 @@ def packing_item_bag(trip_id: str, item_id: str, request: Request,
     carry-on / checked categories — set per item, per trip, independent of the
     catalog's default load-out."""
     i = session.get(PackingItem, item_id)
-    if i is None or i.trip_id != trip_id:
+    uid = _pack_identity(request)[0]
+    if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
     if bag not in _bag_valid_values(session):
         return HTMLResponse("", status_code=400)
@@ -1178,7 +1194,8 @@ def packing_item_label(trip_id: str, item_id: str, request: Request,
     """Rename a line in place — e.g. swap "Jeans" for "Slacks" without touching
     the master packing catalog."""
     i = session.get(PackingItem, item_id)
-    if i is None or i.trip_id != trip_id:
+    uid = _pack_identity(request)[0]
+    if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
     label = label.strip()[:128]
     if not label:
@@ -1196,7 +1213,8 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
     unpack / remove swap just the row (+ the category count out-of-band); keep
     (bring back an omitted item, which crosses sections) re-renders the section."""
     i = session.get(PackingItem, item_id)
-    if i is None or i.trip_id != trip_id:
+    uid = _pack_identity(request)[0]
+    if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
     if action == "pack":
         i.status = "packed"
@@ -1215,12 +1233,12 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
         trip = scope.trip_or_none(session, request, trip_id)
         return templates.TemplateResponse(request, "_packing_section.html",
                                           {"request": request, "trip": trip,
-                                           **_packing_context(session, trip_id)})
+                                           **_packing_context(session, trip_id, uid)})
     row_html = "" if action == "remove" else templates.env.get_template(
         "_packing_item.html").render(
             trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
             packing_bag_options=_bag_options(session))
-    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category, uid))
 
 
 @router.post("/{trip_id}/pack-item/add", response_class=HTMLResponse)
@@ -1238,25 +1256,33 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
     if (category not in PACK_CAT_LABELS or not label
             or bag not in _bag_valid_values(session)):
         return HTMLResponse("", status_code=400)
-    item = PackingItem(trip_id=trip_id, item_key=f"custom:{uuid.uuid4().hex}",
+    uid = _pack_identity(request)[0]
+    item = PackingItem(trip_id=trip_id, user_id=uid,
+                       item_key=f"custom:{uuid.uuid4().hex}",
                        label=label, category=category,
                        quantity=max(1, min(99, quantity)), bag=bag,
                        source="custom", status="draft", edited=True)
     session.add(item)
     session.commit()
     return templates.TemplateResponse(request, "_packing_section.html",
-        {"request": request, "trip": trip, **_packing_context(session, trip_id)})
+        {"request": request, "trip": trip, **_packing_context(session, trip_id, uid)})
 
 
-def _profile_row(session: Session) -> PackingProfile | None:
-    return (session.query(PackingProfile)
+def _profile_row(session: Session, traveler_id=None) -> PackingProfile | None:
+    """The packing profile to DISPLAY for a user (D-123): their own if it exists,
+    else the deployment default (traveler_id NULL) as a starting point."""
+    if traveler_id is not None:
+        own = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
+        if own is not None:
+            return own
+    return (session.query(PackingProfile).filter_by(traveler_id=None)
             .order_by(PackingProfile.created_at).first())
 
 
 def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -> dict:
     from planning.engine import default_profile
     from planning import catalog
-    row = _profile_row(session)
+    row = _profile_row(session, _pack_identity(request)[1])
     values = {**default_profile(), **((row.values if row else None) or {})}
     bag = values.get("bag") or {}
     items = catalog.items(session)
@@ -1328,11 +1354,15 @@ def save_packing_profile(request: Request,
         "style_constraints": style_constraints,
         "must_have_items": must_have_items,
     }
-    row = _profile_row(session)
-    if row is None:
-        session.add(PackingProfile(values=values))
+    # Save to the CURRENT user's OWN profile (D-123: tied to their traveller),
+    # creating it if missing — never overwrite another traveller's or the shared
+    # default when this user has their own.
+    traveler_id = _pack_identity(request)[1]
+    own = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
+    if own is None:
+        session.add(PackingProfile(values=values, traveler_id=traveler_id))
     else:
-        row.values = values
+        own.values = values
     session.commit()
     # Re-render the page with a saved banner; the plan applies the new profile on
     # the next Re-generate.

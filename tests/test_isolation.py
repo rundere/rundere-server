@@ -163,6 +163,41 @@ if DEPS:
         finally:
             settings.auth_required = False
 
+    def test_packing_is_per_user():
+        """D-123: each user sees only their own packing lines on a shared trip."""
+        from app.models import PackingItem
+        from app.trips.routes import _packing_context
+        ua, ub = _user("pk-a"), _user("pk-b")
+        with SessionLocal() as s:
+            t = Trip(name="pk-trip", source="manual", owner_id=ua.id)
+            s.add(t)
+            s.commit()
+            tid = t.id
+            for u, lbl in ((ua, "A-socks"), (ub, "B-socks")):
+                s.add(PackingItem(trip_id=tid, user_id=u.id, item_key="clothing:socks",
+                                  label=lbl, category="clothing", status="draft"))
+            s.commit()
+            rows_a = [r for c in _packing_context(s, tid, ua.id)["packing_cats"] for r in c["rows"]]
+            rows_b = [r for c in _packing_context(s, tid, ub.id)["packing_cats"] for r in c["rows"]]
+            assert [r["label"] for r in rows_a] == ["A-socks"]     # only A's line
+            assert [r["label"] for r in rows_b] == ["B-socks"]     # only B's line
+
+    def test_packing_profile_per_traveller():
+        """D-123: generation loads the viewing user's own profile via their traveller."""
+        from planning.runner import load_profile
+        from app.models import PackingProfile, TravelerIdentity
+        with SessionLocal() as s:
+            tr = TravelerIdentity(display_name="pk-trav", kind="companion")
+            s.add(tr)
+            s.commit()
+            s.refresh(tr)
+            s.add(PackingProfile(traveler_id=tr.id, values={"packing_style": "ultralight"}))
+            s.commit()
+            assert load_profile(s, tr.id)["packing_style"] == "ultralight"
+            s.query(PackingProfile).filter_by(traveler_id=tr.id).delete()
+            s.query(TravelerIdentity).filter_by(id=tr.id).delete()
+            s.commit()
+
     def test_capture_owner_hidden_from_others():
         u = _user("ing-user")
         with SessionLocal() as s:

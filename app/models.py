@@ -538,6 +538,10 @@ class PackingPlan(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.0 Phase 2 (D-123): packing is PER-USER — a plan belongs to the viewing
+    # user, keyed by (trip_id, user_id). No cross-visibility between travellers.
+    # NULL = legacy/auth-off shared plan. Discovery, by contrast, stays trip-wide.
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     status: Mapped[str] = mapped_column(String(12), default="running", index=True)
     archetypes: Mapped[dict | None] = mapped_column(JsonCol)   # chosen + scores
     # 3.2.1: the operator's explicit archetype choice (list of ids), overriding
@@ -566,6 +570,9 @@ class PackingItem(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     plan_id: Mapped[str | None] = mapped_column(String(36), index=True)
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.0 Phase 2 (D-123): per-user, like its PackingPlan. Idempotency is now on
+    # (trip_id, user_id, item_key). NULL = legacy/auth-off.
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     item_key: Mapped[str] = mapped_column(String(64), index=True)   # "clothing:quick_dry_top"
     label: Mapped[str] = mapped_column(String(128))
     category: Mapped[str] = mapped_column(String(16), index=True)
