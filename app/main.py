@@ -31,6 +31,13 @@ app.include_router(authn_router)
 app.include_router(accounts_router)
 app.include_router(oidc_router)
 
+# The JSON API (Phase 3). Every /api/v1/* route (except /api/v1/auth/*) requires
+# a bearer access token via Depends(authn.current_user) — always authenticated,
+# independent of TX_AUTH_REQUIRED — and is user-scoped through app/scope.py.
+from app.api_v1 import router as api_router  # noqa: E402
+
+app.include_router(api_router)
+
 
 # --- Auth gate (SPEC-4 Workstream B) --------------------------------------
 # Master switch is TX_AUTH_REQUIRED. OFF => the app behaves exactly as it did

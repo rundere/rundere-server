@@ -167,3 +167,12 @@ def capture_or_none(session, request, item_id):
     if item is None or not can_access_capture(user_of(request), item):
         return None
     return item
+
+
+def require_capture(session, user, item_id):
+    """API-style guard: return the capture or raise 404 (own + open + admin)."""
+    from fastapi import HTTPException
+    item = session.get(TravelItem, item_id)
+    if item is None or not can_access_capture(user, item):
+        raise HTTPException(status_code=404, detail="item not found")
+    return item
