@@ -129,6 +129,13 @@ def issue_web_token(user: User) -> str:
     return _token(user, "web", settings.jwt_web_ttl_seconds)
 
 
+def issue_api_token(user: User, *, ttl: int | None = None) -> str:
+    """A long-lived bearer token for a MACHINE client (the MCP server, D-126).
+    Same per-user scoping as any access token; revocable en masse by bumping the
+    user's token_version ("sign out everywhere"). Minted via the CLI."""
+    return _token(user, "api", ttl if ttl is not None else settings.jwt_api_ttl_seconds)
+
+
 def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "web")) -> User | None:
     claims = jwt_decode(token)
     if not claims or claims.get("typ") not in kinds:
@@ -257,7 +264,7 @@ def resolve_user(session, request) -> User | None:
     bearer access token → session cookie (web token) → trusted proxy header."""
     authz = request.headers.get("authorization", "")
     if authz[:7].lower() == "bearer ":
-        u = user_from_token(session, authz[7:].strip(), kinds=("access",))
+        u = user_from_token(session, authz[7:].strip(), kinds=("access", "api"))
         if u:
             return u
     cookie = request.cookies.get(settings.auth_cookie_name)

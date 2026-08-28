@@ -51,6 +51,13 @@ if DEPS:
                 s.delete(t)
             s.commit()
 
+    def test_api_token_is_accepted():
+        # A long-lived machine token (MCP, D-126) authenticates like an access token.
+        u = _user("api-machine")
+        tok = authn.issue_api_token(u, ttl=3600)
+        r = client.get("/api/v1/trips", headers={"Authorization": f"Bearer {tok}"})
+        assert r.status_code == 200
+
     def test_api_requires_auth():
         # No bearer → 401 everywhere (auth is always on for the API).
         assert client.get("/api/v1/dashboard").status_code == 401
