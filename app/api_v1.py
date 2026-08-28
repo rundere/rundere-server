@@ -160,6 +160,39 @@ class AssignTripIn(BaseModel):
     trip_id: str
 
 
+class TripPatch(BaseModel):
+    name: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    notes: str | None = None
+
+
+class ActivityIn(BaseModel):
+    type: str
+    values: dict[str, Any] = {}
+    starts_at: str | None = None
+
+
+class ActivityPatch(BaseModel):
+    type: str | None = None
+    values: dict[str, Any] | None = None
+    starts_at: str | None = None
+
+
+class PackingItemPatch(BaseModel):
+    status: str | None = None            # draft | packed | removed (check-off)
+    quantity: int | None = None
+    bag: str | None = None
+    label: str | None = None
+
+
+class PackingItemIn(BaseModel):
+    label: str
+    category: str = "activity"
+    quantity: int = 1
+    bag: str | None = None
+
+
 # --------------------------------------------------------------------------- helpers
 def _me(user=Depends(authn.current_user)):
     return user
@@ -170,6 +203,34 @@ def _trip_summary(session: Session, t: Trip) -> TripSummary:
     return TripSummary(id=t.id, name=t.name, start_date=t.start_date,
                        end_date=t.end_date, source=t.source, owner_id=t.owner_id,
                        activity_count=n)
+
+
+def _activity_out(a: TripActivity) -> ActivityOut:
+    return ActivityOut(id=a.id, type=a.type, starts_at=a.starts_at, values=a.values or {})
+
+
+def _packing_item_out(i: PackingItem) -> PackingItemOut:
+    return PackingItemOut(id=i.id, item_key=i.item_key, label=i.label,
+                          category=i.category, quantity=i.quantity, bag=i.bag,
+                          status=i.status, reason=i.reason)
+
+
+def _packing_out(session: Session, trip_id: str, uid: str) -> "PackingOut | None":
+    plan = (session.query(PackingPlan)
+            .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == uid)
+            .order_by(PackingPlan.generated_at.desc()).first())
+    items = (session.query(PackingItem)
+             .filter(PackingItem.trip_id == trip_id, PackingItem.user_id == uid,
+                     PackingItem.status != "removed").all())
+    # Surface packing when there's a plan OR any items (a user may add a custom
+    # line before ever generating a plan).
+    if plan is None and not items:
+        return None
+    return PackingOut(generated_at=plan.generated_at if plan else None,
+                      archetypes=plan.archetypes if plan else None,
+                      warnings=plan.warnings if plan else None,
+                      tasks=plan.tasks if plan else None,
+                      items=[_packing_item_out(i) for i in items])
 
 
 def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
@@ -207,21 +268,7 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
                  .filter(DiscoveryFinding.trip_id == trip.id).all()]
 
     # packing — PER-USER (D-123)
-    uid = user.id
-    plan = (session.query(PackingPlan)
-            .filter(PackingPlan.trip_id == trip.id, PackingPlan.user_id == uid)
-            .order_by(PackingPlan.generated_at.desc()).first())
-    packing = None
-    if plan is not None:
-        items = (session.query(PackingItem)
-                 .filter(PackingItem.trip_id == trip.id, PackingItem.user_id == uid,
-                         PackingItem.status != "removed").all())
-        packing = PackingOut(
-            generated_at=plan.generated_at, archetypes=plan.archetypes,
-            warnings=plan.warnings, tasks=plan.tasks,
-            items=[PackingItemOut(id=i.id, item_key=i.item_key, label=i.label,
-                                  category=i.category, quantity=i.quantity, bag=i.bag,
-                                  status=i.status, reason=i.reason) for i in items])
+    packing = _packing_out(session, trip.id, user.id)
 
     # linked captures (light) — visible because the user can see this trip
     from app.review.summary import headline as _headline, kind_label as _kind
@@ -341,3 +388,138 @@ def api_assign_trip(item_id: str, body: AssignTripIn,
     flag_modified(item, "review")
     session.commit()
     return {"ok": True, "item_id": item.id, "trip_id": trip.id}
+
+
+# --------------------------------------------------------------------------- write: manual trip edits (D-125)
+# Line-item editing of a trip the user can EDIT (owner / traveller / admin) — the
+# same hand-edits the web trip page allows, for "updates on the go". NOT the
+# capture review/commit pipeline. require_trip(edit=True): 404 if not visible,
+# 403 for a view-only share.
+@router.patch("/trips/{trip_id}", response_model=TripSummary)
+def api_update_trip(trip_id: str, body: TripPatch,
+                    user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    if body.name is not None and body.name.strip():
+        trip.name = body.name.strip()[:200]
+    if body.start_date is not None:
+        trip.start_date = body.start_date or None
+    if body.end_date is not None:
+        trip.end_date = body.end_date or None
+    if body.notes is not None:
+        trip.notes = body.notes or None
+    session.commit()
+    session.refresh(trip)
+    return _trip_summary(session, trip)
+
+
+def _activity_type_or_400(atype: str):
+    from app.trips import types as at
+    t = at.get_type(atype)
+    if t.key != atype:
+        raise HTTPException(400, f"unknown activity type {atype!r}")
+    return t
+
+
+@router.post("/trips/{trip_id}/activities", response_model=ActivityOut, status_code=201)
+def api_add_activity(trip_id: str, body: ActivityIn,
+                     user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    t = _activity_type_or_400(body.type)
+    values = dict(body.values or {})
+    a = TripActivity(trip_id=trip.id, type=t.key, values=values,
+                     starts_at=body.starts_at or values.get("when") or "")
+    session.add(a)
+    session.commit()
+    session.refresh(a)
+    return _activity_out(a)
+
+
+@router.patch("/trips/{trip_id}/activities/{activity_id}", response_model=ActivityOut)
+def api_update_activity(trip_id: str, activity_id: str, body: ActivityPatch,
+                        user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    scope.require_trip(session, user, trip_id, edit=True)
+    a = session.get(TripActivity, activity_id)
+    if a is None or a.trip_id != trip_id:
+        raise HTTPException(404, "activity not found")
+    if body.type is not None:
+        a.type = _activity_type_or_400(body.type).key
+    if body.values is not None:
+        a.values = dict(body.values)
+    if body.starts_at is not None:
+        a.starts_at = body.starts_at or ""
+    elif body.values is not None:
+        a.starts_at = (a.values or {}).get("when") or a.starts_at
+    session.commit()
+    session.refresh(a)
+    return _activity_out(a)
+
+
+@router.delete("/trips/{trip_id}/activities/{activity_id}", status_code=204)
+def api_delete_activity(trip_id: str, activity_id: str,
+                        user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    scope.require_trip(session, user, trip_id, edit=True)
+    a = session.get(TripActivity, activity_id)
+    if a is not None and a.trip_id == trip_id:
+        session.delete(a)
+        session.commit()
+    return None
+
+
+@router.post("/trips/{trip_id}/packing/generate", response_model=PackingOut)
+def api_generate_packing(trip_id: str, user=Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """Generate/regenerate the CALLER's own packing plan (per-user, D-123)."""
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    from app.resolving import load_home_profiles
+    from app.trips.routes import _airport_resolver, _photon
+    from planning.runner import generate_plan
+    generate_plan(session, trip, resolve_airport=_airport_resolver(), geocoder=_photon(),
+                  home_profiles=load_home_profiles(session),
+                  user_id=user.id, traveler_id=user.traveler_id)
+    return _packing_out(session, trip.id, user.id) or PackingOut(items=[])
+
+
+@router.patch("/trips/{trip_id}/packing-items/{item_id}", response_model=PackingItemOut)
+def api_update_packing_item(trip_id: str, item_id: str, body: PackingItemPatch,
+                            user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    """Check off / edit ONE of the caller's own packing lines (the phone use case)."""
+    scope.require_trip(session, user, trip_id, edit=True)
+    i = session.get(PackingItem, item_id)
+    if i is None or i.trip_id != trip_id or i.user_id != user.id:
+        raise HTTPException(404, "packing item not found")
+    if body.status is not None:
+        if body.status not in ("draft", "packed", "removed"):
+            raise HTTPException(400, "status must be draft | packed | removed")
+        i.status = body.status
+    if body.quantity is not None:
+        i.quantity = max(1, min(99, body.quantity))
+        i.edited = True
+    if body.bag is not None:
+        i.bag = body.bag
+        i.edited = True
+    if body.label is not None and body.label.strip():
+        i.label = body.label.strip()[:128]
+        i.edited = True
+    session.commit()
+    session.refresh(i)
+    return _packing_item_out(i)
+
+
+@router.post("/trips/{trip_id}/packing-items", response_model=PackingItemOut, status_code=201)
+def api_add_packing_item(trip_id: str, body: PackingItemIn,
+                         user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    """Add a custom line to the caller's own packing list."""
+    import uuid as _uuid
+    scope.require_trip(session, user, trip_id, edit=True)
+    label = (body.label or "").strip()[:128]
+    if not label:
+        raise HTTPException(400, "label required")
+    i = PackingItem(trip_id=trip_id, user_id=user.id,
+                    item_key=f"custom:{_uuid.uuid4().hex}", label=label,
+                    category=body.category or "activity",
+                    quantity=max(1, min(99, body.quantity)), bag=body.bag,
+                    source="custom", status="draft", edited=True)
+    session.add(i)
+    session.commit()
+    session.refresh(i)
+    return _packing_item_out(i)

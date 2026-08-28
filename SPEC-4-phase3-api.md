@@ -34,8 +34,22 @@ layer and `app/scope.py`, so the API and the HTMX UI never disagree.
 - `POST /api/v1/review/{id}/assign-trip` — link a capture to one of the user's
   trips (sets `trip_pinned`).
 
-**Deferred to 3b:** full review approve/commit over the API (the commit pipeline
-is intricate — kept on the HTMX surface for now); OpenAPI/Swagger UI.
+**Manual trip edits (D-125) — "updates on the go":** line-item editing of a trip
+the user can EDIT (owner/traveller/admin; not the review/commit pipeline). All
+gated by `require_trip(edit=True)` (404 if not visible, 403 for a view-only
+share):
+- `PATCH /api/v1/trips/{id}` — name/dates/notes.
+- `POST /api/v1/trips/{id}/activities`, `PATCH …/activities/{aid}`,
+  `DELETE …/activities/{aid}` — add/edit/remove a timeline item (a location, an
+  event); `starts_at` follows `values.when`, reusing the activity-type registry.
+- `POST /api/v1/trips/{id}/packing/generate` — (re)generate the caller's OWN plan.
+- `PATCH /api/v1/trips/{id}/packing-items/{iid}` — check off / edit ONE of the
+  caller's own lines (status packed|draft|removed, quantity, bag, label).
+- `POST /api/v1/trips/{id}/packing-items` — add a custom line.
+Packing edits are per-user (D-123): an item must be `user_id == caller`.
+
+**Deferred to a later slice:** full review approve/commit over the API (the
+commit pipeline is intricate — kept on the HTMX surface for now); OpenAPI UI.
 
 ## Reuse map
 | Need | Reuse |

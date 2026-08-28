@@ -19,7 +19,8 @@ if DEPS:
     from app import authn
     from app.db import SessionLocal, engine
     from app.main import app
-    from app.models import Base, IngestBatch, Trip, TripActivity, User
+    from app.models import (Base, IngestBatch, PackingItem, Trip, TripActivity,
+                            TripMember, User)
 
     Base.metadata.create_all(engine)
     client = TestClient(app)
@@ -40,11 +41,13 @@ if DEPS:
         return {"Authorization": f"Bearer {authn.issue_access_token(u)}"}
 
     def _cleanup_trips(*names):
-        # These tests add trips/activities to the shared SQLite DB; remove them so
-        # other files (e.g. test_committing) don't see stray rows.
+        # These tests add trips/activities/packing/shares to the shared SQLite DB;
+        # remove them so other files (e.g. test_committing) don't see stray rows.
         with SessionLocal() as s:
             for t in s.query(Trip).filter(Trip.name.in_(names)).all():
                 s.query(TripActivity).filter(TripActivity.trip_id == t.id).delete()
+                s.query(PackingItem).filter(PackingItem.trip_id == t.id).delete()
+                s.query(TripMember).filter(TripMember.trip_id == t.id).delete()
                 s.delete(t)
             s.commit()
 
@@ -113,3 +116,68 @@ if DEPS:
         assert snap["activities"][0]["type"] == "lodging"
         assert snap["activities"][0]["values"]["property"] == "Riad X"
         _cleanup_trips("api-snaptrip")
+
+    def _owned_trip(name, owner):
+        with SessionLocal() as s:
+            t = Trip(name=name, source="manual", owner_id=owner.id)
+            s.add(t)
+            s.commit()
+            return t.id
+
+    def test_api_edit_trip_and_activities():
+        owner = _user("api-editor")
+        tid = _owned_trip("api-edit", owner)
+        # add an activity (an event, "on the go")
+        r = client.post(f"/api/v1/trips/{tid}/activities", headers=_bearer(owner),
+                        json={"type": "event", "values": {"title": "Concert",
+                              "when": "2026-09-10T20:00"}})
+        assert r.status_code == 201, r.text
+        aid = r.json()["id"]
+        assert r.json()["type"] == "event" and r.json()["starts_at"] == "2026-09-10T20:00"
+        # it appears in the snapshot
+        snap = client.get(f"/api/v1/trips/{tid}", headers=_bearer(owner)).json()
+        assert any(a["id"] == aid for a in snap["activities"])
+        # edit the trip name
+        r = client.patch(f"/api/v1/trips/{tid}", headers=_bearer(owner), json={"name": "Renamed"})
+        assert r.status_code == 200 and r.json()["name"] == "Renamed"
+        # edit the activity (starts_at follows values.when)
+        r = client.patch(f"/api/v1/trips/{tid}/activities/{aid}", headers=_bearer(owner),
+                         json={"values": {"title": "Concert 2", "when": "2026-09-11T20:00"}})
+        assert r.status_code == 200 and r.json()["starts_at"] == "2026-09-11T20:00"
+        # delete it
+        assert client.delete(f"/api/v1/trips/{tid}/activities/{aid}",
+                             headers=_bearer(owner)).status_code == 204
+        _cleanup_trips("api-edit", "Renamed")
+
+    def test_api_packing_checkoff():
+        owner = _user("api-packer")
+        tid = _owned_trip("api-pack", owner)
+        r = client.post(f"/api/v1/trips/{tid}/packing-items", headers=_bearer(owner),
+                        json={"label": "Passport", "category": "documents"})
+        assert r.status_code == 201, r.text
+        iid = r.json()["id"]
+        assert r.json()["status"] == "draft"
+        # check it off from the phone
+        r = client.patch(f"/api/v1/trips/{tid}/packing-items/{iid}", headers=_bearer(owner),
+                         json={"status": "packed"})
+        assert r.status_code == 200 and r.json()["status"] == "packed"
+        # the snapshot's packing reflects it
+        snap = client.get(f"/api/v1/trips/{tid}", headers=_bearer(owner)).json()
+        assert snap["packing"] and any(i["id"] == iid and i["status"] == "packed"
+                                       for i in snap["packing"]["items"])
+        _cleanup_trips("api-pack")
+
+    def test_api_view_only_cannot_edit():
+        owner, viewer, stranger = _user("api-eo2"), _user("api-vo2"), _user("api-str2")
+        tid = _owned_trip("api-vt", owner)
+        with SessionLocal() as s:
+            s.add(TripMember(trip_id=tid, user_id=viewer.id))     # explicit view-only share
+            s.commit()
+        # viewer can READ
+        assert client.get(f"/api/v1/trips/{tid}", headers=_bearer(viewer)).status_code == 200
+        # viewer CANNOT edit (403), stranger cannot even see it (404)
+        assert client.patch(f"/api/v1/trips/{tid}", headers=_bearer(viewer),
+                            json={"name": "x"}).status_code == 403
+        assert client.patch(f"/api/v1/trips/{tid}", headers=_bearer(stranger),
+                            json={"name": "x"}).status_code == 404
+        _cleanup_trips("api-vt")
