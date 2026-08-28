@@ -162,6 +162,21 @@ reserved).
   API key (or `/capture/web` proxy identity) that submitted it; the review queue
   is per-submitter (+ open + admin). Household members each run their own
   user-scoped Apps Script key. (owner, 2026-08-27)
+- **D-123 — Packing is PER-USER within a trip; Discovery stays joint.** A packing
+  plan/items are generated for and tied to the *viewing user* (keyed by
+  trip_id + user_id) with no cross-visibility — a companion never sees my socks &
+  underwear. Only editors (travellers/owner/admin) generate packing, and each
+  sees only their own. Existing plans (user_id NULL) stay legacy/shared until
+  regenerated (steady migration). Discovery findings remain trip-level shared.
+  (owner, 2026-08-28)
+- **D-122 — Trip access is two-tier: travellers (who are users) get implicit FULL
+  access; explicit shares are VIEW-ONLY.** A trip's TripTraveler roster drives
+  access — a traveller tied to a user sees & edits the trip automatically (add
+  them as a traveller = share it in). A separate TripMember share grants a
+  NON-traveller read-only visibility. Enforced by HTTP method inside
+  `scope.trip_or_none` (reads need view, writes need edit), so no per-route
+  churn. No public/anonymous visibility — access is always a Yonder user.
+  (owner, 2026-08-28)
 - **D-121 — Trip sharing v1 = "member = full access"; owner_id on trips +
   travel_items only.** A shared user gets full view+edit; the `role` column
   reserves viewer/editor for later. Ownership columns live on the two roots

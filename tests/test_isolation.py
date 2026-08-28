@@ -112,6 +112,57 @@ if DEPS:
         finally:
             settings.auth_required = False
 
+    def test_traveller_who_is_user_gets_full_access():
+        from app.models import TravelerIdentity, TripTraveler
+        owner = _user("iso-to")
+        with SessionLocal() as s:
+            trav = TravelerIdentity(display_name="iso-trav-person", kind="companion")
+            s.add(trav)
+            s.commit()
+            s.refresh(trav)
+            u = User(username="iso-traveller", password_hash=authn.hash_password("pw"),
+                     auth_source="local", traveler_id=trav.id)
+            s.add(u)
+            t = Trip(name="iso-travtrip", source="manual", owner_id=owner.id)
+            s.add(t)
+            s.commit()
+            s.refresh(u)
+            s.expunge(u)
+            assert not scope.can_view_trip(s, u, t)              # not on the roster yet
+            s.add(TripTraveler(trip_id=t.id, traveler_id=trav.id))
+            s.commit()
+            assert scope.can_view_trip(s, u, t)                  # now a traveller
+            assert scope.can_edit_trip(s, u, t)                  # travellers get FULL access
+            assert t.id in scope.visible_trip_ids(s, u)
+            s.query(TripTraveler).filter_by(trip_id=t.id).delete()
+            s.query(TravelerIdentity).filter_by(id=trav.id).delete()
+            s.commit()
+
+    def test_explicit_share_is_view_only():
+        owner, viewer = _user("iso-eo"), _user("iso-ev")         # viewer has no traveler_id
+        with SessionLocal() as s:
+            t = Trip(name="iso-viewtrip", source="manual", owner_id=owner.id)
+            s.add(t)
+            s.commit()
+            tid = t.id
+            s.add(TripMember(trip_id=tid, user_id=viewer.id))
+            s.commit()
+            assert scope.can_view_trip(s, viewer, t)
+            assert not scope.can_edit_trip(s, viewer, t)         # explicit share = view-only
+        settings.auth_required = True
+        try:
+            # can VIEW the trip
+            assert client.get(f"/trips/{tid}", headers=_bearer(viewer),
+                              follow_redirects=False).status_code == 200
+            # but a WRITE route is 403 (method-gated edit)
+            r = client.post(f"/trips/{tid}", headers=_bearer(viewer),
+                            data={"name": "hacked", "start": "", "end": "", "notes": "",
+                                  "adventurelog_collection_id": "", "next": ""},
+                            follow_redirects=False)
+            assert r.status_code == 403
+        finally:
+            settings.auth_required = False
+
     def test_capture_owner_hidden_from_others():
         u = _user("ing-user")
         with SessionLocal() as s:

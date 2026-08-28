@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from sqlalchemy import or_, true
 
-from app.models import TravelItem, Trip, TripMember
+from app.models import TravelItem, Trip, TripMember, TripTraveler
 
 
 def user_of(request):
@@ -30,62 +30,118 @@ def unrestricted(user) -> bool:
     return user is None or bool(getattr(user, "is_admin", False))
 
 
+# Trip access is two-tier (D-122):
+#   FULL (view + edit): owner, admin, or a TRAVELLER on the trip who is a user
+#     (implicit — being on the roster shares the trip in), or an open trip.
+#   VIEW-ONLY (read):  an explicit TripMember share for a NON-traveller.
+_READ_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
 def _member_trip_ids(session, user) -> set[str]:
+    """Trips explicitly shared with the user (view-only)."""
     if user is None:
         return set()
     return {row[0] for row in
             session.query(TripMember.trip_id).filter_by(user_id=user.id).all()}
 
 
+def _roster_trip_ids(session, user) -> set[str]:
+    """Trips the user is a TRAVELLER on (implicit full access)."""
+    if user is None or getattr(user, "traveler_id", None) is None:
+        return set()
+    return {row[0] for row in
+            session.query(TripTraveler.trip_id).filter_by(traveler_id=user.traveler_id).all()}
+
+
+def _is_traveller(session, user, trip) -> bool:
+    if user is None or getattr(user, "traveler_id", None) is None:
+        return False
+    return session.query(TripTraveler).filter_by(
+        trip_id=trip.id, traveler_id=user.traveler_id).count() > 0
+
+
+def _is_member(session, user, trip) -> bool:
+    return session.query(TripMember).filter_by(trip_id=trip.id, user_id=user.id).count() > 0
+
+
 # --------------------------------------------------------------------------- trips
 def trip_filter(session, user):
-    """A predicate for `session.query(Trip).filter(...)`. `true()` when unrestricted."""
+    """A predicate for `session.query(Trip).filter(...)` — VIEW visibility (own +
+    open + traveller-on-roster + explicitly-shared). `true()` when unrestricted."""
     if unrestricted(user):
         return true()
     cond = or_(Trip.owner_id.is_(None), Trip.owner_id == user.id)
-    member_ids = _member_trip_ids(session, user)
-    return or_(cond, Trip.id.in_(member_ids)) if member_ids else cond
+    extra = _member_trip_ids(session, user) | _roster_trip_ids(session, user)
+    return or_(cond, Trip.id.in_(extra)) if extra else cond
 
 
 def visible_trip_ids(session, user) -> set[str] | None:
-    """The set of visible trip ids, or None meaning "all" (unrestricted) — for
-    scoping child tables by trip_id without a join."""
+    """The set of VIEW-visible trip ids, or None meaning "all" (unrestricted) —
+    for scoping child tables by trip_id without a join."""
     if unrestricted(user):
         return None
     ids = {row[0] for row in
            session.query(Trip.id).filter(
                or_(Trip.owner_id.is_(None), Trip.owner_id == user.id)).all()}
-    ids |= _member_trip_ids(session, user)
+    ids |= _member_trip_ids(session, user) | _roster_trip_ids(session, user)
     return ids
 
 
-def can_access_trip(session, user, trip) -> bool:
+def can_view_trip(session, user, trip) -> bool:
     if trip is None:
         return False
     if unrestricted(user):
         return True
     if trip.owner_id is None or trip.owner_id == user.id:
         return True
-    return session.query(TripMember).filter_by(trip_id=trip.id, user_id=user.id).count() > 0
+    return _is_traveller(session, user, trip) or _is_member(session, user, trip)
+
+
+def can_edit_trip(session, user, trip) -> bool:
+    """Full access: owner/admin/open/traveller. Explicit (non-traveller) shares
+    are view-only, so they are NOT editors (D-122)."""
+    if trip is None:
+        return False
+    if unrestricted(user):
+        return True
+    if trip.owner_id is None or trip.owner_id == user.id:
+        return True
+    return _is_traveller(session, user, trip)
+
+
+# Back-compat alias — "access" means view.
+can_access_trip = can_view_trip
 
 
 def trip_or_none(session, request, trip_id):
-    """Drop-in for `session.get(Trip, trip_id)` that also enforces access:
-    returns the trip only if the request's user may see it, else None (so each
-    route's existing `if trip is None` 404 path handles both cases)."""
+    """Drop-in for `session.get(Trip, trip_id)` that enforces access by HTTP
+    method: a READ (GET/HEAD) needs view access; a WRITE (POST/DELETE/…) needs
+    edit access. No view access → None (each route's `if trip is None` 404 path
+    handles it, so existence never leaks). View-but-not-edit on a write → 403."""
     trip = session.get(Trip, trip_id)
-    if trip is None or not can_access_trip(session, user_of(request), trip):
+    if trip is None:
         return None
+    user = user_of(request)
+    if not can_view_trip(session, user, trip):
+        return None
+    method = getattr(request, "method", "GET").upper()
+    if method not in _READ_METHODS and not can_edit_trip(session, user, trip):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403,
+                            detail="you have view-only access to this trip")
     return trip
 
 
-def require_trip(session, user, trip_id):
-    """API-style guard: return the trip or raise 404 (never 403 — a trip's
-    existence must not leak by id-guessing)."""
+def require_trip(session, user, trip_id, *, edit: bool = False):
+    """API-style guard: return the trip or raise 404 (never 403 for existence —
+    a trip's existence must not leak by id-guessing). `edit=True` additionally
+    requires edit access, raising 403 for a view-only share."""
     from fastapi import HTTPException
     trip = session.get(Trip, trip_id)
-    if trip is None or not can_access_trip(session, user, trip):
+    if trip is None or not can_view_trip(session, user, trip):
         raise HTTPException(status_code=404, detail="trip not found")
+    if edit and not can_edit_trip(session, user, trip):
+        raise HTTPException(status_code=403, detail="view-only access")
     return trip
 
 

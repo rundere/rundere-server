@@ -172,22 +172,34 @@ def _activity_display(a: TripActivity) -> dict:
 
 
 def _sharing_context(session: Session, trip: Trip, user=None) -> dict:
-    """Phase 2 (D-121): the "Shared with" panel data. None when auth is off (no
-    sharing surface). Only the owner (or an admin) may modify membership."""
+    """Phase 2 (D-121/D-122): the "Sharing" panel data. None when auth is off.
+    Two tiers: travellers-on-the-trip who are users get FULL access implicitly;
+    explicit shares are VIEW-ONLY for non-travellers. Owner/admin manage shares."""
     if user is None:
         return {"sharing": None}
-    from app.models import TripMember, User
-    member_rows = session.query(TripMember).filter_by(trip_id=trip.id).all()
-    member_ids = {m.user_id for m in member_rows}
+    from app.models import TripMember, TripTraveler, User
+    # Explicit view-only shares.
+    member_ids = {m.user_id for m in
+                  session.query(TripMember).filter_by(trip_id=trip.id).all()}
+    members = [u for u in (session.get(User, mid) for mid in member_ids) if u]
+    # Travellers on this trip who are users → implicit full access.
+    roster_tids = {r.traveler_id for r in
+                   session.query(TripTraveler).filter_by(trip_id=trip.id).all()}
+    traveller_users = (session.query(User).filter(User.traveler_id.in_(roster_tids)).all()
+                       if roster_tids else [])
+    traveller_user_ids = {u.id for u in traveller_users}
     owner = session.get(User, trip.owner_id) if trip.owner_id else None
     can_share = bool(user.is_admin or (trip.owner_id and trip.owner_id == user.id))
-    members = [session.get(User, mid) for mid in member_ids]
+    # An explicit share only makes sense for a user who isn't already the owner,
+    # a traveller (full access already), or shared.
     add_choices = [u for u in session.query(User).order_by(User.username).all()
-                   if u.id != trip.owner_id and u.id not in member_ids]
+                   if u.id != trip.owner_id and u.id not in traveller_user_ids
+                   and u.id not in member_ids]
     return {"sharing": {
         "owner": owner.username if owner else None,
         "is_open": trip.owner_id is None,
-        "members": [{"id": u.id, "username": u.username} for u in members if u],
+        "travellers": [u.username for u in traveller_users if u.id != trip.owner_id],
+        "members": [{"id": u.id, "username": u.username} for u in members],
         "can_share": can_share,
         "add_choices": [{"id": u.id, "username": u.username} for u in add_choices],
     }}

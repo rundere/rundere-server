@@ -56,13 +56,24 @@
 <section class="yn-sec" id="sec-sharing">
   <h2 class="bp-h2">Sharing</h2>
   <p class="bp-muted">
-    {% if sharing.is_open %}Open — visible to everyone.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
+    {% if sharing.is_open %}Open — visible to every Yonder user.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
   </p>
+
+  <h3 class="bp-h3" style="margin-top:10px">Travellers with access</h3>
+  {% if sharing.travellers %}
+  <p class="bp-muted">Travellers on this trip who have a login get full access automatically:</p>
+  <ul class="yn-share-list" style="list-style:none;padding:0;margin:6px 0;display:flex;flex-wrap:wrap;gap:6px">
+    {% for name in sharing.travellers %}<li class="chip">{{ name }} · full access</li>{% endfor %}
+  </ul>
+  {% else %}<p class="bp-muted">No travellers on this trip have a login yet. Add them as a traveller (and link their account) to grant access.</p>{% endif %}
+
+  <h3 class="bp-h3" style="margin-top:10px">Shared for viewing</h3>
   {% if sharing.members %}
-  <ul class="yn-share-list" style="list-style:none;padding:0;margin:8px 0;display:flex;flex-direction:column;gap:6px">
+  <p class="bp-muted">People who can view this trip but aren't travelling on it (read-only):</p>
+  <ul class="yn-share-list" style="list-style:none;padding:0;margin:6px 0;display:flex;flex-direction:column;gap:6px">
     {% for m in sharing.members %}
     <li style="display:flex;align-items:center;gap:8px">
-      <span>{{ m.username }}</span>
+      <span>{{ m.username }} · view-only</span>
       {% if sharing.can_share %}
       <form method="post" action="/trips/{{ trip.id }}/unshare" style="margin:0">
         <input type="hidden" name="user_id" value="{{ m.id }}">
@@ -71,15 +82,15 @@
     </li>
     {% endfor %}
   </ul>
-  {% else %}<p class="bp-muted">Not shared with anyone yet.</p>{% endif %}
+  {% else %}<p class="bp-muted">Not shared with any non-travellers.</p>{% endif %}
   {% if sharing.can_share and sharing.add_choices %}
   <form method="post" action="/trips/{{ trip.id }}/share" style="display:flex;gap:8px;margin-top:8px">
     <select name="user_id" class="input" style="flex:1">
       {% for u in sharing.add_choices %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
     </select>
-    <button class="btn" type="submit">Share</button>
+    <button class="btn" type="submit">Share for viewing</button>
   </form>
-  {% elif sharing.can_share %}<p class="bp-muted">No other users to share with.</p>{% endif %}
+  {% endif %}
 </section>
 {% endif %}
 
