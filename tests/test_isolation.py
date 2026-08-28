@@ -198,6 +198,43 @@ if DEPS:
             s.query(TravelerIdentity).filter_by(id=tr.id).delete()
             s.commit()
 
+    def test_travel_profile_self_edit():
+        """D-124: a user edits their OWN traveller's personal attributes; a user
+        with no linked traveller sees the 'ask an admin' state."""
+        from app.models import TravelerIdentity
+        with SessionLocal() as s:
+            tr = TravelerIdentity(display_name="tp-person", kind="companion")
+            s.add(tr)
+            s.commit()
+            s.refresh(tr)
+            tid = tr.id
+            u = User(username="tp-user", password_hash=authn.hash_password("pw"),
+                     auth_source="local", traveler_id=tid)
+            s.add(u)
+            s.commit()
+            s.refresh(u)
+            s.expunge(u)
+        settings.auth_required = True
+        try:
+            r = client.post("/trips/settings/travel-profile", headers=_bearer(u),
+                            data={"nationality": "ca", "aliases": "OKAFOR/DANIEL\nR OKAFOR",
+                                  "airtrail_user_id": "", "notes": "vip"},
+                            follow_redirects=False)
+            assert r.status_code == 200
+            with SessionLocal() as s:
+                t = s.get(TravelerIdentity, tid)
+                assert t.nationality == "CA" and "R OKAFOR" in (t.aliases or []) and t.notes == "vip"
+            # a user with no linked traveller gets the guidance state, not an editor
+            u2 = _user("tp-nolink")            # no traveler_id
+            r2 = client.get("/trips/settings/travel-profile", headers=_bearer(u2),
+                            follow_redirects=False)
+            assert r2.status_code == 200 and "isn't linked to a traveller" in r2.text
+        finally:
+            settings.auth_required = False
+            with SessionLocal() as s:
+                s.query(TravelerIdentity).filter_by(id=tid).delete()
+                s.commit()
+
     def test_capture_owner_hidden_from_others():
         u = _user("ing-user")
         with SessionLocal() as s:

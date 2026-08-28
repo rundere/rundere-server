@@ -14,6 +14,7 @@
     <span class="sep" aria-hidden="true"></span>
     <span class="grouplbl">Administer</span>
     <a href="/review/home" class="{{ 'on' if p.startswith('/review/home') else '' }}">Home&nbsp;profiles</a>
+    {% if cu %}<a href="/trips/settings/travel-profile" class="{{ 'on' if 'travel-profile' in p else '' }}">Travel&nbsp;profile</a>{% endif %}
     <a href="/trips/settings/packing-profile" class="{{ 'on' if 'packing-profile' in p else '' }}">Packing&nbsp;profile</a>
     <a href="/trips/settings/discovery-profile" class="{{ 'on' if 'discovery-profile' in p else '' }}">Discovery&nbsp;profile</a>
     <a href="/admin/traveler-identity/list" class="{{ 'on' if 'traveler-identity' in p else '' }}">Travellers</a>

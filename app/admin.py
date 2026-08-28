@@ -118,24 +118,18 @@ def mount_admin(app, engine) -> None:
     class TravelerIdentityAdmin(ModelView, model=models.TravelerIdentity):
         name = "Traveller"
         name_plural = "Travellers"
-        # D-35: exactly one row is kind="self" (the AirTrail account holder);
-        # everyone else is a guest. aliases is a JSON list edited one-per-line
-        # (LinesField) because airlines print names in shapes no two agree on.
+        # D-124: the admin roster is a LINKING tool only — name + kind. Personal
+        # traveller attributes a user entered (nationality, aliases, notes,
+        # AirTrail mapping) are NOT shown here; each user edits their own at
+        # Travel profile (/trips/settings/travel-profile). D-35: exactly one row
+        # is kind="self".
         column_list = [models.TravelerIdentity.display_name,
-                       models.TravelerIdentity.kind,
-                       models.TravelerIdentity.airtrail_user_id,
-                       models.TravelerIdentity.aliases]
-        column_labels = {"display_name": "Name", "kind": "Kind",
-                         "airtrail_user_id": "AirTrail user id",
-                         "aliases": "Aliases"}
-        # `kind` is a closed vocabulary (self | guest, D-35) — a free-text box
-        # let a typo like "Self" or "geust" through, which then matches no
-        # identity logic. Force the choice with a dropdown, same override
-        # mechanism as aliases -> LinesField.
-        form_overrides = {"aliases": LinesField, "kind": wtforms.SelectField}
+                       models.TravelerIdentity.kind]
+        column_labels = {"display_name": "Name", "kind": "Kind"}
+        form_columns = ["display_name", "kind"]
+        # `kind` is a closed vocabulary (self | guest, D-35) — force the choice.
+        form_overrides = {"kind": wtforms.SelectField}
         form_args = {
-            "aliases": {"description":
-                        "One alias per line (name as printed on tickets)."},
             "kind": {"choices": [("self", "self — the AirTrail account holder"),
                                  ("guest", "guest")],
                      "default": "guest",

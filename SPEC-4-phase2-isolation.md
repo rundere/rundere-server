@@ -163,7 +163,11 @@ reserved).
   activities, captures/TravelItems, ingest batches, commit attempts, item keys,
   artifacts, packing, discovery — is exposed in any admin UI; it lives in the
   database only (the operator's last-resort access). Generic placeholder guests
-  are excluded from the traveller selection. (owner, 2026-08-28)
+  are excluded from the traveller selection. The admin traveller view is trimmed
+  to **name + kind** (linking only); a user's own personal traveller attributes
+  (nationality, name-on-ticket aliases, AirTrail mapping, notes) move to a
+  **user-facing self-editor** at `/trips/settings/travel-profile` ("Travel
+  profile") — each user edits their own, never the admin. (owner, 2026-08-28)
 
 ## Decisions (D-119–D-121)
 

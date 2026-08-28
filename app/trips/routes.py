@@ -1370,6 +1370,44 @@ def save_packing_profile(request: Request,
                                       _profile_form_ctx(request, session, saved=True))
 
 
+def _my_traveller(session: Session, request: Request):
+    """The current user's own TravelerIdentity, or None (auth off / not linked)."""
+    from app.models import TravelerIdentity
+    user = scope.user_of(request)
+    tid = getattr(user, "traveler_id", None) if user else None
+    return session.get(TravelerIdentity, tid) if tid else None
+
+
+@router.get("/settings/travel-profile", response_class=HTMLResponse)
+def edit_travel_profile(request: Request, session: Session = Depends(get_session)):
+    """A user edits THEIR OWN traveller's personal attributes (D-124): nationality
+    (for visa research), name-on-ticket aliases, AirTrail mapping, notes. These
+    are deliberately NOT in the admin UI — travel is personal."""
+    trav = _my_traveller(session, request)
+    return templates.TemplateResponse(request, "travel_profile.html",
+        {"request": request, "trav": trav, "no_traveller": trav is None, "saved": False})
+
+
+@router.post("/settings/travel-profile", response_class=HTMLResponse)
+def save_travel_profile(request: Request, nationality: str = Form(""),
+                        aliases: str = Form(""), airtrail_user_id: str = Form(""),
+                        notes: str = Form(""), session: Session = Depends(get_session)):
+    from sqlalchemy.orm.attributes import flag_modified
+    trav = _my_traveller(session, request)
+    if trav is None:
+        return templates.TemplateResponse(request, "travel_profile.html",
+            {"request": request, "trav": None, "no_traveller": True, "saved": False})
+    trav.nationality = (nationality or "").strip().upper()[:2] or None
+    trav.aliases = [a.strip() for a in (aliases or "").splitlines() if a.strip()]
+    flag_modified(trav, "aliases")
+    trav.airtrail_user_id = (airtrail_user_id or "").strip() or None
+    trav.notes = (notes or "").strip()[:512] or None
+    session.commit()
+    session.refresh(trav)
+    return templates.TemplateResponse(request, "travel_profile.html",
+        {"request": request, "trav": trav, "no_traveller": False, "saved": True})
+
+
 # ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------
 
 def _discovery_profile_row(session: Session) -> DiscoveryProfile | None:
