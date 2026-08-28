@@ -112,7 +112,8 @@ def _fetch_public_html(url: str) -> str | None:
 def _queue_web(session: Session, html: str, *, source_url: str | None,
                submitted_by: str | None, travel_date: str | None = None,
                travel_time: str | None = None, title: str | None = None,
-               notes: str | None = None, collection_id: str | None = None) -> str:
+               notes: str | None = None, collection_id: str | None = None,
+               owner_user_id: str | None = None) -> str:
     """Wrap a captured page into a `web`-channel batch and store it. Returns the
     batch id."""
     payload = {
@@ -129,7 +130,8 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
         },
     }
     body = json.dumps(payload).encode("utf-8")
-    batch = store_batch(session, body, payload, _internal_key_id(session))
+    batch = store_batch(session, body, payload, _internal_key_id(session),
+                        user_id=owner_user_id)
     session.commit()
     return batch.id
 
@@ -137,7 +139,8 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
 def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
                 travel_date: str, travel_time: str | None = None,
                 title: str | None = None, notes: str | None = None,
-                collection_id: str | None = None) -> str:
+                collection_id: str | None = None,
+                owner_user_id: str | None = None) -> str:
     """Store a Google Maps directions link as a `maps_url`-channel batch — the
     native replacement for the old n8n form. The maps_url extractor needs a
     travel date (a route carries none, RULE-31); the caller validates it."""
@@ -154,7 +157,8 @@ def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
         },
     }
     body = json.dumps(payload).encode("utf-8")
-    batch = store_batch(session, body, payload, _internal_key_id(session))
+    batch = store_batch(session, body, payload, _internal_key_id(session),
+                        user_id=owner_user_id)
     session.commit()
     return batch.id
 
@@ -203,6 +207,11 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     """
     ctype = request.headers.get("Content-Type", "")
     submitted_by = _submitted_by(request)
+    # Phase 2 (D-120): attribute the capture to the submitting Yonder user (from
+    # the session cookie / bearer / trusted proxy). None => an open capture.
+    from app import authn
+    _owner = authn.resolve_user(session, request)
+    owner_user_id = _owner.id if _owner else None
 
     # --- bookmarklet path: raw page HTML in the body ---
     if ctype.startswith("text/html"):
@@ -212,7 +221,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         if not raw.strip():
             return PlainTextResponse("Yonder: empty page — nothing captured.", status_code=400)
         source_url = request.headers.get("X-Yonder-Source-Url") or request.headers.get("Referer")
-        batch_id = _queue_web(session, raw, source_url=source_url, submitted_by=submitted_by)
+        batch_id = _queue_web(session, raw, source_url=source_url, submitted_by=submitted_by, owner_user_id=owner_user_id)
         return PlainTextResponse(
             f"Yonder captured this page ✓ (batch {batch_id[:8]}). "
             f"Run “Process new captures” in the review queue to extract it.")
@@ -243,7 +252,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
                                 "Travel date (a route has no date of its own).")})
             batch_id = _queue_maps(session, content, submitted_by=submitted_by,
                                    travel_date=travel_date, travel_time=travel_time,
-                                   title=title, notes=notes, collection_id=collection_id)
+                                   title=title, notes=notes, collection_id=collection_id, owner_user_id=owner_user_id)
             return templates.TemplateResponse(request, "_capture_result.html", {
                 "ok": True, "batch_id": batch_id,
                 "message": "Captured the drive. Run “Process new captures” in the review queue to extract it."})
@@ -262,7 +271,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
 
     batch_id = _queue_web(session, html, source_url=source_url, submitted_by=submitted_by,
                           travel_date=travel_date, travel_time=travel_time, title=title,
-                          notes=notes, collection_id=collection_id)
+                          notes=notes, collection_id=collection_id, owner_user_id=owner_user_id)
     return templates.TemplateResponse(request, "_capture_result.html", {
         "ok": True, "batch_id": batch_id,
         "message": "Captured. Run “Process new captures” in the review queue to extract it."})

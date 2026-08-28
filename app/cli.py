@@ -1,6 +1,7 @@
 """Operational CLI. Usage (inside the container or a dev venv):
 
-    python -m app.cli create-key <client-name>     # prints the key ONCE
+    python -m app.cli create-key <client-name> [--user <username>]  # prints the key ONCE
+                                                      # --user scopes captures to that user (4.0)
     python -m app.cli revoke-key <client-name>
     python -m app.cli list-keys
     python -m app.cli create-user <username> [--admin] [--password PW]  # 4.0 auth
@@ -137,7 +138,18 @@ def main(argv: list[str]) -> int:
     cmd, args = argv[0], argv[1:]
     with SessionLocal() as session:
         if cmd == "create-key":
-            (client,) = args
+            client = args[0]
+            # Phase 2 (D-120): --user <name> scopes the key to a user, so captures
+            # it submits are owned by them (each member runs their own key).
+            user_id = None
+            if "--user" in args:
+                from app.models import User
+                uname = args[args.index("--user") + 1]
+                u = session.query(User).filter_by(username=uname).one_or_none()
+                if u is None:
+                    print(f"no user {uname!r} (create it first, or omit --user for an open key)")
+                    return 1
+                user_id = u.id
             existing = session.query(ApiKey).filter_by(client_name=client).one_or_none()
             key = auth.generate_key()
             if existing and existing.revoked_at is None:
@@ -151,10 +163,13 @@ def main(argv: list[str]) -> int:
                 existing.created_at = datetime.now(timezone.utc)
                 existing.revoked_at = None
                 existing.last_used_at = None
+                existing.user_id = user_id
             else:
-                session.add(ApiKey(client_name=client, key_hash=auth.hash_key(key)))
+                session.add(ApiKey(client_name=client, key_hash=auth.hash_key(key),
+                                   user_id=user_id))
             session.commit()
-            print(f"API key for {client!r} (shown once, store it now):\n{key}")
+            scoped = f" (scoped to user {args[args.index('--user') + 1]!r})" if user_id else " (open/unscoped)"
+            print(f"API key for {client!r}{scoped} (shown once, store it now):\n{key}")
         elif cmd == "revoke-key":
             (client,) = args
             row = session.query(ApiKey).filter_by(client_name=client).one_or_none()
@@ -165,9 +180,11 @@ def main(argv: list[str]) -> int:
             session.commit()
             print(f"revoked key for {client!r}")
         elif cmd == "list-keys":
+            from app.models import User
             for r in session.query(ApiKey).all():
                 state = "REVOKED" if r.revoked_at else "active"
-                print(f"{r.client_name:30} {state:8} last_used={r.last_used_at}")
+                who = session.get(User, r.user_id).username if r.user_id else "—(open)"
+                print(f"{r.client_name:30} {state:8} user={who:16} last_used={r.last_used_at}")
         elif cmd in ("create-user", "set-password", "make-admin", "list-users",
                      "link-traveler"):
             return _user_cmd(session, cmd, args)

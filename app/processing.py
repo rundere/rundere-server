@@ -48,6 +48,7 @@ def process_batch(session: Session, batch: IngestBatch,
         for i, payload_item in enumerate(items):
             session.add(TravelItem(
                 batch_id=batch.id,
+                owner_id=batch.user_id,          # Phase 2 (D-120): capture ownership
                 item_type=payload_item["item_type"],
                 segment_index=i,
                 segment_count=len(items),

@@ -37,6 +37,7 @@
 <div class="yn-jump">
   <nav class="yn-jump-links">
     <a href="#sec-travelers">Travellers</a>
+    {% if sharing %}<a href="#sec-sharing">Sharing</a>{% endif %}
     <a href="#sec-timeline">Timeline</a>
     <a href="#sec-discovery">Discovery</a>
     <a href="#sec-packing">Packing</a>
@@ -50,6 +51,37 @@
 </div>
 
 {% include "_travelers_section.html" %}
+
+{% if sharing %}
+<section class="yn-sec" id="sec-sharing">
+  <h2 class="bp-h2">Sharing</h2>
+  <p class="bp-muted">
+    {% if sharing.is_open %}Open — visible to everyone.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
+  </p>
+  {% if sharing.members %}
+  <ul class="yn-share-list" style="list-style:none;padding:0;margin:8px 0;display:flex;flex-direction:column;gap:6px">
+    {% for m in sharing.members %}
+    <li style="display:flex;align-items:center;gap:8px">
+      <span>{{ m.username }}</span>
+      {% if sharing.can_share %}
+      <form method="post" action="/trips/{{ trip.id }}/unshare" style="margin:0">
+        <input type="hidden" name="user_id" value="{{ m.id }}">
+        <button class="btn btn-ghost bp-sm" type="submit">Remove</button>
+      </form>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="bp-muted">Not shared with anyone yet.</p>{% endif %}
+  {% if sharing.can_share and sharing.add_choices %}
+  <form method="post" action="/trips/{{ trip.id }}/share" style="display:flex;gap:8px;margin-top:8px">
+    <select name="user_id" class="input" style="flex:1">
+      {% for u in sharing.add_choices %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Share</button>
+  </form>
+  {% elif sharing.can_share %}<p class="bp-muted">No other users to share with.</p>{% endif %}
+</section>
+{% endif %}
 
 <section class="yn-sec" id="sec-timeline">
 <div class="bp-timeline-head">

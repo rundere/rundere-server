@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 
+from app import scope
 from app.config import settings
 from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
@@ -120,9 +121,11 @@ def _trip_display(t: Trip) -> dict:
     }
 
 
-def _list_context(session: Session, q: str, status: str) -> dict:
+def _list_context(session: Session, q: str, status: str, user=None) -> dict:
     today = date.today().isoformat()
-    trips = session.query(Trip).all()
+    # Phase 2: only trips the user may see (own + open + shared); no-op when
+    # auth is off or the user is admin.
+    trips = session.query(Trip).filter(scope.trip_filter(session, user)).all()
     ql = q.lower().strip()
     if ql:
         trips = [t for t in trips if ql in (t.name or "").lower()]
@@ -139,7 +142,7 @@ def _list_context(session: Session, q: str, status: str) -> dict:
             groups.append({"label": label,
                            "trips": [_trip_display(t) for t in members]})
 
-    total = session.query(Trip).count()
+    total = session.query(Trip).filter(scope.trip_filter(session, user)).count()
     return {
         "groups": groups,
         "has_visible": bool(groups),
@@ -168,7 +171,29 @@ def _activity_display(a: TripActivity) -> dict:
     }
 
 
-def _detail_context(session: Session, trip: Trip) -> dict:
+def _sharing_context(session: Session, trip: Trip, user=None) -> dict:
+    """Phase 2 (D-121): the "Shared with" panel data. None when auth is off (no
+    sharing surface). Only the owner (or an admin) may modify membership."""
+    if user is None:
+        return {"sharing": None}
+    from app.models import TripMember, User
+    member_rows = session.query(TripMember).filter_by(trip_id=trip.id).all()
+    member_ids = {m.user_id for m in member_rows}
+    owner = session.get(User, trip.owner_id) if trip.owner_id else None
+    can_share = bool(user.is_admin or (trip.owner_id and trip.owner_id == user.id))
+    members = [session.get(User, mid) for mid in member_ids]
+    add_choices = [u for u in session.query(User).order_by(User.username).all()
+                   if u.id != trip.owner_id and u.id not in member_ids]
+    return {"sharing": {
+        "owner": owner.username if owner else None,
+        "is_open": trip.owner_id is None,
+        "members": [{"id": u.id, "username": u.username} for u in members if u],
+        "can_share": can_share,
+        "add_choices": [{"id": u.id, "username": u.username} for u in add_choices],
+    }}
+
+
+def _detail_context(session: Session, trip: Trip, user=None) -> dict:
     acts = list(trip_activities(session, trip.id))
     # Sort by the denormalized starts_at; '' (undated) sorts to the end.
     acts.sort(key=lambda a: (a.starts_at or "￿"))
@@ -200,6 +225,7 @@ def _detail_context(session: Session, trip: Trip) -> dict:
         **_travelers_context(session, trip.id),
         **_discovery_context(session, trip.id),
         **_packing_context(session, trip.id),
+        **_sharing_context(session, trip, user),
     }
 
 
@@ -398,7 +424,7 @@ def _redirect(url: str) -> HTMLResponse:
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request, q: str = "", status: str = "all",
           session: Session = Depends(get_session)):
-    ctx = {"request": request, **_list_context(session, q, status)}
+    ctx = {"request": request, **_list_context(session, q, status, scope.user_of(request))}
     return templates.TemplateResponse(request, "list.html", ctx)
 
 
@@ -406,7 +432,7 @@ def index(request: Request, q: str = "", status: str = "all",
 def list_partial(request: Request, q: str = "", status: str = "all",
                  session: Session = Depends(get_session)):
     """Groups-only fragment for the live search + status filter."""
-    ctx = {"request": request, **_list_context(session, q, status)}
+    ctx = {"request": request, **_list_context(session, q, status, scope.user_of(request))}
     return templates.TemplateResponse(request, "_groups.html", ctx)
 
 
@@ -428,12 +454,46 @@ def new_trip(request: Request, next: str = "/trips"):
 @router.get("/{trip_id}", response_class=HTMLResponse)
 def detail(trip_id: str, request: Request,
            session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("<p class='bp-empty'>That trip no longer exists.</p>",
                             status_code=404)
-    ctx = {"request": request, **_detail_context(session, trip)}
+    ctx = {"request": request, **_detail_context(session, trip, scope.user_of(request))}
     return templates.TemplateResponse(request, "detail.html", ctx)
+
+
+@router.post("/{trip_id}/share", response_class=HTMLResponse)
+def share_trip(trip_id: str, request: Request, user_id: str = Form(""),
+               session: Session = Depends(get_session)):
+    """Share this trip with another user (owner/admin only). Member = full access."""
+    trip = scope.trip_or_none(session, request, trip_id)
+    me = scope.user_of(request)
+    if trip is None or me is None:
+        return HTMLResponse("", status_code=404)
+    if not (me.is_admin or trip.owner_id == me.id):
+        return HTMLResponse("<p>Only the trip owner can share it.</p>", status_code=403)
+    from app.models import TripMember, User
+    target = session.get(User, user_id) if user_id else None
+    if (target and target.id != trip.owner_id and session.query(TripMember)
+            .filter_by(trip_id=trip.id, user_id=target.id).count() == 0):
+        session.add(TripMember(trip_id=trip.id, user_id=target.id))
+        session.commit()
+    return _redirect(f"/trips/{trip.id}")
+
+
+@router.post("/{trip_id}/unshare", response_class=HTMLResponse)
+def unshare_trip(trip_id: str, request: Request, user_id: str = Form(""),
+                 session: Session = Depends(get_session)):
+    trip = scope.trip_or_none(session, request, trip_id)
+    me = scope.user_of(request)
+    if trip is None or me is None:
+        return HTMLResponse("", status_code=404)
+    if not (me.is_admin or trip.owner_id == me.id):
+        return HTMLResponse("<p>Only the trip owner can change sharing.</p>", status_code=403)
+    from app.models import TripMember
+    session.query(TripMember).filter_by(trip_id=trip.id, user_id=user_id).delete()
+    session.commit()
+    return _redirect(f"/trips/{trip.id}")
 
 
 @router.get("/{trip_id}/derived-locations", response_class=HTMLResponse)
@@ -445,7 +505,7 @@ def derived_locations(trip_id: str, request: Request,
     pipeline's starting point rather than guessing at it. On-demand modal, read
     from the same discover.places output a run would use, so it doubles as a
     pre-flight check."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     return templates.TemplateResponse(request, "_derived_locations.html",
@@ -491,7 +551,7 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
     """Exclude/include a derived place, then re-render the viewer. Excluding also
     drops that place's DRAFT findings for instant feedback; country-scope findings
     reconcile on the next run (the runner prunes stale drafts)."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not place_key:
         return HTMLResponse("", status_code=404)
     existing = (session.query(DiscoveryExclusion)
@@ -661,7 +721,7 @@ def run_discovery_route(trip_id: str, request: Request,
     from app.resolving import load_home_profiles
     from app.trips import discovery_jobs as dj
     from datetime import date as _date
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     if dj.running_run(session, trip_id) is None:
@@ -685,7 +745,7 @@ def discovery_status_route(trip_id: str, request: Request,
     run (restart → failed). When the run is no longer `running`, the returned
     section carries no poll trigger, so the panel stops on its own."""
     from app.trips import discovery_jobs as dj
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     dj.running_run(session, trip_id)          # settle orphans as a side effect
@@ -975,13 +1035,13 @@ def _packing_context(session: Session, trip_id: str) -> dict:
 
 
 @router.post("/{trip_id}/pack", response_class=HTMLResponse)
-def generate_packing_plan_route(trip_id: str,
+def generate_packing_plan_route(trip_id: str, request: Request,
                                 session: Session = Depends(get_session)):
     """Generate (or re-generate) the Packing Plan and reload the detail. Preserves
     your ticked-off / removed items."""
     from app.resolving import load_home_profiles
     from planning.runner import generate_plan
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
@@ -1013,7 +1073,7 @@ def add_archetype_route(trip_id: str, request: Request, archetype_id: str = Form
                         session: Session = Depends(get_session)):
     """Add a trip type to the packing plan and re-generate with the operator's
     explicit set (auto-detection stays as the starting suggestion)."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     valid = {a["id"] for a in _pack_all_archetypes()}
@@ -1028,7 +1088,7 @@ def remove_archetype_route(trip_id: str, request: Request, archetype_id: str = F
                            session: Session = Depends(get_session)):
     """Remove a trip type and re-generate. Removing the last one resets to
     auto-detection on the next generate."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     ids = [i for i in _current_archetype_ids(session, trip_id) if i != archetype_id]
@@ -1140,7 +1200,7 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
     session.commit()
 
     if action in ("keep", "restore"):
-        trip = session.get(Trip, trip_id)
+        trip = scope.trip_or_none(session, request, trip_id)
         return templates.TemplateResponse(request, "_packing_section.html",
                                           {"request": request, "trip": trip,
                                            **_packing_context(session, trip_id)})
@@ -1159,7 +1219,7 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
     """Add a custom line to a category — the other half of a line-item edit
     ("remove the jeans, add a pair of slacks instead") that doesn't fit into
     editing an existing row. Never touched by a re-generate (`edited=True`)."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     label = label.strip()[:128]
@@ -1365,7 +1425,7 @@ def save_discovery_profile(request: Request,
 @router.get("/{trip_id}/edit", response_class=HTMLResponse)
 def edit_trip(trip_id: str, request: Request, next: str = "",
               session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     return templates.TemplateResponse(request, "_trip_modal.html", {
@@ -1402,6 +1462,10 @@ def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
                      "collection_id": adventurelog_collection_id},
             "error": "A trip needs a name."})
     trip = Trip(source="manual")
+    # Phase 2 (D-121): a hand-made trip is owned by its creator. NULL when auth
+    # is off (no user) — an open trip, consistent with pre-4.0 behaviour.
+    _u = scope.user_of(request)
+    trip.owner_id = _u.id if _u else None
     _save_trip_fields(trip, name, start, end, notes, adventurelog_collection_id)
     session.add(trip)
     session.flush()                       # need trip.id for the self-traveller link
@@ -1415,7 +1479,7 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
                 start: str = Form(""), end: str = Form(""), notes: str = Form(""),
                 adventurelog_collection_id: str = Form(""),
                 next: str = Form(""), session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     dest = next or f"/trips/{trip.id}"
@@ -1432,8 +1496,8 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
 
 
 @router.post("/{trip_id}/delete", response_class=HTMLResponse)
-def delete_trip(trip_id: str, session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+def delete_trip(trip_id: str, request: Request, session: Session = Depends(get_session)):
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is not None:
         # Explicit child delete: SQLite in tests does not enforce ON DELETE
         # CASCADE unless PRAGMA foreign_keys is on, so never rely on the DB to
@@ -1465,7 +1529,7 @@ def add_traveler(trip_id: str, request: Request, traveler_id: str = Form(""),
     """Add an existing TravelerIdentity to the trip roster as a companion (the
     `self` traveller auto-links on creation). Idempotent — a duplicate add is a
     no-op — and swaps just the Who's-traveling section."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     try:
@@ -1490,7 +1554,7 @@ def add_guest(trip_id: str, request: Request, name: str = Form(""),
     optional and hang off the identity later if ever wanted (D-94). Reuses an
     existing identity of the same name rather than duplicating it (display_name
     is unique). Blank name is a no-op."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     label = name.strip()
@@ -1706,7 +1770,7 @@ def _push_activities(client, collection_id: str, trip_id: str,
 
 
 @router.post("/{trip_id}/push-adventurelog", response_class=HTMLResponse)
-def push_adventurelog(trip_id: str, session: Session = Depends(get_session)):
+def push_adventurelog(trip_id: str, request: Request, session: Session = Depends(get_session)):
     """Create a PUBLIC AdventureLog collection from this trip and link it — the
     collection ONLY, empty. Pushing the trip's activities and discovery findings
     into it is done afterwards from the managed sync page (/adventurelog), which
@@ -1717,7 +1781,7 @@ def push_adventurelog(trip_id: str, session: Session = Depends(get_session)):
     Public by default so the collection can be direct-linked from outside
     AdventureLog. Idempotent on the collection itself: a trip already linked is
     left alone — we never create a second collection for the same trip."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     if trip.adventurelog_collection_id:
@@ -1911,7 +1975,7 @@ def _al_sync_ctx(session: Session, trip: Trip, client) -> dict:
 @router.get("/{trip_id}/adventurelog", response_class=HTMLResponse)
 def adventurelog_sync_page(trip_id: str, request: Request,
                            session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return _redirect(f"/trips/{trip_id}")
     client = _adventurelog()
@@ -1958,7 +2022,7 @@ def adventurelog_push(trip_id: str, request: Request,
     deduplicated by ownership marker. Transport/lodging update in place silently on
     a match; a Note that matches an existing note needs an explicit confirm (the
     warning panel) before it overwrites."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
     client = _adventurelog()
@@ -2013,7 +2077,7 @@ def adventurelog_pull(trip_id: str, request: Request,
     """Pull selected AdventureLog transport/lodging records into the Yonder
     Timeline as TripActivities. No dedup — Yonder is first-party (owner decision);
     re-pulling a record just adds another Timeline item."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
     client = _adventurelog()
@@ -2112,7 +2176,7 @@ def _collect_values(t: activity_types.ActivityType, form) -> dict:
 @router.post("/{trip_id}/activity", response_class=HTMLResponse)
 async def create_activity(trip_id: str, request: Request,
                           session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     form = await request.form()
