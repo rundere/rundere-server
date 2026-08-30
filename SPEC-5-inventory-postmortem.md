@@ -91,6 +91,25 @@ reserved for a future shopping-list export, but nothing automated in v1.
   activity diffing — scoped when those post-mortem modules are built.
 - **Version placement:** a post-4.0 major (candidate 5.0). TBD.
 
+## Impact on the 4.0 build (assessed 2026-08-30)
+**Additive; no rework of completed 4.0 work.** 4.0's per-user packing (D-123) is
+exactly the foundation this needs, so the hard dimension is already de-risked.
+By element: DB = new tables + one nullable `packing_items.inventory_item_id`
+(additive); API = new endpoints, `/api/v1` unchanged; `scope.py` = one new
+"own-only user resource" filter (inventory is personal, not trip-shared); MCP =
+new tools; trip lifecycle/post-mortem trigger reads existing "trip is past".
+The **one deep change is the planning engine's item resolution**
+(archetype→shared-catalog becomes archetype→user-inventory, D-127) — a
+future-version concern that never touches 4.0.
+
+**Only "act now" item — the iOS app (Phase 5, not yet built):** inventory adds
+*later* screens (inventory, post-mortem, reorder), not changes to the core
+screens, provided the app is built with four cheap forward-compat guards (see the
+Phase-5 notes): lenient offline decoding (tolerate unknown fields), packing kept
+a self-contained module, reserved IA space for an Inventory area + a post-trip
+prompt, and staying on additive `/api/v1` (no v2). Follow those and no Phase-5
+work is wasted.
+
 ## Decisions (proposed, D-127–D-130)
 - **D-127 — Inventory is per-user; no shared master list.** The per-user
   `InventoryItem` set is the master list; the shared `PackingCatalogItem` becomes
