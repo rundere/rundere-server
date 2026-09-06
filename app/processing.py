@@ -19,13 +19,14 @@ from extract.pipeline import extract_ingest_payload
 
 log = logging.getLogger("yonder.processing")
 
-_CONFIDENCE = {"jsonld": 0.9, "ical": 0.9, "maps_url": 0.9, "llm": 0.6}
+_CONFIDENCE = {"jsonld": 0.9, "ical": 0.9, "maps_url": 0.9,
+               "apple_maps_url": 0.9, "llm": 0.6}
 
 
 def _source(batch: IngestBatch, payload: dict) -> dict:
     channel = payload.get("capture_channel") or "gmail"
     return {
-        "type": {"gmail": "gmail", "maps_url": "maps",
+        "type": {"gmail": "gmail", "maps_url": "maps", "apple_maps_url": "maps",
                  "gcal": "gcal", "web": "web"}.get(channel, "manual"),
         "ref": payload.get("message_id") or batch.artifact_sha256 or batch.id,
         "thread_ref": payload.get("thread_id"),

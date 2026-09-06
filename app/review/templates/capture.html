@@ -37,9 +37,11 @@
       <h3>Or paste a page — its source, or a public link</h3>
       <p class="why">
         Paste a page’s HTML source (View Source → copy), a public URL Yonder can
-        fetch itself, or a <strong>Google Maps directions link</strong> (add a
-        Travel date for those). Login-walled pages can’t be fetched from a URL —
-        use the bookmarklet or paste the source for those.
+        fetch itself, or a <strong>Google Maps</strong> / <strong>Apple Maps</strong>
+        directions link (add a Travel date and pick the travel mode for those).
+        Login-walled pages can’t be fetched from a URL — use the bookmarklet or
+        paste the source for those. Travellers come from the trip/collection you
+        attach it to, not this form.
       </p>
       <form hx-post="/capture/web" hx-target="#cap-result" hx-swap="innerHTML"
             hx-disabled-elt="button[type=submit]">
@@ -57,6 +59,23 @@
           <div class="field">
             <label for="travel_time">Travel time (optional)</label>
             <input id="travel_time" name="travel_time" type="text" placeholder="HH:MM">
+          </div>
+          <div class="field">
+            <label for="end_date">End date (optional, multi-day drive)</label>
+            <input id="end_date" name="end_date" type="text" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="field">
+            <label for="timezone">Timezone (optional)</label>
+            <input id="timezone" name="timezone" type="text" placeholder="America/Toronto">
+          </div>
+          <div class="field">
+            <label for="mode">Travel mode (directions links)</label>
+            <select id="mode" name="mode">
+              <option value="">Car (default)</option>
+              <option value="car">Car</option>
+              <option value="transit">Public transit</option>
+              <option value="walk">Walking / hiking</option>
+            </select>
           </div>
           <div class="field">
             <label for="collection_id">Trip / collection id (optional)</label>

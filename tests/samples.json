@@ -8085,5 +8085,707 @@
         "stale": false
       }
     }
+  },
+  {
+    "name": "ROADTRIP / Apple Maps URL -> car trip ATTACHES to existing collection, never mints",
+    "expect": {
+      "schema": "pass",
+      "rules": "pass"
+    },
+    "item": {
+      "id": "1f8c2b3a-0000-4000-8000-000000000401",
+      "schema_version": "1.2.0",
+      "batch_id": null,
+      "segment_index": 0,
+      "segment_count": 1,
+      "source": {
+        "type": "maps",
+        "ref": "b7f0a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0",
+        "api_key_id": "key_bookmarklet",
+        "received_at": "2026-07-25T12:00:00Z",
+        "document_timestamp": "2026-07-25T12:00:00Z",
+        "url": "https://maps.apple.com/?saddr=Toronto,+ON&daddr=Ottawa,+ON&dirflg=d",
+        "capture_context": {
+          "travel_date": "2026-08-08",
+          "travel_time": "07:30",
+          "end_date": null,
+          "collection_id": "c0ffee00-0000-4000-8000-0000000feed1",
+          "timezone": "America/Toronto",
+          "title": "Toronto to Ottawa via Algonquin",
+          "notes": null,
+          "traveler_refs": [
+            "alias_self"
+          ],
+          "item_type_hint": "ground_transport",
+          "submitted_by": "owner",
+          "mode": "car"
+        }
+      },
+      "artifact": {
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "media_type": "text/html",
+        "bytes": 90210
+      },
+      "created_at": "2026-07-25T12:00:00Z",
+      "updated_at": "2026-07-25T12:00:05Z",
+      "item_type": "ground_transport",
+      "canonical_key": "road:2026-08-08:43.6532,-79.3832:45.4215,-75.6972",
+      "booking_group_id": null,
+      "extraction": {
+        "extractor": "apple_maps_url",
+        "model": null,
+        "prompt_version": null,
+        "ran_at": "2026-07-25T12:00:02Z",
+        "confidence": 0.99,
+        "payload": {
+          "item_type": "ground_transport",
+          "booking_status": "planned",
+          "booking_reference": null,
+          "provider": null,
+          "travelers": [
+            {
+              "raw_name": "Daniel Mehta",
+              "given": "Daniel",
+              "family": "Mehta",
+              "role": "self",
+              "match_source": "manual",
+              "match_confidence": 1.0
+            }
+          ],
+          "cost": null,
+          "title": "Toronto to Ottawa via Algonquin",
+          "notes": null,
+          "ground_transport": {
+            "mode": "car",
+            "service_number": null,
+            "departure": {
+              "place": {
+                "raw": "Home, Toronto ON",
+                "name": "Toronto",
+                "city": "Toronto",
+                "region": "Ontario",
+                "country": "CA",
+                "lat": 43.6532,
+                "lon": -79.3832,
+                "tz": "America/Toronto",
+                "geocode_source": "manual",
+                "is_home": true,
+                "home_ref": "home_residence",
+                "suppressed": true,
+                "suppression_reason": "home",
+                "distance_from_home_km": 0.0,
+                "adventurelog_location_id": null
+              },
+              "time": {
+                "local": "2026-08-08T07:30:00",
+                "precision": "datetime",
+                "tz": "America/Toronto",
+                "utc": "2026-08-08T11:30:00Z",
+                "origin": "capture_context"
+              },
+              "terminal": null,
+              "gate": null
+            },
+            "waypoints": [],
+            "arrival": {
+              "place": {
+                "raw": "Ottawa, ON",
+                "name": "Ottawa",
+                "city": "Ottawa",
+                "region": "Ontario",
+                "country": "CA",
+                "lat": 45.4215,
+                "lon": -75.6972,
+                "tz": "America/Toronto",
+                "geocode_source": "photon",
+                "is_home": false,
+                "suppressed": false,
+                "suppression_reason": null,
+                "distance_from_home_km": 352.0,
+                "adventurelog_location_id": null
+              },
+              "time": {
+                "local": "2026-08-08T16:40:00",
+                "precision": "datetime",
+                "tz": "America/Toronto",
+                "utc": "2026-08-08T20:40:00Z",
+                "origin": "capture_context"
+              },
+              "terminal": null,
+              "gate": null
+            },
+            "coach": null,
+            "seats": [],
+            "round_trip": false,
+            "route": {
+              "provider": "apple_maps",
+              "source_url": "https://maps.apple.com/?saddr=Toronto,+ON&daddr=Ottawa,+ON&dirflg=d",
+              "distance_km": 612.4,
+              "duration_minutes": 498,
+              "polyline": null,
+              "is_estimate": true,
+              "captured_at": "2026-07-25T12:00:00Z"
+            }
+          },
+          "capture_required_fields": [
+            "travel_date",
+            "collection_id"
+          ]
+        }
+      },
+      "resolution": {
+        "ran_at": "2026-07-25T12:00:04Z",
+        "outcome": "resolved",
+        "collection_id": "c0ffee00-0000-4000-8000-0000000feed1",
+        "collection_name": "Ontario Road Trip — August 2026",
+        "collection_action": "user_selected",
+        "candidate_collections": [],
+        "self_on_booking": true,
+        "duplicate_of": null,
+        "supersedes": null,
+        "deferred_until": null,
+        "deferred_reason": null,
+        "anchor_eligible": false,
+        "within_home_radius": false,
+        "targets": [
+          "adventurelog.location",
+          "adventurelog.transportation"
+        ],
+        "match_attempted": true
+      },
+      "commit": {
+        "airtrail": null,
+        "adventurelog": [
+          {
+            "target": "location",
+            "key": "location:Ottawa",
+            "state": "ok",
+            "operation": "create",
+            "record_id": "loc-ott-001",
+            "attempts": 1,
+            "last_attempt_at": "2026-07-25T12:00:05Z",
+            "last_status_code": 201,
+            "skip_reason": null,
+            "depends_on": []
+          },
+          {
+            "target": "transportation",
+            "key": "transportation",
+            "state": "ok",
+            "operation": "create",
+            "record_id": "trn-0088",
+            "attempts": 1,
+            "last_attempt_at": "2026-07-25T12:00:05Z",
+            "last_status_code": 201,
+            "skip_reason": null,
+            "depends_on": []
+          }
+        ],
+        "target_versions": {
+          "adventurelog": "0.12.3"
+        }
+      },
+      "status": {
+        "extract": "ok",
+        "resolve": "ok",
+        "airtrail": "skipped",
+        "adventurelog": {
+          "location": "ok",
+          "transportation": "ok"
+        }
+      },
+      "review": {
+        "required": false,
+        "reasons": [],
+        "notified_at": null,
+        "resolved_by": null,
+        "resolved_at": null,
+        "action_taken": null,
+        "escalation": null
+      },
+      "revision": {
+        "action": "create",
+        "revision": 1,
+        "content_hash": "7abe53e6e34c73b56bb165cc5f155c80c3639671f4c18e5cdac7143326375ce3",
+        "prior_item_id": null,
+        "prior_content_hash": null,
+        "prior_document_timestamp": null,
+        "changed_fields": [],
+        "field_locks": [],
+        "stale": false
+      }
+    }
+  },
+  {
+    "name": "WALK / Apple Maps URL walking route -> mode=walk, schema+rules pass",
+    "expect": {
+      "schema": "pass",
+      "rules": "pass"
+    },
+    "item": {
+      "id": "1f8c2b3a-0000-4000-8000-000000000402",
+      "schema_version": "1.2.0",
+      "batch_id": null,
+      "segment_index": 0,
+      "segment_count": 1,
+      "source": {
+        "type": "maps",
+        "ref": "b7f0a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0",
+        "api_key_id": "key_bookmarklet",
+        "received_at": "2026-07-25T12:00:00Z",
+        "document_timestamp": "2026-07-25T12:00:00Z",
+        "url": "https://maps.apple.com/?saddr=Toronto,+ON&daddr=Ottawa,+ON&dirflg=w",
+        "capture_context": {
+          "travel_date": "2026-08-08",
+          "travel_time": "07:30",
+          "end_date": null,
+          "collection_id": "c0ffee00-0000-4000-8000-0000000feed1",
+          "timezone": "America/Toronto",
+          "title": "Toronto to Ottawa via Algonquin",
+          "notes": null,
+          "traveler_refs": [
+            "alias_self"
+          ],
+          "item_type_hint": "ground_transport",
+          "submitted_by": "owner",
+          "mode": "walk"
+        }
+      },
+      "artifact": {
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "media_type": "text/html",
+        "bytes": 90210
+      },
+      "created_at": "2026-07-25T12:00:00Z",
+      "updated_at": "2026-07-25T12:00:05Z",
+      "item_type": "ground_transport",
+      "canonical_key": "road:2026-08-08:43.6532,-79.3832:45.4215,-75.6972",
+      "booking_group_id": null,
+      "extraction": {
+        "extractor": "apple_maps_url",
+        "model": null,
+        "prompt_version": null,
+        "ran_at": "2026-07-25T12:00:02Z",
+        "confidence": 0.99,
+        "payload": {
+          "item_type": "ground_transport",
+          "booking_status": "planned",
+          "booking_reference": null,
+          "provider": null,
+          "travelers": [
+            {
+              "raw_name": "Daniel Mehta",
+              "given": "Daniel",
+              "family": "Mehta",
+              "role": "self",
+              "match_source": "manual",
+              "match_confidence": 1.0
+            }
+          ],
+          "cost": null,
+          "title": "Toronto to Ottawa via Algonquin",
+          "notes": null,
+          "ground_transport": {
+            "mode": "walk",
+            "service_number": null,
+            "departure": {
+              "place": {
+                "raw": "Home, Toronto ON",
+                "name": "Toronto",
+                "city": "Toronto",
+                "region": "Ontario",
+                "country": "CA",
+                "lat": 43.6532,
+                "lon": -79.3832,
+                "tz": "America/Toronto",
+                "geocode_source": "manual",
+                "is_home": true,
+                "home_ref": "home_residence",
+                "suppressed": true,
+                "suppression_reason": "home",
+                "distance_from_home_km": 0.0,
+                "adventurelog_location_id": null
+              },
+              "time": {
+                "local": "2026-08-08T07:30:00",
+                "precision": "datetime",
+                "tz": "America/Toronto",
+                "utc": "2026-08-08T11:30:00Z",
+                "origin": "capture_context"
+              },
+              "terminal": null,
+              "gate": null
+            },
+            "waypoints": [],
+            "arrival": {
+              "place": {
+                "raw": "Ottawa, ON",
+                "name": "Ottawa",
+                "city": "Ottawa",
+                "region": "Ontario",
+                "country": "CA",
+                "lat": 45.4215,
+                "lon": -75.6972,
+                "tz": "America/Toronto",
+                "geocode_source": "photon",
+                "is_home": false,
+                "suppressed": false,
+                "suppression_reason": null,
+                "distance_from_home_km": 352.0,
+                "adventurelog_location_id": null
+              },
+              "time": {
+                "local": "2026-08-08T16:40:00",
+                "precision": "datetime",
+                "tz": "America/Toronto",
+                "utc": "2026-08-08T20:40:00Z",
+                "origin": "capture_context"
+              },
+              "terminal": null,
+              "gate": null
+            },
+            "coach": null,
+            "seats": [],
+            "round_trip": false,
+            "route": {
+              "provider": "apple_maps",
+              "source_url": "https://maps.apple.com/?saddr=Toronto,+ON&daddr=Ottawa,+ON&dirflg=w",
+              "distance_km": 612.4,
+              "duration_minutes": 498,
+              "polyline": null,
+              "is_estimate": true,
+              "captured_at": "2026-07-25T12:00:00Z"
+            }
+          },
+          "capture_required_fields": [
+            "travel_date",
+            "collection_id"
+          ]
+        }
+      },
+      "resolution": {
+        "ran_at": "2026-07-25T12:00:04Z",
+        "outcome": "resolved",
+        "collection_id": "c0ffee00-0000-4000-8000-0000000feed1",
+        "collection_name": "Ontario Road Trip — August 2026",
+        "collection_action": "user_selected",
+        "candidate_collections": [],
+        "self_on_booking": true,
+        "duplicate_of": null,
+        "supersedes": null,
+        "deferred_until": null,
+        "deferred_reason": null,
+        "anchor_eligible": false,
+        "within_home_radius": false,
+        "targets": [
+          "adventurelog.location",
+          "adventurelog.transportation"
+        ],
+        "match_attempted": true
+      },
+      "commit": {
+        "airtrail": null,
+        "adventurelog": [
+          {
+            "target": "location",
+            "key": "location:Ottawa",
+            "state": "ok",
+            "operation": "create",
+            "record_id": "loc-ott-001",
+            "attempts": 1,
+            "last_attempt_at": "2026-07-25T12:00:05Z",
+            "last_status_code": 201,
+            "skip_reason": null,
+            "depends_on": []
+          },
+          {
+            "target": "transportation",
+            "key": "transportation",
+            "state": "ok",
+            "operation": "create",
+            "record_id": "trn-0088",
+            "attempts": 1,
+            "last_attempt_at": "2026-07-25T12:00:05Z",
+            "last_status_code": 201,
+            "skip_reason": null,
+            "depends_on": []
+          }
+        ],
+        "target_versions": {
+          "adventurelog": "0.12.3"
+        }
+      },
+      "status": {
+        "extract": "ok",
+        "resolve": "ok",
+        "airtrail": "skipped",
+        "adventurelog": {
+          "location": "ok",
+          "transportation": "ok"
+        }
+      },
+      "review": {
+        "required": false,
+        "reasons": [],
+        "notified_at": null,
+        "resolved_by": null,
+        "resolved_at": null,
+        "action_taken": null,
+        "escalation": null
+      },
+      "revision": {
+        "action": "create",
+        "revision": 1,
+        "content_hash": "7abe53e6e34c73b56bb165cc5f155c80c3639671f4c18e5cdac7143326375ce3",
+        "prior_item_id": null,
+        "prior_content_hash": null,
+        "prior_document_timestamp": null,
+        "changed_fields": [],
+        "field_locks": [],
+        "stale": false
+      }
+    }
+  },
+  {
+    "name": "NEGATIVE / Apple Maps URL with no travel_date (RULE-31 fires for apple_maps_url too)",
+    "expect": {
+      "schema": "pass",
+      "rules": "fail"
+    },
+    "item": {
+      "id": "1f8c2b3a-0000-4000-8000-000000000502",
+      "schema_version": "1.2.0",
+      "batch_id": null,
+      "segment_index": 0,
+      "segment_count": 1,
+      "source": {
+        "type": "maps",
+        "ref": "b7f0a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0",
+        "api_key_id": "key_bookmarklet",
+        "received_at": "2026-07-25T12:00:00Z",
+        "document_timestamp": "2026-07-25T12:00:00Z",
+        "url": "https://maps.apple.com/?saddr=Toronto,+ON&daddr=Ottawa,+ON&dirflg=d",
+        "capture_context": {
+          "travel_date": null,
+          "travel_time": null,
+          "end_date": null,
+          "collection_id": "c0ffee00-0000-4000-8000-0000000feed1",
+          "timezone": "America/Toronto",
+          "title": "Toronto to Ottawa via Algonquin",
+          "notes": null,
+          "traveler_refs": [
+            "alias_self"
+          ],
+          "item_type_hint": "ground_transport",
+          "submitted_by": "owner",
+          "mode": "car"
+        }
+      },
+      "artifact": {
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "media_type": "text/html",
+        "bytes": 90210
+      },
+      "created_at": "2026-07-25T12:00:00Z",
+      "updated_at": "2026-07-25T12:00:05Z",
+      "item_type": "ground_transport",
+      "canonical_key": "road:2026-08-08:43.6532,-79.3832:45.4215,-75.6972",
+      "booking_group_id": null,
+      "extraction": {
+        "extractor": "apple_maps_url",
+        "model": null,
+        "prompt_version": null,
+        "ran_at": "2026-07-25T12:00:02Z",
+        "confidence": 0.99,
+        "payload": {
+          "item_type": "ground_transport",
+          "booking_status": "planned",
+          "booking_reference": null,
+          "provider": null,
+          "travelers": [
+            {
+              "raw_name": "Daniel Mehta",
+              "given": "Daniel",
+              "family": "Mehta",
+              "role": "self",
+              "match_source": "manual",
+              "match_confidence": 1.0
+            }
+          ],
+          "cost": null,
+          "title": "Toronto to Ottawa via Algonquin",
+          "notes": null,
+          "ground_transport": {
+            "mode": "car",
+            "service_number": null,
+            "departure": {
+              "place": {
+                "raw": "Home, Toronto ON",
+                "name": "Toronto",
+                "city": "Toronto",
+                "region": "Ontario",
+                "country": "CA",
+                "lat": 43.6532,
+                "lon": -79.3832,
+                "tz": "America/Toronto",
+                "geocode_source": "manual",
+                "is_home": true,
+                "home_ref": "home_residence",
+                "suppressed": true,
+                "suppression_reason": "home",
+                "distance_from_home_km": 0.0,
+                "adventurelog_location_id": null
+              },
+              "time": {
+                "local": "2026-08-08T07:30:00",
+                "precision": "datetime",
+                "tz": "America/Toronto",
+                "utc": "2026-08-08T11:30:00Z",
+                "origin": "capture_context"
+              },
+              "terminal": null,
+              "gate": null
+            },
+            "waypoints": [],
+            "arrival": {
+              "place": {
+                "raw": "Ottawa, ON",
+                "name": "Ottawa",
+                "city": "Ottawa",
+                "region": "Ontario",
+                "country": "CA",
+                "lat": 45.4215,
+                "lon": -75.6972,
+                "tz": "America/Toronto",
+                "geocode_source": "photon",
+                "is_home": false,
+                "suppressed": false,
+                "suppression_reason": null,
+                "distance_from_home_km": 352.0,
+                "adventurelog_location_id": null
+              },
+              "time": {
+                "local": "2026-08-08T16:40:00",
+                "precision": "datetime",
+                "tz": "America/Toronto",
+                "utc": "2026-08-08T20:40:00Z",
+                "origin": "capture_context"
+              },
+              "terminal": null,
+              "gate": null
+            },
+            "coach": null,
+            "seats": [],
+            "round_trip": false,
+            "route": {
+              "provider": "apple_maps",
+              "source_url": "https://maps.apple.com/?saddr=Toronto,+ON&daddr=Ottawa,+ON&dirflg=d",
+              "distance_km": 612.4,
+              "duration_minutes": 498,
+              "polyline": null,
+              "is_estimate": true,
+              "captured_at": "2026-07-25T12:00:00Z"
+            }
+          },
+          "capture_required_fields": [
+            "travel_date",
+            "collection_id"
+          ]
+        }
+      },
+      "resolution": {
+        "ran_at": "2026-07-25T12:00:04Z",
+        "outcome": "resolved",
+        "collection_id": "c0ffee00-0000-4000-8000-0000000feed1",
+        "collection_name": "Ontario Road Trip — August 2026",
+        "collection_action": "user_selected",
+        "candidate_collections": [],
+        "self_on_booking": true,
+        "duplicate_of": null,
+        "supersedes": null,
+        "deferred_until": null,
+        "deferred_reason": null,
+        "anchor_eligible": false,
+        "within_home_radius": false,
+        "targets": [
+          "adventurelog.location",
+          "adventurelog.transportation"
+        ],
+        "match_attempted": true
+      },
+      "commit": {
+        "airtrail": null,
+        "adventurelog": [
+          {
+            "target": "location",
+            "key": "location:Algonquin Provincial Park",
+            "state": "ok",
+            "operation": "create",
+            "record_id": "loc-alg-001",
+            "attempts": 1,
+            "last_attempt_at": "2026-07-25T12:00:05Z",
+            "last_status_code": 201,
+            "skip_reason": null,
+            "depends_on": []
+          },
+          {
+            "target": "location",
+            "key": "location:Ottawa",
+            "state": "ok",
+            "operation": "create",
+            "record_id": "loc-ott-001",
+            "attempts": 1,
+            "last_attempt_at": "2026-07-25T12:00:05Z",
+            "last_status_code": 201,
+            "skip_reason": null,
+            "depends_on": []
+          },
+          {
+            "target": "transportation",
+            "key": "transportation",
+            "state": "ok",
+            "operation": "create",
+            "record_id": "trn-0088",
+            "attempts": 1,
+            "last_attempt_at": "2026-07-25T12:00:05Z",
+            "last_status_code": 201,
+            "skip_reason": null,
+            "depends_on": []
+          }
+        ],
+        "target_versions": {
+          "adventurelog": "0.12.3"
+        }
+      },
+      "status": {
+        "extract": "ok",
+        "resolve": "ok",
+        "airtrail": "skipped",
+        "adventurelog": {
+          "location": "ok",
+          "transportation": "ok"
+        }
+      },
+      "review": {
+        "required": false,
+        "reasons": [],
+        "notified_at": null,
+        "resolved_by": null,
+        "resolved_at": null,
+        "action_taken": null,
+        "escalation": null
+      },
+      "revision": {
+        "action": "create",
+        "revision": 1,
+        "content_hash": "7abe53e6e34c73b56bb165cc5f155c80c3639671f4c18e5cdac7143326375ce3",
+        "prior_item_id": null,
+        "prior_content_hash": null,
+        "prior_document_timestamp": null,
+        "changed_fields": [],
+        "field_locks": [],
+        "stale": false
+      }
+    }
   }
 ]

@@ -147,6 +147,11 @@ class CaptureIn(BaseModel):
     url: str | None = None
     html: str | None = None          # shared page HTML (bookmarklet-style)
     travel_date: str | None = None
+    travel_time: str | None = None
+    end_date: str | None = None
+    timezone: str | None = None
+    mode: str | None = None          # directions: car / transit / walk (SPEC-4 §3)
+    collection_id: str | None = None
     title: str | None = None
     notes: str | None = None
 
@@ -350,18 +355,26 @@ def api_capture(body: CaptureIn, user=Depends(authn.current_user),
     """Share-to-app: a Google Maps directions URL, a webpage URL, or shared page
     HTML. Owned by the caller (D-120)."""
     from app.capture import _fetch_public_html, _looks_like_url, _queue_maps, _queue_web
-    from extract import maps_url
+    from extract import apple_maps_url, maps_url
     url = (body.url or "").strip()
+    is_apple = bool(url) and apple_maps_url.looks_like_apple_maps_url(url)
     if body.html:
         bid = _queue_web(session, body.html, source_url=url or None,
                          submitted_by=user.username, travel_date=body.travel_date,
                          title=body.title, notes=body.notes, owner_user_id=user.id)
-    elif url and maps_url.looks_like_maps_url(url):
+    elif url and apple_maps_url.is_apple_short_link(url):
+        raise HTTPException(
+            422, "Apple Maps short link (maps.apple/p/…) carries no coordinates; "
+                 "share the full maps.apple.com directions link")
+    elif is_apple or (url and maps_url.looks_like_maps_url(url)):
         if not body.travel_date:
-            raise HTTPException(400, "a Google Maps directions link needs travel_date")
+            raise HTTPException(400, "a maps directions link needs travel_date")
         bid = _queue_maps(session, url, submitted_by=user.username,
-                          travel_date=body.travel_date, title=body.title,
-                          notes=body.notes, owner_user_id=user.id)
+                          travel_date=body.travel_date, travel_time=body.travel_time,
+                          end_date=body.end_date, timezone=body.timezone, mode=body.mode,
+                          title=body.title, notes=body.notes,
+                          collection_id=body.collection_id, owner_user_id=user.id,
+                          provider="apple" if is_apple else "google")
     elif _looks_like_url(url):
         html = _fetch_public_html(url)
         if not html:

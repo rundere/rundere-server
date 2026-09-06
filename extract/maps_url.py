@@ -23,16 +23,29 @@ import urllib.error
 import urllib.request
 from urllib.parse import parse_qs, unquote_plus, urlsplit
 
+# Shared with the Apple extractor (D-89): place/date parsing and the travel-mode
+# contract live in directions_common so the two providers can't drift. ExtractionError
+# is re-exported here so existing callers (`maps_url.ExtractionError`) keep working.
+from extract.directions_common import (  # noqa: F401
+    ExtractionError, _capture_dt, _parse_place, resolve_mode)
+
 _DIR_PATH = re.compile(r"/maps/dir/([^@?#]+)")
-_COORD = re.compile(r"^\s*(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)\s*$")
-_HAS_DIGIT = re.compile(r"\d")
 # Google short-link hosts we will follow a redirect for. Restricted so the
 # server never fetches an arbitrary operator-supplied URL (SSRF).
 _SHORT_HOSTS = {"maps.app.goo.gl", "goo.gl", "g.co"}
+# Google states its travel mode in the ?api=1 form as travelmode=<x>; map the
+# ones we support to the shared canonical vocabulary. driving/absent => car.
+_GOOGLE_TRAVELMODE = {"driving": "car", "walking": "walk", "transit": "transit"}
 
 
-class ExtractionError(Exception):
-    pass
+def _google_mode_signal(url: str) -> str | None:
+    """The canonical travel mode a Google directions URL states, or None. Only
+    the ?api=1 travelmode param is read; a /maps/dir path without it states no
+    mode (the data blob's !3e codes are undocumented — treated as absent)."""
+    tm = (parse_qs(urlsplit(url).query).get("travelmode") or [None])[0]
+    if tm is None:
+        return None
+    return _GOOGLE_TRAVELMODE.get(tm.strip().lower(), "unknown")
 
 
 def looks_like_maps_url(url: str) -> bool:
@@ -54,35 +67,6 @@ def looks_like_maps_url(url: str) -> bool:
         return True
     q = parse_qs(parts.query)
     return bool(q.get("origin") and q.get("destination"))
-
-
-def _capture_dt(date, time, tz) -> dict:
-    dt = {"local": f"{date}T{time}" if time else str(date),
-          "precision": "datetime" if time else "date",
-          "origin": "capture_context"}
-    if tz:
-        dt["tz"] = tz
-    return dt
-
-
-def _parse_place(segment: str) -> dict:
-    """A directions stop -> a Place. A coordinate becomes lat/lon; a
-    'City, Region[, Country]' name is split so the resolver's geocoder can locate
-    it (its area tier needs a structured city — see D-59); a street address or a
-    bare name is left as raw for the geocoder's other tiers."""
-    seg = segment.strip()
-    place: dict = {"raw": seg}
-    if _COORD.match(seg):
-        return place            # a bare coordinate; coords are read at resolve
-    place["name"] = seg
-    parts = [p.strip() for p in seg.split(",") if p.strip()]
-    # Only treat it as "City, Region[, Country]" when the FIRST part is not a
-    # street line (no house number) — an address keeps its whole string for the
-    # D-59 formatted-address tier instead.
-    if len(parts) >= 2 and not _HAS_DIGIT.search(parts[0]):
-        place["city"] = parts[0]
-        place["region"] = parts[1]
-    return place
 
 
 def _expand_short(url: str) -> str:
@@ -134,6 +118,10 @@ def extract_maps_url(url: str, capture_context: dict | None = None) -> list[dict
             "not a Google Maps directions URL, or fewer than 2 stops "
             f"(found {len(segments)})")
 
+    # Travel mode is the capture selection (default car), cross-checked against
+    # the URL's own travelmode signal (D-91 revised).
+    mode = resolve_mode(cc.get("mode"), _google_mode_signal(url))
+
     dep_dt = _capture_dt(date, cc.get("travel_time"), cc.get("timezone"))
     # A multi-day drive arrives on end_date (date-only); otherwise same day.
     arr_dt = (_capture_dt(cc["end_date"], None, cc.get("timezone"))
@@ -157,7 +145,7 @@ def extract_maps_url(url: str, capture_context: dict | None = None) -> list[dict
         "title": cc.get("title") or f"Drive: {segments[0]} → {segments[-1]}",
         "notes": cc.get("notes"),
         "ground_transport": {
-            "mode": "car",
+            "mode": mode,
             "departure": origin,
             "arrival": dest,
             "waypoints": waypoints,

@@ -35,7 +35,7 @@ from app.config import settings
 from app.db import get_session
 from app.ingest import store_batch
 from app.models import ApiKey
-from extract import maps_url
+from extract import apple_maps_url, maps_url
 
 log = logging.getLogger("yonder.capture")
 router = APIRouter()
@@ -138,19 +138,28 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
 
 def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
                 travel_date: str, travel_time: str | None = None,
+                end_date: str | None = None, timezone: str | None = None,
+                mode: str | None = None,
                 title: str | None = None, notes: str | None = None,
                 collection_id: str | None = None,
-                owner_user_id: str | None = None) -> str:
-    """Store a Google Maps directions link as a `maps_url`-channel batch — the
-    native replacement for the old n8n form. The maps_url extractor needs a
-    travel date (a route carries none, RULE-31); the caller validates it."""
+                owner_user_id: str | None = None,
+                provider: str = "google") -> str:
+    """Store a maps directions link (Google or Apple) as a directions-channel
+    batch — the native replacement for the old n8n form. The extractor needs a
+    travel date (a route carries none, RULE-31); the caller validates it.
+    `provider` selects the channel/extractor; `mode` is the car/transit/walk
+    selection cross-checked against the URL (SPEC-4 §2/§3)."""
+    channel = "apple_maps_url" if provider == "apple" else "maps_url"
     payload = {
-        "capture_channel": "maps_url",
+        "capture_channel": channel,
         "url": url,
         "capture_context": {
             "submitted_by": submitted_by or _WEB_CLIENT,
             "travel_date": travel_date,
             "travel_time": travel_time or None,
+            "end_date": end_date or None,
+            "timezone": timezone or None,
+            "mode": mode or None,
             "title": title or None,
             "notes": notes or None,
             "collection_id": collection_id or None,
@@ -231,6 +240,9 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     content = (form.get("content") or "").strip()
     travel_date = (form.get("travel_date") or "").strip() or None
     travel_time = (form.get("travel_time") or "").strip() or None
+    end_date = (form.get("end_date") or "").strip() or None
+    timezone = (form.get("timezone") or "").strip() or None
+    mode = (form.get("mode") or "").strip() or None
     title = (form.get("title") or "").strip() or None
     notes = (form.get("notes") or "").strip() or None
     collection_id = (form.get("collection_id") or "").strip() or None
@@ -242,20 +254,30 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     source_url = None
     html = content
     if _looks_like_url(content):
-        # A Google Maps directions link is not a web page to fetch — route it to
-        # the maps_url extractor (native; retires the n8n form). It needs a date.
-        if maps_url.looks_like_maps_url(content):
+        # A maps directions link is not a web page to fetch — route it to the
+        # matching extractor (native; retires the n8n form). It needs a date.
+        is_apple = apple_maps_url.looks_like_apple_maps_url(content)
+        if apple_maps_url.is_apple_short_link(content):
+            return templates.TemplateResponse(request, "_capture_result.html", {
+                "ok": False,
+                "message": ("That Apple Maps share link (maps.apple/p/…) carries no "
+                            "coordinates — open it and paste the full "
+                            "maps.apple.com directions link instead.")})
+        if is_apple or maps_url.looks_like_maps_url(content):
             if not travel_date:
                 return templates.TemplateResponse(request, "_capture_result.html", {
                     "ok": False,
-                    "message": ("That’s a Google Maps directions link — add a "
-                                "Travel date (a route has no date of its own).")})
+                    "message": ("That’s a maps directions link — add a Travel date "
+                                "(a route has no date of its own).")})
             batch_id = _queue_maps(session, content, submitted_by=submitted_by,
                                    travel_date=travel_date, travel_time=travel_time,
-                                   title=title, notes=notes, collection_id=collection_id, owner_user_id=owner_user_id)
+                                   end_date=end_date, timezone=timezone, mode=mode,
+                                   title=title, notes=notes, collection_id=collection_id,
+                                   owner_user_id=owner_user_id,
+                                   provider="apple" if is_apple else "google")
             return templates.TemplateResponse(request, "_capture_result.html", {
                 "ok": True, "batch_id": batch_id,
-                "message": "Captured the drive. Run “Process new captures” in the review queue to extract it."})
+                "message": "Captured the trip. Run “Process new captures” in the review queue to extract it."})
         source_url = content
         html = _fetch_public_html(content)
         if not html:

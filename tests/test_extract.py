@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from extract import ical, jsonld, maps_url, mime, pipeline
+from extract import apple_maps_url, ical, jsonld, maps_url, mime, pipeline
 from extract.llm import ExtractionFailed, OllamaExtractor, inline_refs, load_extraction_schema
 from validation import validate_schema
 
@@ -594,6 +594,162 @@ def test_pipeline_maps_channel():
     r2 = pipeline.extract_ingest_payload(
         {"capture_channel": "maps_url", "url": MAPS, "capture_context": {}})
     assert r2.needs_review
+
+
+# ---------------------------------------------------------- google mode select
+
+def test_maps_url_mode_selection_walk():
+    """A capture-selected walk mode is written through (SPEC-4 §3)."""
+    g = maps_url.extract_maps_url(
+        MAPS, {"travel_date": "2026-08-08", "mode": "walk"})[0]["ground_transport"]
+    assert g["mode"] == "walk"
+
+
+def test_maps_url_mode_conflict_rejected():
+    """travelmode=walking in the URL contradicts a Car selection -> refuse."""
+    url = ("https://www.google.com/maps/dir/?api=1&origin=Toronto,ON"
+           "&destination=Ottawa,ON&travelmode=walking")
+    try:
+        maps_url.extract_maps_url(url, {"travel_date": "2026-08-08", "mode": "car"})
+    except maps_url.ExtractionError as ex:
+        assert "mismatch" in str(ex)
+    else:
+        raise AssertionError("should refuse a mode that contradicts the URL")
+
+
+# ---------------------------------------------------------------- apple_maps_url
+
+APPLE = ("https://maps.apple.com/?saddr=Toronto,+ON&daddr=Ottawa,+ON&dirflg=d")
+
+
+def test_apple_maps_url_happy_path_car():
+    items = apple_maps_url.extract_apple_maps_url(
+        APPLE, {"travel_date": "2026-08-08", "timezone": "America/Toronto"})
+    _assert_valid(items)
+    g = items[0]["ground_transport"]
+    assert g["mode"] == "car"
+    assert g["departure"]["place"]["city"] == "Toronto"
+    assert g["arrival"]["place"]["city"] == "Ottawa"
+    assert g["waypoints"] == []                                   # Apple: no waypoints
+    assert g["route"]["provider"] == "apple_maps"
+    assert g["route"]["is_estimate"] is True
+    assert g["departure"]["time"]["origin"] == "capture_context"  # RULE-34
+
+
+def test_apple_maps_url_walking_mode():
+    url = "https://maps.apple.com/?saddr=A&daddr=B&dirflg=w"
+    g = apple_maps_url.extract_apple_maps_url(
+        url, {"travel_date": "2026-08-08", "mode": "walk"})[0]["ground_transport"]
+    assert g["mode"] == "walk"
+
+
+def test_apple_maps_url_transit_is_other_with_notes_marker():
+    url = "https://maps.apple.com/?saddr=A&daddr=B&dirflg=r"
+    items = apple_maps_url.extract_apple_maps_url(
+        url, {"travel_date": "2026-08-08", "mode": "transit"})
+    _assert_valid(items)
+    assert items[0]["ground_transport"]["mode"] == "other"
+    assert "transit" in (items[0]["notes"] or "").lower()
+
+
+def test_apple_maps_url_mode_conflict_rejected():
+    """dirflg=w (walking) contradicts a Car selection -> refuse (D-91 revised)."""
+    url = "https://maps.apple.com/?saddr=A&daddr=B&dirflg=w"
+    try:
+        apple_maps_url.extract_apple_maps_url(url, {"travel_date": "2026-08-08", "mode": "car"})
+    except apple_maps_url.ExtractionError as ex:
+        assert "mismatch" in str(ex)
+    else:
+        raise AssertionError("should refuse a mode that contradicts dirflg")
+
+
+def test_apple_maps_url_absent_dirflg_is_not_a_conflict():
+    """No dirflg + Car selection is fine — an absent signal never conflicts."""
+    url = "https://maps.apple.com/?saddr=A&daddr=B"
+    g = apple_maps_url.extract_apple_maps_url(
+        url, {"travel_date": "2026-08-08", "mode": "car"})[0]["ground_transport"]
+    assert g["mode"] == "car"
+
+
+def test_apple_maps_url_unknown_dirflg_rejected():
+    """An unrecognized dirflg (e.g. cycling) is a present, unsupported signal."""
+    url = "https://maps.apple.com/?saddr=A&daddr=B&dirflg=c"
+    try:
+        apple_maps_url.extract_apple_maps_url(url, {"travel_date": "2026-08-08", "mode": "car"})
+    except apple_maps_url.ExtractionError as ex:
+        assert "mismatch" in str(ex)
+    else:
+        raise AssertionError("should refuse an unrecognized dirflg")
+
+
+def test_apple_maps_url_daddr_only_refuses():
+    url = "https://maps.apple.com/?daddr=Ottawa,+ON"
+    try:
+        apple_maps_url.extract_apple_maps_url(url, {"travel_date": "2026-08-08"})
+    except apple_maps_url.ExtractionError as ex:
+        assert "2 stops" in str(ex)
+    else:
+        raise AssertionError("a link with only daddr must refuse")
+
+
+def test_apple_maps_url_current_location_origin_refuses():
+    url = "https://maps.apple.com/?saddr=Current%20Location&daddr=Ottawa,+ON"
+    try:
+        apple_maps_url.extract_apple_maps_url(url, {"travel_date": "2026-08-08"})
+    except apple_maps_url.ExtractionError as ex:
+        assert "current-location" in str(ex) or "placeholder" in str(ex)
+    else:
+        raise AssertionError("a current-location origin is not stable — refuse")
+
+
+def test_apple_maps_url_without_date_refuses():
+    try:
+        apple_maps_url.extract_apple_maps_url(APPLE, {})
+    except apple_maps_url.ExtractionError as ex:
+        assert "RULE-31" in str(ex)
+    else:
+        raise AssertionError("should refuse to guess a date")
+
+
+def test_apple_maps_url_coordinate_saddr_parses():
+    url = "https://maps.apple.com/?saddr=37.7749,-122.4194&daddr=Ottawa,+ON"
+    g = apple_maps_url.extract_apple_maps_url(
+        url, {"travel_date": "2026-08-08"})[0]["ground_transport"]
+    assert g["departure"]["place"]["raw"] == "37.7749,-122.4194"
+    assert "city" not in g["departure"]["place"]                  # a coord, not a name
+    assert g["arrival"]["place"]["city"] == "Ottawa"
+
+
+def test_apple_maps_url_short_link_refuses():
+    try:
+        apple_maps_url.extract_apple_maps_url(
+            "https://maps.apple/p/abc123", {"travel_date": "2026-08-08"})
+    except apple_maps_url.ExtractionError as ex:
+        assert "short link" in str(ex)
+    else:
+        raise AssertionError("a maps.apple/p short link is out of scope (D-88)")
+
+
+def test_looks_like_apple_maps_url():
+    assert apple_maps_url.looks_like_apple_maps_url(APPLE)
+    assert not apple_maps_url.looks_like_apple_maps_url("https://maps.apple/p/abc")
+    assert not apple_maps_url.looks_like_apple_maps_url(
+        "https://maps.apple.com/?daddr=Ottawa")                   # missing saddr
+    assert not apple_maps_url.looks_like_apple_maps_url(
+        "https://www.google.com/maps/dir/A/B")
+    assert apple_maps_url.is_apple_short_link("https://maps.apple/p/abc")
+
+
+def test_pipeline_routes_apple_before_google():
+    """An Apple link reaches the apple_maps_url extractor, not the Google one."""
+    r = pipeline.extract_ingest_payload(
+        {"capture_channel": "apple_maps_url", "url": APPLE,
+         "capture_context": {"travel_date": "2026-08-08"}})
+    assert r.ok and r.extractor == "apple_maps_url"
+    # Also via bare-URL sniffing (no explicit channel).
+    r2 = pipeline.extract_ingest_payload(
+        {"url": APPLE, "capture_context": {"travel_date": "2026-08-08"}})
+    assert r2.ok and r2.extractor == "apple_maps_url"
 
 
 # ---------------------------------------------------------------- runner
