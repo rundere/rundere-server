@@ -41,10 +41,15 @@ class Settings(BaseSettings):
 
     # Discovery (Yonder 3.0, SPEC-3-discovery.md). Deterministic-tier sources —
     # overridable so a deployment can self-host (e.g. its own Frankfurter) and
-    # stay fully local. base_currencies is the home bases the currency resolver +
-    # calculator convert FROM (D-65).
-    discovery_base_currencies: str = "CAD,USD"
-    frankfurter_url: str = "https://api.frankfurter.dev/v1"
+    # stay fully local. base_currencies is the deployment's ALWAYS-ON base
+    # currencies the resolver + calculator convert FROM (D-65). They are unioned
+    # with each trip traveller's own explicit pick (TravelerIdentity.base_currency)
+    # — so a traveller's profile can be CAD while this keeps USD in view for a
+    # closed-currency destination (e.g. Cuba). With no traveller pick, these are
+    # the whole set. Defaults to USD (the universal reference) when unset — a
+    # deployment sets this to its own home currencies (e.g. "CAD,USD").
+    discovery_base_currencies: str = "USD"
+    frankfurter_url: str = "https://api.frankfurter.dev/v2"
     open_meteo_url: str = "https://api.open-meteo.com/v1"
     open_meteo_archive_url: str = "https://archive-api.open-meteo.com/v1"
     # Discovery LLM tier (Yonder 3.2, SPEC-3.2 §5). SearXNG is already in the

@@ -297,6 +297,11 @@ class TravelerIdentity(Base):
     # 3.2 (D-91): ISO-2 country code, used by the visa resolver (the `self`
     # traveller's nationality). NULL = visa research skipped with a visible prompt.
     nationality: Mapped[str | None] = mapped_column(String(2))
+    # 4.0 (D-65): the traveller's own base currency — the one the discovery
+    # currency resolver + calculator convert FROM on their trips. An EXPLICIT
+    # profile choice (ISO-4217, e.g. "GBP"), independent of nationality and home.
+    # NULL = fall back to the deployment default (TX_DISCOVERY_BASE_CURRENCIES).
+    base_currency: Mapped[str | None] = mapped_column(String(3))
     # 3.2 (D-100): a generic guest is a roster placeholder — "someone is coming"
     # — NOT a modelled person. Minted by the trip "add a guest" quick-add. It
     # carries no profile/nationality and is deliberately EXCLUDED from discovery

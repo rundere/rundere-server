@@ -22,6 +22,13 @@
       <div class="field"><label>Nationality</label>
         <input name="nationality" maxlength="2" placeholder="ISO-2, e.g. CA, US, GB"
                value="{{ trav.nationality or '' }}" style="text-transform:uppercase"></div>
+      <div class="field"><label>Base currency</label>
+        <select name="base_currency" class="v">
+          <option value="">— deployment default —</option>
+          {% for code, label in currencies %}
+          <option value="{{ code }}" {% if trav.base_currency == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select></div>
       <div class="field"><label>Name-on-ticket aliases</label>
         <textarea name="aliases" rows="3" class="v"
                   placeholder="One per line — e.g. OKAFOR/DANIEL MR">{{ (trav.aliases or []) | join('\n') }}</textarea></div>
@@ -33,7 +40,10 @@
       <button class="act primary" type="submit" style="margin-top:12px">Save</button>
     </form>
     <p class="why" style="margin-top:12px">Nationality drives visa research on your
-      trips. Aliases help match flights printed under name variants.</p>
+      trips. Base currency is your own currency for the discovery rates and
+      calculator; the deployment's configured currencies are always shown too, so
+      leaving this blank just uses those. Aliases help match flights printed under
+      name variants.</p>
   {% endif %}
   </div>
 </div>

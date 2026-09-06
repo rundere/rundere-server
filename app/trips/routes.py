@@ -723,6 +723,34 @@ def _discovery_section(request: Request, session: Session, trip: Trip) -> HTMLRe
     return templates.TemplateResponse(request, "_discovery_section.html", ctx)
 
 
+def _trip_base_currencies(session: Session, trip_id: str) -> tuple[str, ...]:
+    """Base currencies the currency resolver + calculator convert FROM (D-65).
+
+    The union of two sources, traveller picks first:
+      1. each trip traveller's EXPLICIT base currency, chosen on their travel
+         profile (TravelerIdentity.base_currency) — its own field, not derived
+         from nationality or the home profile. A UK traveller who picks GBP
+         converts from GBP, not a hardcoded CAD.
+      2. the deployment's ALWAYS-ON base currencies (TX_DISCOVERY_BASE_CURRENCIES).
+         These add reference visibility on top of the profile pick — e.g. keep
+         USD in view for a Cuba trip (CUP is a closed currency, but USD is the
+         practical reference) while a traveller's profile stays CAD.
+    When no traveller has picked one, the result is just the deployment set."""
+    from app.models import TravelerIdentity, TripTraveler
+    travelers = (session.query(TravelerIdentity)
+                 .join(TripTraveler, TripTraveler.traveler_id == TravelerIdentity.id)
+                 .filter(TripTraveler.trip_id == trip_id).all())
+    codes: list[str] = []
+    for t in travelers:
+        c = (t.base_currency or "").strip().upper()
+        if c and c not in codes:
+            codes.append(c)
+    for c in settings.base_currency_list:          # always-on deployment extras
+        if c not in codes:
+            codes.append(c)
+    return tuple(codes)
+
+
 @router.post("/{trip_id}/discover", response_class=HTMLResponse)
 def run_discovery_route(trip_id: str, request: Request,
                         session: Session = Depends(get_session)):
@@ -739,14 +767,15 @@ def run_discovery_route(trip_id: str, request: Request,
     if dj.running_run(session, trip_id) is None:
         profile = _discovery_profile_row(session)
         ident = _self_identity(session)
+        today = _date.today().isoformat()
         dj.launch(trip_id, resolve_airport=_airport_resolver(), geocoder=_photon(),
                   det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(),
                   home_profiles=load_home_profiles(session),
                   excluded=_excluded_keys(session, trip_id),
                   discovery_profile=(profile.values if profile else None),
                   nationality=(ident.nationality if ident else None),
-                  base_currencies=settings.base_currency_list,
-                  today=_date.today().isoformat())
+                  base_currencies=_trip_base_currencies(session, trip_id),
+                  today=today)
     return _discovery_section(request, session, trip)
 
 
@@ -784,7 +813,7 @@ def rerun_finding_route(trip_id: str, fid: str,
         return _redirect(f"/trips/{trip_id}")
     rerun_finding(session, f, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
-                  base_currencies=settings.base_currency_list)
+                  base_currencies=_trip_base_currencies(session, trip_id))
     return _redirect(f"/trips/{trip_id}")
 
 
@@ -805,6 +834,19 @@ def edit_finding(trip_id: str, fid: str, request: Request,
         return templates.TemplateResponse(request, "_language_edit.html", {
             "request": request, "trip_id": trip_id, "fid": fid,
             "place_key": f.place_key, "options": options})
+    # Currency edits the actual conversion numbers (data.rates), not just the
+    # markdown — a text-only edit would leave the calculator computing from the
+    # stale snapshot. No resolved currency code (Babel couldn't map the country)
+    # → nothing structured to edit, fall through to the markdown editor.
+    data = f.data or {}
+    if f.topic == "currency" and data.get("currency"):
+        code = data["currency"]
+        per = (data.get("rates") or {}).get(code, {})
+        bases = data.get("bases") or list(settings.base_currency_list)
+        rows = [{"base": b, "value": per.get(f"per_{b}")} for b in bases]
+        return templates.TemplateResponse(request, "_currency_edit.html", {
+            "request": request, "trip_id": trip_id, "fid": fid,
+            "code": code, "place_key": f.place_key, "rows": rows})
     return templates.TemplateResponse(request, "_finding_edit.html", {
         "request": request, "trip_id": trip_id, "fid": fid,
         "topic_label": TOPIC_LABELS.get(f.topic, f.topic),
@@ -814,6 +856,8 @@ def edit_finding(trip_id: str, fid: str, request: Request,
 @router.post("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
 def save_finding(trip_id: str, fid: str, body: str = Form(""),
                  langs: list[str] = Form(default=[]),
+                 cur_base: list[str] = Form(default=[]),
+                 cur_rate: list[str] = Form(default=[]),
                  session: Session = Depends(get_session)):
     f = _finding_or_404(session, trip_id, fid)
     if f is None:
@@ -826,6 +870,37 @@ def save_finding(trip_id: str, fid: str, body: str = Form(""),
         label = _bold_label(f.body_md) or f.place_key
         f.body_md, f.data, f.confidence = build_language_body(
             label, langs, official=False, phrasebook=langdata.phrasebook(session))
+    elif f.topic == "currency" and (f.data or {}).get("currency"):
+        # Rewrite the stored rate snapshot (units of `code` per 1 base) that the
+        # calculator reads — the whole point of the fix — then regenerate the body
+        # from it so text and math never diverge.
+        from discover.resolvers.currency import render_currency_body
+        from datetime import date as _date
+        data = dict(f.data or {})
+        code = data["currency"]
+        per_base: dict[str, float] = {}
+        for b, v in zip(cur_base, cur_rate):
+            b, v = (b or "").strip().upper(), (v or "").strip()
+            if not b or not v:
+                continue
+            try:
+                fv = float(v)
+            except ValueError:
+                continue
+            if fv > 0:
+                per_base[b] = fv
+        bases = [(b or "").strip().upper() for b in cur_base if (b or "").strip()]
+        as_of = _date.today().isoformat()
+        data["date"] = as_of
+        data["bases"] = bases
+        data["rates"] = ({code: {f"per_{b}": per_base[b] for b in per_base}}
+                         if per_base else {})
+        f.data = data
+        f.body_md = render_currency_body(
+            _bold_label(f.body_md) or f.place_key, code,
+            data.get("currency_name") or code, bases, per_base, as_of,
+            bool(data.get("usd_useful")), source_note="manually edited")
+        f.confidence = "high" if per_base else "flagged"
     else:
         f.body_md = body
     f.status = "edited"
@@ -837,8 +912,10 @@ def save_finding(trip_id: str, fid: str, body: str = Form(""),
 def currency_calculator(trip_id: str, fid: str, request: Request,
                         session: Session = Depends(get_session)):
     """The per-trip currency calculator (D-65). Computes client-side from the
-    STORED rate snapshot — no live call — pivoting every currency through CAD so
-    any pair converts, including local↔local on a multi-country trip."""
+    STORED rate snapshot — no live call — pivoting every currency through one home
+    base so any pair converts, including local↔local on a multi-country trip. The
+    pivot is chosen from the trip's own base currencies (no hardcoded CAD), so a
+    non-Canadian traveller's calculator works too."""
     f = _finding_or_404(session, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
@@ -853,26 +930,39 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
         as_of = as_of or d.get("date")
         for code, per in (d.get("rates") or {}).items():
             rates[code] = {b.replace("per_", ""): v for b, v in per.items()}
-    # Pivot table: units of each currency per 1 CAD.
-    per_cad: dict[str, float] = {"CAD": 1.0}
-    usd_per_cad = None
-    for code, br in rates.items():
-        if br.get("CAD"):
-            per_cad[code] = br["CAD"]
-        if usd_per_cad is None and br.get("CAD") and br.get("USD"):
-            usd_per_cad = br["CAD"] / br["USD"]
-    if rates.get("USD", {}).get("CAD"):
-        usd_per_cad = rates["USD"]["CAD"]
-    if usd_per_cad:
-        per_cad["USD"] = usd_per_cad
-    # Dropdown order: bases first, then destination currencies.
-    bases = [b for b in settings.base_currency_list if b in per_cad]
-    dests = sorted(c for c in per_cad if c not in bases)
+    # The home base currencies the snapshots quote (what we convert FROM). Pick
+    # the pivot as the base the most currencies quote, so the table stays
+    # connected even after a manual edit trimmed a base from one finding.
+    all_bases: list[str] = []
+    for br in rates.values():
+        for b in br:
+            if b not in all_bases:
+                all_bases.append(b)
+    ordered_bases = ([b for b in settings.base_currency_list if b in all_bases]
+                     + [b for b in all_bases if b not in settings.base_currency_list])
+    pivot = max(ordered_bases, default=None,
+                key=lambda B: sum(1 for br in rates.values() if br.get(B)))
+    # per_pivot[X] = units of X per 1 pivot, so the client converts any pair as
+    # amount / per_pivot[from] * per_pivot[to].
+    per_pivot: dict[str, float] = {}
+    if pivot is not None:
+        per_pivot[pivot] = 1.0
+        for code, br in rates.items():
+            if br.get(pivot):
+                per_pivot[code] = br[pivot]                  # code per 1 pivot
+        for code, br in rates.items():                       # other home bases
+            p = br.get(pivot)
+            for b, v in br.items():
+                if b not in per_pivot and p and v:
+                    per_pivot[b] = p / v                     # b per 1 pivot
+    # Dropdown order: home bases first, then destination currencies.
+    bases = [b for b in ordered_bases if b in per_pivot]
+    dests = sorted(c for c in per_pivot if c not in bases)
     currencies = bases + dests
     import json as _json
     return templates.TemplateResponse(request, "_calculator.html", {
         "request": request, "trip_id": trip_id,
-        "currencies": currencies, "per_cad_json": Markup(_json.dumps(per_cad)),
+        "currencies": currencies, "per_pivot_json": Markup(_json.dumps(per_pivot)),
         "as_of": as_of or "—",
         "default_from": bases[0] if bases else (currencies[0] if currencies else ""),
         "default_to": dests[0] if dests else (currencies[-1] if currencies else ""),
@@ -1378,26 +1468,47 @@ def _my_traveller(session: Session, request: Request):
     return session.get(TravelerIdentity, tid) if tid else None
 
 
+def _currency_options() -> list[tuple[str, str]]:
+    """(code, "CAD — Canadian Dollar") for every ISO-4217 currency Babel knows,
+    for the travel-profile base-currency picker. Sorted by code."""
+    from babel.numbers import list_currencies, get_currency_name
+    opts = []
+    for c in list_currencies():
+        try:
+            name = get_currency_name(c, locale="en")
+        except Exception:
+            name = c
+        opts.append((c, f"{c} — {name}"))
+    return sorted(opts)
+
+
 @router.get("/settings/travel-profile", response_class=HTMLResponse)
 def edit_travel_profile(request: Request, session: Session = Depends(get_session)):
     """A user edits THEIR OWN traveller's personal attributes (D-124): nationality
-    (for visa research), name-on-ticket aliases, AirTrail mapping, notes. These
-    are deliberately NOT in the admin UI — travel is personal."""
+    (for visa research), base currency (for discovery currency conversion),
+    name-on-ticket aliases, AirTrail mapping, notes. These are deliberately NOT in
+    the admin UI — travel is personal."""
     trav = _my_traveller(session, request)
     return templates.TemplateResponse(request, "travel_profile.html",
-        {"request": request, "trav": trav, "no_traveller": trav is None, "saved": False})
+        {"request": request, "trav": trav, "no_traveller": trav is None,
+         "currencies": _currency_options(), "saved": False})
 
 
 @router.post("/settings/travel-profile", response_class=HTMLResponse)
 def save_travel_profile(request: Request, nationality: str = Form(""),
+                        base_currency: str = Form(""),
                         aliases: str = Form(""), airtrail_user_id: str = Form(""),
                         notes: str = Form(""), session: Session = Depends(get_session)):
     from sqlalchemy.orm.attributes import flag_modified
+    from babel.numbers import list_currencies
     trav = _my_traveller(session, request)
     if trav is None:
         return templates.TemplateResponse(request, "travel_profile.html",
-            {"request": request, "trav": None, "no_traveller": True, "saved": False})
+            {"request": request, "trav": None, "no_traveller": True,
+             "currencies": _currency_options(), "saved": False})
     trav.nationality = (nationality or "").strip().upper()[:2] or None
+    bc = (base_currency or "").strip().upper()
+    trav.base_currency = bc if bc in set(list_currencies()) else None
     trav.aliases = [a.strip() for a in (aliases or "").splitlines() if a.strip()]
     flag_modified(trav, "aliases")
     trav.airtrail_user_id = (airtrail_user_id or "").strip() or None
@@ -1405,7 +1516,8 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
     session.commit()
     session.refresh(trav)
     return templates.TemplateResponse(request, "travel_profile.html",
-        {"request": request, "trav": trav, "no_traveller": False, "saved": True})
+        {"request": request, "trav": trav, "no_traveller": False,
+         "currencies": _currency_options(), "saved": True})
 
 
 # ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------

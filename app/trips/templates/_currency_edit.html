@@ -1,0 +1,24 @@
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
+  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+    <div class="dialog-title">Edit rates · {{ code }} · {{ place_key }}</div>
+    <form class="dialog-body" hx-post="/trips/{{ trip_id }}/finding/{{ fid }}/edit"
+          hx-target="#modal-root" hx-swap="innerHTML">
+      <p class="bp-trip-notes">Set how many <b>{{ code }}</b> one unit of each home
+        currency buys — these are the numbers the calculator converts from, not just
+        the displayed text. Saving marks the finding <b>edited</b>. Leave a row blank
+        to drop that rate.</p>
+      {% for r in rows %}
+      <div class="field">
+        <label>1 {{ r.base }} = <span class="bp-trip-notes">({{ code }})</span></label>
+        <input type="hidden" name="cur_base" value="{{ r.base }}">
+        <input class="input" name="cur_rate" type="number" step="any" min="0"
+               inputmode="decimal" value="{{ r.value if r.value is not none else '' }}">
+      </div>
+      {% endfor %}
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
