@@ -222,6 +222,62 @@ def test_capture_maps_url_requires_travel_date():
     _route_or_skip(run)
 
 
+def _apple_batches():
+    with SessionLocal() as s:
+        return [b for b in s.query(IngestBatch).all()
+                if (b.payload or {}).get("capture_channel") == "apple_maps_url"]
+
+
+def test_capture_apple_path_routes_to_apple_channel():
+    def run():
+        before = len(_apple_batches())
+        r = _client.post("/capture/web", data={
+            "path": "apple",
+            "content": "https://maps.apple.com/?saddr=Toronto,+ON&daddr=Ottawa,+ON&dirflg=d",
+            "travel_date": "2026-09-23", "mode": "car"})
+        assert r.status_code == 200
+        after = _apple_batches()
+        assert len(after) == before + 1
+        assert after[-1].payload["capture_context"]["mode"] == "car"
+    _route_or_skip(run)
+
+
+def test_capture_apple_path_rejects_google_url():
+    def run():
+        before = len(_apple_batches())
+        r = _client.post("/capture/web", data={
+            "path": "apple",
+            "content": "https://www.google.com/maps/dir/Toronto/Ottawa",
+            "travel_date": "2026-09-23"})
+        assert r.status_code == 200
+        assert "Apple Maps directions link" in r.text
+        assert len(_apple_batches()) == before        # wrong path -> nothing stored
+    _route_or_skip(run)
+
+
+def test_capture_google_path_rejects_apple_url():
+    def run():
+        before = len(_maps_batches())
+        r = _client.post("/capture/web", data={
+            "path": "google",
+            "content": "https://maps.apple.com/?saddr=A&daddr=B",
+            "travel_date": "2026-09-23"})
+        assert r.status_code == 200
+        assert "Google Maps directions link" in r.text
+        assert len(_maps_batches()) == before
+    _route_or_skip(run)
+
+
+def test_capture_apple_path_rejects_short_link():
+    def run():
+        r = _client.post("/capture/web", data={
+            "path": "apple", "content": "https://maps.apple/p/abc123",
+            "travel_date": "2026-09-23"})
+        assert r.status_code == 200
+        assert "no coordinates" in r.text.lower()
+    _route_or_skip(run)
+
+
 def test_about_page_shows_version_repo_and_credit():
     def run():
         from app.config import settings

@@ -27,6 +27,18 @@ MODE_BY_SELECTION = {"car": "car", "transit": "other", "walk": "walk"}
 # (e.g. cycling) — it matches no selection and therefore always conflicts.
 _CANON_BY_SELECTION = {"car": "car", "transit": "transit", "walk": "walk"}
 
+# Human-facing labels used in titles/notes so Google and Apple read identically.
+PROVIDER_LABEL = {"google_maps": "Google Maps", "apple_maps": "Apple Maps"}
+_TITLE_VERB = {"car": "Drive", "walk": "Walk", "other": "Transit"}
+# Origins that are not a stable stop — Apple/Google may emit these when a route
+# starts from "current location", i.e. whoever shared it (SPEC-4 §4). Compared
+# case-insensitively.
+UNSTABLE_ORIGINS = {"current location", "my location", "here"}
+
+
+def is_unstable_origin(segment: str) -> bool:
+    return (segment or "").strip().lower() in UNSTABLE_ORIGINS
+
 
 class ExtractionError(Exception):
     pass
@@ -83,3 +95,67 @@ def resolve_mode(selection: str | None, url_signal: str | None) -> str:
             f"travel-mode mismatch: capture selected {sel!r} but the link's "
             f"directions mode is {url_signal!r}; not guessing which is right")
     return MODE_BY_SELECTION[sel]
+
+
+def build_directions_payload(segments: list[str], capture_context: dict | None,
+                             *, provider: str, source_url: str,
+                             url_mode_signal: str | None) -> list[dict]:
+    """The one ground_transport payload builder shared by every directions
+    provider (SPEC-4 D-89). Callers parse their own URL shape into ordered
+    `segments` (origin, waypoints…, destination) and pass the provider's mode
+    signal; everything downstream — date stamping, mode resolution, the unstable-
+    origin guard, titles, the transit notes marker, round-trip inference and the
+    route block — is identical across providers so the experience can't drift.
+
+    `provider` is the route.provider value ("google_maps" / "apple_maps").
+    """
+    cc = capture_context or {}
+    date = cc.get("travel_date")
+    if not date:
+        raise ExtractionError(
+            "directions URL requires capture_context.travel_date (RULE-31): "
+            "a route carries no date")
+    if is_unstable_origin(segments[0]):
+        raise ExtractionError(
+            f"origin {segments[0]!r} is a current-location placeholder, not a "
+            "stable origin; cannot capture a route from it")
+
+    mode = resolve_mode(cc.get("mode"), url_mode_signal)
+
+    dep_dt = _capture_dt(date, cc.get("travel_time"), cc.get("timezone"))
+    # A multi-day trip arrives on end_date (date-only); otherwise same day.
+    arr_dt = (_capture_dt(cc["end_date"], None, cc.get("timezone"))
+              if cc.get("end_date") else dep_dt)
+
+    # Coordinates are NOT set here: the extraction Place schema has no coord
+    # fields (coords belong at resolve). Where a provider embeds them (Google's
+    # data blob) they ride in route.source_url and are applied at resolve.
+    movements = [{"place": _parse_place(seg),
+                  "time": arr_dt if i == len(segments) - 1 else dep_dt}
+                 for i, seg in enumerate(segments)]
+    origin, dest = segments[0], segments[-1]
+
+    title = cc.get("title") or f"{_TITLE_VERB[mode]}: {origin} → {dest}"
+    notes = cc.get("notes")
+    if mode == "other":
+        # Transit: the URL has no leg steps to store; mark that it is a transit
+        # route so downstream can tell it from a drive (D-92).
+        label = PROVIDER_LABEL.get(provider, provider)
+        marker = f"Public transit route: {origin} → {dest} (via {label})"
+        notes = f"{marker}\n{notes}" if notes else marker
+
+    return [{
+        "item_type": "ground_transport",
+        "booking_status": "planned",           # a plan, never actuals (D-22)
+        "title": title,
+        "notes": notes,
+        "ground_transport": {
+            "mode": mode,
+            "departure": movements[0],
+            "arrival": movements[-1],
+            "waypoints": movements[1:-1],
+            "round_trip": origin == dest or None,
+            "route": {"provider": provider, "source_url": source_url,
+                      "is_estimate": True},    # RULE-27b: intent, not actuals
+        },
+    }]

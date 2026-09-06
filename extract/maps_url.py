@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, unquote_plus, urlsplit
 # contract live in directions_common so the two providers can't drift. ExtractionError
 # is re-exported here so existing callers (`maps_url.ExtractionError`) keep working.
 from extract.directions_common import (  # noqa: F401
-    ExtractionError, _capture_dt, _parse_place, resolve_mode)
+    ExtractionError, build_directions_payload)
 
 _DIR_PATH = re.compile(r"/maps/dir/([^@?#]+)")
 # Google short-link hosts we will follow a redirect for. Restricted so the
@@ -103,14 +103,9 @@ def _segments(url: str) -> list[str]:
 
 
 def extract_maps_url(url: str, capture_context: dict | None = None) -> list[dict]:
-    """One ground_transport road payload from a Google Maps directions URL."""
-    cc = capture_context or {}
-    date = cc.get("travel_date")
-    if not date:
-        raise ExtractionError(
-            "maps_url requires capture_context.travel_date (RULE-31): "
-            "a directions URL carries no date")
-
+    """One ground_transport road payload from a Google Maps directions URL.
+    Parses the Google-specific URL shapes, then hands off to the shared builder
+    so the payload matches every other directions provider (D-89)."""
     url = _expand_short(url or "")
     segments = _segments(url)
     if len(segments) < 2:
@@ -118,39 +113,10 @@ def extract_maps_url(url: str, capture_context: dict | None = None) -> list[dict
             "not a Google Maps directions URL, or fewer than 2 stops "
             f"(found {len(segments)})")
 
-    # Travel mode is the capture selection (default car), cross-checked against
-    # the URL's own travelmode signal (D-91 revised).
-    mode = resolve_mode(cc.get("mode"), _google_mode_signal(url))
-
-    dep_dt = _capture_dt(date, cc.get("travel_time"), cc.get("timezone"))
-    # A multi-day drive arrives on end_date (date-only); otherwise same day.
-    arr_dt = (_capture_dt(cc["end_date"], None, cc.get("timezone"))
-              if cc.get("end_date") else dep_dt)
-
-    # Coordinates are NOT set here: the extraction Place schema has no coord
-    # fields (coords belong at resolve, like geocoding). The exact per-stop coords
-    # Google embeds in the data blob (!1d<lon>!2d<lat>) travel in route.source_url
-    # and are applied at resolve by _apply_maps_coords — which also beats the
-    # abbreviations + postal codes that make Google's formatted addresses
-    # un-geocodable ("100 … Pkwy, … ON Z9Z 9Z9" returns nothing from OSM).
-    movements = [{"place": _parse_place(seg),
-                  "time": arr_dt if i == len(segments) - 1 else dep_dt}
-                 for i, seg in enumerate(segments)]
-    origin, dest = movements[0], movements[-1]
-    waypoints = movements[1:-1]
-
-    return [{
-        "item_type": "ground_transport",
-        "booking_status": "planned",           # a plan, never actuals (D-22)
-        "title": cc.get("title") or f"Drive: {segments[0]} → {segments[-1]}",
-        "notes": cc.get("notes"),
-        "ground_transport": {
-            "mode": mode,
-            "departure": origin,
-            "arrival": dest,
-            "waypoints": waypoints,
-            "round_trip": segments[0] == segments[-1] or None,
-            "route": {"provider": "google_maps", "source_url": url,
-                      "is_estimate": True},    # RULE-27b: intent, not actuals
-        },
-    }]
+    # The exact per-stop coords Google embeds in the data blob (!1d<lon>!2d<lat>)
+    # ride in route.source_url and are applied at resolve by _apply_maps_coords —
+    # which also beats the abbreviations + postal codes that make Google's
+    # formatted addresses un-geocodable ("100 … Pkwy, … ON Z9Z 9Z9").
+    return build_directions_payload(
+        segments, capture_context, provider="google_maps", source_url=url,
+        url_mode_signal=_google_mode_signal(url))

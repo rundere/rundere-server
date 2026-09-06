@@ -21,15 +21,12 @@ from urllib.parse import parse_qs, urlsplit
 # Shared contract (D-89). ExtractionError is re-exported for the pipeline's
 # except clause (`apple_maps_url.ExtractionError`).
 from extract.directions_common import (  # noqa: F401
-    ExtractionError, _capture_dt, _parse_place, resolve_mode)
+    ExtractionError, build_directions_payload)
 
 # Apple's dirflg -> the shared canonical travel mode. Absent => driving (Apple's
 # default), i.e. no stated mode. Any other value (e.g. `c` cycling) is a present
 # but unsupported signal -> "unknown", which conflicts with every selection.
 _DIRFLG = {"d": "car", "w": "walk", "r": "transit"}
-# Placeholder origins Apple emits for "start from current location" — not a
-# stable stop (SPEC-4 §4). Compared case-insensitively after unquoting.
-_UNSTABLE_ORIGINS = {"current location", "my location", "here"}
 
 
 def is_apple_short_link(url: str) -> bool:
@@ -62,14 +59,9 @@ def _first(q: dict, key: str) -> str | None:
 
 
 def extract_apple_maps_url(url: str, capture_context: dict | None = None) -> list[dict]:
-    """One ground_transport payload from an Apple Maps directions URL."""
-    cc = capture_context or {}
-    date = cc.get("travel_date")
-    if not date:
-        raise ExtractionError(
-            "apple_maps_url requires capture_context.travel_date (RULE-31): "
-            "a directions URL carries no date")
-
+    """One ground_transport payload from an Apple Maps directions URL. Parses the
+    Apple-specific query shape, then hands off to the shared builder so the
+    payload matches every other directions provider (D-89)."""
     if is_apple_short_link(url):
         raise ExtractionError(
             "Apple Maps short link (maps.apple/p/…) carries no coordinates "
@@ -82,48 +74,13 @@ def extract_apple_maps_url(url: str, capture_context: dict | None = None) -> lis
         raise ExtractionError(
             "not an Apple Maps directions URL, or fewer than 2 stops "
             "(both saddr and daddr are required)")
-    if saddr.lower() in _UNSTABLE_ORIGINS:
-        raise ExtractionError(
-            f"Apple Maps saddr={saddr!r} is a current-location placeholder, not "
-            "a stable origin; cannot capture a route from it")
 
-    # Travel mode: the capture selection (default car), cross-checked against the
-    # link's dirflg (D-91 revised). Present-and-contradicting => ExtractionError.
+    # Travel mode signal from the link's dirflg (D-91 revised): absent => no
+    # stated mode; an unrecognized value => a present, unsupported signal.
     dirflg = (_first(q, "dirflg") or "").lower() or None
     url_signal = None if dirflg is None else _DIRFLG.get(dirflg, "unknown")
-    mode = resolve_mode(cc.get("mode"), url_signal)
 
-    dep_dt = _capture_dt(date, cc.get("travel_time"), cc.get("timezone"))
-    # A multi-day trip arrives on end_date (date-only); otherwise same day.
-    arr_dt = (_capture_dt(cc["end_date"], None, cc.get("timezone"))
-              if cc.get("end_date") else dep_dt)
-
-    departure = {"place": _parse_place(saddr), "time": dep_dt}
-    arrival = {"place": _parse_place(daddr), "time": arr_dt}
-
-    # round_trip is inferred from matching endpoints (Apple carries no explicit
-    # signal). Mirrors the Google extractor's behaviour.
-    round_trip = saddr == daddr or None
-
-    notes = cc.get("notes")
-    if mode == "other":
-        # Transit: the URL has no leg steps to store; mark that it is a transit
-        # route so downstream can tell it from a drive (D-92).
-        marker = f"Public transit route: {saddr} → {daddr} (via Apple Maps)"
-        notes = f"{marker}\n{notes}" if notes else marker
-
-    return [{
-        "item_type": "ground_transport",
-        "booking_status": "planned",           # a plan, never actuals (D-22)
-        "title": cc.get("title") or f"{saddr} → {daddr}",
-        "notes": notes,
-        "ground_transport": {
-            "mode": mode,
-            "departure": departure,
-            "arrival": arrival,
-            "waypoints": [],                   # Apple carries no waypoints (D-87)
-            "round_trip": round_trip,
-            "route": {"provider": "apple_maps", "source_url": url,
-                      "is_estimate": True},    # RULE-27b: intent, not actuals
-        },
-    }]
+    # Apple carries no waypoints (D-87): origin + destination only.
+    return build_directions_payload(
+        [saddr, daddr], capture_context, provider="apple_maps", source_url=url,
+        url_mode_signal=url_signal)

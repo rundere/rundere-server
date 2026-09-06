@@ -165,9 +165,13 @@ unstable origin. Never guess it.
 
 `extract/maps_url.py`'s `_parse_place()` (City/Region split, D-59) and
 `_capture_dt()` (capture-context date stamping, RULE-31/34) are generic over *any*
-directions URL. **Share them, don't copy** — promote both to
-`extract/directions_common.py` and have `maps_url.py` and the new Apple module
-import from there, so the providers can't drift.
+directions URL. **Share them, don't copy** — they live in
+`extract/directions_common.py`. In fact the whole payload assembly is shared:
+each provider module only parses its own URL shape into ordered `segments` + a
+mode signal, then calls `build_directions_payload(...)`, which owns date stamping,
+mode resolution, the unstable-origin guard, titles, the transit notes marker,
+round-trip inference and the route block. Parity is structural (D-96): neither
+provider can drift because there is only one builder.
 
 - **Dates.** Neither provider's link carries a date; `capture_context.travel_date`
   is required (RULE-31). `start time`, `end_date`, `timezone` flow from the
@@ -277,9 +281,19 @@ entry (matching `maps_url`) rather than defaulting to `0.5`.
   sources later via `route.provider`.
 - **D-94** — Travellers inherit from the selected trip/collection; they are never
   captured per directions item.
-- **D-95** — The capture surface is selection-based, not content-sniffed;
-  `looks_like_*` becomes a per-path validator, and `_queue_maps` is fixed to plumb
-  `end_date`, `timezone`, and `mode`.
+- **D-95** — The capture surface is selection-based, not content-sniffed: three
+  paths (web page / Google Maps / Apple Maps). `looks_like_*` is a per-path
+  validator that rejects a URL pasted on the wrong path, and `_queue_maps` is
+  fixed to plumb `end_date`, `timezone`, and `mode`. Sniffing is retained only as
+  a fallback for clients that send no path (the bookmarklet, older callers).
+- **D-96 (parity principle)** — Providers with a common use case are kept at
+  feature parity *by construction*, not by remembering to mirror changes. Google
+  and Apple share one `extract/directions_common.build_directions_payload`, so
+  mode handling, the transit notes marker, the unstable-origin guard, titles,
+  round-trip inference and the route block are identical for both — a new
+  directions capability is added to the shared builder once and both providers
+  gain it together. This is the standing rule for any future solution built on a
+  shared use case: update the common path, not one provider.
 
 ---
 

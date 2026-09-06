@@ -617,6 +617,30 @@ def test_maps_url_mode_conflict_rejected():
         raise AssertionError("should refuse a mode that contradicts the URL")
 
 
+def test_maps_url_transit_gets_notes_marker():
+    """PARITY: a Google transit route -> mode other + a notes marker, exactly
+    like Apple (shared builder, D-89)."""
+    url = ("https://www.google.com/maps/dir/?api=1&origin=Toronto,ON"
+           "&destination=Ottawa,ON&travelmode=transit")
+    items = maps_url.extract_maps_url(url, {"travel_date": "2026-08-08", "mode": "transit"})
+    _assert_valid(items)
+    assert items[0]["ground_transport"]["mode"] == "other"
+    assert "transit" in (items[0]["notes"] or "").lower()
+    assert "Google Maps" in items[0]["notes"]
+
+
+def test_maps_url_current_location_origin_refuses():
+    """PARITY: a current-location origin is rejected for Google too (D-89)."""
+    url = ("https://www.google.com/maps/dir/?api=1&origin=Current Location"
+           "&destination=Ottawa,ON")
+    try:
+        maps_url.extract_maps_url(url, {"travel_date": "2026-08-08"})
+    except maps_url.ExtractionError as ex:
+        assert "current-location" in str(ex) or "placeholder" in str(ex)
+    else:
+        raise AssertionError("a current-location origin is not stable — refuse")
+
+
 # ---------------------------------------------------------------- apple_maps_url
 
 APPLE = ("https://maps.apple.com/?saddr=Toronto,+ON&daddr=Ottawa,+ON&dirflg=d")

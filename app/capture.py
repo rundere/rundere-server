@@ -238,6 +238,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     # --- page form path ---
     form = await request.form()
     content = (form.get("content") or "").strip()
+    path = (form.get("path") or "").strip().lower()   # page | google | apple | ""
     travel_date = (form.get("travel_date") or "").strip() or None
     travel_time = (form.get("travel_time") or "").strip() or None
     end_date = (form.get("end_date") or "").strip() or None
@@ -247,45 +248,62 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     notes = (form.get("notes") or "").strip() or None
     collection_id = (form.get("collection_id") or "").strip() or None
 
-    if not content:
+    def _msg(ok, message, batch_id=None):
         return templates.TemplateResponse(request, "_capture_result.html", {
-            "ok": False, "message": "Paste a page's source or a URL first."})
+            "ok": ok, "message": message, "batch_id": batch_id})
+
+    if not content:
+        return _msg(False, "Paste a page's source or a URL first.")
+
+    def _queue_directions(provider):
+        if not travel_date:
+            return _msg(False, "That’s a directions capture — add a Travel date "
+                               "(a route has no date of its own).")
+        batch_id = _queue_maps(session, content, submitted_by=submitted_by,
+                               travel_date=travel_date, travel_time=travel_time,
+                               end_date=end_date, timezone=timezone, mode=mode,
+                               title=title, notes=notes, collection_id=collection_id,
+                               owner_user_id=owner_user_id, provider=provider)
+        return _msg(True, "Captured the trip. Run “Process new captures” in the "
+                          "review queue to extract it.", batch_id)
+
+    # Explicit directions paths: the selection is authoritative, so looks_like_*
+    # validates the pasted URL against the chosen provider (SPEC-4 §2.1).
+    if path == "apple":
+        if apple_maps_url.is_apple_short_link(content):
+            return _msg(False, "That Apple Maps share link (maps.apple/p/…) carries "
+                               "no coordinates — open it and paste the full "
+                               "maps.apple.com directions link instead.")
+        if not apple_maps_url.looks_like_apple_maps_url(content):
+            return _msg(False, "That doesn’t look like an Apple Maps directions link "
+                               "(needs maps.apple.com with saddr and daddr).")
+        return _queue_directions("apple")
+    if path == "google":
+        if not maps_url.looks_like_maps_url(content):
+            return _msg(False, "That doesn’t look like a Google Maps directions link.")
+        return _queue_directions("google")
 
     source_url = None
     html = content
     if _looks_like_url(content):
-        # A maps directions link is not a web page to fetch — route it to the
-        # matching extractor (native; retires the n8n form). It needs a date.
-        is_apple = apple_maps_url.looks_like_apple_maps_url(content)
-        if apple_maps_url.is_apple_short_link(content):
-            return templates.TemplateResponse(request, "_capture_result.html", {
-                "ok": False,
-                "message": ("That Apple Maps share link (maps.apple/p/…) carries no "
-                            "coordinates — open it and paste the full "
-                            "maps.apple.com directions link instead.")})
-        if is_apple or maps_url.looks_like_maps_url(content):
-            if not travel_date:
-                return templates.TemplateResponse(request, "_capture_result.html", {
-                    "ok": False,
-                    "message": ("That’s a maps directions link — add a Travel date "
-                                "(a route has no date of its own).")})
-            batch_id = _queue_maps(session, content, submitted_by=submitted_by,
-                                   travel_date=travel_date, travel_time=travel_time,
-                                   end_date=end_date, timezone=timezone, mode=mode,
-                                   title=title, notes=notes, collection_id=collection_id,
-                                   owner_user_id=owner_user_id,
-                                   provider="apple" if is_apple else "google")
-            return templates.TemplateResponse(request, "_capture_result.html", {
-                "ok": True, "batch_id": batch_id,
-                "message": "Captured the trip. Run “Process new captures” in the review queue to extract it."})
+        # No explicit provider path (bookmarklet / older clients): fall back to
+        # sniffing so a pasted maps link still routes correctly. An explicit
+        # "page" selection skips this and is fetched as a web page.
+        if path != "page":
+            is_apple = apple_maps_url.looks_like_apple_maps_url(content)
+            if apple_maps_url.is_apple_short_link(content):
+                return _msg(False, "That Apple Maps share link (maps.apple/p/…) "
+                                   "carries no coordinates — paste the full "
+                                   "maps.apple.com directions link instead.")
+            if is_apple or maps_url.looks_like_maps_url(content):
+                return _queue_directions("apple" if is_apple else "google")
         source_url = content
         html = _fetch_public_html(content)
         if not html:
-            return templates.TemplateResponse(request, "_capture_result.html", {
-                "ok": False,
-                "message": ("Couldn’t fetch that URL — it may need a login, block "
-                            "bots, or resolve to a private address. Use the bookmarklet "
-                            "on the open page, or paste its source here instead.")})
+            return _msg(False, "Couldn’t fetch that URL — it may need a login, block "
+                               "bots, or resolve to a private address. Use the "
+                               "bookmarklet on the open page, or paste its source "
+                               "here instead.")
 
     if len(html.encode("utf-8")) > settings.ingest_max_body_bytes:
         return templates.TemplateResponse(request, "_capture_result.html", {
