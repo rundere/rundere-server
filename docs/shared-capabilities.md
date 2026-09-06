@@ -22,6 +22,15 @@ that needs something different is a *subsection* of that shared capability — a
 thin parse/adapter layer or a parameter — never a parallel rewrite of the whole
 thing.**
 
+**The shared path is a ceiling-enabler, not a floor.** Sharing must not flatten a
+richer input down to what the weakest channel can express — that is regression to
+the mean, and it destroys value. The goal is *identical behaviour where the input
+supports it*, and *maximum value where an input supports more*. The shared
+function carries the common behaviour every channel needs; a channel whose input
+carries more (Google's waypoints and embedded coordinates) still uses it to the
+full — the shared path accommodates the richer input rather than discarding it.
+Never level down to force uniformity.
+
 Concretely:
 
 - The **shared function owns the behaviour**: the output shape, the business
@@ -55,12 +64,13 @@ Review the ask in the context of the whole application, not in isolation:
 2. **If it's genuinely new**, build the common function first — the part any
    future channel would reuse — then the channel-specific layer on top. Assume a
    second channel will come.
-3. **Distinguish a format difference from parity debt.** It is fine for one
-   channel to carry a capability another's input cannot express — Google
-   directions have waypoints and embedded coordinates; Apple's URL has neither.
-   That is not divergence to fix; it is the shared function doing what each input
-   supports. Divergence to fix is when the *same* input could be handled the same
-   way but isn't.
+3. **Distinguish a format difference from parity debt.** It is fine — required,
+   even — for one channel to carry a capability another's input cannot express:
+   Google directions have waypoints and embedded coordinates; Apple's URL has
+   neither. That is not divergence to fix; it is the shared function doing what
+   each input supports, to the maximum it supports. Do not remove the richer
+   behaviour to make the channels look alike. Divergence to fix is the opposite:
+   when the *same* input could be handled the same way but isn't.
 4. **Put the decision in the spec.** Record what became shared and what stayed
    channel-specific, so the next channel inherits the reasoning.
 
