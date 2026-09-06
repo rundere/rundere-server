@@ -375,14 +375,20 @@ alembic/        migrations (baseline 0001)
 capture/        gmail-addon/, gcal-addon/ (Apps Script); maps-n8n/ (deprecated,
                 superseded by the built-in /capture page in v1.2)
 tests/          pytest suite + samples.json regression corpus
-docs/           A5/A6 specs, home-profiles.example.json, the setup/usage guide
+docs/           A5/A6 specs, shared-capabilities guideline (D-96),
+                home-profiles.example.json, the setup/usage guide
 scripts/        extract_eval.py — run the chain over dumped real payloads
 ```
 
 The design specs (`docs/A5-canonical-keys.md`, `docs/A6-collection-resolution.md`,
-`SPEC-3-discovery.md`, `SPEC-3.1-planning.md`, `SPEC-3.2-discovery-llm.md`) and
-the generated `RULES.md` explain the resolution, Discovery/Planning, and rule
-behaviour in depth.
+`SPEC-3-discovery.md`, `SPEC-3.1-planning.md`, `SPEC-3.2-discovery-llm.md`,
+`SPEC-4-directions-capture.md`) and the generated `RULES.md` explain the
+resolution, Discovery/Planning, and rule behaviour in depth.
+
+**Engineering guideline:** `docs/shared-capabilities.md` — build capabilities as
+common project-level functions and treat a channel/provider's needs as a
+subsection of that shared capability, not a rewrite. Review it before adding a new
+capability or channel (D-89/D-96).
 
 Inline `D-NN` / `RULE-NN` / `OQ-NN` codes throughout the code and capture docs
 are provenance markers for decisions, rules, and open questions tracked in the
