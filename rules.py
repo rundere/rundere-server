@@ -32,6 +32,12 @@ from dataclasses import dataclass
 
 MODES = ("enforce", "audit", "off")
 
+# Extractors that produce a directions-URL capture (a route with no date of its
+# own). The capture-context checks (RULE-31/32/34) are the same failure mode
+# regardless of provider, so they gate on membership here rather than a literal
+# extractor name (SPEC-4 D-90).
+DIRECTIONS_EXTRACTORS = {"maps_url", "apple_maps_url"}
+
 
 # ================================================================= registry
 
@@ -116,10 +122,10 @@ _R = [
     Rule("RULE-28b", _G_ROAD, "within_home_radius=true but write targets are set"),
     Rule("RULE-29", _G_ROAD, "Collection minted by an item marked anchor_eligible=false"),
     Rule("RULE-29b", _G_ROAD, "anchor_eligible and within_home_radius are mutually exclusive"),
-    Rule("RULE-31", _G_CAPTURE, "maps_url capture without capture_context.travel_date — a directions URL carries no date"),
-    Rule("RULE-32", _G_CAPTURE, "maps_url resolved without a user-selected collection (D-05)"),
+    Rule("RULE-31", _G_CAPTURE, "directions-URL capture without capture_context.travel_date — a directions URL carries no date"),
+    Rule("RULE-32", _G_CAPTURE, "directions-URL capture resolved without a user-selected collection (D-05)"),
     Rule("RULE-33", _G_CAPTURE, "capture_required_fields entry unsupplied and review.required not set"),
-    Rule("RULE-34", _G_CAPTURE, "maps_url date with origin other than capture_context — nothing in the URL supplies it"),
+    Rule("RULE-34", _G_CAPTURE, "directions-URL date with origin other than capture_context — nothing in the URL supplies it"),
     Rule("RULE-34b", _G_CAPTURE, "Date origin=inferred is never committable (D-06)"),
     Rule("RULE-34c", _G_CAPTURE, "origin=capture_context but capture_context supplied no date"),
     Rule("RULE-35", _G_CAPTURE, "collection_action=user_selected but capture_context supplies no collection_id"),
@@ -358,13 +364,13 @@ def _item_violations(item: dict) -> list[tuple[str, str]]:
     ext = (item.get("extraction") or {}).get("extractor")
     req = p.get("capture_required_fields") or []
 
-    if ext == "maps_url":
+    if ext in DIRECTIONS_EXTRACTORS:
         if not cc.get("travel_date"):
-            e(("RULE-31", "maps_url capture with no capture_context.travel_date — a Google "
-                          "Maps directions URL carries no date; it is unusable without one"))
+            e(("RULE-31", "directions-URL capture with no capture_context.travel_date — a "
+                          "maps directions URL carries no date; it is unusable without one"))
         if not cc.get("collection_id") and res.get("outcome") == "resolved":
-            e(("RULE-32", "maps_url resolved with no user-selected collection; the drive "
-                          "plan attaches to a collection the human made in advance"))
+            e(("RULE-32", "directions-URL capture resolved with no user-selected collection; "
+                          "the trip plan attaches to a collection the human made in advance"))
 
     for f in req:
         if not cc.get(f):
@@ -377,8 +383,8 @@ def _item_violations(item: dict) -> list[tuple[str, str]]:
         if isinstance(node, dict):
             if "local" in node and "precision" in node:
                 o = node.get("origin")
-                if ext == "maps_url" and o not in ("capture_context", "collection_default"):
-                    e(("RULE-34", f"{path}: maps_url date origin={o!r}; must be "
+                if ext in DIRECTIONS_EXTRACTORS and o not in ("capture_context", "collection_default"):
+                    e(("RULE-34", f"{path}: directions-URL date origin={o!r}; must be "
                                   f"capture_context — nothing in the URL supplies it"))
                 if o == "inferred":
                     e(("RULE-34b", f"{path}: date origin=inferred is never committable"))

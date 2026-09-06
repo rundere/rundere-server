@@ -1,6 +1,6 @@
 """Task 4 regression + toggle tests.
 
-The 35 cases in samples.json are the contract: every case must behave exactly
+The cases in samples.json are the contract: every case must behave exactly
 as it did under tests/validate.py. A case flipping from fail to pass is a
 regression, not a fix.
 

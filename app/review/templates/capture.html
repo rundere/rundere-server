@@ -34,16 +34,25 @@
 
     {# --- Fallback path: paste source or a public URL --- #}
     <section class="cap-card">
-      <h3>Or paste a page — its source, or a public link</h3>
+      <h3>Or paste something — pick what it is</h3>
       <p class="why">
-        Paste a page’s HTML source (View Source → copy), a public URL Yonder can
-        fetch itself, or a <strong>Google Maps directions link</strong> (add a
-        Travel date for those). Login-walled pages can’t be fetched from a URL —
-        use the bookmarklet or paste the source for those.
+        Choose what you’re capturing, then paste it. Directions links need a
+        Travel date and a travel mode (a route carries neither). Login-walled
+        pages can’t be fetched from a URL — use the bookmarklet or paste the
+        source for those. Travellers come from the trip/collection you attach it
+        to, not this form.
       </p>
       <form hx-post="/capture/web" hx-target="#cap-result" hx-swap="innerHTML"
             hx-disabled-elt="button[type=submit]">
+        <fieldset class="cap-paths" onchange="yonderPath(this)">
+          <label><input type="radio" name="path" value="page" checked> Web page</label>
+          <label><input type="radio" name="path" value="google"> Google Maps directions</label>
+          <label><input type="radio" name="path" value="apple"> Apple Maps directions</label>
+        </fieldset>
         <textarea name="content" class="cap-area mono" rows="7"
+                  data-ph-page="Paste page source (<!doctype html>…) or a URL (https://…)"
+                  data-ph-google="Paste a Google Maps directions link (https://www.google.com/maps/dir/…)"
+                  data-ph-apple="Paste an Apple Maps directions link (https://maps.apple.com/?saddr=…&daddr=…)"
                   placeholder="Paste page source (<!doctype html>…) or a URL (https://…)"></textarea>
         <div class="cap-fields">
           <div class="field">
@@ -57,6 +66,23 @@
           <div class="field">
             <label for="travel_time">Travel time (optional)</label>
             <input id="travel_time" name="travel_time" type="text" placeholder="HH:MM">
+          </div>
+          <div class="field dir-only" hidden>
+            <label for="end_date">End date (optional, multi-day trip)</label>
+            <input id="end_date" name="end_date" type="text" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="field dir-only" hidden>
+            <label for="timezone">Timezone (optional)</label>
+            <input id="timezone" name="timezone" type="text" placeholder="America/Toronto">
+          </div>
+          <div class="field dir-only" hidden>
+            <label for="mode">Travel mode</label>
+            <select id="mode" name="mode">
+              <option value="">Car (default)</option>
+              <option value="car">Car</option>
+              <option value="transit">Public transit</option>
+              <option value="walk">Walking / hiking</option>
+            </select>
           </div>
           <div class="field">
             <label for="collection_id">Trip / collection id (optional)</label>
@@ -81,4 +107,17 @@
     </section>
   </div>
 </div>
+<script>
+  // Show the directions-only fields and swap the paste placeholder to match the
+  // selected capture path. Progressive enhancement only — the backend validates
+  // the path/URL regardless of whether this runs.
+  function yonderPath(form) {
+    var path = (form.querySelector('input[name=path]:checked') || {}).value || 'page';
+    var isDir = path === 'google' || path === 'apple';
+    form.querySelectorAll('.dir-only').forEach(function (el) { el.hidden = !isDir; });
+    var area = form.querySelector('textarea[name=content]');
+    if (area) { area.placeholder = area.getAttribute('data-ph-' + path) || area.placeholder; }
+  }
+  document.querySelectorAll('form .cap-paths').forEach(function (fs) { yonderPath(fs.form); });
+</script>
 {% endblock %}

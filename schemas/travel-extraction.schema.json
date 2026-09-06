@@ -584,6 +584,7 @@
             "car_rental",
             "rideshare",
             "transfer",
+            "walk",
             "other"
           ]
         },
@@ -905,6 +906,19 @@
         },
         "item_type_hint": {
           "$ref": "#/$defs/ItemType"
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "car",
+            "transit",
+            "walk",
+            null
+          ],
+          "description": "Directions captures only: the travel mode chosen on the capture surface, cross-checked against the URL's own mode signal (SPEC-4 D-91). Absent => car."
         },
         "submitted_by": {
           "type": [
