@@ -20,9 +20,11 @@ review. **This spec builds the reviews/lessons module inside that shell.** One
 `TripPostMortem` per (trip, user); packing review and the interview are two
 sections of the same object, offered when a trip becomes `past`.
 
-If SPEC-5 is built first, this adds a section. If this is built first, it
-**introduces** the shell (per D-130) and packing review attaches later. Either
-order works; the shell is the shared contract.
+**Build order (D-144): packing-review first.** SPEC-5's deterministic
+packing-review module ships first and **introduces the shell**; this interview
+module attaches to that existing shell afterward. Chosen to front-load the
+lower-risk, no-LLM module and de-risk the shell before layering AI on top. The
+shell is the shared contract either way.
 
 ## 1. The interview is itinerary- and journal-aware (D-136)
 
@@ -42,13 +44,18 @@ what these sources contain; it must not invent events.
 
 ## 2. Interview format & flow (D-137)
 
-A **turn-based, adaptive** interview, not a fixed form:
-1. **Seed.** From the itinerary + journal, the engine drafts an opening set of
-   targeted questions (per day, per notable activity, plus trip-level).
-2. **Converse.** The traveller answers in free text (or voice→text on mobile);
-   each answer can spawn a follow-up ("the fish tacos — worth a note for next
-   time?"). Bounded: a max follow-up depth and a "wrap up" the user can hit any
-   time — the interview must never feel infinite.
+A **turn-based, adaptive but deliberately tight** interview, not a fixed form
+and not an open-ended chat. v1 is bounded hard (D-137):
+1. **Seed.** From the itinerary + journal, the engine drafts a **small** opening
+   set — a handful of targeted questions (a few day/activity-level, a couple
+   trip-level), not one per day. Order by signal (days the journal actually
+   mentions come first).
+2. **Converse.** The traveller answers in free text (voice→text is v1.1+, D-143,
+   not v1). Each answer may spawn **at most one** follow-up, and only when it
+   clearly adds something ("the fish tacos — worth a note for next time?").
+   A "wrap up now" control is always present. The interview is **finite by
+   construction** — a small seed set × ≤1 follow-up each — so it never feels
+   like an endless chat and stays cheap on the LLM.
 3. **Skip freely.** Every question is skippable; a sparse interview still
    produces a valid (thinner) post-mortem. Never blocks.
 4. **Synthesise.** On finalize, the engine writes the structured result (§3).
@@ -173,14 +180,10 @@ so it needs no offline design.
 
 ## Open questions (for the design phase)
 
-- **Sequencing vs SPEC-5.** Ship the interview module before, after, or with the
-  packing-review module? They share the shell; recommend the shell + interview
-  first (higher perceived value, journal-driven), packing review folds in.
-- **Voice input.** Mobile voice→text makes the field-adjacent debrief far more
-  natural but adds an iOS speech dependency — v1.1.
-- **Interview length control.** Exact follow-up depth / question budget to keep
-  it "thorough but finite" — tune against real transcripts (as the events
-  resolver was tuned against live output).
+- **Exact seed/follow-up budget.** The tight bound is decided (D-137); the exact
+  numbers — how many seed questions, the "adds something" test for the single
+  follow-up — get tuned against real transcripts (as the events resolver was
+  tuned against live output). A design-phase tuning task, not a reopening.
 - **Multi-traveller trips.** v1 is strictly per-user post-mortems; a future
   "shared trip recap" that (consensually) merges members' highlights is out of
   scope and would need an explicit sharing model.
@@ -189,15 +192,18 @@ so it needs no offline design.
 - **Version placement.** A post-4.0 major (SPEC-5 floated 5.0); the shell could
   land with whichever of the two modules ships first.
 
-## Decisions (proposed, D-136–D-141)
+## Decisions (proposed, D-136–D-144)
 
 - **D-136 — The interview is grounded in the itinerary + own journal.** It reads
   the `TripActivity` timeline, the interviewee's own journal (SPEC-6),
   packing, and discovery findings, and may reference only what those contain —
   no invented events. (proposed, 2026-09-06)
-- **D-137 — Adaptive, turn-based, skippable, resumable.** Not a fixed form:
-  seeded targeted questions, bounded follow-ups, every question skippable, and
-  the conversation resumable via a durable record. (proposed)
+- **D-137 — Adaptive, turn-based, skippable, resumable — and deliberately tight
+  in v1.** Not a fixed form and not an open-ended chat: a **small** seed set
+  (a handful of questions), **at most one** follow-up per answer and only when it
+  adds something, an always-present "wrap up", every question skippable, and the
+  conversation resumable via a durable record. Finite by construction — cheap on
+  the LLM and never an endless chat. Exact counts tuned in design. (proposed)
 - **D-138 — Structured output, not a transcript.** Synthesises summary,
   highlights/stories, forward-looking lessons (optionally targeted), optional
   ratings; the transcript is retained for provenance and re-synthesis. (proposed)
@@ -212,3 +218,13 @@ so it needs no offline design.
   discovery-profile / planning; v1 records and displays targeted lessons, wiring
   them into each engine is a follow-on — reserving the past→future loop without
   blocking v1. (proposed)
+- **D-143 — Text-only in v1; voice→text is v1.1+.** The first interview is text
+  entry only. Mobile voice-to-text (iOS speech) makes a field-adjacent debrief
+  more natural but adds an Apple dependency and scope; deferred to v1.1 once the
+  flow is proven. (proposed, 2026-09-07)
+- **D-144 — Packing-review module ships before the interview module.** Within the
+  shared `TripPostMortem` shell (SPEC-5 D-130), build SPEC-5's deterministic
+  packing-review module first (lower AI risk, no LLM dependency), then this
+  interview/stories/lessons module. The shell lands with the packing module; the
+  interview attaches to it. Supersedes the earlier "interview-first" lean.
+  (proposed, 2026-09-07)
