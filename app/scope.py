@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from sqlalchemy import or_, true
 
-from app.models import TravelItem, Trip, TripMember, TripTraveler
+from app.models import JournalEntry, TravelItem, Trip, TripMember, TripTraveler
 
 
 def user_of(request):
@@ -176,3 +176,34 @@ def require_capture(session, user, item_id):
     if item is None or not can_access_capture(user, item):
         raise HTTPException(status_code=404, detail="item not found")
     return item
+
+
+# --------------------------------------------------------------------------- journal
+# A journal is PERSONAL (SPEC-6 D-134): visible to its author and admins only,
+# never trip-shared. Unlike trips/captures there is deliberately NO "open"
+# (NULL owner) tier for a normal user — a diary must not leak between users.
+# Admins and the auth-off single-user world (user is None) still see everything,
+# same as every other resource.
+def journal_filter(user):
+    """A predicate for `session.query(JournalEntry).filter(...)`."""
+    if unrestricted(user):
+        return true()
+    return JournalEntry.owner_id == user.id
+
+
+def can_access_journal(user, entry) -> bool:
+    if entry is None:
+        return False
+    if unrestricted(user):
+        return True
+    return entry.owner_id == user.id
+
+
+def require_journal(session, user, entry_id):
+    """API-style guard: return the entry or raise 404 (own + admin). Existence
+    never leaks by id — a stranger's entry 404s exactly like a missing one."""
+    from fastapi import HTTPException
+    entry = session.get(JournalEntry, entry_id)
+    if entry is None or not can_access_journal(user, entry):
+        raise HTTPException(status_code=404, detail="journal entry not found")
+    return entry

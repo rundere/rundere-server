@@ -1,0 +1,72 @@
+{# The whole journal surface: compose box + entries, grouped by entry_date.
+   Root element carries id="journal-panel"; every mutation hx-swaps this outerHTML,
+   so the form resets and the list refreshes together (app/journal_web.py). #}
+<div id="journal-panel">
+
+  <form class="cap-card" style="padding:0" hx-post="/journal"
+        hx-target="#journal-panel" hx-swap="outerHTML"
+        hx-on::after-request="if(event.detail.successful) this.reset()">
+    <label class="cap-lbl" for="jnl-body">What happened?</label>
+    <textarea id="jnl-body" name="body" class="cap-area" required
+              placeholder="Ferry was late, best fish tacos by the harbour, got sunburnt…"></textarea>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
+      <div>
+        <label class="cap-lbl" for="jnl-date">Day it's about</label>
+        <input id="jnl-date" type="date" name="entry_date" value="{{ today }}" class="cap-input">
+      </div>
+      <div style="flex:1;min-width:160px">
+        <label class="cap-lbl" for="jnl-trip">Trip (optional)</label>
+        <select id="jnl-trip" name="trip_id" class="cap-input">
+          <option value="">— not attached —</option>
+          {% for t in trips %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="act primary">Save note</button>
+    </div>
+  </form>
+
+  {% if not groups %}
+  <div class="dash-empty" style="margin-top:14px">
+    <span>No journal entries yet — write your first one above.</span>
+  </div>
+  {% else %}
+  <div style="margin-top:6px;color:var(--ink-3);font-size:12px">
+    {{ entry_count }} entr{{ 'y' if entry_count == 1 else 'ies' }}
+  </div>
+  {% for g in groups %}
+  <div class="dash-section" style="margin-top:10px">
+    <h2>{{ g.date }}</h2>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      {% for e in g.entries %}
+      <div class="cap-card" style="padding:12px 14px">
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+          {% if e.time %}<span class="age">{{ e.time }}</span>{% endif %}
+          {% if e.place %}<span class="age">📍 {{ e.place }}</span>{% endif %}
+          {% if e.duplicated_from %}<span class="pill">copy</span>{% endif %}
+          {% for tag in e.tags %}<span class="pill">{{ tag }}</span>{% endfor %}
+        </div>
+        <div style="white-space:pre-wrap;margin:6px 0 10px">{{ e.body }}</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select name="trip_id" class="cap-input" style="width:auto;font-size:12px;padding:4px 8px"
+                  hx-post="/journal/{{ e.id }}/attach" hx-target="#journal-panel"
+                  hx-swap="outerHTML" hx-trigger="change" aria-label="Attach to trip">
+            <option value="">— not attached —</option>
+            {% for t in trips %}
+            <option value="{{ t.id }}" {% if t.id == e.trip_id %}selected{% endif %}>{{ t.name }}</option>
+            {% endfor %}
+          </select>
+          <button class="act tiny" hx-post="/journal/{{ e.id }}/duplicate"
+                  hx-target="#journal-panel" hx-swap="outerHTML"
+                  title="Duplicate — to apply this note to another trip">Duplicate</button>
+          <button class="act tiny quiet" hx-post="/journal/{{ e.id }}/delete"
+                  hx-target="#journal-panel" hx-swap="outerHTML"
+                  hx-confirm="Delete this journal entry?">Delete</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+</div>

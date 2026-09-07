@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Journal{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="dash" style="gap:14px">
+    <div class="dash-hero">
+      <div>
+        <h1>Travel journal</h1>
+        <p>Quick daily notes — jot what happened, attach it to a trip later.</p>
+      </div>
+      <div class="dash-hero-actions">
+        <a class="act tiny" href="/">← Home</a>
+      </div>
+    </div>
+    {% include "_journal_panel.html" %}
+  </div>
+</div>
+{% endblock %}

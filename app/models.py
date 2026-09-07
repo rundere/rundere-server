@@ -725,3 +725,50 @@ class DiscoveryExclusion(Base):
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
     place_key: Mapped[str] = mapped_column(String(128), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class JournalEntry(Base):
+    """Yonder 4.x — a travel journal entry (SPEC-6). A quick, first-person, dated
+    note the traveller AUTHORS — the counter-weight to the rest of Yonder, which
+    is captured structured data run through extract→resolve→commit. A journal
+    entry is deliberately NOT a TravelItem or a TripActivity (D-131): it never
+    touches that pipeline or the rules engine, carries no type contract, and is
+    strictly personal (own-only scope, D-134) — sharing a trip never exposes a
+    co-traveller's journal.
+
+    Organising axis is `entry_date`, the day the entry is ABOUT — you write up
+    yesterday's hike over breakfast (D-132). `captured_at` keeps the true device
+    timestamp for provenance and intra-day ordering, and is the minimum "time
+    context" every entry carries alongside `entry_date` (D-142). Geo
+    (`place_lat`/`place_lon`, later `place_label`) is best-effort — captured
+    automatically on mobile when permitted, opportunistic in the browser, never
+    required, and never blocks a save.
+
+    Standalone-capable: `trip_id` is nullable and set later by an explicit
+    attach action (D-133); a field note can precede any trip. An entry belongs to
+    exactly ONE trip at a time — to use the same note against another trip the
+    author DUPLICATES it (`duplicated_from` records the fork) and attaches the
+    copy. Soft link on trip_id (plain indexed column, no DB FK — house
+    convention; the trip delete route clears dangling links).
+
+    `owner_id` is set by every authenticated write; it is nullable only so the
+    pre-auth / auth-off single-user world (user is None) can still write. The
+    own-only scope filter (app/scope.py) shows an entry to its author and admins
+    only."""
+    __tablename__ = "journal_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    entry_date: Mapped[str] = mapped_column(String(10), index=True)  # ISO date, the day it is ABOUT
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    trip_id: Mapped[str | None] = mapped_column(String(36), index=True)  # soft link; attach later
+    body: Mapped[str] = mapped_column(Text, default="")
+    values: Mapped[dict] = mapped_column(JsonCol, default=dict)  # mood, tags[], place label…
+    place_lat: Mapped[float | None] = mapped_column(Float)
+    place_lon: Mapped[float | None] = mapped_column(Float)
+    place_label: Mapped[str | None] = mapped_column(String(256))
+    source: Mapped[str] = mapped_column(String(16), default="api")  # mobile|web|share|api
+    duplicated_from: Mapped[str | None] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
