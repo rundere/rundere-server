@@ -1,8 +1,16 @@
 # SPEC (planning) — Travel Journal
 
-**Status: PLANNING** — a mobile-first pillar for the 4.x line, proposed after the
-4.0 companion foundation (API + auth + isolation) lands. Decisions D-131+ are
-**proposed** (captured 2026-09-06). Not scheduled/built.
+**Status: PARTIALLY IMPLEMENTED (2026-09-07).** A mobile-first pillar for the
+4.x line. Decisions D-131+ are **proposed**; the first increment is built and
+merged to `feat/4.0-companion`.
+
+> **Built so far:** `JournalEntry` model + migration `0024`; own-only scope
+> (D-134); the `app/journal.py` service; the `/api/v1` journal CRUD + duplicate;
+> and the **web** compose/list surface (`/journal`). Online-only, tested.
+>
+> **Deferred (later cycles):** the mobile app + its offline outbox (D-135, needs
+> the iOS app), MCP `list_journal`/`add_journal_entry` tools, and the optional
+> Trip Snapshot `journal[]` array. These are spec-driven backlog, not scope cuts.
 
 A **quick daily note-capture** surface: the traveller jots what happened, from
 the phone in the field or the home page at the desk. Deliberately unstructured

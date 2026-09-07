@@ -1,10 +1,20 @@
 # SPEC (planning) — Trip Post-Mortem, AI Interview module
 
-**Status: PLANNING** — a post-4.0 major pillar. Decisions D-136+ are **proposed**
-(captured 2026-09-06). Not scheduled/built. **Extends** the post-mortem
-*framework* already proposed in `SPEC-5-inventory-postmortem.md` (D-130); this
-spec is the **interview / reviews / lessons** module, a sibling to that spec's
-packing-review module — not a competing shell.
+**Status: PLANNING — DEFERRED (2026-09-07).** A post-4.0 major pillar, and the
+**deliberately deferred** part of the post-trip work: the AI interview is
+**not** being built in the current cycle. It stays a spec-driven backlog item,
+picked up later behind its prerequisite (D-145). Decisions D-136+ are
+**proposed**. **Extends** the post-mortem *framework* already proposed in
+`SPEC-5-inventory-postmortem.md` (D-130); this spec is the **interview /
+reviews / lessons** module, a sibling to that spec's packing-review module —
+not a competing shell.
+
+> **Why deferred.** SPEC-6's journal (the interview's raw material) shipped
+> first — backend + `/api/v1` + web surface. The AI interview is the highest-
+> risk, highest-complexity piece, and per D-144 it cannot start until SPEC-5's
+> deterministic packing-review module introduces the post-mortem shell. So the
+> ordered backlog is: **SPEC-5 packing module → this interview module**, both
+> future, spec-driven cycles. Nothing here is built yet.
 
 Turns "the trip is over" into a **structured reflection**: what happened, the
 good stories, what could be better next time — captured as an **AI-led
@@ -192,7 +202,7 @@ so it needs no offline design.
 - **Version placement.** A post-4.0 major (SPEC-5 floated 5.0); the shell could
   land with whichever of the two modules ships first.
 
-## Decisions (proposed, D-136–D-144)
+## Decisions (proposed, D-136–D-145)
 
 - **D-136 — The interview is grounded in the itinerary + own journal.** It reads
   the `TripActivity` timeline, the interviewee's own journal (SPEC-6),
@@ -228,3 +238,9 @@ so it needs no offline design.
   interview/stories/lessons module. The shell lands with the packing module; the
   interview attaches to it. Supersedes the earlier "interview-first" lean.
   (proposed, 2026-09-07)
+- **D-145 — The AI interview is deferred; the journal shipped first.** In the
+  current cycle only SPEC-6's journal is built (backend + API + web). This
+  AI-driven module is deliberately held as a spec-driven backlog item, to be
+  picked up in a later cycle behind its prerequisite (SPEC-5's packing-review
+  module, D-144). Deferral is a sequencing choice, not a scope cut — the plan
+  above stands. (accepted, 2026-09-07)
