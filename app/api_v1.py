@@ -18,10 +18,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import authn, scope
+from app import authn, journal as journal_svc, scope
 from app.db import get_session
-from app.models import (DiscoveryFinding, PackingItem, PackingPlan, TravelItem,
-                        TravelerIdentity, Trip, TripActivity, TripTraveler)
+from app.models import (DiscoveryFinding, JournalEntry, PackingItem, PackingPlan,
+                        TravelItem, TravelerIdentity, Trip, TripActivity,
+                        TripTraveler)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -536,3 +537,136 @@ def api_add_packing_item(trip_id: str, body: PackingItemIn,
     session.commit()
     session.refresh(i)
     return _packing_item_out(i)
+
+
+# --------------------------------------------------------------------------- journal (SPEC-6)
+class JournalOut(BaseModel):
+    id: str
+    entry_date: str
+    captured_at: datetime | None = None
+    trip_id: str | None = None
+    body: str = ""
+    values: dict[str, Any] = {}
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    source: str = "api"
+    duplicated_from: str | None = None
+
+
+class JournalCreate(BaseModel):
+    entry_date: str | None = None          # day the entry is ABOUT; defaults to today
+    captured_at: str | None = None         # device time context (ISO-8601); defaults to now
+    body: str = ""
+    trip_id: str | None = None             # optional attach at create; validated
+    values: dict[str, Any] | None = None
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    source: str = "api"
+
+
+class JournalPatch(BaseModel):
+    # trip_id is a first-class edit: null DETACHES, a value re-attaches (D-133).
+    entry_date: str | None = None
+    body: str | None = None
+    trip_id: str | None = None
+    values: dict[str, Any] | None = None
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    attach_trip: bool = False              # set true to apply trip_id (incl. null=detach)
+
+
+class JournalDuplicate(BaseModel):
+    trip_id: str | None = None             # the copy's trip (null = unattached)
+
+
+def _journal_out(e: JournalEntry) -> JournalOut:
+    return JournalOut(
+        id=e.id, entry_date=e.entry_date, captured_at=e.captured_at,
+        trip_id=e.trip_id, body=e.body or "", values=e.values or {},
+        place_lat=e.place_lat, place_lon=e.place_lon, place_label=e.place_label,
+        source=e.source or "api", duplicated_from=e.duplicated_from)
+
+
+@router.post("/journal", response_model=JournalOut, status_code=201)
+def api_journal_create(body: JournalCreate, user=Depends(authn.current_user),
+                       session: Session = Depends(get_session)):
+    """Create one journal entry owned by the caller. entry_date + captured_at are
+    the minimum stamps (defaulted here when omitted); geo is optional (D-142).
+    Writes are stateless about connectivity — offline queuing is the mobile
+    client's outbox (SPEC-6 D-135), not this endpoint."""
+    try:
+        e = journal_svc.create_entry(
+            session, user, entry_date=body.entry_date, captured_at=body.captured_at,
+            body=body.body, trip_id=body.trip_id, values=body.values,
+            place_lat=body.place_lat, place_lon=body.place_lon,
+            place_label=body.place_label, source=body.source)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return _journal_out(e)
+
+
+@router.get("/journal", response_model=list[JournalOut])
+def api_journal_list(trip_id: str | None = None, date_from: str | None = None,
+                     date_to: str | None = None, user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """The caller's own entries (own-only, D-134), newest day first. Optionally
+    scoped to one trip or an entry_date range."""
+    rows = journal_svc.list_entries(session, user, trip_id=trip_id,
+                                    date_from=date_from, date_to=date_to)
+    return [_journal_out(e) for e in rows]
+
+
+@router.get("/journal/{entry_id}", response_model=JournalOut)
+def api_journal_get(entry_id: str, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    return _journal_out(journal_svc.get_entry(session, user, entry_id))
+
+
+@router.patch("/journal/{entry_id}", response_model=JournalOut)
+def api_journal_update(entry_id: str, body: JournalPatch,
+                       user=Depends(authn.current_user),
+                       session: Session = Depends(get_session)):
+    """Edit the caller's own entry. To change the trip link set attach_trip=true
+    (trip_id null detaches, a value re-attaches) — this makes an explicit intent
+    out of the nullable field so a normal patch never accidentally detaches."""
+    kw: dict[str, Any] = {}
+    if body.entry_date is not None:
+        kw["entry_date"] = body.entry_date
+    if body.body is not None:
+        kw["body"] = body.body
+    if body.values is not None:
+        kw["values"] = body.values
+    if body.place_lat is not None:
+        kw["place_lat"] = body.place_lat
+    if body.place_lon is not None:
+        kw["place_lon"] = body.place_lon
+    if body.place_label is not None:
+        kw["place_label"] = body.place_label
+    if body.attach_trip:
+        kw["trip_id"] = body.trip_id
+    try:
+        e = journal_svc.update_entry(session, user, entry_id, **kw)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return _journal_out(e)
+
+
+@router.post("/journal/{entry_id}/duplicate", response_model=JournalOut,
+             status_code=201)
+def api_journal_duplicate(entry_id: str, body: JournalDuplicate,
+                          user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """Fork an entry to apply the same note to another trip (D-133). The copy is
+    independent; `duplicated_from` records the origin."""
+    e = journal_svc.duplicate_entry(session, user, entry_id, trip_id=body.trip_id)
+    return _journal_out(e)
+
+
+@router.delete("/journal/{entry_id}", status_code=204)
+def api_journal_delete(entry_id: str, user=Depends(authn.current_user),
+                       session: Session = Depends(get_session)):
+    journal_svc.delete_entry(session, user, entry_id)
+    return None
