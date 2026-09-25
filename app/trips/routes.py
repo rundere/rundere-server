@@ -286,7 +286,7 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         "linked_captures": _linked_captures(session, trip.id),
         **_push_state(trip),
         **_travelers_context(session, trip.id),
-        **_discovery_context(session, trip.id),
+        **_discovery_context(session, trip.id, user.id if user else None),
         **_packing_context(session, trip.id, user.id if user else None),
         **_sharing_context(session, trip, user),
     }
@@ -336,6 +336,24 @@ def discovery_travelers(session: Session, trip_id: str) -> list[TravelerIdentity
             .filter(TravelerIdentity.id.in_(ids),
                     TravelerIdentity.generic.is_(False))
             .order_by(TravelerIdentity.display_name).all())
+
+
+def _viewer_uid(request) -> str | None:
+    """Whose Discover/Packing this is (4.1): the signed-in user; None with auth
+    off (the single-user mode those rows use)."""
+    u = scope.user_of(request)
+    return u.id if u else None
+
+
+def _viewer_traveler(session: Session, request) -> TravelerIdentity | None:
+    """The viewing person's traveller — their nationality, base currency and
+    discovery profile shape their Discover tab. Auth off: the `self` traveller.
+    A signed-in user with no traveller linked: None."""
+    u = scope.user_of(request)
+    if u is None:
+        return _self_identity(session)
+    tid = getattr(u, "traveler_id", None)
+    return session.get(TravelerIdentity, tid) if tid is not None else None
 
 
 def _self_identity(session: Session) -> TravelerIdentity | None:
@@ -588,9 +606,11 @@ def derived_locations(trip_id: str, request: Request,
                                       _derived_locations_ctx(request, session, trip))
 
 
-def _excluded_keys(session: Session, trip_id: str) -> set[str]:
+def _excluded_keys(session: Session, trip_id: str, uid: str | None) -> set[str]:
+    """Places this person chose not to research on this trip (per person, 4.1)."""
     return {e.place_key for e in session.query(DiscoveryExclusion)
-            .filter(DiscoveryExclusion.trip_id == trip_id).all()}
+            .filter(DiscoveryExclusion.trip_id == trip_id,
+                    DiscoveryExclusion.user_id == uid).all()}
 
 
 def _derived_locations_ctx(request: Request, session: Session, trip: Trip) -> dict:
@@ -600,10 +620,11 @@ def _derived_locations_ctx(request: Request, session: Session, trip: Trip) -> di
     acts = trip_activities(session, trip.id)
     result = derive_locations(acts, resolve_airport=_airport_resolver(),
                               geocoder=_photon())
-    # Discovery is joint per trip, so it goes by the trip owner's homes.
-    profiles = load_homes_for_user(session, trip.owner_id)
+    # Discover is per person (4.1): the viewer's homes and exclusions.
+    uid = _viewer_uid(request)
+    profiles = load_homes_for_user(session, uid)
     hc = home_country_set(result.places, profiles, trip.start_date)
-    excluded = _excluded_keys(session, trip.id)
+    excluded = _excluded_keys(session, trip.id, uid)
     places = [{
         "label": p.label, "city": p.city, "country": p.country,
         "lat": p.lat, "lon": p.lon, "key": p.place_key,
@@ -631,16 +652,19 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not place_key:
         return HTMLResponse("", status_code=404)
+    uid = _viewer_uid(request)
     existing = (session.query(DiscoveryExclusion)
                 .filter(DiscoveryExclusion.trip_id == trip_id,
+                        DiscoveryExclusion.user_id == uid,
                         DiscoveryExclusion.place_key == place_key).first())
     if existing is not None:
         session.delete(existing)
     else:
-        session.add(DiscoveryExclusion(trip_id=trip_id, place_key=place_key))
+        session.add(DiscoveryExclusion(trip_id=trip_id, user_id=uid, place_key=place_key))
         # Instant feedback: remove this place's own draft findings now.
         for f in (session.query(DiscoveryFinding)
                   .filter(DiscoveryFinding.trip_id == trip_id,
+                          DiscoveryFinding.user_id == uid,
                           DiscoveryFinding.place_key == place_key,
                           DiscoveryFinding.status == "draft").all()):
             session.delete(f)
@@ -738,9 +762,11 @@ def _run_view(run: DiscoveryRun) -> dict:
             if run.finished_at else ""}
 
 
-def _discovery_context(session: Session, trip_id: str) -> dict:
+def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
+    """The Discover tab for ONE person (4.1): their own findings and runs."""
     findings = (session.query(DiscoveryFinding)
-                .filter(DiscoveryFinding.trip_id == trip_id).all())
+                .filter(DiscoveryFinding.trip_id == trip_id,
+                        DiscoveryFinding.user_id == uid).all())
     grouped: dict[str, list] = {}
     for f in findings:
         grouped.setdefault(f.topic, []).append(f)
@@ -753,7 +779,7 @@ def _discovery_context(session: Session, trip_id: str) -> dict:
                                  "label": TOPIC_LABELS.get(topic, topic),
                                  "findings": [_finding_view(f) for f in fs]})
     last = (session.query(DiscoveryRun)
-            .filter(DiscoveryRun.trip_id == trip_id)
+            .filter(DiscoveryRun.trip_id == trip_id, DiscoveryRun.user_id == uid)
             .order_by(DiscoveryRun.started_at.desc()).first())
     running = last is not None and last.status == "running"
     run_progress = None
@@ -784,32 +810,22 @@ def _llm_resolvers():
 
 def _discovery_section(request: Request, session: Session, trip: Trip) -> HTMLResponse:
     ctx = {"request": request, "trip": {"id": trip.id},
-           **_discovery_context(session, trip.id)}
+           **_discovery_context(session, trip.id, _viewer_uid(request))}
     return templates.TemplateResponse(request, "_discovery_section.html", ctx)
 
 
-def _trip_base_currencies(session: Session, trip_id: str) -> tuple[str, ...]:
-    """Base currencies the currency resolver + calculator convert FROM (D-65).
-
-    The union of two sources, traveller picks first:
-      1. each trip traveller's EXPLICIT base currency, chosen on their travel
-         profile (TravelerIdentity.base_currency) — its own field, not derived
-         from nationality or the home profile. A UK traveller who picks GBP
-         converts from GBP, not a hardcoded CAD.
-      2. the deployment's ALWAYS-ON base currencies (TX_DISCOVERY_BASE_CURRENCIES).
-         These add reference visibility on top of the profile pick — e.g. keep
-         USD in view for a Cuba trip (CUP is a closed currency, but USD is the
-         practical reference) while a traveller's profile stays CAD.
-    When no traveller has picked one, the result is just the deployment set."""
-    from app.models import TravelerIdentity, TripTraveler
-    travelers = (session.query(TravelerIdentity)
-                 .join(TripTraveler, TripTraveler.traveler_id == TravelerIdentity.id)
-                 .filter(TripTraveler.trip_id == trip_id).all())
+def _base_currencies(traveler: TravelerIdentity | None) -> tuple[str, ...]:
+    """Base currencies the currency resolver + calculator convert FROM (D-65),
+    for ONE person (4.1 — Discover is per person):
+      1. their EXPLICIT base currency from their travel profile
+         (TravelerIdentity.base_currency) — not derived from nationality or home;
+      2. then the deployment's ALWAYS-ON base currencies
+         (TX_DISCOVERY_BASE_CURRENCIES), for reference (e.g. USD for Cuba).
+    With no pick, just the deployment set."""
     codes: list[str] = []
-    for t in travelers:
-        c = (t.base_currency or "").strip().upper()
-        if c and c not in codes:
-            codes.append(c)
+    c = ((traveler.base_currency if traveler else None) or "").strip().upper()
+    if c:
+        codes.append(c)
     for c in settings.base_currency_list:          # always-on deployment extras
         if c not in codes:
             codes.append(c)
@@ -822,25 +838,29 @@ def run_discovery_route(trip_id: str, request: Request,
     """Launch a Discovery pass — BOTH tiers on a background worker (§6.1) — and
     return the self-polling section. The deterministic findings land in the first
     few seconds; the LLM findings stream in as each resolver finishes. A run is
-    already in flight for this trip? Just show its panel (one run per trip)."""
+    already in flight? Just show its panel (one run per person per trip).
+
+    Per person (4.1): the run uses the VIEWER's discovery profile, nationality,
+    base currency, homes and excluded places, and its findings are theirs."""
     from app.resolving import load_homes_for_user
     from app.trips import discovery_jobs as dj
     from datetime import date as _date
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    if dj.running_run(session, trip_id) is None:
-        profile = _discovery_profile_row(session)
-        ident = _self_identity(session)
+    uid = _viewer_uid(request)
+    if dj.running_run(session, trip_id, uid) is None:
+        ident = _viewer_traveler(session, request)
+        profile = _discovery_profile_row(session, ident, uid is None)
         today = _date.today().isoformat()
         dj.launch(trip_id, resolve_airport=_airport_resolver(), geocoder=_photon(),
                   det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(),
-                  home_profiles=load_homes_for_user(session, trip.owner_id),
-                  excluded=_excluded_keys(session, trip_id),
+                  home_profiles=load_homes_for_user(session, uid),
+                  excluded=_excluded_keys(session, trip_id, uid),
                   discovery_profile=(profile.values if profile else None),
                   nationality=(ident.nationality if ident else None),
-                  base_currencies=_trip_base_currencies(session, trip_id),
-                  today=today)
+                  base_currencies=_base_currencies(ident),
+                  today=today, user_id=uid)
     return _discovery_section(request, session, trip)
 
 
@@ -854,22 +874,29 @@ def discovery_status_route(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    dj.running_run(session, trip_id)          # settle orphans as a side effect
+    dj.running_run(session, trip_id, _viewer_uid(request))   # settle orphans
     return _discovery_section(request, session, trip)
 
 
-def _finding_or_404(session: Session, trip_id: str, fid: str) -> DiscoveryFinding | None:
+def _finding_or_404(session: Session, request: Request, trip_id: str,
+                    fid: str) -> DiscoveryFinding | None:
+    """A finding on a trip the viewer can access, and only their OWN (4.1).
+    Anything else reads as missing."""
     f = session.get(DiscoveryFinding, fid)
-    return f if (f is not None and f.trip_id == trip_id) else None
+    if f is None or f.trip_id != trip_id or f.user_id != _viewer_uid(request):
+        return None
+    if scope.trip_or_none(session, request, trip_id) is None:
+        return None
+    return f
 
 
 @router.post("/{trip_id}/finding/{fid}/rerun", response_class=HTMLResponse)
-def rerun_finding_route(trip_id: str, fid: str,
+def rerun_finding_route(trip_id: str, fid: str, request: Request,
                         session: Session = Depends(get_session)):
     """Regenerate this one finding (the per-topic re-run). Re-fetches live topics
     (weather/currency) and overrides a manual edit — an explicit fresh copy."""
     from discover.runner import rerun_finding
-    f = _finding_or_404(session, trip_id, fid)
+    f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
     # Language findings aren't re-runnable (see _finding_view) — never let a
@@ -878,14 +905,14 @@ def rerun_finding_route(trip_id: str, fid: str,
         return _redirect(f"/trips/{trip_id}")
     rerun_finding(session, f, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
-                  base_currencies=_trip_base_currencies(session, trip_id))
+                  base_currencies=_base_currencies(_viewer_traveler(session, request)))
     return _redirect(f"/trips/{trip_id}")
 
 
 @router.get("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
 def edit_finding(trip_id: str, fid: str, request: Request,
                  session: Session = Depends(get_session)):
-    f = _finding_or_404(session, trip_id, fid)
+    f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
     # Language uses a structured picker, not free text (you pick from the vetted
@@ -919,12 +946,12 @@ def edit_finding(trip_id: str, fid: str, request: Request,
 
 
 @router.post("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
-def save_finding(trip_id: str, fid: str, body: str = Form(""),
+def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
                  langs: list[str] = Form(default=[]),
                  cur_base: list[str] = Form(default=[]),
                  cur_rate: list[str] = Form(default=[]),
                  session: Session = Depends(get_session)):
-    f = _finding_or_404(session, trip_id, fid)
+    f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
     if f.topic == "language":
@@ -981,11 +1008,12 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
     base so any pair converts, including local↔local on a multi-country trip. The
     pivot is chosen from the trip's own base currencies (no hardcoded CAD), so a
     non-Canadian traveller's calculator works too."""
-    f = _finding_or_404(session, trip_id, fid)
+    f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
     cur_findings = (session.query(DiscoveryFinding)
                     .filter(DiscoveryFinding.trip_id == trip_id,
+                            DiscoveryFinding.user_id == f.user_id,
                             DiscoveryFinding.topic == "currency").all())
     # rates[code][base] = units of `code` per 1 `base` (from the snapshots).
     rates: dict[str, dict[str, float]] = {}
@@ -1587,16 +1615,34 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
 
 # ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------
 
-def _discovery_profile_row(session: Session) -> DiscoveryProfile | None:
-    """Single-user for now (D-89): the first row is the deployment-wide default,
-    same convention as _profile_row for packing."""
+def _discovery_profile_row(session: Session, traveler: TravelerIdentity | None,
+                           owner: bool = False) -> DiscoveryProfile | None:
+    """ONE person's discovery profile (4.1, D-95: exactly one per person). The
+    row on their traveller; for the `self` traveller, a pre-4.1 unassigned row
+    counts too (it was the owner's). Nobody else ever sees another person's
+    tastes — no traveller, or no row yet, means a blank profile. `owner` (auth
+    off, single-user): with no traveller at all, the unassigned row."""
+    if traveler is None:
+        if not owner:
+            return None
+        return (session.query(DiscoveryProfile)
+                .filter(DiscoveryProfile.traveler_id.is_(None))
+                .order_by(DiscoveryProfile.created_at).first())
+    own = (session.query(DiscoveryProfile)
+           .filter(DiscoveryProfile.traveler_id == traveler.id)
+           .order_by(DiscoveryProfile.created_at).first())
+    if own is not None or traveler.kind != "self":
+        return own
     return (session.query(DiscoveryProfile)
+            .filter(DiscoveryProfile.traveler_id.is_(None))
             .order_by(DiscoveryProfile.created_at).first())
 
 
 def _discovery_form_ctx(request: Request, session: Session,
                         saved: bool = False) -> dict:
-    row = _discovery_profile_row(session)
+    trav = _viewer_traveler(session, request)
+    owner = scope.user_of(request) is None
+    row = _discovery_profile_row(session, trav, owner)
     d = _discovery_default()
     v = {**d, **((row.values if row else None) or {})}
     food = {**d["food"], **(v.get("food") or {})}
@@ -1609,7 +1655,7 @@ def _discovery_form_ctx(request: Request, session: Session,
     budget = food.get("budget_ceiling") or 0
     mob = practical.get("mobility") or "no_limits"
     return {
-        "request": request, "saved": saved,
+        "request": request, "saved": saved, "no_traveller": trav is None and not owner,
         "dietary": [{"value": k, "label": t, "checked": k in diet}
                     for k, t in DISCOVERY_DIETARY],
         "cuisine_dislikes": ", ".join(food.get("cuisine_dislikes") or []),
@@ -1669,10 +1715,17 @@ def save_discovery_profile(request: Request,
         "activity": {"interests": [x for x in activity_interests if x in acts_ok]},
         "practical": {"mobility": mobility if mobility in mob_ok else "no_limits"},
     }
-    row = _discovery_profile_row(session)
+    trav = _viewer_traveler(session, request)
+    owner = scope.user_of(request) is None
+    if trav is None and not owner:   # signed in, no traveller: nowhere to keep it
+        return templates.TemplateResponse(request, "discovery_profile.html",
+                                          _discovery_form_ctx(request, session))
+    tid = trav.id if trav else None
+    row = _discovery_profile_row(session, trav, owner)
     if row is None:
-        session.add(DiscoveryProfile(values=values))
+        session.add(DiscoveryProfile(traveler_id=tid, values=values))
     else:
+        row.traveler_id = tid        # claims a pre-4.1 unassigned row for self
         row.values = values
     session.commit()
     return templates.TemplateResponse(request, "discovery_profile.html",
@@ -2190,7 +2243,7 @@ def _al_airports_photon():
     return airports, _photon(), {}
 
 
-def _al_sync_ctx(session: Session, trip: Trip, client) -> dict:
+def _al_sync_ctx(session: Session, trip: Trip, client, uid: str | None = None) -> dict:
     """Everything the sync page renders: pushable Yonder items (with a per-item
     'already there?' flag) and pullable AdventureLog records."""
     cid = trip.adventurelog_collection_id
@@ -2204,8 +2257,10 @@ def _al_sync_ctx(session: Session, trip: Trip, client) -> dict:
                            "label": t.title(a.values or {}) or a.type,
                            "kind": kind.title(),
                            "exists": _activity_marker(a.id) in index})
+    # Only the viewer's own Discover findings (4.1: Discover is per person).
     for f in (session.query(DiscoveryFinding)
-              .filter(DiscoveryFinding.trip_id == trip.id).all()):
+              .filter(DiscoveryFinding.trip_id == trip.id,
+                      DiscoveryFinding.user_id == uid).all()):
         push_items.append({"id": f"discovery:{f.id}", "source": "Discovery",
                            "label": f"{TOPIC_LABELS.get(f.topic, f.topic)} — {f.place_key}",
                            "kind": "Note",
@@ -2242,11 +2297,12 @@ def adventurelog_sync_page(trip_id: str, request: Request,
     if client is None:
         return HTMLResponse("AdventureLog isn't configured on this server.",
                             status_code=503)
-    ctx = {"request": request, **_al_sync_ctx(session, trip, client)}
+    ctx = {"request": request, **_al_sync_ctx(session, trip, client, _viewer_uid(request))}
     return templates.TemplateResponse(request, "adventurelog.html", ctx)
 
 
-def _build_push_plan(session, trip, item_ids, collection_id, airports, photon, cache):
+def _build_push_plan(session, trip, item_ids, collection_id, airports, photon, cache,
+                     uid=None):
     """(kind, body, marker, is_note, label) for each selected item, markers stamped."""
     plan = []
     for raw in item_ids:
@@ -2260,7 +2316,7 @@ def _build_push_plan(session, trip, item_ids, collection_id, airports, photon, c
             label = activity_types.get_type(a.type).title(a.values or {}) or a.type
         elif source == "discovery":
             f = session.get(DiscoveryFinding, ident)
-            if f is None or f.trip_id != trip.id:
+            if f is None or f.trip_id != trip.id or f.user_id != uid:
                 continue
             kind, body = "note", _finding_note_body(f, collection_id)
             marker = _discovery_marker(f.topic, f.place_key)
@@ -2291,7 +2347,8 @@ def adventurelog_push(trip_id: str, request: Request,
     cid = trip.adventurelog_collection_id
     index = _al_collection_index(client, cid)
     airports, photon, cache = _al_airports_photon()
-    plan = _build_push_plan(session, trip, item_ids, cid, airports, photon, cache)
+    plan = _build_push_plan(session, trip, item_ids, cid, airports, photon, cache,
+                            uid=_viewer_uid(request))
 
     # Note collisions need confirmation unless already confirmed.
     collisions = [{"label": p["label"], "existing": index[p["marker"]]["name"]}

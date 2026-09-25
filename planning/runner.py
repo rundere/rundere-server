@@ -97,9 +97,12 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
             TripActivity.trip_id == trip.id).all()
         derived = derive_locations(acts, resolve_airport=resolve_airport,
                                    geocoder=geocoder)
-        weather = (session.query(DiscoveryFinding)
-                   .filter(DiscoveryFinding.trip_id == trip.id,
-                           DiscoveryFinding.topic == "weather").all())
+        # Weather is the same for everyone on the trip, so use this person's own
+        # weather findings, else any traveller's (4.1: Discover is per person) —
+        # a companion shouldn't have to run Discover before packing.
+        wq = session.query(DiscoveryFinding).filter(
+            DiscoveryFinding.trip_id == trip.id, DiscoveryFinding.topic == "weather")
+        weather = wq.filter(DiscoveryFinding.user_id == user_id).all() or wq.all()
         profiles = list(home_profiles or [])
         home_countries = home_country_set(derived.places, profiles, trip.start_date)
         ctx = derive_context(acts, derived, weather, start_date=trip.start_date,

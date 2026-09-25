@@ -453,6 +453,9 @@ class DiscoveryRun(Base):
     # Soft link, plain indexed column (same convention as travel_items.trip_id —
     # no DB FK; the trips delete route is responsible for cleanup).
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.1: Discover is per person (migration 0026) — whose run/finding/exclusion
+    # this is. NULL = auth-off single-user mode (same rule as packing, D-123).
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     status: Mapped[str] = mapped_column(String(12), default="running", index=True)  # running|done|failed|cancelled
     phase: Mapped[str | None] = mapped_column(String(128))
     done: Mapped[int] = mapped_column(Integer, default=0)
@@ -480,6 +483,9 @@ class DiscoveryFinding(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     run_id: Mapped[str | None] = mapped_column(String(36), index=True)
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.1: Discover is per person (migration 0026) — whose run/finding/exclusion
+    # this is. NULL = auth-off single-user mode (same rule as packing, D-123).
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     topic: Mapped[str] = mapped_column(String(24), index=True)  # weather|currency|visa|...
     scope: Mapped[str] = mapped_column(String(8))               # country|city
     place_key: Mapped[str] = mapped_column(String(128))          # "US" | "US:Glendale"
@@ -735,6 +741,9 @@ class DiscoveryExclusion(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.1: Discover is per person (migration 0026) — whose run/finding/exclusion
+    # this is. NULL = auth-off single-user mode (same rule as packing, D-123).
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     place_key: Mapped[str] = mapped_column(String(128), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
