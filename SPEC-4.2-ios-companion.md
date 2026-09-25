@@ -118,6 +118,10 @@ Discovery profiles, and for admins Users + admin tables. Native profile
 editing is out of scope for 4.2.
 
 ### 3.7 Claude connector: remote MCP inside Yonder (owner, 2026-09-25)
+
+> **Implementation brief for YONDER-107/108:**
+> [`docs/handoff/YONDER-107-108-claude-connector.md`](docs/handoff/YONDER-107-108-claude-connector.md)
+> (self-contained, for a cloud session without Plane/homelab access).
 Goal: use Yonder from **claude.ai** (and the Claude mobile app, which uses the
 same account's connectors) for travel planning — read trips, timeline,
 Discover findings, packing; add activities, notes, captures; augment Discover
