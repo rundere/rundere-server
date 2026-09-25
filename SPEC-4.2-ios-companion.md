@@ -154,6 +154,30 @@ Design:
   Also bring `portainer-stack.yml` in line with the live labels (it only
   shows `/ingest` today).
 
+**Not tied to Authentik (owner, 2026-09-25).** Yonder is always the token
+issuer; *how you sign in* at `/oauth/authorize` is whatever the deployment has:
+- **local accounts only** (no OIDC): the normal Yonder username/password page;
+- **OIDC enabled** (e.g. Authentik, YONDER-92): "Sign in with <IdP>" on the
+  same page (an existing IdP session makes it one click);
+- **proxy header trusted** (optional): the forward-auth identity is used
+  directly — only on routes that pass the proxy; the machine-endpoint route
+  must strip any client-supplied identity header.
+Both modes are built and tested; connectors require `TX_AUTH_REQUIRED` on.
+
+**Tokens.**
+- *OAuth (claude.ai, the iOS app):* short-lived access token (≈1 h,
+  audience = this Yonder) + long-lived **rotating refresh token** stored
+  hashed per grant (sliding expiry, e.g. 90 days of inactivity). Claude
+  refreshes silently, so a connection lasts until revoked; a leaked access
+  token dies within the hour. Revoking a grant (Account → Connected apps)
+  kills its refresh token at once.
+- *Personal API tokens* (Claude Code / scripts / the stdio MCP): created and
+  revoked on the Account page (shown once, stored hashed, individually
+  revocable, optional expiry) — replaces `app.cli mint-api-token` via
+  `docker exec`, whose tokens can only be revoked all at once.
+- Resetting a password / "sign out everywhere" (`token_version`) still
+  revokes everything for that user; deactivating a user blocks all tokens.
+
 Why first: it's the same foundation the iOS app needs — the app's SSO becomes
 a standard OAuth code + PKCE flow against the same `/oauth/authorize`
 (replacing the bespoke handoff in §3.2), and the same machine-endpoint route
