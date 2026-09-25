@@ -117,6 +117,48 @@ Links (in-app browser, same account): Account, Travel / Home / Packing /
 Discovery profiles, and for admins Users + admin tables. Native profile
 editing is out of scope for 4.2.
 
+### 3.7 Claude connector: remote MCP inside Yonder (owner, 2026-09-25)
+Goal: use Yonder from **claude.ai** (and the Claude mobile app, which uses the
+same account's connectors) for travel planning — read trips, timeline,
+Discover findings, packing; add activities, notes, captures; augment Discover
+with Claude's own research. Today's `mcp/` is a stdio script (Claude
+Desktop/Code on the LAN only, 8 tools from 4.0, token via `docker exec`).
+
+Facts from Anthropic's docs: a claude.ai custom connector reaches the server
+**from Anthropic's cloud** (public reachability required; Anthropic publishes
+its IP ranges); users connect through an **OAuth sign-in** (optional static
+client id/secret in advanced settings; no plain API-key option).
+
+Design:
+- **`/mcp` inside the Yonder app** (MCP Streamable HTTP), calling the same
+  service layer as `/api/v1`, so every tool is per-user scoped and obeys the
+  sharing rules. Tools cover the current API (trips, snapshot, timeline edit
+  incl. `traveler_ids`, packing, journal, capture, review read, assign-trip),
+  plus a way to **save research into the caller's Discover** (a finding/note
+  the person can review), so Claude augments the local discovery work.
+- **Yonder is its own OAuth 2.1 authorization server** for this: protected-
+  resource + authorization-server metadata, `/oauth/authorize` (PKCE) that
+  shows the normal Yonder sign-in and a consent screen, `/oauth/token`
+  (+ refresh), and dynamic client registration or a pre-registered client
+  (id/secret pasted in claude.ai's advanced settings). Issued tokens are
+  per-user Yonder tokens; the Account page lists **connected apps** with revoke.
+- **Routing** (live Traefik has a catch-all `yonder-all-ext` router with
+  Authentik forward-auth + geoblock + CrowdSec; `/ingest` already bypasses
+  Authentik): add a machine-endpoint router — `/mcp`, `/oauth/token`,
+  `/oauth/register`, `/.well-known/oauth-*` (and `/api/v1` for the app,
+  below) — with **geoblock + CrowdSec, no Authentik**, since those callers are
+  servers/apps that can't do Authentik's browser login and every request needs
+  a Yonder bearer token anyway. Optionally restrict `/mcp` to Anthropic's IP
+  ranges. **Keep Authentik on the browser pages** (`/login`, `/oauth/authorize`,
+  the web app), so the sign-in page itself is never naked on the internet.
+  Also bring `portainer-stack.yml` in line with the live labels (it only
+  shows `/ingest` today).
+
+Why first: it's the same foundation the iOS app needs — the app's SSO becomes
+a standard OAuth code + PKCE flow against the same `/oauth/authorize`
+(replacing the bespoke handoff in §3.2), and the same machine-endpoint route
+lets the app reach `/api/v1` off-LAN (runbook: "iOS off-LAN" gap).
+
 ## 4. Work breakdown (in order)
 
 Server items can be done on the homelab host (Docker, test stack) or on the Mac
@@ -124,6 +166,9 @@ with Docker Desktop; each ships with tests like everything in 4.1.
 
 | # | Work | Plane | Side | Depends on |
 |---|---|---|---|---|
+| 0a | Yonder OAuth 2.1 authorization server + connected-apps UI (§3.7) | YONDER-107 | server | — |
+| 0b | Remote MCP at `/mcp`, tools up to date + "save to my Discover" (§3.7) | YONDER-108 | server | 0a |
+| 0c | Traefik machine-endpoint route (no Authentik; geoblock + CrowdSec), stack file synced (§3.7) | YONDER-109 | ops | 0a |
 | 1 | OpenAPI for `/api/v1` behind auth + DTO drift check | YONDER-58 | server + app | — |
 | 2 | User payload + sharing endpoint (§3.3) | YONDER-101 | server | — |
 | 3 | DTO sync: `traveler_ids`, user fields, lenient decoding; per-person cache keys (§3.4) | YONDER-102 | app | 1, 2 |
@@ -134,14 +179,14 @@ with Docker Desktop; each ships with tests like everything in 4.1.
 | 8 | Review over the API incl. commit scoping + assign-trip filing fixes (§3.5) | YONDER-57 | server | — |
 | 9 | Review write actions in the app | YONDER-78 | app | 8 |
 | 10 | Turn on OIDC in prod (Authentik) | YONDER-92 | ops | — |
-| 11 | Native OIDC handoff (§3.2) | YONDER-104 | server | 10 |
+| 11 | App SSO via Yonder's OAuth server (§3.7; supersedes the handoff in §3.2) | YONDER-104 | server | 10 |
 | 12 | OIDC sign-in + first-sign-in sharing question in the app | YONDER-77 | app | 2, 11 |
 | 13 | Share Extension + capture outbox | YONDER-54 | app | 7 |
 | 14 | Map (snapshot `places` lat/lon) + in-app review notifications | YONDER-55 | app | 4 |
 | 15 | App icon | YONDER-80 | app | — |
 | 16 | Distribution: AltStore sideload vs TestFlight | YONDER-56 | owner decision | before sharing builds with others |
 
-A sensible slicing: **4.2** = 1–7 (the app becomes useful day to day: edit
+A sensible slicing: **4.2** = 0a–0c then 1–7 (the app becomes useful day to day: edit
 trips, check off packing, see who's on what, capture, journal); **4.3** = 8–12
 (review triage + SSO); **4.4** = 13–16.
 
