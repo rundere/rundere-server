@@ -10,6 +10,10 @@ dependencies = [
     "alembic>=1.13",
     "psycopg[binary]>=3.1",
     "sqladmin>=0.16",
+    # sqladmin imports SQLAlchemy's asyncio layer, which needs greenlet; it is
+    # not pulled in transitively on every platform, and without it /admin
+    # silently fails to mount (test_admin_mounts_including_travellers_regression).
+    "greenlet>=3.0",
     "jsonschema>=4.21",
     "pydantic>=2.7",
     "pydantic-settings>=2.2",
