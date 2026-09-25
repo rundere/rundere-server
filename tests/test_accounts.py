@@ -282,3 +282,31 @@ if DEPS:
         # auth off = single-user world: everything, minus user-only entries
         off = client.get("/settings").text
         assert "Administration" in off and "/account" not in off
+
+    def test_every_settings_page_has_the_settings_sidebar():
+        """4.1.x: moving between settings pages never means going back to the top
+        bar — each has the same sidebar, current page highlighted; the admin
+        tables use it instead of SQLAdmin's own. Daily pages don't get it."""
+        import re
+        settings.auth_required = True
+        try:
+            h = _bearer("side-admin", admin=True)
+            for path, label in [("/account", "Account"),
+                                ("/trips/settings/travel-profile", "Travel profile"),
+                                ("/review/home", "Home profiles"),
+                                ("/trips/settings/packing-profile", "Packing profile"),
+                                ("/trips/settings/discovery-profile", "Discovery profile"),
+                                ("/users", "Users"),
+                                ("/about", "About")]:
+                # (the /admin tables aren't mounted in the test app; their
+                # sidebar comes from admin_templates/sqladmin/layout.html)
+                html = client.get(path, headers=h).text
+                assert 'class="yn-set-nav"' in html, path
+                assert re.search(r'class="[^"]*\bon\b[^"]*"[^>]*>\s*' + re.escape(label), html), path
+            for path in ("/trips", "/review", "/settings"):
+                assert 'class="yn-set-nav"' not in client.get(path, headers=h).text, path
+            # a regular user's sidebar has no Administration group
+            plain = client.get("/account", headers=_bearer("side-plain")).text
+            assert "Administration" not in plain and "/admin/rule-setting" not in plain
+        finally:
+            settings.auth_required = False

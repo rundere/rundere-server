@@ -22,7 +22,11 @@ function txToggleTheme(){var r=document.documentElement,c=r.getAttribute('data-t
 </head>
 <body class="trips-body">
 {% include "_appheader.html" %}
-<main class="bp-wrap">{% block content %}{% endblock %}</main>
+{% import "_settings_menu.html" as settings_menu with context %}
+{% if settings_menu.in_settings %}
+<div class="yn-set-shell">{% include "_settings_nav.html" %}
+<main class="bp-wrap yn-set-main">{% block content %}{% endblock %}</main></div>
+{% else %}<main class="bp-wrap">{{ self.content() }}</main>{% endif %}
 {# Modals swap into this slot; /trips/close empties it. #}
 <div id="modal-root"></div>
 </body>

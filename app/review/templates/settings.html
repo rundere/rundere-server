@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
+{% import "_settings_menu.html" as m with context %}
 <div class="app">
   <div class="ops"><div class="ops-row">
     <h1 class="pagetitle">Settings</h1>
@@ -10,7 +11,7 @@
     <section>
       <h2 class="settings-h">You</h2>
       <div class="settings-grid">
-        {% for e in you %}
+        {% for e in m.you %}
         <a class="settings-card" href="{{ e.href }}">
           <span class="settings-title">{{ e.title }}</span>
           <span class="settings-desc">{{ e.desc }}</span>
@@ -19,14 +20,14 @@
       </div>
     </section>
 
-    {% if admin %}
+    {% if m.admin %}
     <section>
       <h2 class="settings-h">Administration</h2>
       <p class="why" style="margin:-4px 0 10px">To set up someone else's profiles — a traveller
         with no account yet, or a user who shares with admins — open a profile page under
         "You" and pick them in <b>Profile of</b>.</p>
       <div class="settings-grid">
-        {% for e in admin %}
+        {% for e in m.admin %}
         <a class="settings-card" href="{{ e.href }}">
           <span class="settings-title">{{ e.title }}</span>
           <span class="settings-desc">{{ e.desc }}</span>

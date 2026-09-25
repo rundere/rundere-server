@@ -1,0 +1,49 @@
+{# The ONE definition of the Settings menu (4.1.x). Imported `with context` by
+   the Settings page (cards), the Settings sidebar, and the app header (to know
+   when a page is a settings page). Entry: title, href, match prefix, one-line
+   description. `needs_user`: hidden with auth off. The Administration group
+   shows to admins, or to everyone with auth off (same rule as app/scope.py). #}
+{% set cur_path = request.url.path if request else '' %}
+{% set cur_user = request.state.user if (request and request.state and request.state.user is defined) else none %}
+{% set cur_for = request.query_params.get('for') if request else none %}
+{% set cur_q = ('?for=' ~ cur_for) if cur_for else '' %}
+{% set you_all = [
+  {"title": "Account", "href": "/account", "match": "/account", "needs_user": true,
+   "desc": "Change your password and the email reset links go to."},
+  {"title": "Travel profile", "href": "/trips/settings/travel-profile" ~ cur_q, "match": "/trips/settings/travel-profile", "needs_user": false,
+   "desc": "Nationality, base currency, names on tickets."},
+  {"title": "Home profiles", "href": "/review/home" ~ cur_q, "match": "/review/home", "needs_user": false,
+   "desc": "Your home airports and where you've lived, so trips from home aren't logged as visits."},
+  {"title": "Packing profile", "href": "/trips/settings/packing-profile" ~ cur_q, "match": "/trips/settings/packing-profile", "needs_user": false,
+   "desc": "What you always bring and how you pack."},
+  {"title": "Discovery profile", "href": "/trips/settings/discovery-profile" ~ cur_q, "match": "/trips/settings/discovery-profile", "needs_user": false,
+   "desc": "Food, activity and pace preferences for trip research."},
+] %}
+{% set admin_all = [
+  {"title": "Users", "href": "/users", "match": "/users", "needs_user": true,
+   "desc": "Accounts, roles, password resets, email delivery."},
+  {"title": "Travellers", "href": "/admin/traveler-identity/list", "match": "/admin/traveler-identity", "needs_user": false,
+   "desc": "The roster accounts link to."},
+  {"title": "Rules", "href": "/admin/rule-setting/list", "match": "/admin/rule-setting", "needs_user": false,
+   "desc": "Which review rules enforce, audit or are off."},
+  {"title": "Source rules", "href": "/admin/source-rule/list", "match": "/admin/source-rule", "needs_user": false,
+   "desc": "How captured emails are routed."},
+  {"title": "API keys", "href": "/admin/api-key/list", "match": "/admin/api-key", "needs_user": false,
+   "desc": "Capture clients (Apps Script, add-ons)."},
+  {"title": "Packing catalog", "href": "/admin/packing-catalog-item/list", "match": "/admin/packing-catalog-item", "needs_user": false,
+   "desc": "Items packing plans draw from."},
+  {"title": "Bag inventory", "href": "/admin/bag/list", "match": "/admin/bag", "needs_user": false,
+   "desc": "The bags items can be packed into."},
+  {"title": "Phrasebook", "href": "/admin/phrasebook-phrase/list", "match": "/admin/phrasebook-phrase", "needs_user": false,
+   "desc": "Phrases for the language findings."},
+  {"title": "Regional languages", "href": "/admin/regional-language/list", "match": "/admin/regional-language", "needs_user": false,
+   "desc": "Languages spoken by region, for discovery."},
+] %}
+{% set show_admin = (cur_user is none) or cur_user.is_admin %}
+{% set you = you_all | rejectattr("needs_user") | list if cur_user is none else you_all %}
+{% set admin = ((admin_all | rejectattr("needs_user") | list) if cur_user is none else admin_all) if show_admin else [] %}
+{# Is the current page a settings page? (the hub, any entry, the admin area, About) #}
+{% set ns = namespace(on=cur_path.startswith('/settings') or cur_path.startswith('/admin') or cur_path.startswith('/about')) %}
+{% for e in you_all + admin_all %}{% if cur_path.startswith(e.match) %}{% set ns.on = true %}{% endif %}{% endfor %}
+{% set in_settings = ns.on %}
+{% set is_hub = cur_path.startswith('/settings') %}

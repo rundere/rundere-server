@@ -355,7 +355,12 @@ a{color:var(--accent)}
 </head>
 <body>
 {% block appheader %}{% include "_appheader.html" %}{% endblock %}
+{% import "_settings_menu.html" as settings_menu with context %}
+{% if settings_menu.in_settings and not settings_menu.is_hub %}
+<div class="yn-set-shell">{% include "_settings_nav.html" %}<div class="yn-set-main">
 {% block content %}{% endblock %}
+</div></div>
+{% else %}{{ self.content() }}{% endif %}
 <script>
 // Auto-hide the result toast a few seconds after it is swapped in OOB.
 document.body.addEventListener('htmx:oobAfterSwap', function(e){

@@ -16,41 +16,12 @@ from fastapi.templating import Jinja2Templates
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
 
-# (title, href, one-line description, needs a signed-in user)
-_YOU = [
-    ("Account", "/account", "Change your password and the email reset links go to.", True),
-    ("Travel profile", "/trips/settings/travel-profile",
-     "Nationality, base currency, names on tickets.", True),
-    ("Home profiles", "/review/home",
-     "Where you've lived, so trips from home aren't logged as visits.", False),
-    ("Packing profile", "/trips/settings/packing-profile",
-     "What you always bring and how you pack.", False),
-    ("Discovery profile", "/trips/settings/discovery-profile",
-     "Food, activity and pace preferences for trip research.", False),
-]
-
-_ADMIN = [
-    ("Users", "/users", "Accounts, roles, password resets, email delivery."),
-    ("Travellers", "/admin/traveler-identity/list", "The roster accounts link to."),
-    ("Rules", "/admin/rule-setting/list", "Which review rules enforce, audit or are off."),
-    ("Source rules", "/admin/source-rule/list", "How captured emails are routed."),
-    ("API keys", "/admin/api-key/list", "Capture clients (Apps Script, add-ons)."),
-    ("Packing catalog", "/admin/packing-catalog-item/list", "Items packing plans draw from."),
-    ("Bag inventory", "/admin/bag/list", "The bags items can be packed into."),
-    ("Phrasebook", "/admin/phrasebook-phrase/list", "Phrases for the language findings."),
-    ("Regional languages", "/admin/regional-language/list",
-     "Languages spoken by region, for discovery."),
-]
+# The menu itself (entries, names, who sees which group) lives in ONE place,
+# review/templates/_settings_menu.html, shared with the Settings sidebar that
+# every settings page shows, so the two can never drift apart.
 
 
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
-    user = getattr(request.state, "user", None)
-    signed_in = user is not None
-    show_admin = user is None or bool(getattr(user, "is_admin", False))
-    you = [{"title": t, "href": h, "desc": d} for t, h, d, needs_user in _YOU
-           if signed_in or not needs_user]
-    admin = ([{"title": t, "href": h, "desc": d} for t, h, d in _ADMIN
-              if signed_in or h != "/users"] if show_admin else [])
     return templates.TemplateResponse(request, "settings.html", {
-        "you": you, "admin": admin, "me": user})
+        "me": getattr(request.state, "user", None)})

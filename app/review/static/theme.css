@@ -82,3 +82,28 @@
 .settings-desc{font-size:12.5px;color:var(--ink-2);line-height:1.4}
 .settings-foot{margin-top:24px;font-size:13px}
 .settings-foot a{color:var(--ink-2)}
+
+/* ---- settings sidebar (every settings page, incl. the admin tables) ---- */
+.yn-set-shell{display:flex;align-items:flex-start;min-height:calc(100vh - 46px)}
+.yn-set-nav{flex:0 0 208px;position:sticky;top:46px;align-self:flex-start;
+  max-height:calc(100vh - 46px);overflow-y:auto;padding:14px 10px 24px;
+  background:var(--surface);border-right:1px solid var(--line);font-family:var(--ui)}
+.yn-set-nav a{display:block;padding:6px 10px;border-radius:var(--r);font-size:13.5px;
+  color:var(--ink-2);text-decoration:none;border-left:2px solid transparent}
+.yn-set-nav a:hover{color:var(--ink);background:var(--surface-sunk)}
+.yn-set-nav a.on{color:var(--ink);font-weight:600;background:var(--surface-sunk);
+  border-left-color:var(--accent)}
+.yn-set-nav .yn-set-top{font-weight:600;color:var(--ink);margin-bottom:4px}
+.yn-set-grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink-3);padding:14px 10px 4px}
+.yn-set-nav .yn-set-about{margin-top:14px;font-size:12.5px}
+.yn-set-main{flex:1;min-width:0}
+@media (max-width:720px){
+  .yn-set-shell{display:block;min-height:0}
+  .yn-set-nav{position:static;max-height:none;display:flex;gap:4px;overflow-x:auto;
+    padding:8px;border-right:0;border-bottom:1px solid var(--line);white-space:nowrap}
+  .yn-set-nav a{flex:0 0 auto;border-left:0;border-bottom:2px solid transparent}
+  .yn-set-nav a.on{border-bottom-color:var(--accent)}
+  .yn-set-grp{display:none}
+  .yn-set-nav .yn-set-about{margin-top:0}
+}
