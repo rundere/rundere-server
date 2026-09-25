@@ -1029,11 +1029,15 @@ def _resolve_or_mint_yonder_trip(session: Session, item: TravelItem,
     from app.models import Trip
     cid = (collection_id if collection_id
            and not str(collection_id).startswith("(") else None)
+    # The minted trip belongs to whoever owns the capture that minted it (the
+    # ingesting key's user, D-120) — same as a hand-made trip is owned by its
+    # creator. NULL only when the capture itself is open (unscoped key).
     trip = Trip(source="resolver",
                name=resolution.get("collection_name") or "Untitled trip",
                start_date=resolution.get("collection_start"),
                end_date=resolution.get("collection_end"),
-               adventurelog_collection_id=cid)
+               adventurelog_collection_id=cid,
+               owner_id=item.owner_id)
     session.add(trip)
     session.flush()
     item.trip_id = trip.id
