@@ -264,3 +264,21 @@ if DEPS:
         # the old token is now revoked
         client.cookies.clear()
         assert client.get("/account", headers=hdr).status_code == 401
+    def test_settings_hub_admin_section_only_for_admins():
+        """4.1: profiles + administration live under /settings, not the top bar;
+        the Administration group only shows to admins (or with auth off)."""
+        settings.auth_required = True
+        try:
+            plain = client.get("/settings", headers=_bearer("hub-plain")).text
+            assert "Travel profile" in plain and "Account" in plain
+            assert "Administration" not in plain and "/admin/rule-setting" not in plain
+            admin = client.get("/settings", headers=_bearer("hub-admin", admin=True)).text
+            assert "Administration" in admin and "/users" in admin
+            # the top bar carries the daily links (Journal included), not admin ones
+            bar = client.get("/trips", headers=_bearer("hub-plain")).text
+            assert 'href="/admin/rule-setting/list"' not in bar and 'href="/journal"' in bar
+        finally:
+            settings.auth_required = False
+        # auth off = single-user world: everything, minus user-only entries
+        off = client.get("/settings").text
+        assert "Administration" in off and "/account" not in off
