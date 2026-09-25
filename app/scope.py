@@ -4,20 +4,25 @@ One module, used by the HTMX routes now and the /api/v1 layer in Phase 3, so the
 two never disagree on who can see what.
 
 Two ownership roots:
-- **Trip** — visible if open (owner_id NULL), owned by the user, shared via a
-  TripMember row, or the user is admin.
-- **TravelItem (capture)** — visible if open (owner_id NULL) or owned by the user
-  (or admin).
+- **Trip** — visible if open (owner_id NULL), owned by the user, the user
+  travels on it, or it's shared with them via a TripMember row.
+- **TravelItem (capture)** — visible if open (owner_id NULL) or owned by the user.
 
-Every function is a **no-op when scoping shouldn't apply**: `user is None` (auth
-disabled — the pre-4.0 single-user world) or the user is an admin. So wiring
-these in changes nothing until TX_AUTH_REQUIRED is on.
+**Admins (4.1 sharing):** an admin additionally sees — and edits — data owned by
+users who SHARE with admins (`User.share_with_admins`, on by default). A user who
+opts out is, to an admin, like any other user: visible only where they invite
+the admin in (roster/share). This is an in-app policy, not encryption; the
+server operator can always read the database.
+
+Every function is a **no-op with auth disabled** (`user is None`, the pre-4.0
+single-user world), so wiring these in changes nothing until TX_AUTH_REQUIRED
+is on.
 """
 from __future__ import annotations
 
-from sqlalchemy import or_, true
+from sqlalchemy import or_, select, true
 
-from app.models import JournalEntry, TravelItem, Trip, TripMember, TripTraveler
+from app.models import JournalEntry, TravelItem, Trip, TripMember, TripTraveler, User
 
 
 def user_of(request):
@@ -26,8 +31,30 @@ def user_of(request):
 
 
 def unrestricted(user) -> bool:
-    """True when scoping is a no-op: no authenticated user, or an admin."""
-    return user is None or bool(getattr(user, "is_admin", False))
+    """True when scoping is a no-op: auth is off (no user). Admins are NOT
+    unrestricted since 4.1 — they see sharing users' data; see is_admin/sharing."""
+    return user is None
+
+
+def is_admin(user) -> bool:
+    return bool(getattr(user, "is_admin", False))
+
+
+def sharing_owner_ids():
+    """SQL subquery of the users who share their data with admins."""
+    return select(User.id).where(User.share_with_admins.is_(True))
+
+
+def owner_shares(session, owner_id) -> bool:
+    """Does this owner share with admins? (No owner = open data: yes.)"""
+    if not owner_id:
+        return True
+    owner = session.get(User, owner_id)
+    return owner is None or bool(owner.share_with_admins)
+
+
+def _admin_sees(session, user, owner_id) -> bool:
+    return is_admin(user) and owner_shares(session, owner_id)
 
 
 # Trip access is two-tier (D-122):
@@ -71,6 +98,8 @@ def trip_filter(session, user):
     if unrestricted(user):
         return true()
     cond = or_(Trip.owner_id.is_(None), Trip.owner_id == user.id)
+    if is_admin(user):
+        cond = or_(cond, Trip.owner_id.in_(sharing_owner_ids()))
     extra = _member_trip_ids(session, user) | _roster_trip_ids(session, user)
     return or_(cond, Trip.id.in_(extra)) if extra else cond
 
@@ -91,11 +120,7 @@ def visible_trip_ids(session, user) -> set[str] | None:
     for scoping child tables by trip_id without a join."""
     if unrestricted(user):
         return None
-    ids = {row[0] for row in
-           session.query(Trip.id).filter(
-               or_(Trip.owner_id.is_(None), Trip.owner_id == user.id)).all()}
-    ids |= _member_trip_ids(session, user) | _roster_trip_ids(session, user)
-    return ids
+    return {row[0] for row in session.query(Trip.id).filter(trip_filter(session, user)).all()}
 
 
 def can_view_trip(session, user, trip) -> bool:
@@ -105,17 +130,21 @@ def can_view_trip(session, user, trip) -> bool:
         return True
     if trip.owner_id is None or trip.owner_id == user.id:
         return True
+    if _admin_sees(session, user, trip.owner_id):
+        return True
     return _is_traveller(session, user, trip) or _is_member(session, user, trip)
 
 
 def can_edit_trip(session, user, trip) -> bool:
-    """Full access: owner/admin/open/traveller. Explicit (non-traveller) shares
-    are view-only, so they are NOT editors (D-122)."""
+    """Full access: owner/open/traveller, or an admin when the owner shares.
+    Explicit (non-traveller) shares are view-only, so NOT editors (D-122)."""
     if trip is None:
         return False
     if unrestricted(user):
         return True
     if trip.owner_id is None or trip.owner_id == user.id:
+        return True
+    if _admin_sees(session, user, trip.owner_id):
         return True
     return _is_traveller(session, user, trip)
 
@@ -161,7 +190,21 @@ def capture_filter(user):
     """A predicate for `session.query(TravelItem).filter(...)`."""
     if unrestricted(user):
         return true()
-    return or_(TravelItem.owner_id.is_(None), TravelItem.owner_id == user.id)
+    cond = or_(TravelItem.owner_id.is_(None), TravelItem.owner_id == user.id)
+    if is_admin(user):
+        cond = or_(cond, TravelItem.owner_id.in_(sharing_owner_ids()))
+    return cond
+
+
+def batch_filter(user):
+    """IngestBatch predicate, same rule as captures (a batch becomes captures)."""
+    from app.models import IngestBatch
+    if unrestricted(user):
+        return true()
+    cond = or_(IngestBatch.user_id.is_(None), IngestBatch.user_id == user.id)
+    if is_admin(user):
+        cond = or_(cond, IngestBatch.user_id.in_(sharing_owner_ids()))
+    return cond
 
 
 def can_access_capture(user, item) -> bool:
@@ -169,7 +212,13 @@ def can_access_capture(user, item) -> bool:
         return False
     if unrestricted(user):
         return True
-    return item.owner_id is None or item.owner_id == user.id
+    if item.owner_id is None or item.owner_id == user.id:
+        return True
+    if is_admin(user):
+        from sqlalchemy.orm import object_session
+        session = object_session(item)
+        return session is not None and owner_shares(session, item.owner_id)
+    return False
 
 
 def capture_or_none(session, request, item_id):
@@ -193,13 +242,17 @@ def require_capture(session, user, item_id):
 # A journal is PERSONAL (SPEC-6 D-134): visible to its author and admins only,
 # never trip-shared. Unlike trips/captures there is deliberately NO "open"
 # (NULL owner) tier for a normal user — a diary must not leak between users.
-# Admins and the auth-off single-user world (user is None) still see everything,
-# same as every other resource.
+# The auth-off single-user world (user is None) sees everything; an admin sees
+# entries of users who share with admins (4.1), same as every other resource.
 def journal_filter(user):
     """A predicate for `session.query(JournalEntry).filter(...)`."""
     if unrestricted(user):
         return true()
-    return JournalEntry.owner_id == user.id
+    cond = JournalEntry.owner_id == user.id
+    if is_admin(user):
+        cond = or_(cond, JournalEntry.owner_id.is_(None),
+                   JournalEntry.owner_id.in_(sharing_owner_ids()))
+    return cond
 
 
 def can_access_journal(user, entry) -> bool:
@@ -207,7 +260,13 @@ def can_access_journal(user, entry) -> bool:
         return False
     if unrestricted(user):
         return True
-    return entry.owner_id == user.id
+    if entry.owner_id == user.id:
+        return True
+    if is_admin(user):
+        from sqlalchemy.orm import object_session
+        session = object_session(entry)
+        return session is not None and owner_shares(session, entry.owner_id)
+    return False
 
 
 def require_journal(session, user, entry_id):

@@ -89,6 +89,11 @@ async def auth_gate(request, call_next):
         msg = "admin only"
         return (JSONResponse({"detail": msg}, status_code=403) if is_api
                 else HTMLResponse(f"<h1>403 — {msg}</h1>", status_code=403))
+    # 4.1: a self-registered/SSO-provisioned user first chooses whether to share
+    # their data with admins. Browser only — the JSON API is never redirected.
+    if (not is_api and getattr(user, "sharing_prompt", False)
+            and not path.startswith(("/account/sharing", "/logout"))):
+        return RedirectResponse(f"/account/sharing?next={quote(path)}", status_code=303)
     request.state.user = user
     return await call_next(request)
 
