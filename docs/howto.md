@@ -1,6 +1,6 @@
 # Yonder — Setup & Usage Guide
 
-> Current for **v3.9.2**. Screenshots are being recaptured against the current
+> Current for **v4.0.0**. Screenshots are being recaptured against the current
 > UI; `_[screenshot: …]_` marks where each one belongs. The older
 > `docs/howto.html` predates the trip pickers and Yonder's first-party writes —
 > treat it as historical, not current.
