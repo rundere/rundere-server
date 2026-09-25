@@ -1044,6 +1044,9 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
 
     execute = confirm == "1"
     b = bucket if bucket in BUCKETS else "staged"
+    # Only the captures this person may log — their own and open ones (an admin
+    # also those of users who share). Never someone else's approvals (YONDER-105).
+    mine = scope.capture_filter(scope.user_of(request))
 
     if not execute:
         # PREVIEW stays synchronous — it only reads (target refs + dedup) and is
@@ -1054,7 +1057,8 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
                    "skipped": 0, "plans": []}
         try:
             summary = commit_pending(session, adventurelog, airtrail,
-                                     identities=load_identities(session), dry_run=True)
+                                     identities=load_identities(session), dry_run=True,
+                                     item_filter=mine)
         except Exception as ex:
             log.exception("commit preview failed")
             error = str(ex)
@@ -1070,7 +1074,8 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
             adventurelog, airtrail = _target_clients()
             summary = commit_pending(s, adventurelog, airtrail,
                                      identities=load_identities(s),
-                                     dry_run=False, progress=progress)
+                                     dry_run=False, progress=progress,
+                                     item_filter=mine)
             n = summary["items"]
             parts = [f"logged {summary['writes_ok']} write(s) across {n} item(s)"]
             if summary["writes_failed"]:
