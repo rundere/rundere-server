@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     oidc_auto_create: bool = True            # provision a User on first SSO login
     oidc_admin_group: str = ""               # a `groups` claim value that grants admin (optional)
 
-    app_version: str = "3.9.2"
+    app_version: str = "4.0.0"
 
     @property
     def base_currency_list(self) -> tuple[str, ...]:
