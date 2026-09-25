@@ -9,6 +9,8 @@
   <p class="bp-trip-notes">Set these once — they shape every packing plan. After
     changing them, re-generate a trip's plan to apply.</p>
 </div>
+{% include "_acting_for.html" %}
+
 
 {% if no_traveller %}
 <div class="card blueprint yn-note-card yn-todo">
@@ -26,7 +28,7 @@
 </div>
 {% endif %}
 
-<form method="post" action="/trips/settings/packing-profile"
+<form method="post" action="/trips/settings/packing-profile{{ acting.qs if acting else '' }}"
       class="card blueprint yn-profile-card">
   <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
 
