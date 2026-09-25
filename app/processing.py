@@ -19,13 +19,14 @@ from extract.pipeline import extract_ingest_payload
 
 log = logging.getLogger("yonder.processing")
 
-_CONFIDENCE = {"jsonld": 0.9, "ical": 0.9, "maps_url": 0.9, "llm": 0.6}
+_CONFIDENCE = {"jsonld": 0.9, "ical": 0.9, "maps_url": 0.9,
+               "apple_maps_url": 0.9, "llm": 0.6}
 
 
 def _source(batch: IngestBatch, payload: dict) -> dict:
     channel = payload.get("capture_channel") or "gmail"
     return {
-        "type": {"gmail": "gmail", "maps_url": "maps",
+        "type": {"gmail": "gmail", "maps_url": "maps", "apple_maps_url": "maps",
                  "gcal": "gcal", "web": "web"}.get(channel, "manual"),
         "ref": payload.get("message_id") or batch.artifact_sha256 or batch.id,
         "thread_ref": payload.get("thread_id"),
@@ -48,6 +49,7 @@ def process_batch(session: Session, batch: IngestBatch,
         for i, payload_item in enumerate(items):
             session.add(TravelItem(
                 batch_id=batch.id,
+                owner_id=batch.user_id,          # Phase 2 (D-120): capture ownership
                 item_type=payload_item["item_type"],
                 segment_index=i,
                 segment_count=len(items),

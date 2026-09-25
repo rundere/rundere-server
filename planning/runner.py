@@ -28,21 +28,29 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def load_profile(session: Session) -> dict:
-    """The active packing profile's values, or engine defaults. Single-user for
-    now (D-82): the first profile row wins; a per-traveller lookup slots in here
-    when Yonder gains multi-user."""
-    row = session.query(PackingProfile).order_by(PackingProfile.created_at).first()
+def load_profile(session: Session, traveler_id: int | None = None) -> dict:
+    """The packing profile values for a traveller (D-123: per-user via traveller),
+    falling back to the deployment default (traveler_id NULL), then any profile,
+    then engine defaults. This is the per-traveller lookup D-82 anticipated."""
+    row = None
+    if traveler_id is not None:
+        row = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
+    if row is None:
+        row = (session.query(PackingProfile).filter_by(traveler_id=None)
+               .order_by(PackingProfile.created_at).first())
+    if row is None:
+        row = session.query(PackingProfile).order_by(PackingProfile.created_at).first()
     return {**default_profile(), **(row.values or {})} if row else default_profile()
 
 
-def _upsert_item(session: Session, plan: PackingPlan, trip_id: str, pi) -> None:
+def _upsert_item(session: Session, plan: PackingPlan, trip_id: str, pi,
+                 user_id: str | None = None) -> None:
     row = (session.query(PackingItem)
-           .filter_by(trip_id=trip_id, item_key=pi.item_key).first())
+           .filter_by(trip_id=trip_id, user_id=user_id, item_key=pi.item_key).first())
     if row is not None and (row.status in ("packed", "removed") or row.edited):
         return                              # human decision — never clobbered
     if row is None:
-        row = PackingItem(trip_id=trip_id, item_key=pi.item_key)
+        row = PackingItem(trip_id=trip_id, user_id=user_id, item_key=pi.item_key)
         session.add(row)
     row.plan_id = plan.id
     row.label = pi.label
@@ -56,28 +64,32 @@ def _upsert_item(session: Session, plan: PackingPlan, trip_id: str, pi) -> None:
     row.updated_at = _now()
 
 
-def _latest_manual_archetypes(session: Session, trip_id: str) -> list | None:
-    """The operator's last archetype override for this trip, to carry forward
-    across a plain re-generate so the choice sticks."""
+def _latest_manual_archetypes(session: Session, trip_id: str,
+                              user_id: str | None = None) -> list | None:
+    """The user's last archetype override for this trip, to carry forward across
+    a plain re-generate so the choice sticks (per-user, D-123)."""
     prev = (session.query(PackingPlan)
-            .filter(PackingPlan.trip_id == trip_id)
+            .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
             .order_by(PackingPlan.generated_at.desc()).first())
     return (prev.manual_archetypes if prev else None) or None
 
 
 def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
                   home_profiles: list = (), today: str | None = None,
-                  manual_archetypes: list | None = None) -> PackingPlan:
-    """Generate and persist a Packing Plan for `trip`. Returns the committed row.
+                  manual_archetypes: list | None = None,
+                  user_id: str | None = None, traveler_id: int | None = None) -> PackingPlan:
+    """Generate and persist a Packing Plan for `trip`, owned by `user_id`
+    (D-123: per-user; NULL = legacy/auth-off). The viewing user's own packing
+    profile is loaded via `traveler_id`.
 
-    `manual_archetypes` is the operator's explicit archetype choice. Pass it to
-    force a set; pass None (a plain re-generate) and the last override is carried
+    `manual_archetypes` is the user's explicit archetype choice. Pass it to force
+    a set; pass None (a plain re-generate) and the last override is carried
     forward. An explicit empty list resets to auto-detection."""
     if manual_archetypes is None:
-        manual_archetypes = _latest_manual_archetypes(session, trip.id)
+        manual_archetypes = _latest_manual_archetypes(session, trip.id, user_id)
     override = [a for a in (manual_archetypes or []) if a] or None
-    plan = PackingPlan(trip_id=trip.id, status="running", generated_at=_now(),
-                       manual_archetypes=override)
+    plan = PackingPlan(trip_id=trip.id, user_id=user_id, status="running",
+                       generated_at=_now(), manual_archetypes=override)
     session.add(plan)
     session.flush()
     try:
@@ -91,7 +103,8 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
         profiles = list(home_profiles or [])
         home_countries = home_country_set(derived.places, profiles, trip.start_date)
         ctx = derive_context(acts, derived, weather, start_date=trip.start_date,
-                             end_date=trip.end_date, profile=load_profile(session),
+                             end_date=trip.end_date,
+                             profile=load_profile(session, traveler_id),
                              home_countries=home_countries)
         result = build_plan(ctx, catalog.items(session), force_archetypes=override)
 
@@ -102,12 +115,14 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
 
         produced: set[str] = set()
         for pi in result.items + result.omitted:
-            _upsert_item(session, plan, trip.id, pi)
+            _upsert_item(session, plan, trip.id, pi, user_id)
             produced.add(pi.item_key)
         # prune stale drafts/omitted the latest run didn't produce (item removed,
-        # place excluded, activity changed) — keep packed/removed/edited.
+        # place excluded, activity changed) — keep packed/removed/edited. Scoped
+        # to THIS user's rows (D-123).
         for row in (session.query(PackingItem)
                     .filter(PackingItem.trip_id == trip.id,
+                            PackingItem.user_id == user_id,
                             PackingItem.status.in_(("draft", "omitted")),
                             PackingItem.edited.is_(False)).all()):
             if row.item_key not in produced:

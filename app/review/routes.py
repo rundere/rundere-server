@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 import rules as rules_module
+from app import scope
 from app.db import SessionLocal, get_session
 from app.models import TravelItem
 from app.review import jobs
@@ -365,8 +366,12 @@ def _view(item: TravelItem) -> dict:
     }
 
 
-def _all_views(session: Session) -> list[dict]:
-    items = session.query(TravelItem).order_by(TravelItem.created_at.desc()).all()
+def _all_views(session: Session, user=None) -> list[dict]:
+    # Phase 2 (D-120): the review queue is per-submitter — a user sees their own
+    # captures + open ones. No-op when auth is off or the user is admin.
+    from app import scope
+    items = (session.query(TravelItem).filter(scope.capture_filter(user))
+             .order_by(TravelItem.created_at.desc()).all())
     return [_view(i) for i in items]
 
 
@@ -382,7 +387,7 @@ def _counts(views: list[dict]) -> dict:
 @router.get("/", response_class=HTMLResponse)
 def queue(request: Request, bucket: str = "attention",
           session: Session = Depends(get_session)):
-    views = _all_views(session)
+    views = _all_views(session, scope.user_of(request))
     shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
     return templates.TemplateResponse(request, "queue.html", {
         "items": shown, "counts": _counts(views),
@@ -393,7 +398,7 @@ def queue(request: Request, bucket: str = "attention",
 @router.get("/item/{item_id}", response_class=HTMLResponse)
 def detail(item_id: str, request: Request, bucket: str = "attention",
            session: Session = Depends(get_session)):
-    item = session.get(TravelItem, item_id)
+    item = scope.capture_or_none(session, request, item_id)
     if item is None:
         return HTMLResponse("<p class='empty'>That item no longer exists.</p>",
                             status_code=404)
@@ -424,7 +429,7 @@ async def save(item_id: str, request: Request, bucket: str = "attention",
     them to judge, never a silent overwrite. Re-resolving immediately means the
     rules re-run and a fixed item leaves the queue on the spot.
     """
-    item = session.get(TravelItem, item_id)
+    item = scope.capture_or_none(session, request, item_id)
     if item is None:
         return HTMLResponse("", status_code=404)
 
@@ -492,12 +497,12 @@ async def save(item_id: str, request: Request, bucket: str = "attention",
     # actually resolved ok after the edit — resolve==ok means it is out of the
     # "Needs you" bucket, so it is never blocked. Otherwise we just save and let
     # the operator see why it still needs attention.
-    final = session.get(TravelItem, item_id)
+    final = scope.capture_or_none(session, request, item_id)
     approved_now = False
     if "and_approve" in form:
         if not (final.resolution or {}).get("outcome"):
             _reresolve(session, final)
-            final = session.get(TravelItem, item_id)
+            final = scope.capture_or_none(session, request, item_id)
         if (final.status or {}).get("resolve") == "ok":
             review = dict(final.review or {})
             review.update({"required": False, "action_taken": "approved",
@@ -514,7 +519,7 @@ async def save(item_id: str, request: Request, bucket: str = "attention",
         # keeps its old "Ready" pill and stays in the queue. Retarget the swap to
         # the whole queue body (same effect as the plain Approve action); the
         # open detail collapses, which is the expected "it moved on" feedback.
-        views = _all_views(session)
+        views = _all_views(session, scope.user_of(request))
         shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
         resp = templates.TemplateResponse(request, "_after_action.html", {
             "items": shown, "counts": _counts(views), "bucket": bucket, "oob": True})
@@ -538,7 +543,7 @@ def assign_trip(item_id: str, request: Request, collection_id: str = Form(""),
     to AirTrail now also files its AdventureLog transportation into the chosen
     trip. An empty value clears the pick and returns the item to auto-resolution.
     """
-    item = session.get(TravelItem, item_id)
+    item = scope.capture_or_none(session, request, item_id)
     if item is None:
         return HTMLResponse("", status_code=404)
 
@@ -569,7 +574,7 @@ def assign_trip(item_id: str, request: Request, collection_id: str = Form(""),
     session.commit()
     _reresolve(session, item)
 
-    final = session.get(TravelItem, item_id)
+    final = scope.capture_or_none(session, request, item_id)
     return _detail_response(request, session, final, bucket=bucket,
                             saved=True, oob_counts=True)
 
@@ -636,11 +641,11 @@ def assign_yonder_trip(item_id: str, request: Request, trip_id: str = Form(""),
     as a linked capture. No re-resolve needed; the item's bucket is unchanged.
     """
     from app.models import Trip
-    item = session.get(TravelItem, item_id)
+    item = scope.capture_or_none(session, request, item_id)
     if item is None:
         return HTMLResponse("", status_code=404)
     tid = (trip_id or "").strip()
-    if tid and session.get(Trip, tid) is None:
+    if tid and scope.trip_or_none(session, request, tid) is None:
         return _detail_response(request, session, item, bucket=bucket, saved=False)
     item.trip_id = tid or None
     # Pin the choice so the resolver's auto-link never overrides a human — this
@@ -655,17 +660,19 @@ def assign_yonder_trip(item_id: str, request: Request, trip_id: str = Form(""),
 
 
 def _yonder_trip_context(session: Session, item: TravelItem,
-                         view: dict) -> dict | None:
+                         view: dict, user=None) -> dict | None:
     """Options for the in-house Yonder trip picker, or None when it shouldn't
     show (item already staged/logged/ignored). Always available even with no
     trips yet — it then invites creating one. Trips whose dates contain the item
-    sort first, then newest-first; the current link is preselected."""
+    sort first, then newest-first; the current link is preselected. Only offers
+    trips the user may see (Phase 2)."""
     from app.models import Trip
     if view["bucket"] not in ("attention", "waiting", "ready"):
         return None
     from resolve.targets import item_date_span
     start, end = (item_date_span(view["payload"]) or (None, None))
-    trips = session.query(Trip).order_by(Trip.start_date.desc()).all()
+    trips = (session.query(Trip).filter(scope.trip_filter(session, user))
+             .order_by(Trip.start_date.desc()).all())
     selected = item.trip_id
     selected_name = None
 
@@ -769,10 +776,11 @@ def _detail_response(request: Request, session: Session, item: TravelItem,
            # the in-house Yonder trip it belongs to (association only). Either can
            # be absent and the template just omits that picker.
            "trip_al": _trip_context(session, item, view),
-           "trip_yonder": _yonder_trip_context(session, item, view)}
+           "trip_yonder": _yonder_trip_context(session, item, view,
+                                               scope.user_of(request))}
     if oob_counts:
         # Saving can move the item between buckets; refresh the counts too.
-        views = _all_views(session)
+        views = _all_views(session, scope.user_of(request))
         ctx.update({"counts": _counts(views), "oob": True})
         return templates.TemplateResponse(request, "_after_save.html", ctx)
     return templates.TemplateResponse(request, "detail.html", ctx)
@@ -840,7 +848,7 @@ def _job_panel(request: Request, job: dict, bucket: str):
 def _job_done(request: Request, job: dict, bucket: str):
     from app.db import SessionLocal as _SL
     with _SL() as s:                            # fresh session: the worker committed
-        views = _all_views(s)
+        views = _all_views(s, scope.user_of(request))
     shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
     return templates.TemplateResponse(request, "_job_done.html", {
         "job": job, "items": shown, "counts": _counts(views), "bucket": bucket,
@@ -1037,7 +1045,7 @@ def commit_cancel():
 def act(item_id: str, action: str, request: Request, bucket: str = "attention",
         session: Session = Depends(get_session)):
     """approve | ignore — both STAGE a decision; neither writes to a target."""
-    item = session.get(TravelItem, item_id)
+    item = scope.capture_or_none(session, request, item_id)
     if item is None:
         return HTMLResponse("", status_code=404)
     now = datetime.now(timezone.utc).isoformat()
@@ -1051,7 +1059,7 @@ def act(item_id: str, action: str, request: Request, bucket: str = "attention",
         # nothing (a no_change duplicate) is left untouched and stays approvable.
         if not (item.resolution or {}).get("outcome"):
             _reresolve(session, item)
-            item = session.get(TravelItem, item_id)
+            item = scope.capture_or_none(session, request, item_id)
         if (item.status or {}).get("resolve") != "ok":
             # Not resolved (deferred / needs_review) — do not stage; show the
             # refreshed detail so the operator sees why (needs a trip, a fix…).
@@ -1066,7 +1074,7 @@ def act(item_id: str, action: str, request: Request, bucket: str = "attention",
         item.review = review
         session.commit()
         bucket = bucket if bucket in BUCKETS else "attention"
-        views = _all_views(session)
+        views = _all_views(session, scope.user_of(request))
         shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
         return templates.TemplateResponse(request, "_after_action.html", {
             "items": shown, "counts": _counts(views), "bucket": bucket, "oob": True,
@@ -1087,7 +1095,7 @@ def act(item_id: str, action: str, request: Request, bucket: str = "attention",
         session.commit()
         _reresolve(session, item)          # recompute; returns it to its real bucket
         bucket = bucket if bucket in BUCKETS else "staged"
-        views = _all_views(session)
+        views = _all_views(session, scope.user_of(request))
         shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
         return templates.TemplateResponse(request, "_after_action.html", {
             "items": shown, "counts": _counts(views), "bucket": bucket, "oob": True,
@@ -1113,7 +1121,7 @@ def act(item_id: str, action: str, request: Request, bucket: str = "attention",
     # Stay on the bucket the operator was viewing; the acted item has left it,
     # and the counts refresh out-of-band.
     bucket = bucket if bucket in BUCKETS else "attention"
-    views = _all_views(session)
+    views = _all_views(session, scope.user_of(request))
     shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
     return templates.TemplateResponse(request, "_after_action.html", {
         "items": shown, "counts": _counts(views), "bucket": bucket, "oob": True,

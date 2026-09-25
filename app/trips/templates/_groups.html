@@ -1,3 +1,16 @@
+{% if has_any %}
+<input type="hidden" id="trip-status" name="status" value="{{ status }}">
+<nav class="yn-tabs bp-trip-tabs" role="tablist" aria-label="Trips">
+  {% for t in tabs %}
+  <button type="button" role="tab" class="yn-tab{% if t.active %} active{% endif %}"
+          aria-selected="{{ 'true' if t.active else 'false' }}"
+          hx-get="/trips/list" hx-vals='{"status": "{{ t.key }}"}' hx-include="#trip-controls"
+          hx-target="#trip-groups" hx-replace-url="/trips?status={{ t.key }}">
+    {{ t.label }} <span class="yn-tab-count">{{ t.count }}</span>
+  </button>
+  {% endfor %}
+</nav>
+{% endif %}
 {% if has_visible %}
   {% for grp in groups %}
   <section class="bp-group">
@@ -32,7 +45,14 @@
 {% elif search_no_results %}
   <div class="card blueprint bp-empty-card">
     <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-    <div class="bp-empty-msg">No trips match your search.</div>
+    <div class="bp-empty-msg">No {{ tabs | selectattr("active") | map(attribute="label") | first | lower }} trips{% if q %} match your search{% endif %}.
+      {% if other_tab.count %}
+      <button class="btn btn-ghost bp-sm" type="button"
+              hx-get="/trips/list" hx-vals='{"status": "{{ other_tab.key }}"}' hx-include="#trip-controls"
+              hx-target="#trip-groups" hx-replace-url="/trips?status={{ other_tab.key }}">
+        {{ other_tab.count }} in {{ other_tab.label }} →</button>
+      {% endif %}
+    </div>
   </div>
 {% else %}
   <div class="card blueprint bp-empty-card">

@@ -35,7 +35,7 @@ from app.config import settings
 from app.db import get_session
 from app.ingest import store_batch
 from app.models import ApiKey
-from extract import maps_url
+from extract import apple_maps_url, maps_url
 
 log = logging.getLogger("yonder.capture")
 router = APIRouter()
@@ -112,7 +112,8 @@ def _fetch_public_html(url: str) -> str | None:
 def _queue_web(session: Session, html: str, *, source_url: str | None,
                submitted_by: str | None, travel_date: str | None = None,
                travel_time: str | None = None, title: str | None = None,
-               notes: str | None = None, collection_id: str | None = None) -> str:
+               notes: str | None = None, collection_id: str | None = None,
+               owner_user_id: str | None = None) -> str:
     """Wrap a captured page into a `web`-channel batch and store it. Returns the
     batch id."""
     payload = {
@@ -129,32 +130,44 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
         },
     }
     body = json.dumps(payload).encode("utf-8")
-    batch = store_batch(session, body, payload, _internal_key_id(session))
+    batch = store_batch(session, body, payload, _internal_key_id(session),
+                        user_id=owner_user_id)
     session.commit()
     return batch.id
 
 
 def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
                 travel_date: str, travel_time: str | None = None,
+                end_date: str | None = None, timezone: str | None = None,
+                mode: str | None = None,
                 title: str | None = None, notes: str | None = None,
-                collection_id: str | None = None) -> str:
-    """Store a Google Maps directions link as a `maps_url`-channel batch — the
-    native replacement for the old n8n form. The maps_url extractor needs a
-    travel date (a route carries none, RULE-31); the caller validates it."""
+                collection_id: str | None = None,
+                owner_user_id: str | None = None,
+                provider: str = "google") -> str:
+    """Store a maps directions link (Google or Apple) as a directions-channel
+    batch — the native replacement for the old n8n form. The extractor needs a
+    travel date (a route carries none, RULE-31); the caller validates it.
+    `provider` selects the channel/extractor; `mode` is the car/transit/walk
+    selection cross-checked against the URL (SPEC-4 §2/§3)."""
+    channel = "apple_maps_url" if provider == "apple" else "maps_url"
     payload = {
-        "capture_channel": "maps_url",
+        "capture_channel": channel,
         "url": url,
         "capture_context": {
             "submitted_by": submitted_by or _WEB_CLIENT,
             "travel_date": travel_date,
             "travel_time": travel_time or None,
+            "end_date": end_date or None,
+            "timezone": timezone or None,
+            "mode": mode or None,
             "title": title or None,
             "notes": notes or None,
             "collection_id": collection_id or None,
         },
     }
     body = json.dumps(payload).encode("utf-8")
-    batch = store_batch(session, body, payload, _internal_key_id(session))
+    batch = store_batch(session, body, payload, _internal_key_id(session),
+                        user_id=owner_user_id)
     session.commit()
     return batch.id
 
@@ -203,6 +216,11 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     """
     ctype = request.headers.get("Content-Type", "")
     submitted_by = _submitted_by(request)
+    # Phase 2 (D-120): attribute the capture to the submitting Yonder user (from
+    # the session cookie / bearer / trusted proxy). None => an open capture.
+    from app import authn
+    _owner = authn.resolve_user(session, request)
+    owner_user_id = _owner.id if _owner else None
 
     # --- bookmarklet path: raw page HTML in the body ---
     if ctype.startswith("text/html"):
@@ -212,7 +230,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         if not raw.strip():
             return PlainTextResponse("Yonder: empty page — nothing captured.", status_code=400)
         source_url = request.headers.get("X-Yonder-Source-Url") or request.headers.get("Referer")
-        batch_id = _queue_web(session, raw, source_url=source_url, submitted_by=submitted_by)
+        batch_id = _queue_web(session, raw, source_url=source_url, submitted_by=submitted_by, owner_user_id=owner_user_id)
         return PlainTextResponse(
             f"Yonder captured this page ✓ (batch {batch_id[:8]}). "
             f"Run “Process new captures” in the review queue to extract it.")
@@ -220,41 +238,72 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     # --- page form path ---
     form = await request.form()
     content = (form.get("content") or "").strip()
+    path = (form.get("path") or "").strip().lower()   # page | google | apple | ""
     travel_date = (form.get("travel_date") or "").strip() or None
     travel_time = (form.get("travel_time") or "").strip() or None
+    end_date = (form.get("end_date") or "").strip() or None
+    timezone = (form.get("timezone") or "").strip() or None
+    mode = (form.get("mode") or "").strip() or None
     title = (form.get("title") or "").strip() or None
     notes = (form.get("notes") or "").strip() or None
     collection_id = (form.get("collection_id") or "").strip() or None
 
-    if not content:
+    def _msg(ok, message, batch_id=None):
         return templates.TemplateResponse(request, "_capture_result.html", {
-            "ok": False, "message": "Paste a page's source or a URL first."})
+            "ok": ok, "message": message, "batch_id": batch_id})
+
+    if not content:
+        return _msg(False, "Paste a page's source or a URL first.")
+
+    def _queue_directions(provider):
+        if not travel_date:
+            return _msg(False, "That’s a directions capture — add a Travel date "
+                               "(a route has no date of its own).")
+        batch_id = _queue_maps(session, content, submitted_by=submitted_by,
+                               travel_date=travel_date, travel_time=travel_time,
+                               end_date=end_date, timezone=timezone, mode=mode,
+                               title=title, notes=notes, collection_id=collection_id,
+                               owner_user_id=owner_user_id, provider=provider)
+        return _msg(True, "Captured the trip. Run “Process new captures” in the "
+                          "review queue to extract it.", batch_id)
+
+    # Explicit directions paths: the selection is authoritative, so looks_like_*
+    # validates the pasted URL against the chosen provider (SPEC-4 §2.1).
+    if path == "apple":
+        if apple_maps_url.is_apple_short_link(content):
+            return _msg(False, "That Apple Maps share link (maps.apple/p/…) carries "
+                               "no coordinates — open it and paste the full "
+                               "maps.apple.com directions link instead.")
+        if not apple_maps_url.looks_like_apple_maps_url(content):
+            return _msg(False, "That doesn’t look like an Apple Maps directions link "
+                               "(needs maps.apple.com with saddr and daddr).")
+        return _queue_directions("apple")
+    if path == "google":
+        if not maps_url.looks_like_maps_url(content):
+            return _msg(False, "That doesn’t look like a Google Maps directions link.")
+        return _queue_directions("google")
 
     source_url = None
     html = content
     if _looks_like_url(content):
-        # A Google Maps directions link is not a web page to fetch — route it to
-        # the maps_url extractor (native; retires the n8n form). It needs a date.
-        if maps_url.looks_like_maps_url(content):
-            if not travel_date:
-                return templates.TemplateResponse(request, "_capture_result.html", {
-                    "ok": False,
-                    "message": ("That’s a Google Maps directions link — add a "
-                                "Travel date (a route has no date of its own).")})
-            batch_id = _queue_maps(session, content, submitted_by=submitted_by,
-                                   travel_date=travel_date, travel_time=travel_time,
-                                   title=title, notes=notes, collection_id=collection_id)
-            return templates.TemplateResponse(request, "_capture_result.html", {
-                "ok": True, "batch_id": batch_id,
-                "message": "Captured the drive. Run “Process new captures” in the review queue to extract it."})
+        # No explicit provider path (bookmarklet / older clients): fall back to
+        # sniffing so a pasted maps link still routes correctly. An explicit
+        # "page" selection skips this and is fetched as a web page.
+        if path != "page":
+            is_apple = apple_maps_url.looks_like_apple_maps_url(content)
+            if apple_maps_url.is_apple_short_link(content):
+                return _msg(False, "That Apple Maps share link (maps.apple/p/…) "
+                                   "carries no coordinates — paste the full "
+                                   "maps.apple.com directions link instead.")
+            if is_apple or maps_url.looks_like_maps_url(content):
+                return _queue_directions("apple" if is_apple else "google")
         source_url = content
         html = _fetch_public_html(content)
         if not html:
-            return templates.TemplateResponse(request, "_capture_result.html", {
-                "ok": False,
-                "message": ("Couldn’t fetch that URL — it may need a login, block "
-                            "bots, or resolve to a private address. Use the bookmarklet "
-                            "on the open page, or paste its source here instead.")})
+            return _msg(False, "Couldn’t fetch that URL — it may need a login, block "
+                               "bots, or resolve to a private address. Use the "
+                               "bookmarklet on the open page, or paste its source "
+                               "here instead.")
 
     if len(html.encode("utf-8")) > settings.ingest_max_body_bytes:
         return templates.TemplateResponse(request, "_capture_result.html", {
@@ -262,7 +311,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
 
     batch_id = _queue_web(session, html, source_url=source_url, submitted_by=submitted_by,
                           travel_date=travel_date, travel_time=travel_time, title=title,
-                          notes=notes, collection_id=collection_id)
+                          notes=notes, collection_id=collection_id, owner_user_id=owner_user_id)
     return templates.TemplateResponse(request, "_capture_result.html", {
         "ok": True, "batch_id": batch_id,
         "message": "Captured. Run “Process new captures” in the review queue to extract it."})

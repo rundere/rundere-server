@@ -1,0 +1,11 @@
+{# Shared traveller picker (D-117: pick existing OR create new). #}
+<label for="traveler_id">Traveller</label>
+<select id="traveler_id" name="traveler_id">
+  <option value="none">— none / create new below —</option>
+  {% for t in travelers %}
+  <option value="{{ t.id }}">{{ t.display_name }} ({{ t.kind }})</option>
+  {% endfor %}
+</select>
+<label for="new_traveler">…or a new traveller's name</label>
+<input id="new_traveler" name="new_traveler" placeholder="e.g. Alex Rivera">
+<p class="hint">Pick who this account is, or type a new name to add them to the roster.</p>

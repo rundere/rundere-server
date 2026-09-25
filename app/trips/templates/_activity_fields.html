@@ -7,7 +7,8 @@
   {% else %}
   <div class="field">
     <label>{{ fl.label }}</label>
-    <input class="input" type="{{ fl.type }}" name="{{ fl.key }}" value="{{ fl.value }}">
+    <input class="input" type="{{ fl.type }}" name="{{ fl.key }}" value="{{ fl.value }}"
+           {% if fl.hint %}placeholder="{{ fl.hint }}"{% endif %}>
   </div>
   {% endif %}
 {% endfor %}

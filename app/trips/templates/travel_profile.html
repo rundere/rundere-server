@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Travel profile{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <span class="pagetitle">My travel profile</span>
+  </div></div>
+
+  {% if saved %}<div class="saved-note">Saved.</div>{% endif %}
+
+  <div style="padding:16px;max-width:640px">
+  {% if no_traveller %}
+    <p class="why">Your account isn't linked to a traveller yet. Ask an admin to
+      link your account to a traveller (Administer → Users), then you can set your
+      travel details here.</p>
+  {% else %}
+    <p class="why">These are your own personal travel details — only you (and the
+      trips you're on) use them. They are never shown in the admin.</p>
+    <form method="post" action="/trips/settings/travel-profile">
+      <div class="field"><label>Name</label>
+        <span class="v ro">{{ trav.display_name }}</span></div>
+      <div class="field"><label>Nationality</label>
+        <input name="nationality" maxlength="2" placeholder="ISO-2, e.g. CA, US, GB"
+               value="{{ trav.nationality or '' }}" style="text-transform:uppercase"></div>
+      <div class="field"><label>Base currency</label>
+        <select name="base_currency" class="v">
+          <option value="">— deployment default —</option>
+          {% for code, label in currencies %}
+          <option value="{{ code }}" {% if trav.base_currency == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select></div>
+      <div class="field"><label>Name-on-ticket aliases</label>
+        <textarea name="aliases" rows="3" class="v"
+                  placeholder="One per line — e.g. OKAFOR/DANIEL MR">{{ (trav.aliases or []) | join('\n') }}</textarea></div>
+      <div class="field"><label>AirTrail user id</label>
+        <input name="airtrail_user_id" placeholder="optional — links your flight history"
+               value="{{ trav.airtrail_user_id or '' }}"></div>
+      <div class="field"><label>Notes</label>
+        <textarea name="notes" rows="3" class="v">{{ trav.notes or '' }}</textarea></div>
+      <button class="act primary" type="submit" style="margin-top:12px">Save</button>
+    </form>
+    <p class="why" style="margin-top:12px">Nationality drives visa research on your
+      trips. Base currency is your own currency for the discovery rates and
+      calculator; the deployment's configured currencies are always shown too, so
+      leaving this blank just uses those. Aliases help match flights printed under
+      name variants.</p>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}

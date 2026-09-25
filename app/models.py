@@ -86,6 +86,10 @@ class TravelItem(Base):
     # — Yonder trips are their own trip system, not a mirror. Plain column, no DB
     # FK (see migration 0008); the trips delete route clears dangling links.
     trip_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    # 4.0 Phase 2 (D-120): the submitting user, inherited from the ingest batch
+    # (key.user_id) or set from the /capture/web proxy user. NULL = open/legacy;
+    # the review queue is scoped to owner_id (own + open). See app/scope.py.
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
     status: Mapped[dict | None] = mapped_column(JsonCol)
     source: Mapped[dict | None] = mapped_column(JsonCol)
     extraction: Mapped[dict | None] = mapped_column(JsonCol)
@@ -118,6 +122,10 @@ class IngestBatch(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     api_key_id: Mapped[str] = mapped_column(String(36), ForeignKey("api_keys.id"))
+    # 4.0 Phase 2 (D-120): the submitting user, copied from the ingesting key's
+    # user_id (or the /capture/web proxy user). Propagated onto each TravelItem's
+    # owner_id. NULL = an unscoped/legacy key → open capture.
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     declared_segment_count: Mapped[int | None] = mapped_column(Integer)
     payload: Mapped[dict] = mapped_column(JsonCol)
@@ -164,9 +172,73 @@ class ApiKey(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     client_name: Mapped[str] = mapped_column(String(128), unique=True)
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # 4.0 Phase 2 (D-120): scope this ingest key to a user, so captures it
+    # submits are owned by them (each household member runs their own Apps Script
+    # with their own key). NULL = unscoped/legacy/system key → open captures.
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class User(Base):
+    """A human account (Yonder 4.0 Phase 1a, SPEC-4 D-111). Yonder had no users
+    before 4.0; this is the identity all of API/MCP/web authenticate as.
+
+    Dual-source (D-111): `auth_source` is local | oidc | proxy. Local carries a
+    scrypt `password_hash`; oidc/proxy carry `external_subject` and a null hash.
+    `token_version` is the revocation lever — bumping it invalidates every
+    outstanding access/web/refresh token for this user ("sign out everywhere").
+    `traveler_id` (D-112) links the account to the existing self/guest roster
+    (TravelerIdentity) so there is no parallel identity concept. Per-user data
+    isolation is a LATER phase (2); Phase 1 only establishes who you are.
+    """
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(255))
+    password_hash: Mapped[str | None] = mapped_column(String(255))  # null for oidc/proxy
+    auth_source: Mapped[str] = mapped_column(String(16), default="local")  # local|oidc|proxy
+    external_subject: Mapped[str | None] = mapped_column(String(255), index=True)  # oidc sub / proxy:<name>
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)  # -> traveler_identities.id
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RefreshToken(Base):
+    """A rotating refresh token for the mobile/API flow (SPEC-4 D-111). The
+    opaque secret is shown to the client once; only its sha256 is stored, so a
+    DB leak cannot mint sessions. Consumed-and-rotated on every refresh; a
+    token is revocable individually (revoked_at) or en masse via User.token_version.
+    Web sessions use a JWT cookie instead and don't create rows here."""
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    user_agent: Mapped[str | None] = mapped_column(String(256))
+
+
+class PasswordResetToken(Base):
+    """One-time password-reset link (Phase 1a.1, D-117). Only the sha256 of the
+    opaque token is stored; the link carries the plaintext. Single-use (used_at)
+    and time-boxed (expires_at). Emailed when SMTP is configured, otherwise an
+    admin generates and hands over the link from the Users page."""
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Artifact(Base):
@@ -225,6 +297,11 @@ class TravelerIdentity(Base):
     # 3.2 (D-91): ISO-2 country code, used by the visa resolver (the `self`
     # traveller's nationality). NULL = visa research skipped with a visible prompt.
     nationality: Mapped[str | None] = mapped_column(String(2))
+    # 4.0 (D-65): the traveller's own base currency — the one the discovery
+    # currency resolver + calculator convert FROM on their trips. An EXPLICIT
+    # profile choice (ISO-4217, e.g. "GBP"), independent of nationality and home.
+    # NULL = fall back to the deployment default (TX_DISCOVERY_BASE_CURRENCIES).
+    base_currency: Mapped[str | None] = mapped_column(String(3))
     # 3.2 (D-100): a generic guest is a roster placeholder — "someone is coming"
     # — NOT a modelled person. Minted by the trip "add a guest" quick-add. It
     # carries no profile/nationality and is deliberately EXCLUDED from discovery
@@ -268,9 +345,27 @@ class Trip(Base):
     # still carry an AdventureLog collection id. Set by "Push to AdventureLog"
     # or entered by hand; the detail page links to it.
     adventurelog_collection_id: Mapped[str | None] = mapped_column(String(64))
+    # 4.0 Phase 2 (D-121): the owning user. NULL = open/legacy (visible to all);
+    # a manual trip is owned by its creator; a resolver-minted trip stays NULL
+    # (D-119, no user context). Sharing is via TripMember. See app/scope.py.
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripMember(Base):
+    """4.0 Phase 2 (D-121): a user a trip is shared with. v1 = "member = full
+    access" (view + edit); `role` reserves viewer/editor for later. The owner
+    isn't listed here — ownership is `Trip.owner_id`."""
+    __tablename__ = "trip_members"
+    __table_args__ = (UniqueConstraint("trip_id", "user_id", name="uq_trip_member"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    role: Mapped[str] = mapped_column(String(16), default="member")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class TripTraveler(Base):
@@ -448,6 +543,10 @@ class PackingPlan(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.0 Phase 2 (D-123): packing is PER-USER — a plan belongs to the viewing
+    # user, keyed by (trip_id, user_id). No cross-visibility between travellers.
+    # NULL = legacy/auth-off shared plan. Discovery, by contrast, stays trip-wide.
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     status: Mapped[str] = mapped_column(String(12), default="running", index=True)
     archetypes: Mapped[dict | None] = mapped_column(JsonCol)   # chosen + scores
     # 3.2.1: the operator's explicit archetype choice (list of ids), overriding
@@ -476,6 +575,9 @@ class PackingItem(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     plan_id: Mapped[str | None] = mapped_column(String(36), index=True)
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.0 Phase 2 (D-123): per-user, like its PackingPlan. Idempotency is now on
+    # (trip_id, user_id, item_key). NULL = legacy/auth-off.
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     item_key: Mapped[str] = mapped_column(String(64), index=True)   # "clothing:quick_dry_top"
     label: Mapped[str] = mapped_column(String(128))
     category: Mapped[str] = mapped_column(String(16), index=True)
@@ -623,3 +725,50 @@ class DiscoveryExclusion(Base):
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
     place_key: Mapped[str] = mapped_column(String(128), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class JournalEntry(Base):
+    """Yonder 4.x — a travel journal entry (SPEC-6). A quick, first-person, dated
+    note the traveller AUTHORS — the counter-weight to the rest of Yonder, which
+    is captured structured data run through extract→resolve→commit. A journal
+    entry is deliberately NOT a TravelItem or a TripActivity (D-131): it never
+    touches that pipeline or the rules engine, carries no type contract, and is
+    strictly personal (own-only scope, D-134) — sharing a trip never exposes a
+    co-traveller's journal.
+
+    Organising axis is `entry_date`, the day the entry is ABOUT — you write up
+    yesterday's hike over breakfast (D-132). `captured_at` keeps the true device
+    timestamp for provenance and intra-day ordering, and is the minimum "time
+    context" every entry carries alongside `entry_date` (D-142). Geo
+    (`place_lat`/`place_lon`, later `place_label`) is best-effort — captured
+    automatically on mobile when permitted, opportunistic in the browser, never
+    required, and never blocks a save.
+
+    Standalone-capable: `trip_id` is nullable and set later by an explicit
+    attach action (D-133); a field note can precede any trip. An entry belongs to
+    exactly ONE trip at a time — to use the same note against another trip the
+    author DUPLICATES it (`duplicated_from` records the fork) and attaches the
+    copy. Soft link on trip_id (plain indexed column, no DB FK — house
+    convention; the trip delete route clears dangling links).
+
+    `owner_id` is set by every authenticated write; it is nullable only so the
+    pre-auth / auth-off single-user world (user is None) can still write. The
+    own-only scope filter (app/scope.py) shows an entry to its author and admins
+    only."""
+    __tablename__ = "journal_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    entry_date: Mapped[str] = mapped_column(String(10), index=True)  # ISO date, the day it is ABOUT
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    trip_id: Mapped[str | None] = mapped_column(String(36), index=True)  # soft link; attach later
+    body: Mapped[str] = mapped_column(Text, default="")
+    values: Mapped[dict] = mapped_column(JsonCol, default=dict)  # mood, tags[], place label…
+    place_lat: Mapped[float | None] = mapped_column(Float)
+    place_lon: Mapped[float | None] = mapped_column(Float)
+    place_label: Mapped[str | None] = mapped_column(String(256))
+    source: Mapped[str] = mapped_column(String(16), default="api")  # mobile|web|share|api
+    duplicated_from: Mapped[str | None] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)

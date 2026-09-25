@@ -35,11 +35,14 @@
 </div>
 
 <div class="yn-jump">
-  <nav class="yn-jump-links">
-    <a href="#sec-travelers">Travellers</a>
-    <a href="#sec-timeline">Timeline</a>
-    <a href="#sec-discovery">Discovery</a>
-    <a href="#sec-packing">Packing</a>
+  <nav class="yn-tabs" role="tablist" aria-label="Trip sections">
+    <button type="button" role="tab" class="yn-tab" data-tab="travellers" onclick="ynTab(this.dataset.tab)">Travellers</button>
+    <button type="button" role="tab" class="yn-tab" data-tab="timeline" onclick="ynTab(this.dataset.tab)">Timeline</button>
+    <button type="button" role="tab" class="yn-tab" data-tab="discovery" onclick="ynTab(this.dataset.tab)">Discovery</button>
+    <button type="button" role="tab" class="yn-tab" data-tab="packing" onclick="ynTab(this.dataset.tab)">Packing</button>
+    {% if linked_captures %}<button type="button" role="tab" class="yn-tab" data-tab="captures" onclick="ynTab(this.dataset.tab)">Captures</button>{% endif %}
+    {# Per-trip settings go last; Sharing is the first. #}
+    {% if sharing %}<button type="button" role="tab" class="yn-tab" data-tab="sharing" onclick="ynTab(this.dataset.tab)">Sharing</button>{% endif %}
   </nav>
   <div class="yn-jump-tools">
     <input class="input yn-jump-filter" type="search" oninput="ynFilter(this.value)"
@@ -49,8 +52,11 @@
   </div>
 </div>
 
+<div class="yn-tabpanel" role="tabpanel" data-tab="travellers">
 {% include "_travelers_section.html" %}
+</div>
 
+<div class="yn-tabpanel" role="tabpanel" data-tab="timeline">
 <section class="yn-sec" id="sec-timeline">
 <div class="bp-timeline-head">
   <div class="yn-sec-title">
@@ -61,6 +67,8 @@
     {% if has_activities %}
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('timeline', true)">Expand all</button>
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('timeline', false)">Collapse all</button>
+    <a class="btn btn-secondary bp-sm" href="/trips/{{ trip.id }}/timeline.pdf" target="_blank"
+       rel="noopener" title="A printable itinerary to share with anyone">Export PDF</a>
     {% endif %}
     <button class="btn btn-primary"
             hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
@@ -128,12 +136,18 @@
 {% endif %}
 </div>
 </section>
+</div>
 
+<div class="yn-tabpanel" role="tabpanel" data-tab="discovery">
 {% include "_discovery_section.html" %}
+</div>
 
+<div class="yn-tabpanel" role="tabpanel" data-tab="packing">
 {% include "_packing_section.html" %}
+</div>
 
 {% if linked_captures %}
+<div class="yn-tabpanel" role="tabpanel" data-tab="captures">
 <section class="yn-sec" id="sec-captures">
 <div class="bp-timeline-head">
   <div class="yn-sec-title">
@@ -161,6 +175,51 @@
   independent of AdventureLog.</p>
 </div>
 </section>
+</div>
+{% endif %}
+
+{% if sharing %}
+<div class="yn-tabpanel" role="tabpanel" data-tab="sharing">
+<section class="yn-sec" id="sec-sharing">
+  <h2 class="bp-h2">Sharing</h2>
+  <p class="bp-muted">
+    {% if sharing.is_open %}Open — visible to every Yonder user.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
+  </p>
+
+  <h3 class="bp-h3" style="margin-top:10px">Travellers with access</h3>
+  {% if sharing.travellers %}
+  <p class="bp-muted">Travellers on this trip who have a login get full access automatically:</p>
+  <ul class="yn-share-list" style="list-style:none;padding:0;margin:6px 0;display:flex;flex-wrap:wrap;gap:6px">
+    {% for name in sharing.travellers %}<li class="chip">{{ name }} · full access</li>{% endfor %}
+  </ul>
+  {% else %}<p class="bp-muted">No travellers on this trip have a login yet. Add them as a traveller (and link their account) to grant access.</p>{% endif %}
+
+  <h3 class="bp-h3" style="margin-top:10px">Shared for viewing</h3>
+  {% if sharing.members %}
+  <p class="bp-muted">People who can view this trip but aren't travelling on it (read-only):</p>
+  <ul class="yn-share-list" style="list-style:none;padding:0;margin:6px 0;display:flex;flex-direction:column;gap:6px">
+    {% for m in sharing.members %}
+    <li style="display:flex;align-items:center;gap:8px">
+      <span>{{ m.username }} · view-only</span>
+      {% if sharing.can_share %}
+      <form method="post" action="/trips/{{ trip.id }}/unshare" style="margin:0">
+        <input type="hidden" name="user_id" value="{{ m.id }}">
+        <button class="btn btn-ghost bp-sm" type="submit">Remove</button>
+      </form>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="bp-muted">Not shared with any non-travellers.</p>{% endif %}
+  {% if sharing.can_share and sharing.add_choices %}
+  <form method="post" action="/trips/{{ trip.id }}/share" style="display:flex;gap:8px;margin-top:8px">
+    <select name="user_id" class="input" style="flex:1">
+      {% for u in sharing.add_choices %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Share for viewing</button>
+  </form>
+  {% endif %}
+</section>
+</div>
 {% endif %}
 
 <script>
@@ -178,17 +237,40 @@ function ynToggleAll(grp, open) {
     .forEach(function (d) { d.open = open; });
   if (sec.classList && open) sec.classList.remove('collapsed');
 }
-// Page-level: every section + every collapsible group/finding.
+// Expand/collapse every group/finding in the visible tab (all tabs while a
+// filter is active, since matches can span tabs).
 function ynAll(open) {
-  document.querySelectorAll('.yn-sec')
-    .forEach(function (s) { s.classList.toggle('collapsed', !open); });
-  document.querySelectorAll('details.bp-group, details.yn-finding')
+  var scope = document.body.classList.contains('yn-filtering')
+    ? '.yn-tabpanel' : '.yn-tabpanel.active';
+  document.querySelectorAll(scope + ' details.bp-group, ' + scope + ' details.yn-finding')
     .forEach(function (d) { d.open = open; });
 }
+// Section tabs. The active tab lives in the URL hash (#timeline), so reloads,
+// HTMX-driven redirects and shared links land on the same tab; the old
+// #sec-* jump anchors map onto their tab.
+function ynTab(name) {
+  var tabs = document.querySelectorAll('.yn-tab');
+  var known = Array.prototype.some.call(tabs, function (t) { return t.dataset.tab === name; });
+  if (!known) name = 'timeline';
+  tabs.forEach(function (t) {
+    var on = t.dataset.tab === name;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('.yn-tabpanel').forEach(function (p) {
+    p.classList.toggle('active', p.dataset.tab === name);
+  });
+  if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
+}
+(function () {
+  var h = location.hash.replace(/^#(sec-)?/, '');
+  ynTab(h === 'travelers' ? 'travellers' : h);
+})();
 // Live filter: hide anything (a city finding, a day, a packing row, a traveller)
 // that doesn't contain the query; reveal + open matches; hide now-empty groups.
 function ynFilter(q) {
   q = (q || '').trim().toLowerCase();
+  document.body.classList.toggle('yn-filtering', !!q);
   document.querySelectorAll('.yn-filterable').forEach(function (el) {
     var hit = !q || el.textContent.toLowerCase().indexOf(q) !== -1;
     el.classList.toggle('yn-hidden', !hit);

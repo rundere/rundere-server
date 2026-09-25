@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ trip.name }} — Timeline</title>
+<style>
+  /* Print-only stylesheet for the timeline PDF export (WeasyPrint). Kept
+     self-contained: the web theme is screen-first and dark-mode aware. */
+  @page {
+    size: Letter;
+    margin: 18mm 16mm 18mm 16mm;
+    @bottom-left { content: string(tripname) " · Timeline"; font: 8pt "DejaVu Sans", sans-serif; color: #6a6a6f; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt "DejaVu Sans", sans-serif; color: #6a6a6f; }
+  }
+  * { box-sizing: border-box; }
+  body { font: 9.5pt/1.4 "DejaVu Sans", sans-serif; color: #17181a; margin: 0; }
+  a { color: #365f86; text-decoration: none; }
+
+  header { border-bottom: 2px solid #365f86; padding-bottom: 8pt; margin-bottom: 14pt; }
+  h1 { font-size: 20pt; margin: 0 0 3pt; letter-spacing: -0.2pt; string-set: tripname content(); }
+  .dates { font-size: 11pt; color: #3d3d42; }
+  .meta { margin-top: 5pt; font-size: 8.5pt; color: #545459; }
+  .meta b { color: #3d3d42; }
+  .trip-notes { margin: 6pt 0 0; font-size: 9pt; color: #3d3d42; }
+
+  .day { margin: 0 0 12pt; }
+  .day h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.6pt;
+            color: #365f86; margin: 0 0 5pt; padding-bottom: 3pt;
+            border-bottom: 1px solid #d9d9de; page-break-after: avoid; }
+
+  .act { display: table; width: 100%; padding: 6pt 0 7pt;
+         border-bottom: 1px solid #ececef; page-break-inside: avoid; }
+  .act:last-child { border-bottom: none; }
+  .when { display: table-cell; width: 22mm; vertical-align: top;
+          font-weight: bold; font-size: 9pt; color: #2a2a2d; padding-top: 1pt; }
+  .when .span { display: block; font-weight: normal; font-size: 8pt; color: #6a6a6f; }
+  .body { display: table-cell; vertical-align: top; }
+  .type { display: inline-block; font-size: 7pt; text-transform: uppercase;
+          letter-spacing: 0.5pt; color: #365f86; border: 0.75pt solid #a9c9ec;
+          border-radius: 2pt; padding: 0 3pt; margin-bottom: 2pt; }
+  .title { font-size: 11pt; font-weight: bold; }
+  .subtitle { color: #545459; }
+  .fields { margin-top: 4pt; width: 100%; border-collapse: collapse; }
+  .fields td { padding: 1pt 8pt 1pt 0; vertical-align: top; font-size: 8.8pt; }
+  .fields td.k { color: #6a6a6f; white-space: nowrap; width: 30mm; }
+  .fields td.v { color: #17181a; }
+  .fields tr.code td.v { font-family: "DejaVu Sans Mono", monospace; font-weight: bold; }
+  .long { margin-top: 3pt; font-size: 8.8pt; color: #3d3d42; white-space: pre-wrap; }
+  .map { margin-top: 3pt; font-size: 8.5pt; }
+
+  .empty { color: #6a6a6f; font-style: italic; }
+  footer { margin-top: 16pt; font-size: 7.5pt; color: #9a9aa0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{ trip.name }}</h1>
+  {% if trip.dates %}<div class="dates">{{ trip.dates }}</div>{% endif %}
+  {% if travellers %}<div class="meta"><b>Travellers:</b> {{ travellers | join(", ") }}</div>{% endif %}
+  {% if trip.notes %}<p class="trip-notes">{{ trip.notes }}</p>{% endif %}
+</header>
+
+{% for day in days %}
+<section class="day">
+  <h2>{{ day.heading }}</h2>
+  {% for a in day.activities %}
+  <div class="act">
+    <div class="when">
+      {{ a.time_label or "" }}
+      {% if a.span_label %}<span class="span">{{ a.span_label }}</span>{% endif %}
+    </div>
+    <div class="body">
+      <div class="type">{{ a.type_label }}</div>
+      <div class="title">{{ a.title }}</div>
+      {% if a.subtitle %}<div class="subtitle">{{ a.subtitle }}</div>{% endif %}
+      {% set short = a.rows | rejectattr("long") | list %}
+      {% if short %}
+      <table class="fields">
+        {% for r in short %}
+        <tr{% if r.label.endswith("#") %} class="code"{% endif %}>
+          <td class="k">{{ r.label }}</td><td class="v">{{ r.value }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+      {% for r in a.rows if r.long %}
+      <div class="long"><b>{{ r.label }}:</b> {{ r.value }}</div>
+      {% endfor %}
+      {% if a.map_url %}<div class="map"><a href="{{ a.map_url }}">Open in Google Maps ↗</a></div>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% else %}
+<p class="empty">No activities on this trip yet.</p>
+{% endfor %}
+
+<footer>Shared from Yonder · generated {{ generated }}</footer>
+</body>
+</html>

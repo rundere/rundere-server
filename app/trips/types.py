@@ -36,8 +36,11 @@ class ActivityType:
         return next((f for f in self.fields if f["key"] == key), None)
 
 
-def _f(key: str, label: str, kind: str = "text") -> Field:
-    return {"key": key, "label": label, "type": kind}
+def _f(key: str, label: str, kind: str = "text", hint: str = "") -> Field:
+    f = {"key": key, "label": label, "type": kind}
+    if hint:
+        f["hint"] = hint          # input placeholder only, never a label
+    return f
 
 
 # Order here is the order shown in the type dropdown.
@@ -111,7 +114,7 @@ _TYPES: tuple[ActivityType, ...] = (
             # Accommodation kind — feeds the packing archetype (resort→beach,
             # campground/cabin→outdoors, …) and AdventureLog's Lodging.type on
             # push (D-81). Free text; the planning context normalises it.
-            _f("type", "Type (hotel, hostel, resort, bnb, campground, cabin, …)"),
+            _f("type", "Type", hint="hotel, hostel, resort, bnb, campground, cabin, …"),
             _f("address", "Address"),
             _f("confirmation", "Confirmation #"),
             _f("sourceLink", "Source document", "url"),
@@ -239,6 +242,16 @@ def _is_maps_url(url: str) -> bool:
         or "goo.gl/maps" in u)
 
 
+def map_query(activity_type: str, values: dict) -> str | None:
+    """The place text that locates this activity (what `map_url` searches for),
+    so a client can hand it to its own maps app. A road trip uses its route."""
+    v = values or {}
+    if activity_type == "drive":
+        return v.get("route") or None
+    fn = _MAP_QUERY.get(activity_type)
+    return fn(v) if fn else None
+
+
 def map_url(activity_type: str, values: dict) -> str | None:
     """A 'find on map' link for one timeline activity, or None when it has no
     locatable field. Flight → departure airport; lodging/restaurant → the
@@ -255,6 +268,14 @@ def map_url(activity_type: str, values: dict) -> str | None:
     return _maps_search(q) if q else None
 
 
+def time_labels(activity_type: str) -> tuple[str | None, str | None]:
+    """The type's own labels for its start/end times ("Check-in"/"Check-out",
+    "Departure"/"Arrival"); None when the type has no such field."""
+    t = get_type(activity_type)
+    start, end = t.field("when"), t.field("endWhen")
+    return (start["label"] if start else None, end["label"] if end else None)
+
+
 def detail_fields(activity_type: str, values: dict) -> list[dict]:
     """Labelled, non-empty fields for the expanded row, in declaration order,
     with the long free-text fields pushed to the end. `when` is excluded (it is
@@ -268,7 +289,7 @@ def detail_fields(activity_type: str, values: dict) -> list[dict]:
         val = values.get(key)
         if not val:
             continue
-        row = {"label": f["label"], "value": val,
+        row = {"key": key, "label": f["label"], "value": val, "kind": f["type"],
                "is_link": key == "sourceLink"}
         (long if key in _LONG_KEYS else short).append(row)
     return short + long

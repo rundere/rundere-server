@@ -20,14 +20,14 @@
         fluctuate. Computed from Yonder's stored snapshot (no live lookup).</p>
       <script>
       (function(){
-        var perCad = {{ per_cad_json }};
+        var perPivot = {{ per_pivot_json }};
         var amt = document.getElementById('yn-cc-amt');
         var from = document.getElementById('yn-cc-from');
         var to = document.getElementById('yn-cc-to');
         var out = document.getElementById('yn-cc-out');
         function conv(){
           var a = parseFloat(amt.value); if (isNaN(a)) a = 0;
-          var f = perCad[from.value], t = perCad[to.value];
+          var f = perPivot[from.value], t = perPivot[to.value];
           if (!f || !t) { out.textContent = '—'; return; }
           var r = a / f * t;
           out.textContent = r.toLocaleString(undefined, {maximumFractionDigits: 2}) + ' ' + to.value;

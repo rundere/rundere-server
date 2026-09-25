@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 
+from app import scope
 from app.config import settings
 from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
@@ -42,8 +43,9 @@ templates.env.loader = ChoiceLoader([
 
 STATUS_LABELS = [("inprogress", "In progress"), ("upcoming", "Upcoming"),
                  ("past", "Past")]
-STATUS_FILTERS = [("all", "All"), ("inprogress", "In progress"),
-                  ("upcoming", "Upcoming"), ("past", "Past")]
+# The list's two tabs. "Upcoming" also holds in-progress (and undated) trips;
+# "Past" is grouped by year so a long history stays scannable.
+TRIP_TABS = [("upcoming", "Upcoming"), ("past", "Past")]
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
            "Oct", "Nov", "Dec"]
@@ -120,34 +122,53 @@ def _trip_display(t: Trip) -> dict:
     }
 
 
-def _list_context(session: Session, q: str, status: str) -> dict:
+def _list_context(session: Session, q: str, status: str, user=None) -> dict:
     today = date.today().isoformat()
-    trips = session.query(Trip).all()
+    tab = "past" if status == "past" else "upcoming"   # always default: Upcoming
+    # Phase 2: only trips the user may see (own + open + shared); no-op when
+    # auth is off or the user is admin.
+    trips = session.query(Trip).filter(scope.trip_filter(session, user)).all()
+    total = len(trips)
     ql = q.lower().strip()
     if ql:
         trips = [t for t in trips if ql in (t.name or "").lower()]
     annotated = [(t, trip_status(t, today)) for t in trips]
-    if status != "all":
-        annotated = [(t, s) for (t, s) in annotated if s == status]
+    in_tab = {k: [(t, st) for (t, st) in annotated if (st == "past") == (k == "past")]
+              for k, _ in TRIP_TABS}
 
     groups = []
-    for key, label in STATUS_LABELS:
-        members = [t for (t, s) in annotated if s == key]
-        # Upcoming/in-progress ascend by start; past descends (most recent first).
-        members.sort(key=lambda t: (t.start_date or ""), reverse=(key == "past"))
-        if members:
-            groups.append({"label": label,
-                           "trips": [_trip_display(t) for t in members]})
+    if tab == "upcoming":
+        for key, label in STATUS_LABELS:
+            if key == "past":
+                continue
+            # In progress first, then upcoming — both ascending by start.
+            members = sorted((t for (t, st) in in_tab[tab] if st == key),
+                             key=lambda t: t.start_date or "")
+            if members:
+                groups.append({"label": label,
+                               "trips": [_trip_display(t) for t in members]})
+    else:
+        # Most recent first, one group per year.
+        members = sorted((t for (t, _) in in_tab[tab]),
+                         key=lambda t: t.start_date or t.end_date or "", reverse=True)
+        for t in members:
+            year = (t.start_date or t.end_date or "")[:4] or "Undated"
+            if not groups or groups[-1]["label"] != year:
+                groups.append({"label": year, "trips": []})
+            groups[-1]["trips"].append(_trip_display(t))
 
-    total = session.query(Trip).count()
+    other = "past" if tab == "upcoming" else "upcoming"
     return {
         "groups": groups,
         "has_visible": bool(groups),
         "has_any": total > 0,
         "search_no_results": total > 0 and not groups,
-        "q": q, "status": status,
-        "status_filters": [{"key": k, "label": l, "checked": status == k}
-                           for k, l in STATUS_FILTERS],
+        "q": q, "status": tab,
+        "tabs": [{"key": k, "label": l, "count": len(in_tab[k]), "active": k == tab}
+                 for k, l in TRIP_TABS],
+        # When a search misses in this tab but hits in the other, say so.
+        "other_tab": {"key": other, "label": dict(TRIP_TABS)[other],
+                      "count": len(in_tab[other])},
     }
 
 
@@ -165,10 +186,51 @@ def _activity_display(a: TripActivity) -> dict:
         "span_label": ("→ " + fmt_date_short(end_when)) if multi_day else "",
         "fields": activity_types.detail_fields(a.type, v),
         "map_url": activity_types.map_url(a.type, v),
+        # The typed start ("Check-in: Apr 10, 3:00 PM") — the PDF pairs it with
+        # the end field when there is one.
+        "start_label": activity_types.time_labels(a.type)[0] or "Start",
+        "start_display": fmt_datetime(when),
+        "has_end": bool(end_when),
     }
 
 
-def _detail_context(session: Session, trip: Trip) -> dict:
+def _sharing_context(session: Session, trip: Trip, user=None) -> dict:
+    """Phase 2 (D-121/D-122): the "Sharing" panel data. None when auth is off.
+    Two tiers: travellers-on-the-trip who are users get FULL access implicitly;
+    explicit shares are VIEW-ONLY for non-travellers. Owner/admin manage shares."""
+    if user is None:
+        return {"sharing": None}
+    from app.models import TripMember, TripTraveler, User
+    # Explicit view-only shares.
+    member_ids = {m.user_id for m in
+                  session.query(TripMember).filter_by(trip_id=trip.id).all()}
+    members = [u for u in (session.get(User, mid) for mid in member_ids) if u]
+    # Travellers on this trip who are users → implicit full access.
+    roster_tids = {r.traveler_id for r in
+                   session.query(TripTraveler).filter_by(trip_id=trip.id).all()}
+    traveller_users = (session.query(User).filter(User.traveler_id.in_(roster_tids)).all()
+                       if roster_tids else [])
+    traveller_user_ids = {u.id for u in traveller_users}
+    owner = session.get(User, trip.owner_id) if trip.owner_id else None
+    can_share = bool(user.is_admin or (trip.owner_id and trip.owner_id == user.id))
+    # An explicit share only makes sense for a user who isn't already the owner,
+    # a traveller (full access already), or shared.
+    add_choices = [u for u in session.query(User).order_by(User.username).all()
+                   if u.id != trip.owner_id and u.id not in traveller_user_ids
+                   and u.id not in member_ids]
+    return {"sharing": {
+        "owner": owner.username if owner else None,
+        "is_open": trip.owner_id is None,
+        "travellers": [u.username for u in traveller_users if u.id != trip.owner_id],
+        "members": [{"id": u.id, "username": u.username} for u in members],
+        "can_share": can_share,
+        "add_choices": [{"id": u.id, "username": u.username} for u in add_choices],
+    }}
+
+
+def timeline_day_groups(session: Session, trip: Trip) -> list[dict]:
+    """The timeline as day groups of display-ready activities — shared by the
+    trip page and the PDF export."""
     acts = list(trip_activities(session, trip.id))
     # Sort by the denormalized starts_at; '' (undated) sorts to the end.
     acts.sort(key=lambda a: (a.starts_at or "￿"))
@@ -179,10 +241,17 @@ def _detail_context(session: Session, trip: Trip) -> dict:
         grp = index.get(key)
         if grp is None:
             grp = {"label": "Date not set" if key == "_unscheduled"
-                   else fmt_date(key), "activities": []}
+                   else fmt_date(key), "day": "" if key == "_unscheduled" else key,
+                   "activities": []}
             index[key] = grp
             day_groups.append(grp)
         grp["activities"].append(_activity_display(a))
+    return day_groups
+
+
+def _detail_context(session: Session, trip: Trip, user=None) -> dict:
+    day_groups = timeline_day_groups(session, trip)
+    acts = [a for g in day_groups for a in g["activities"]]
     notes = (trip.notes or "").strip()
     return {
         "trip": {
@@ -199,7 +268,8 @@ def _detail_context(session: Session, trip: Trip) -> dict:
         **_push_state(trip),
         **_travelers_context(session, trip.id),
         **_discovery_context(session, trip.id),
-        **_packing_context(session, trip.id),
+        **_packing_context(session, trip.id, user.id if user else None),
+        **_sharing_context(session, trip, user),
     }
 
 
@@ -396,17 +466,17 @@ def _redirect(url: str) -> HTMLResponse:
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-def index(request: Request, q: str = "", status: str = "all",
+def index(request: Request, q: str = "", status: str = "upcoming",
           session: Session = Depends(get_session)):
-    ctx = {"request": request, **_list_context(session, q, status)}
+    ctx = {"request": request, **_list_context(session, q, status, scope.user_of(request))}
     return templates.TemplateResponse(request, "list.html", ctx)
 
 
 @router.get("/list", response_class=HTMLResponse)
-def list_partial(request: Request, q: str = "", status: str = "all",
+def list_partial(request: Request, q: str = "", status: str = "upcoming",
                  session: Session = Depends(get_session)):
-    """Groups-only fragment for the live search + status filter."""
-    ctx = {"request": request, **_list_context(session, q, status)}
+    """Tabs + groups fragment for the live search and the Upcoming/Past tabs."""
+    ctx = {"request": request, **_list_context(session, q, status, scope.user_of(request))}
     return templates.TemplateResponse(request, "_groups.html", ctx)
 
 
@@ -428,12 +498,59 @@ def new_trip(request: Request, next: str = "/trips"):
 @router.get("/{trip_id}", response_class=HTMLResponse)
 def detail(trip_id: str, request: Request,
            session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("<p class='bp-empty'>That trip no longer exists.</p>",
                             status_code=404)
-    ctx = {"request": request, **_detail_context(session, trip)}
+    ctx = {"request": request, **_detail_context(session, trip, scope.user_of(request))}
     return templates.TemplateResponse(request, "detail.html", ctx)
+
+
+@router.get("/{trip_id}/timeline.pdf")
+def timeline_pdf(trip_id: str, request: Request, download: bool = False,
+                 session: Session = Depends(get_session)):
+    """The Timeline tab as a shareable PDF itinerary (same visibility rules as
+    the trip page)."""
+    trip = scope.trip_or_none(session, request, trip_id)
+    if trip is None:
+        return HTMLResponse("<p class='bp-empty'>That trip no longer exists.</p>",
+                            status_code=404)
+    from app.trips import pdf
+    return pdf.pdf_response(session, trip, download=download)
+
+
+@router.post("/{trip_id}/share", response_class=HTMLResponse)
+def share_trip(trip_id: str, request: Request, user_id: str = Form(""),
+               session: Session = Depends(get_session)):
+    """Share this trip with another user (owner/admin only). Member = full access."""
+    trip = scope.trip_or_none(session, request, trip_id)
+    me = scope.user_of(request)
+    if trip is None or me is None:
+        return HTMLResponse("", status_code=404)
+    if not (me.is_admin or trip.owner_id == me.id):
+        return HTMLResponse("<p>Only the trip owner can share it.</p>", status_code=403)
+    from app.models import TripMember, User
+    target = session.get(User, user_id) if user_id else None
+    if (target and target.id != trip.owner_id and session.query(TripMember)
+            .filter_by(trip_id=trip.id, user_id=target.id).count() == 0):
+        session.add(TripMember(trip_id=trip.id, user_id=target.id))
+        session.commit()
+    return _redirect(f"/trips/{trip.id}")
+
+
+@router.post("/{trip_id}/unshare", response_class=HTMLResponse)
+def unshare_trip(trip_id: str, request: Request, user_id: str = Form(""),
+                 session: Session = Depends(get_session)):
+    trip = scope.trip_or_none(session, request, trip_id)
+    me = scope.user_of(request)
+    if trip is None or me is None:
+        return HTMLResponse("", status_code=404)
+    if not (me.is_admin or trip.owner_id == me.id):
+        return HTMLResponse("<p>Only the trip owner can change sharing.</p>", status_code=403)
+    from app.models import TripMember
+    session.query(TripMember).filter_by(trip_id=trip.id, user_id=user_id).delete()
+    session.commit()
+    return _redirect(f"/trips/{trip.id}")
 
 
 @router.get("/{trip_id}/derived-locations", response_class=HTMLResponse)
@@ -445,7 +562,7 @@ def derived_locations(trip_id: str, request: Request,
     pipeline's starting point rather than guessing at it. On-demand modal, read
     from the same discover.places output a run would use, so it doubles as a
     pre-flight check."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     return templates.TemplateResponse(request, "_derived_locations.html",
@@ -491,7 +608,7 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
     """Exclude/include a derived place, then re-render the viewer. Excluding also
     drops that place's DRAFT findings for instant feedback; country-scope findings
     reconcile on the next run (the runner prunes stale drafts)."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not place_key:
         return HTMLResponse("", status_code=404)
     existing = (session.query(DiscoveryExclusion)
@@ -651,6 +768,34 @@ def _discovery_section(request: Request, session: Session, trip: Trip) -> HTMLRe
     return templates.TemplateResponse(request, "_discovery_section.html", ctx)
 
 
+def _trip_base_currencies(session: Session, trip_id: str) -> tuple[str, ...]:
+    """Base currencies the currency resolver + calculator convert FROM (D-65).
+
+    The union of two sources, traveller picks first:
+      1. each trip traveller's EXPLICIT base currency, chosen on their travel
+         profile (TravelerIdentity.base_currency) — its own field, not derived
+         from nationality or the home profile. A UK traveller who picks GBP
+         converts from GBP, not a hardcoded CAD.
+      2. the deployment's ALWAYS-ON base currencies (TX_DISCOVERY_BASE_CURRENCIES).
+         These add reference visibility on top of the profile pick — e.g. keep
+         USD in view for a Cuba trip (CUP is a closed currency, but USD is the
+         practical reference) while a traveller's profile stays CAD.
+    When no traveller has picked one, the result is just the deployment set."""
+    from app.models import TravelerIdentity, TripTraveler
+    travelers = (session.query(TravelerIdentity)
+                 .join(TripTraveler, TripTraveler.traveler_id == TravelerIdentity.id)
+                 .filter(TripTraveler.trip_id == trip_id).all())
+    codes: list[str] = []
+    for t in travelers:
+        c = (t.base_currency or "").strip().upper()
+        if c and c not in codes:
+            codes.append(c)
+    for c in settings.base_currency_list:          # always-on deployment extras
+        if c not in codes:
+            codes.append(c)
+    return tuple(codes)
+
+
 @router.post("/{trip_id}/discover", response_class=HTMLResponse)
 def run_discovery_route(trip_id: str, request: Request,
                         session: Session = Depends(get_session)):
@@ -661,20 +806,21 @@ def run_discovery_route(trip_id: str, request: Request,
     from app.resolving import load_home_profiles
     from app.trips import discovery_jobs as dj
     from datetime import date as _date
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     if dj.running_run(session, trip_id) is None:
         profile = _discovery_profile_row(session)
         ident = _self_identity(session)
+        today = _date.today().isoformat()
         dj.launch(trip_id, resolve_airport=_airport_resolver(), geocoder=_photon(),
                   det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(),
                   home_profiles=load_home_profiles(session),
                   excluded=_excluded_keys(session, trip_id),
                   discovery_profile=(profile.values if profile else None),
                   nationality=(ident.nationality if ident else None),
-                  base_currencies=settings.base_currency_list,
-                  today=_date.today().isoformat())
+                  base_currencies=_trip_base_currencies(session, trip_id),
+                  today=today)
     return _discovery_section(request, session, trip)
 
 
@@ -685,7 +831,7 @@ def discovery_status_route(trip_id: str, request: Request,
     run (restart → failed). When the run is no longer `running`, the returned
     section carries no poll trigger, so the panel stops on its own."""
     from app.trips import discovery_jobs as dj
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     dj.running_run(session, trip_id)          # settle orphans as a side effect
@@ -712,7 +858,7 @@ def rerun_finding_route(trip_id: str, fid: str,
         return _redirect(f"/trips/{trip_id}")
     rerun_finding(session, f, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
-                  base_currencies=settings.base_currency_list)
+                  base_currencies=_trip_base_currencies(session, trip_id))
     return _redirect(f"/trips/{trip_id}")
 
 
@@ -733,6 +879,19 @@ def edit_finding(trip_id: str, fid: str, request: Request,
         return templates.TemplateResponse(request, "_language_edit.html", {
             "request": request, "trip_id": trip_id, "fid": fid,
             "place_key": f.place_key, "options": options})
+    # Currency edits the actual conversion numbers (data.rates), not just the
+    # markdown — a text-only edit would leave the calculator computing from the
+    # stale snapshot. No resolved currency code (Babel couldn't map the country)
+    # → nothing structured to edit, fall through to the markdown editor.
+    data = f.data or {}
+    if f.topic == "currency" and data.get("currency"):
+        code = data["currency"]
+        per = (data.get("rates") or {}).get(code, {})
+        bases = data.get("bases") or list(settings.base_currency_list)
+        rows = [{"base": b, "value": per.get(f"per_{b}")} for b in bases]
+        return templates.TemplateResponse(request, "_currency_edit.html", {
+            "request": request, "trip_id": trip_id, "fid": fid,
+            "code": code, "place_key": f.place_key, "rows": rows})
     return templates.TemplateResponse(request, "_finding_edit.html", {
         "request": request, "trip_id": trip_id, "fid": fid,
         "topic_label": TOPIC_LABELS.get(f.topic, f.topic),
@@ -742,6 +901,8 @@ def edit_finding(trip_id: str, fid: str, request: Request,
 @router.post("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
 def save_finding(trip_id: str, fid: str, body: str = Form(""),
                  langs: list[str] = Form(default=[]),
+                 cur_base: list[str] = Form(default=[]),
+                 cur_rate: list[str] = Form(default=[]),
                  session: Session = Depends(get_session)):
     f = _finding_or_404(session, trip_id, fid)
     if f is None:
@@ -754,6 +915,37 @@ def save_finding(trip_id: str, fid: str, body: str = Form(""),
         label = _bold_label(f.body_md) or f.place_key
         f.body_md, f.data, f.confidence = build_language_body(
             label, langs, official=False, phrasebook=langdata.phrasebook(session))
+    elif f.topic == "currency" and (f.data or {}).get("currency"):
+        # Rewrite the stored rate snapshot (units of `code` per 1 base) that the
+        # calculator reads — the whole point of the fix — then regenerate the body
+        # from it so text and math never diverge.
+        from discover.resolvers.currency import render_currency_body
+        from datetime import date as _date
+        data = dict(f.data or {})
+        code = data["currency"]
+        per_base: dict[str, float] = {}
+        for b, v in zip(cur_base, cur_rate):
+            b, v = (b or "").strip().upper(), (v or "").strip()
+            if not b or not v:
+                continue
+            try:
+                fv = float(v)
+            except ValueError:
+                continue
+            if fv > 0:
+                per_base[b] = fv
+        bases = [(b or "").strip().upper() for b in cur_base if (b or "").strip()]
+        as_of = _date.today().isoformat()
+        data["date"] = as_of
+        data["bases"] = bases
+        data["rates"] = ({code: {f"per_{b}": per_base[b] for b in per_base}}
+                         if per_base else {})
+        f.data = data
+        f.body_md = render_currency_body(
+            _bold_label(f.body_md) or f.place_key, code,
+            data.get("currency_name") or code, bases, per_base, as_of,
+            bool(data.get("usd_useful")), source_note="manually edited")
+        f.confidence = "high" if per_base else "flagged"
     else:
         f.body_md = body
     f.status = "edited"
@@ -765,8 +957,10 @@ def save_finding(trip_id: str, fid: str, body: str = Form(""),
 def currency_calculator(trip_id: str, fid: str, request: Request,
                         session: Session = Depends(get_session)):
     """The per-trip currency calculator (D-65). Computes client-side from the
-    STORED rate snapshot — no live call — pivoting every currency through CAD so
-    any pair converts, including local↔local on a multi-country trip."""
+    STORED rate snapshot — no live call — pivoting every currency through one home
+    base so any pair converts, including local↔local on a multi-country trip. The
+    pivot is chosen from the trip's own base currencies (no hardcoded CAD), so a
+    non-Canadian traveller's calculator works too."""
     f = _finding_or_404(session, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
@@ -781,26 +975,39 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
         as_of = as_of or d.get("date")
         for code, per in (d.get("rates") or {}).items():
             rates[code] = {b.replace("per_", ""): v for b, v in per.items()}
-    # Pivot table: units of each currency per 1 CAD.
-    per_cad: dict[str, float] = {"CAD": 1.0}
-    usd_per_cad = None
-    for code, br in rates.items():
-        if br.get("CAD"):
-            per_cad[code] = br["CAD"]
-        if usd_per_cad is None and br.get("CAD") and br.get("USD"):
-            usd_per_cad = br["CAD"] / br["USD"]
-    if rates.get("USD", {}).get("CAD"):
-        usd_per_cad = rates["USD"]["CAD"]
-    if usd_per_cad:
-        per_cad["USD"] = usd_per_cad
-    # Dropdown order: bases first, then destination currencies.
-    bases = [b for b in settings.base_currency_list if b in per_cad]
-    dests = sorted(c for c in per_cad if c not in bases)
+    # The home base currencies the snapshots quote (what we convert FROM). Pick
+    # the pivot as the base the most currencies quote, so the table stays
+    # connected even after a manual edit trimmed a base from one finding.
+    all_bases: list[str] = []
+    for br in rates.values():
+        for b in br:
+            if b not in all_bases:
+                all_bases.append(b)
+    ordered_bases = ([b for b in settings.base_currency_list if b in all_bases]
+                     + [b for b in all_bases if b not in settings.base_currency_list])
+    pivot = max(ordered_bases, default=None,
+                key=lambda B: sum(1 for br in rates.values() if br.get(B)))
+    # per_pivot[X] = units of X per 1 pivot, so the client converts any pair as
+    # amount / per_pivot[from] * per_pivot[to].
+    per_pivot: dict[str, float] = {}
+    if pivot is not None:
+        per_pivot[pivot] = 1.0
+        for code, br in rates.items():
+            if br.get(pivot):
+                per_pivot[code] = br[pivot]                  # code per 1 pivot
+        for code, br in rates.items():                       # other home bases
+            p = br.get(pivot)
+            for b, v in br.items():
+                if b not in per_pivot and p and v:
+                    per_pivot[b] = p / v                     # b per 1 pivot
+    # Dropdown order: home bases first, then destination currencies.
+    bases = [b for b in ordered_bases if b in per_pivot]
+    dests = sorted(c for c in per_pivot if c not in bases)
     currencies = bases + dests
     import json as _json
     return templates.TemplateResponse(request, "_calculator.html", {
         "request": request, "trip_id": trip_id,
-        "currencies": currencies, "per_cad_json": Markup(_json.dumps(per_cad)),
+        "currencies": currencies, "per_pivot_json": Markup(_json.dumps(per_pivot)),
         "as_of": as_of or "—",
         "default_from": bases[0] if bases else (currencies[0] if currencies else ""),
         "default_to": dests[0] if dests else (currencies[-1] if currencies else ""),
@@ -930,11 +1137,19 @@ def _packing_item_view(i: PackingItem, bag_labels: dict[str, str]) -> dict:
             "edited": i.edited}
 
 
-def _packing_context(session: Session, trip_id: str) -> dict:
+def _pack_identity(request):
+    """(user_id, traveler_id) for the viewing user — packing is per-user (D-123).
+    Both None when auth is off → the legacy shared plan."""
+    u = scope.user_of(request)
+    return (u.id if u else None), (getattr(u, "traveler_id", None) if u else None)
+
+
+def _packing_context(session: Session, trip_id: str, user_id=None) -> dict:
     items = (session.query(PackingItem)
-             .filter(PackingItem.trip_id == trip_id).all())
+             .filter(PackingItem.trip_id == trip_id,
+                     PackingItem.user_id == user_id).all())
     plan = (session.query(PackingPlan)
-            .filter(PackingPlan.trip_id == trip_id)
+            .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
             .order_by(PackingPlan.generated_at.desc()).first())
     from planning.engine import all_archetypes as _all_archetypes
     _all_arch = _all_archetypes()
@@ -975,22 +1190,25 @@ def _packing_context(session: Session, trip_id: str) -> dict:
 
 
 @router.post("/{trip_id}/pack", response_class=HTMLResponse)
-def generate_packing_plan_route(trip_id: str,
+def generate_packing_plan_route(trip_id: str, request: Request,
                                 session: Session = Depends(get_session)):
     """Generate (or re-generate) the Packing Plan and reload the detail. Preserves
     your ticked-off / removed items."""
     from app.resolving import load_home_profiles
     from planning.runner import generate_plan
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
+    uid, tid = _pack_identity(request)
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_home_profiles(session))
+                  geocoder=_photon(), home_profiles=load_home_profiles(session),
+                  user_id=uid, traveler_id=tid)
     return _redirect(f"/trips/{trip_id}")
 
 
-def _current_archetype_ids(session: Session, trip_id: str) -> list[str]:
-    plan = (session.query(PackingPlan).filter(PackingPlan.trip_id == trip_id)
+def _current_archetype_ids(session: Session, trip_id: str, user_id=None) -> list[str]:
+    plan = (session.query(PackingPlan)
+            .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
             .order_by(PackingPlan.generated_at.desc()).first())
     return [a.get("id") for a in ((plan.archetypes if plan else None) or [])
             if a.get("id")]
@@ -1000,12 +1218,13 @@ def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
                                 ids: list[str]) -> HTMLResponse:
     from app.resolving import load_home_profiles
     from planning.runner import generate_plan
+    uid, tid = _pack_identity(request)
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), home_profiles=load_home_profiles(session),
-                  manual_archetypes=ids)
+                  manual_archetypes=ids, user_id=uid, traveler_id=tid)
     return templates.TemplateResponse(request, "_packing_section.html",
         {"request": request, "trip": {"id": trip.id},
-         **_packing_context(session, trip.id)})
+         **_packing_context(session, trip.id, uid)})
 
 
 @router.post("/{trip_id}/pack/archetypes/add", response_class=HTMLResponse)
@@ -1013,11 +1232,11 @@ def add_archetype_route(trip_id: str, request: Request, archetype_id: str = Form
                         session: Session = Depends(get_session)):
     """Add a trip type to the packing plan and re-generate with the operator's
     explicit set (auto-detection stays as the starting suggestion)."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     valid = {a["id"] for a in _pack_all_archetypes()}
-    ids = _current_archetype_ids(session, trip_id)
+    ids = _current_archetype_ids(session, trip_id, _pack_identity(request)[0])
     if archetype_id in valid and archetype_id not in ids:
         ids.append(archetype_id)
     return _regenerate_with_archetypes(request, session, trip, ids)
@@ -1028,10 +1247,10 @@ def remove_archetype_route(trip_id: str, request: Request, archetype_id: str = F
                            session: Session = Depends(get_session)):
     """Remove a trip type and re-generate. Removing the last one resets to
     auto-detection on the next generate."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    ids = [i for i in _current_archetype_ids(session, trip_id) if i != archetype_id]
+    ids = [i for i in _current_archetype_ids(session, trip_id, _pack_identity(request)[0]) if i != archetype_id]
     return _regenerate_with_archetypes(request, session, trip, ids)
 
 
@@ -1040,11 +1259,13 @@ def _pack_all_archetypes():
     return all_archetypes()
 
 
-def _pack_count_oob(session: Session, trip_id: str, category: str) -> str:
+def _pack_count_oob(session: Session, trip_id: str, category: str, user_id=None) -> str:
     """An out-of-band swap for a category's packed/total badge, so an inline
-    row change keeps the header count honest without a page reload."""
+    row change keeps the header count honest without a page reload. Scoped to the
+    user's own items (D-123)."""
     rows = (session.query(PackingItem)
             .filter(PackingItem.trip_id == trip_id,
+                    PackingItem.user_id == user_id,
                     PackingItem.category == category,
                     PackingItem.status.in_(("draft", "packed"))).all())
     packed = sum(1 for r in rows if r.status == "packed")
@@ -1057,7 +1278,7 @@ def _pack_item_row(request: Request, trip_id: str, session: Session,
     row_html = templates.env.get_template("_packing_item.html").render(
         trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
         packing_bag_options=_bag_options(session))
-    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category, i.user_id))
 
 
 # NB: these three (qty/bag/label) MUST be registered before the generic
@@ -1073,7 +1294,8 @@ def packing_item_qty(trip_id: str, item_id: str, request: Request,
     item this trip needs — "2 pairs of jeans" doesn't always mean 2. Marks the
     row `edited` so a later re-generate never overwrites it back."""
     i = session.get(PackingItem, item_id)
-    if i is None or i.trip_id != trip_id:
+    uid = _pack_identity(request)[0]
+    if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
     i.quantity = max(1, min(99, quantity))
     i.edited = True
@@ -1089,7 +1311,8 @@ def packing_item_bag(trip_id: str, item_id: str, request: Request,
     carry-on / checked categories — set per item, per trip, independent of the
     catalog's default load-out."""
     i = session.get(PackingItem, item_id)
-    if i is None or i.trip_id != trip_id:
+    uid = _pack_identity(request)[0]
+    if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
     if bag not in _bag_valid_values(session):
         return HTMLResponse("", status_code=400)
@@ -1106,7 +1329,8 @@ def packing_item_label(trip_id: str, item_id: str, request: Request,
     """Rename a line in place — e.g. swap "Jeans" for "Slacks" without touching
     the master packing catalog."""
     i = session.get(PackingItem, item_id)
-    if i is None or i.trip_id != trip_id:
+    uid = _pack_identity(request)[0]
+    if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
     label = label.strip()[:128]
     if not label:
@@ -1124,7 +1348,8 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
     unpack / remove swap just the row (+ the category count out-of-band); keep
     (bring back an omitted item, which crosses sections) re-renders the section."""
     i = session.get(PackingItem, item_id)
-    if i is None or i.trip_id != trip_id:
+    uid = _pack_identity(request)[0]
+    if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
     if action == "pack":
         i.status = "packed"
@@ -1140,15 +1365,15 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
     session.commit()
 
     if action in ("keep", "restore"):
-        trip = session.get(Trip, trip_id)
+        trip = scope.trip_or_none(session, request, trip_id)
         return templates.TemplateResponse(request, "_packing_section.html",
                                           {"request": request, "trip": trip,
-                                           **_packing_context(session, trip_id)})
+                                           **_packing_context(session, trip_id, uid)})
     row_html = "" if action == "remove" else templates.env.get_template(
         "_packing_item.html").render(
             trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
             packing_bag_options=_bag_options(session))
-    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category, uid))
 
 
 @router.post("/{trip_id}/pack-item/add", response_class=HTMLResponse)
@@ -1159,32 +1384,40 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
     """Add a custom line to a category — the other half of a line-item edit
     ("remove the jeans, add a pair of slacks instead") that doesn't fit into
     editing an existing row. Never touched by a re-generate (`edited=True`)."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     label = label.strip()[:128]
     if (category not in PACK_CAT_LABELS or not label
             or bag not in _bag_valid_values(session)):
         return HTMLResponse("", status_code=400)
-    item = PackingItem(trip_id=trip_id, item_key=f"custom:{uuid.uuid4().hex}",
+    uid = _pack_identity(request)[0]
+    item = PackingItem(trip_id=trip_id, user_id=uid,
+                       item_key=f"custom:{uuid.uuid4().hex}",
                        label=label, category=category,
                        quantity=max(1, min(99, quantity)), bag=bag,
                        source="custom", status="draft", edited=True)
     session.add(item)
     session.commit()
     return templates.TemplateResponse(request, "_packing_section.html",
-        {"request": request, "trip": trip, **_packing_context(session, trip_id)})
+        {"request": request, "trip": trip, **_packing_context(session, trip_id, uid)})
 
 
-def _profile_row(session: Session) -> PackingProfile | None:
-    return (session.query(PackingProfile)
+def _profile_row(session: Session, traveler_id=None) -> PackingProfile | None:
+    """The packing profile to DISPLAY for a user (D-123): their own if it exists,
+    else the deployment default (traveler_id NULL) as a starting point."""
+    if traveler_id is not None:
+        own = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
+        if own is not None:
+            return own
+    return (session.query(PackingProfile).filter_by(traveler_id=None)
             .order_by(PackingProfile.created_at).first())
 
 
 def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -> dict:
     from planning.engine import default_profile
     from planning import catalog
-    row = _profile_row(session)
+    row = _profile_row(session, _pack_identity(request)[1])
     values = {**default_profile(), **((row.values if row else None) or {})}
     bag = values.get("bag") or {}
     items = catalog.items(session)
@@ -1256,16 +1489,80 @@ def save_packing_profile(request: Request,
         "style_constraints": style_constraints,
         "must_have_items": must_have_items,
     }
-    row = _profile_row(session)
-    if row is None:
-        session.add(PackingProfile(values=values))
+    # Save to the CURRENT user's OWN profile (D-123: tied to their traveller),
+    # creating it if missing — never overwrite another traveller's or the shared
+    # default when this user has their own.
+    traveler_id = _pack_identity(request)[1]
+    own = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
+    if own is None:
+        session.add(PackingProfile(values=values, traveler_id=traveler_id))
     else:
-        row.values = values
+        own.values = values
     session.commit()
     # Re-render the page with a saved banner; the plan applies the new profile on
     # the next Re-generate.
     return templates.TemplateResponse(request, "packing_profile.html",
                                       _profile_form_ctx(request, session, saved=True))
+
+
+def _my_traveller(session: Session, request: Request):
+    """The current user's own TravelerIdentity, or None (auth off / not linked)."""
+    from app.models import TravelerIdentity
+    user = scope.user_of(request)
+    tid = getattr(user, "traveler_id", None) if user else None
+    return session.get(TravelerIdentity, tid) if tid else None
+
+
+def _currency_options() -> list[tuple[str, str]]:
+    """(code, "CAD — Canadian Dollar") for every ISO-4217 currency Babel knows,
+    for the travel-profile base-currency picker. Sorted by code."""
+    from babel.numbers import list_currencies, get_currency_name
+    opts = []
+    for c in list_currencies():
+        try:
+            name = get_currency_name(c, locale="en")
+        except Exception:
+            name = c
+        opts.append((c, f"{c} — {name}"))
+    return sorted(opts)
+
+
+@router.get("/settings/travel-profile", response_class=HTMLResponse)
+def edit_travel_profile(request: Request, session: Session = Depends(get_session)):
+    """A user edits THEIR OWN traveller's personal attributes (D-124): nationality
+    (for visa research), base currency (for discovery currency conversion),
+    name-on-ticket aliases, AirTrail mapping, notes. These are deliberately NOT in
+    the admin UI — travel is personal."""
+    trav = _my_traveller(session, request)
+    return templates.TemplateResponse(request, "travel_profile.html",
+        {"request": request, "trav": trav, "no_traveller": trav is None,
+         "currencies": _currency_options(), "saved": False})
+
+
+@router.post("/settings/travel-profile", response_class=HTMLResponse)
+def save_travel_profile(request: Request, nationality: str = Form(""),
+                        base_currency: str = Form(""),
+                        aliases: str = Form(""), airtrail_user_id: str = Form(""),
+                        notes: str = Form(""), session: Session = Depends(get_session)):
+    from sqlalchemy.orm.attributes import flag_modified
+    from babel.numbers import list_currencies
+    trav = _my_traveller(session, request)
+    if trav is None:
+        return templates.TemplateResponse(request, "travel_profile.html",
+            {"request": request, "trav": None, "no_traveller": True,
+             "currencies": _currency_options(), "saved": False})
+    trav.nationality = (nationality or "").strip().upper()[:2] or None
+    bc = (base_currency or "").strip().upper()
+    trav.base_currency = bc if bc in set(list_currencies()) else None
+    trav.aliases = [a.strip() for a in (aliases or "").splitlines() if a.strip()]
+    flag_modified(trav, "aliases")
+    trav.airtrail_user_id = (airtrail_user_id or "").strip() or None
+    trav.notes = (notes or "").strip()[:512] or None
+    session.commit()
+    session.refresh(trav)
+    return templates.TemplateResponse(request, "travel_profile.html",
+        {"request": request, "trav": trav, "no_traveller": False,
+         "currencies": _currency_options(), "saved": True})
 
 
 # ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------
@@ -1365,7 +1662,7 @@ def save_discovery_profile(request: Request,
 @router.get("/{trip_id}/edit", response_class=HTMLResponse)
 def edit_trip(trip_id: str, request: Request, next: str = "",
               session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     return templates.TemplateResponse(request, "_trip_modal.html", {
@@ -1402,6 +1699,10 @@ def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
                      "collection_id": adventurelog_collection_id},
             "error": "A trip needs a name."})
     trip = Trip(source="manual")
+    # Phase 2 (D-121): a hand-made trip is owned by its creator. NULL when auth
+    # is off (no user) — an open trip, consistent with pre-4.0 behaviour.
+    _u = scope.user_of(request)
+    trip.owner_id = _u.id if _u else None
     _save_trip_fields(trip, name, start, end, notes, adventurelog_collection_id)
     session.add(trip)
     session.flush()                       # need trip.id for the self-traveller link
@@ -1415,7 +1716,7 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
                 start: str = Form(""), end: str = Form(""), notes: str = Form(""),
                 adventurelog_collection_id: str = Form(""),
                 next: str = Form(""), session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     dest = next or f"/trips/{trip.id}"
@@ -1432,8 +1733,8 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
 
 
 @router.post("/{trip_id}/delete", response_class=HTMLResponse)
-def delete_trip(trip_id: str, session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+def delete_trip(trip_id: str, request: Request, session: Session = Depends(get_session)):
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is not None:
         # Explicit child delete: SQLite in tests does not enforce ON DELETE
         # CASCADE unless PRAGMA foreign_keys is on, so never rely on the DB to
@@ -1465,7 +1766,7 @@ def add_traveler(trip_id: str, request: Request, traveler_id: str = Form(""),
     """Add an existing TravelerIdentity to the trip roster as a companion (the
     `self` traveller auto-links on creation). Idempotent — a duplicate add is a
     no-op — and swaps just the Who's-traveling section."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     try:
@@ -1490,7 +1791,7 @@ def add_guest(trip_id: str, request: Request, name: str = Form(""),
     optional and hang off the identity later if ever wanted (D-94). Reuses an
     existing identity of the same name rather than duplicating it (display_name
     is unique). Blank name is a no-op."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     label = name.strip()
@@ -1706,7 +2007,7 @@ def _push_activities(client, collection_id: str, trip_id: str,
 
 
 @router.post("/{trip_id}/push-adventurelog", response_class=HTMLResponse)
-def push_adventurelog(trip_id: str, session: Session = Depends(get_session)):
+def push_adventurelog(trip_id: str, request: Request, session: Session = Depends(get_session)):
     """Create a PUBLIC AdventureLog collection from this trip and link it — the
     collection ONLY, empty. Pushing the trip's activities and discovery findings
     into it is done afterwards from the managed sync page (/adventurelog), which
@@ -1717,7 +2018,7 @@ def push_adventurelog(trip_id: str, session: Session = Depends(get_session)):
     Public by default so the collection can be direct-linked from outside
     AdventureLog. Idempotent on the collection itself: a trip already linked is
     left alone — we never create a second collection for the same trip."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     if trip.adventurelog_collection_id:
@@ -1911,7 +2212,7 @@ def _al_sync_ctx(session: Session, trip: Trip, client) -> dict:
 @router.get("/{trip_id}/adventurelog", response_class=HTMLResponse)
 def adventurelog_sync_page(trip_id: str, request: Request,
                            session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return _redirect(f"/trips/{trip_id}")
     client = _adventurelog()
@@ -1958,7 +2259,7 @@ def adventurelog_push(trip_id: str, request: Request,
     deduplicated by ownership marker. Transport/lodging update in place silently on
     a match; a Note that matches an existing note needs an explicit confirm (the
     warning panel) before it overwrites."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
     client = _adventurelog()
@@ -2013,7 +2314,7 @@ def adventurelog_pull(trip_id: str, request: Request,
     """Pull selected AdventureLog transport/lodging records into the Yonder
     Timeline as TripActivities. No dedup — Yonder is first-party (owner decision);
     re-pulling a record just adds another Timeline item."""
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
     client = _adventurelog()
@@ -2059,7 +2360,7 @@ def _activity_modal_ctx(request: Request, trip_id: str, *, mode: str,
 
 def _modal_fields(t: activity_types.ActivityType, values: dict) -> list[dict]:
     return [{"key": f["key"], "label": f["label"], "type": f["type"],
-             "is_textarea": f["type"] == "textarea",
+             "is_textarea": f["type"] == "textarea", "hint": f.get("hint", ""),
              "value": values.get(f["key"], "")} for f in t.fields]
 
 
@@ -2112,7 +2413,7 @@ def _collect_values(t: activity_types.ActivityType, form) -> dict:
 @router.post("/{trip_id}/activity", response_class=HTMLResponse)
 async def create_activity(trip_id: str, request: Request,
                           session: Session = Depends(get_session)):
-    trip = session.get(Trip, trip_id)
+    trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     form = await request.form()

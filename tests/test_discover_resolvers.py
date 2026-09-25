@@ -64,7 +64,7 @@ def test_currency_builds_rate_snapshot(monkeypatch):
 
 
 def test_currency_unquoted_currency_is_flagged(monkeypatch):
-    # ECB doesn't quote the Moroccan dirham → no rates, flagged, still names it.
+    # Frankfurter returns no rate for this currency → no rates, flagged, still names it.
     monkeypatch.setattr(currency_mod, "get_json",
                         lambda url, timeout=12: {"date": "2026-08-13", "rates": {}})
     f = CurrencyResolver().resolve(DerivedPlace("MA", "Harar", 31, -8), _ctx())

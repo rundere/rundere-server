@@ -1,0 +1,17 @@
+{% extends "authcard.html" %}
+{% block title %}First-run setup{% endblock %}
+{% block body %}
+<form class="card" method="post" action="/setup">
+  <div class="brand"><h1>Yonder</h1><span>first-run setup</span></div>
+  <p class="sub">No accounts exist yet. Create the first <strong>admin</strong> —
+     this is you, the account holder.</p>
+  <label for="username">Username</label>
+  <input id="username" name="username" autocomplete="username" autofocus required>
+  <label for="email">Email <span style="text-transform:none;color:var(--ink-3)">(optional, for password resets)</span></label>
+  <input id="email" name="email" type="email" autocomplete="email">
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" required>
+  {% include "_traveler_picker.html" %}
+  <button type="submit">Create admin &amp; sign in</button>
+</form>
+{% endblock %}

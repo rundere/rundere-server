@@ -26,7 +26,7 @@ __all__ = ["Finding", "Resolver", "ResolverContext", "build_deterministic",
            "SafetyResolver"]
 
 
-def build_deterministic(*, frankfurter_url: str = "https://api.frankfurter.dev/v1",
+def build_deterministic(*, frankfurter_url: str = "https://api.frankfurter.dev/v2",
                         open_meteo_url: str = "https://api.open-meteo.com/v1",
                         open_meteo_archive_url: str = "https://archive-api.open-meteo.com/v1",
                         ) -> list[Resolver]:

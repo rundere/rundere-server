@@ -41,10 +41,15 @@ class Settings(BaseSettings):
 
     # Discovery (Yonder 3.0, SPEC-3-discovery.md). Deterministic-tier sources —
     # overridable so a deployment can self-host (e.g. its own Frankfurter) and
-    # stay fully local. base_currencies is the home bases the currency resolver +
-    # calculator convert FROM (D-65).
-    discovery_base_currencies: str = "CAD,USD"
-    frankfurter_url: str = "https://api.frankfurter.dev/v1"
+    # stay fully local. base_currencies is the deployment's ALWAYS-ON base
+    # currencies the resolver + calculator convert FROM (D-65). They are unioned
+    # with each trip traveller's own explicit pick (TravelerIdentity.base_currency)
+    # — so a traveller's profile can be CAD while this keeps USD in view for a
+    # closed-currency destination (e.g. Cuba). With no traveller pick, these are
+    # the whole set. Defaults to USD (the universal reference) when unset — a
+    # deployment sets this to its own home currencies (e.g. "CAD,USD").
+    discovery_base_currencies: str = "USD"
+    frankfurter_url: str = "https://api.frankfurter.dev/v2"
     open_meteo_url: str = "https://api.open-meteo.com/v1"
     open_meteo_archive_url: str = "https://archive-api.open-meteo.com/v1"
     # Discovery LLM tier (Yonder 3.2, SPEC-3.2 §5). SearXNG is already in the
@@ -53,7 +58,66 @@ class Settings(BaseSettings):
     # degrade to absent findings (they require both searxng_url and ollama_url).
     searxng_url: str = "http://searxng:8080"
 
-    app_version: str = "3.9.2"
+    # Auth (Yonder 4.0 Phase 1a, SPEC-4 Workstream B). Dependency-free HS256
+    # JWT + scrypt (app/authn.py). auth_required is the master switch: OFF by
+    # default so existing single-user deployments keep working untouched until
+    # the operator creates a user and opts in (TX_AUTH_REQUIRED=true). The 4.0
+    # test stack turns it ON.
+    auth_required: bool = False
+    # HS256 signing key. MUST be set in prod (empty => a process-ephemeral key,
+    # so tokens do not survive a restart — a loud dev-only fallback).
+    jwt_secret: str = ""
+    jwt_access_ttl_seconds: int = 1800              # mobile/API access token (30 min)
+    jwt_refresh_ttl_seconds: int = 60 * 60 * 24 * 90  # mobile refresh token (90 days)
+    jwt_web_ttl_seconds: int = 60 * 60 * 24 * 7     # web cookie session (7 days)
+    jwt_api_ttl_seconds: int = 60 * 60 * 24 * 365   # long-lived machine token (MCP), 1yr
+    auth_cookie_name: str = "yonder_session"
+    # Secure cookie (https only). Prod is behind Traefik TLS => keep True; the
+    # test stack talks plain http on :8140 => set TX_AUTH_COOKIE_SECURE=false.
+    auth_cookie_secure: bool = True
+    # Trusted reverse-proxy identity (D-113). OFF by default. When on, a request
+    # carrying the proxy's identity header (e.g. Authentik's X-Authentik-Username)
+    # auto-provisions/links a User — so an Authentik-fronted LAN needs no second
+    # login. Only trust this where a proxy actually sets it and strips client copies.
+    auth_proxy_header_trust: bool = False
+    auth_proxy_header: str = "X-Authentik-Username"
+    auth_proxy_auto_admin: bool = False             # never grant admin from a header by default
+
+    # Onboarding (Phase 1a.1, D-117). First-run always lets you create the first
+    # admin while the users table is empty; after that, registration is closed
+    # unless this is turned on. Admins always create accounts from Administer →
+    # Users regardless.
+    auth_registration_open: bool = False
+    password_reset_ttl_seconds: int = 3600          # reset-link validity (1 hour)
+    # Optional SMTP for password-reset emails. Without it, /forgot tells the user
+    # to contact an admin, and admins mint a copy-paste reset link from the Users
+    # page. We email a reset LINK, never a password.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_starttls: bool = True
+    # Absolute base (e.g. https://yonder.home.example) for links in emails. Empty
+    # => derive from the request that triggered the reset.
+    public_base_url: str = ""
+
+    # OIDC / external SSO (Phase 1b, D-118). Yonder is an OAuth2/OIDC *client*
+    # (Authorization Code + PKCE) against Authentik/Keycloak/etc. First login
+    # provisions a User (auth_source=oidc) and mints the SAME Yonder session —
+    # one uniform token flow (D-111). OFF until issuer + client creds are set.
+    oidc_enabled: bool = False
+    oidc_issuer: str = ""                    # .../.well-known/openid-configuration lives under here
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_scopes: str = "openid email profile"
+    oidc_redirect_url: str = ""              # override; else {base}/oidc/callback
+    oidc_display_name: str = "SSO"           # login-button label
+    oidc_username_claim: str = "preferred_username"
+    oidc_auto_create: bool = True            # provision a User on first SSO login
+    oidc_admin_group: str = ""               # a `groups` claim value that grants admin (optional)
+
+    app_version: str = "4.0.0"
 
     @property
     def base_currency_list(self) -> tuple[str, ...]:

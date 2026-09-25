@@ -1,0 +1,29 @@
+{% extends "authcard.html" %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<form class="card" method="post" action="/login">
+  <div class="brand"><h1>Yonder</h1><span>sign in</span></div>
+  <p class="sub">Sign in to your Yonder companion.</p>
+  {% if msg == "reset" %}<div class="ok">Password updated — sign in with your new password.</div>{% endif %}
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="username">Username</label>
+  <input id="username" name="username" autocomplete="username" autofocus
+         value="{{ username or '' }}" required>
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password"
+         autocomplete="current-password" required>
+  <button type="submit">Sign in</button>
+  {% if oidc_enabled %}
+  <a href="/oidc/login?next={{ next|urlencode }}"
+     style="display:block;text-align:center;margin-top:10px;padding:10px 12px;
+            border:1px solid var(--line-strong);border-radius:var(--r);
+            color:var(--ink);text-decoration:none;font-weight:600">
+    Sign in with {{ oidc_name }}</a>
+  {% endif %}
+  <div class="links">
+    <a href="/forgot">Forgot password?</a>
+    {% if registration_open %}<a href="/register">Create account</a>{% endif %}
+  </div>
+</form>
+{% endblock %}

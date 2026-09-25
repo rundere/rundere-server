@@ -1,0 +1,23 @@
+{% extends "authcard.html" %}
+{% block title %}Reset password{% endblock %}
+{% block body %}
+<form class="card" method="post" action="/forgot">
+  <div class="brand"><h1>Yonder</h1><span>reset password</span></div>
+  {% if sent %}
+    <div class="ok">If that account exists, a reset link is on its way.</div>
+    {% if not smtp %}
+      <p class="hint">Email isn't configured on this server, so ask your admin to
+      generate a reset link for you from Administer → Users.</p>
+    {% endif %}
+    <div class="links"><a href="/login">Back to sign in</a></div>
+  {% else %}
+    <p class="sub">Enter your username or email and we'll send a link to set a new password.</p>
+    <label for="identifier">Username or email</label>
+    <input id="identifier" name="identifier" autofocus required>
+    <button type="submit">Send reset link</button>
+    {% if not smtp %}<p class="hint">Note: email isn't configured — an admin can
+      still generate a reset link for you.</p>{% endif %}
+    <div class="links"><a href="/login">Back to sign in</a></div>
+  {% endif %}
+</form>
+{% endblock %}

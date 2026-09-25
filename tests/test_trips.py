@@ -130,13 +130,29 @@ def test_status_grouping_and_filter():
     _mk("Now trip", (TODAY - timedelta(days=1)).isoformat(),
         (TODAY + timedelta(days=1)).isoformat())
 
+    # Defaults to the Upcoming tab: in-progress + upcoming, never past.
     html = client.get("/trips").text
     for label in ("In progress", "Upcoming", "Past"):
         assert label in html
+    assert "Now trip" in html and "Upcoming trip" in html
+    assert "Past trip" not in html
 
     only_past = client.get("/trips/list", params={"status": "past"}).text
     assert "Past trip" in only_past
     assert "Upcoming trip" not in only_past and "Now trip" not in only_past
+    # Past trips are grouped by year.
+    assert f">{(TODAY - timedelta(days=40)).year}<" in only_past
+
+
+def test_search_miss_points_to_other_tab():
+    if not DEPS:
+        return
+    _clear()
+    _mk("Old Kyoto", (TODAY - timedelta(days=400)).isoformat(),
+        (TODAY - timedelta(days=395)).isoformat())
+    html = client.get("/trips/list", params={"q": "kyoto"}).text
+    assert "No upcoming trips match your search" in html
+    assert "1 in Past" in html
 
 
 def test_search_filters_by_name():
@@ -532,3 +548,170 @@ def test_delete_trip_sweeps_travelers():
     with SessionLocal() as s:
         assert s.query(TripTraveler).filter(
             TripTraveler.trip_id == tid).count() == 0
+
+
+# ------------------------------------------------------ currency finding edit
+
+def test_currency_edit_updates_conversion_numbers():
+    """Editing a currency finding rewrites data.rates (what the calculator reads)
+    and regenerates the body — not a text-only edit (the fixed bug)."""
+    if not DEPS:
+        return
+    from app.db import SessionLocal
+    from app.models import DiscoveryFinding
+    tid = _mk("Rates trip")
+    with SessionLocal() as s:
+        f = DiscoveryFinding(
+            trip_id=tid, topic="currency", scope="country", place_key="CH",
+            status="draft", confidence="high", resolver="currency.frankfurter",
+            body_md=("**Geneva, CH** — official currency **Swiss Franc (CHF)**.\n\n"
+                     "- 1 CAD = 0.58 CHF\n- 1 USD = 0.72 CHF\n"),
+            data={"currency": "CHF", "currency_name": "Swiss Franc",
+                  "date": "2026-08-13", "bases": ["CAD", "USD"],
+                  "rates": {"CHF": {"per_CAD": 0.58, "per_USD": 0.72}},
+                  "usd_useful": False})
+        s.add(f)
+        s.commit()
+        fid = f.id
+
+    r = client.post(f"/trips/{tid}/finding/{fid}/edit",
+                    data={"cur_base": ["CAD", "USD"], "cur_rate": ["0.60", "0.75"]})
+    assert r.status_code < 400
+
+    with SessionLocal() as s:
+        f = s.get(DiscoveryFinding, fid)
+        assert f.status == "edited"
+        # The numbers the calculator computes from now reflect the edit.
+        assert f.data["rates"]["CHF"] == {"per_CAD": 0.60, "per_USD": 0.75}
+        # Body regenerated from those numbers, so text and math agree.
+        assert "1 CAD = 0.6 CHF" in f.body_md
+        assert "1 USD = 0.75 CHF" in f.body_md
+        assert "manually edited" in f.body_md
+
+
+def test_currency_edit_blank_rate_drops_it():
+    """A blank rate row drops that rate; clearing all rates flags the finding."""
+    if not DEPS:
+        return
+    from app.db import SessionLocal
+    from app.models import DiscoveryFinding
+    tid = _mk("Drop-rate trip")
+    with SessionLocal() as s:
+        f = DiscoveryFinding(
+            trip_id=tid, topic="currency", scope="country", place_key="CH",
+            status="draft", confidence="high", resolver="currency.frankfurter",
+            body_md="**Geneva, CH** — official currency **Swiss Franc (CHF)**.",
+            data={"currency": "CHF", "currency_name": "Swiss Franc",
+                  "bases": ["CAD", "USD"],
+                  "rates": {"CHF": {"per_CAD": 0.58, "per_USD": 0.72}},
+                  "usd_useful": False})
+        s.add(f)
+        s.commit()
+        fid = f.id
+
+    # Keep CAD, blank out USD.
+    client.post(f"/trips/{tid}/finding/{fid}/edit",
+                data={"cur_base": ["CAD", "USD"], "cur_rate": ["0.60", ""]})
+    with SessionLocal() as s:
+        f = s.get(DiscoveryFinding, fid)
+        assert f.data["rates"]["CHF"] == {"per_CAD": 0.60}
+        assert f.confidence == "high"
+
+    # Blank both — no rates left, finding is flagged.
+    client.post(f"/trips/{tid}/finding/{fid}/edit",
+                data={"cur_base": ["CAD", "USD"], "cur_rate": ["", ""]})
+    with SessionLocal() as s:
+        f = s.get(DiscoveryFinding, fid)
+        assert f.data["rates"] == {}
+        assert f.confidence == "flagged"
+
+
+# ------------------------------ base currencies from the travel profile (4.0)
+
+def _mk_traveller_on_trip(trip_id, name, base_currency=None):
+    """A TravelerIdentity (optionally with a chosen base currency) linked to a trip."""
+    from app.db import SessionLocal
+    from app.models import TravelerIdentity, TripTraveler
+    with SessionLocal() as s:
+        t = TravelerIdentity(display_name=name, kind="guest",
+                             base_currency=base_currency)
+        s.add(t)
+        s.commit()
+        s.add(TripTraveler(trip_id=trip_id, traveler_id=t.id, role="companion"))
+        s.commit()
+        return t.id
+
+
+def test_trip_base_currencies_profile_first_then_env():
+    """The traveller's EXPLICIT pick leads, and the deployment's always-on
+    currencies (TX_DISCOVERY_BASE_CURRENCIES) are unioned in for extra
+    visibility — the Cuba case: profile stays put, USD still shown."""
+    if not DEPS:
+        return
+    from app.db import SessionLocal
+    from app.config import settings
+    from app.trips.routes import _trip_base_currencies
+    tid = _mk("UK trip")
+    _mk_traveller_on_trip(tid, "UK Traveller", base_currency="GBP")
+    with SessionLocal() as s:
+        bases = _trip_base_currencies(s, tid)
+    assert bases[0] == "GBP"                                    # pick leads
+    assert set(bases) == {"GBP"} | set(settings.base_currency_list)  # + env extras
+
+
+def test_trip_base_currencies_union_across_travellers():
+    """Multiple travellers' picks, plus the deployment currencies, all present."""
+    if not DEPS:
+        return
+    from app.db import SessionLocal
+    from app.config import settings
+    from app.trips.routes import _trip_base_currencies
+    tid = _mk("Mixed trip")
+    _mk_traveller_on_trip(tid, "UK One", base_currency="GBP")
+    _mk_traveller_on_trip(tid, "JP Two", base_currency="JPY")
+    _mk_traveller_on_trip(tid, "No pick", base_currency=None)   # ignored
+    with SessionLocal() as s:
+        bases = _trip_base_currencies(s, tid)
+    assert {"GBP", "JPY"} <= set(bases)
+    assert set(settings.base_currency_list) <= set(bases)       # env extras kept
+
+
+def test_trip_base_currencies_env_only_when_no_pick():
+    """No traveller has picked → just the deployment's configured currencies."""
+    if not DEPS:
+        return
+    from app.db import SessionLocal
+    from app.config import settings
+    from app.trips.routes import _trip_base_currencies
+    tid = _mk("No-pick trip")
+    _mk_traveller_on_trip(tid, "Blank Traveller", base_currency=None)
+    with SessionLocal() as s:
+        bases = _trip_base_currencies(s, tid)
+    assert bases == settings.base_currency_list
+
+
+def test_calculator_pivots_without_cad_home():
+    """The calculator no longer hardcodes a CAD pivot: a GBP-only snapshot still
+    builds a working conversion table."""
+    if not DEPS:
+        return
+    from app.db import SessionLocal
+    from app.models import DiscoveryFinding
+    tid = _mk("GBP calc trip")
+    with SessionLocal() as s:
+        f = DiscoveryFinding(
+            trip_id=tid, topic="currency", scope="country", place_key="CH",
+            status="draft", confidence="high", resolver="currency.frankfurter",
+            body_md="**Geneva, CH** — official currency **Swiss Franc (CHF)**.",
+            data={"currency": "CHF", "currency_name": "Swiss Franc",
+                  "date": "2026-08-13", "bases": ["GBP"],
+                  "rates": {"CHF": {"per_GBP": 1.15}}, "usd_useful": False})
+        s.add(f)
+        s.commit()
+        fid = f.id
+    r = client.get(f"/trips/{tid}/finding/{fid}/calculator")
+    assert r.status_code == 200
+    # Pivot is GBP (the only home base) — no CAD involved, table still built.
+    assert "GBP" in r.text and "CHF" in r.text
+    assert '"GBP": 1.0' in r.text
+    assert "1.15" in r.text

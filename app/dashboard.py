@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app import scope
 from app.config import settings
 from app.db import get_session
 from app.models import IngestBatch, Trip
@@ -54,15 +55,21 @@ def _next_trip(trips: list[Trip], today: str) -> dict | None:
             "in_progress": in_progress, "days_until": days_until}
 
 
-def _pipeline_counts(session: Session) -> dict:
+def _pipeline_counts(session: Session, user=None) -> dict:
     # Reuse the review queue's own bucket logic — a fresh reimplementation here
-    # would inevitably drift from what "Needs you: 3" means on /review.
+    # would inevitably drift from what "Needs you: 3" means on /review. Scoped to
+    # the user's own captures (Phase 2) so the two surfaces still agree.
     from app.review.routes import _all_views, _counts
-    return _counts(_all_views(session))
+    return _counts(_all_views(session, user))
 
 
-def _capture_activity(session: Session, today: str) -> dict:
-    rows = session.query(IngestBatch).all()
+def _capture_activity(session: Session, today: str, user=None) -> dict:
+    q = session.query(IngestBatch)
+    if not scope.unrestricted(user):
+        from sqlalchemy import or_
+        q = q.filter(or_(IngestBatch.user_id.is_(None),
+                         IngestBatch.user_id == user.id))    # own + open, like the queue
+    rows = q.all()
     return {
         "today": sum(1 for b in rows
                      if b.received_at and b.received_at.date().isoformat() == today),
@@ -75,13 +82,14 @@ def _capture_activity(session: Session, today: str) -> dict:
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, session: Session = Depends(get_session)):
     today = date.today().isoformat()
-    trips = session.query(Trip).all()
+    user = scope.user_of(request)
+    trips = session.query(Trip).filter(scope.trip_filter(session, user)).all()
     upcoming_count = sum(1 for t in trips
                          if t.start_date and _trip_status(t, today) == "upcoming")
     return templates.TemplateResponse(request, "dashboard.html", {
         "next_trip": _next_trip(trips, today),
-        "counts": _pipeline_counts(session),
-        "capture": _capture_activity(session, today),
+        "counts": _pipeline_counts(session, user),
+        "capture": _capture_activity(session, today, user),
         "trip_count": len(trips),
         "upcoming_count": upcoming_count,
         "version": settings.app_version,

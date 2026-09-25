@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from extract import gcal, ical, jsonld, maps_url, mime, pdf, web
+from extract import apple_maps_url, gcal, ical, jsonld, maps_url, mime, pdf, web
 from extract.normalize import normalize_batch, normalize_payload
 from extract.llm import ExtractionFailed, OllamaExtractor, load_extraction_schema
 from validation import validate_schema
@@ -57,10 +57,25 @@ def extract_ingest_payload(ingest_payload: dict,
     channel = ingest_payload.get("capture_channel") or ""
     cc = ingest_payload.get("capture_context") or {}
 
-    # ---- maps_url channel: not an email at all
-    if channel == "maps_url" or (ingest_payload.get("url") or "").find("/maps/dir/") >= 0:
+    url = ingest_payload.get("url") or ""
+
+    # ---- apple_maps_url channel: an Apple Maps directions link (not an email).
+    # Checked before the Google branch so an Apple link never reaches the Google
+    # extractor by way of the shared maps handling (SPEC-4 §2).
+    if channel == "apple_maps_url" or apple_maps_url.looks_like_apple_maps_url(url):
         try:
-            items = maps_url.extract_maps_url(ingest_payload.get("url", ""), cc)
+            items = apple_maps_url.extract_apple_maps_url(url, cc)
+            return _validated(items, "apple_maps_url", result) or _fail(result)
+        except apple_maps_url.ExtractionError as ex:
+            result.needs_review = True
+            result.reasons.append(str(ex))
+            result.trace.append(f"apple_maps_url: {ex}")
+            return result
+
+    # ---- maps_url channel: not an email at all
+    if channel == "maps_url" or url.find("/maps/dir/") >= 0:
+        try:
+            items = maps_url.extract_maps_url(url, cc)
             return _validated(items, "maps_url", result) or _fail(result)
         except maps_url.ExtractionError as ex:
             result.needs_review = True

@@ -328,8 +328,8 @@ deployment stack.
 | `TX_AIRTRAIL_TOKEN` | `""` | AirTrail API token |
 | `TX_AIRTRAIL_DB_URL` | `""` | AirTrail Postgres, read-only (D-50) |
 | `TX_PHOTON_URL` | `http://photon:2322` | Self-hosted geocoder (D-22) |
-| `TX_DISCOVERY_BASE_CURRENCIES` | `CAD,USD` | Home currencies Discovery's currency resolver/calculator convert FROM (D-65) |
-| `TX_FRANKFURTER_URL` | `https://api.frankfurter.dev/v1` | Currency-rate source for Discovery (public, keyless; overridable for a self-hosted mirror) |
+| `TX_DISCOVERY_BASE_CURRENCIES` | `USD` | Always-on base currencies Discovery's resolver/calculator convert FROM (D-65); unioned with each traveller's own travel-profile pick, so these stay visible (e.g. USD for a closed-currency destination) alongside a per-traveller currency. Defaults to USD when unset; set to your home currencies, e.g. `CAD,USD` |
+| `TX_FRANKFURTER_URL` | `https://api.frankfurter.dev/v2` | Currency-rate source for Discovery (public, keyless; overridable for a self-hosted mirror) |
 | `TX_OPEN_METEO_URL` | `https://api.open-meteo.com/v1` | Forecast weather source for Discovery |
 | `TX_OPEN_METEO_ARCHIVE_URL` | `https://archive-api.open-meteo.com/v1` | Historical weather source for Discovery (trips beyond the forecast window) |
 | `TX_SEARXNG_URL` | `http://searxng:8080` | Metasearch backend for Discovery's LLM tier (visa/safety/events/food/regional language). Empty = those topics degrade to absent findings |
@@ -375,14 +375,20 @@ alembic/        migrations (baseline 0001)
 capture/        gmail-addon/, gcal-addon/ (Apps Script); maps-n8n/ (deprecated,
                 superseded by the built-in /capture page in v1.2)
 tests/          pytest suite + samples.json regression corpus
-docs/           A5/A6 specs, home-profiles.example.json, the setup/usage guide
+docs/           A5/A6 specs, shared-capabilities guideline (D-96),
+                home-profiles.example.json, the setup/usage guide
 scripts/        extract_eval.py — run the chain over dumped real payloads
 ```
 
 The design specs (`docs/A5-canonical-keys.md`, `docs/A6-collection-resolution.md`,
-`SPEC-3-discovery.md`, `SPEC-3.1-planning.md`, `SPEC-3.2-discovery-llm.md`) and
-the generated `RULES.md` explain the resolution, Discovery/Planning, and rule
-behaviour in depth.
+`SPEC-3-discovery.md`, `SPEC-3.1-planning.md`, `SPEC-3.2-discovery-llm.md`,
+`SPEC-4-directions-capture.md`) and the generated `RULES.md` explain the
+resolution, Discovery/Planning, and rule behaviour in depth.
+
+**Engineering guideline:** `docs/shared-capabilities.md` — build capabilities as
+common project-level functions and treat a channel/provider's needs as a
+subsection of that shared capability, not a rewrite. Review it before adding a new
+capability or channel (D-89/D-96).
 
 Inline `D-NN` / `RULE-NN` / `OQ-NN` codes throughout the code and capture docs
 are provenance markers for decisions, rules, and open questions tracked in the
