@@ -155,3 +155,130 @@ if DEPS:
             mid = s.query(User).filter_by(username="acct-admin2").one().id
         r = client.post(f"/users/{mid}/admin", headers=hdr, follow_redirects=False)
         assert "err=" in r.headers["location"]                 # can't change your own role
+
+    def test_account_email_self_service():
+        """A user sets their own reset email, but only by re-entering their
+        password; emails are unique case-insensitively; /forgot finds by email."""
+        hdr = _bearer("mailer")                                  # password "pw"
+        with SessionLocal() as s:
+            s.query(User).filter(User.email.in_(["me@example.com", "ME@example.com"])
+                                 ).update({User.email: None}, synchronize_session=False)
+            s.commit()
+        assert client.get("/account", headers=hdr).status_code == 200
+        r = client.post("/account/email", headers=hdr, follow_redirects=False,
+                        data={"email": "me@example.com", "current_password": "wrong"})
+        assert "err=" in r.headers["location"]
+        r = client.post("/account/email", headers=hdr, follow_redirects=False,
+                        data={"email": "me@example.com", "current_password": "pw"})
+        assert "msg=" in r.headers["location"]
+        with SessionLocal() as s:
+            assert s.query(User).filter_by(username="mailer").one().email == "me@example.com"
+        # another account can't take the same address, whatever the case
+        admin = _bearer("mail-admin", admin=True)
+        with SessionLocal() as s:
+            other = s.query(User).filter_by(username="mail-admin").one().id
+        r = client.post(f"/users/{other}/email", headers=admin, follow_redirects=False,
+                        data={"email": "ME@example.com"})
+        assert "err=" in r.headers["location"]
+        # /forgot resolves the email case-insensitively and mints a token
+        with SessionLocal() as s:
+            uid = s.query(User).filter_by(username="mailer").one().id
+            before = s.query(PasswordResetToken).filter_by(user_id=uid).count()
+        assert client.post("/forgot", data={"identifier": "Me@Example.com"}).status_code == 200
+        with SessionLocal() as s:
+            assert s.query(PasswordResetToken).filter_by(user_id=uid).count() == before + 1
+
+    def test_admin_email_and_test_send(monkeypatch):
+        from app import accounts_routes, email as email_mod
+        admin = _bearer("mail-admin2", admin=True)
+        with SessionLocal() as s:
+            uid = s.query(User).filter_by(username="mail-admin2").one().id
+        r = client.post(f"/users/{uid}/email", headers=admin, follow_redirects=False,
+                        data={"email": "not-an-email"})
+        assert "err=" in r.headers["location"]
+        client.post(f"/users/{uid}/email", headers=admin, data={"email": "a2@example.com"})
+        with SessionLocal() as s:
+            assert s.get(User, uid).email == "a2@example.com"
+        # no SMTP -> test send explains, never crashes
+        monkeypatch.setattr(settings, "smtp_host", "")
+        r = client.post("/users/test-email", headers=admin, follow_redirects=False)
+        assert "not+configured" in r.headers["location"]
+        # SMTP set -> delivered to the admin's own address by default
+        monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+        monkeypatch.setattr(settings, "smtp_from", "yonder@example.com")
+        sent = []
+        monkeypatch.setattr(accounts_routes, "deliver", lambda to, subj, body: sent.append(to))
+        r = client.post("/users/test-email", headers=admin, follow_redirects=False)
+        assert sent == ["a2@example.com"] and "msg=" in r.headers["location"]
+        # a failing server surfaces its error to the admin
+        def boom(*a):
+            raise OSError("connection refused")
+        monkeypatch.setattr(accounts_routes, "deliver", boom)
+        r = client.post("/users/test-email", headers=admin, follow_redirects=False)
+        assert "connection+refused" in r.headers["location"]
+        monkeypatch.setattr(settings, "smtp_ssl", True)
+        assert "(SSL)" in email_mod.smtp_summary()
+
+    def test_smtp_ssl_uses_implicit_tls(monkeypatch):
+        from app import email as email_mod
+        used = []
+
+        class FakeSMTP:
+            def __init__(self, *a, **k): used.append(type(self).__name__)
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def starttls(self): used.append("starttls")
+            def login(self, *a): pass
+            def send_message(self, m): used.append("sent")
+
+        class SMTP_SSL(FakeSMTP):
+            pass
+
+        monkeypatch.setattr(email_mod.smtplib, "SMTP", FakeSMTP)
+        monkeypatch.setattr(email_mod.smtplib, "SMTP_SSL", SMTP_SSL)
+        monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+        monkeypatch.setattr(settings, "smtp_from", "y@example.com")
+        monkeypatch.setattr(settings, "smtp_ssl", True)
+        assert email_mod.send_email("x@example.com", "s", "b")
+        assert used == ["SMTP_SSL", "sent"]                      # no STARTTLS on SMTPS
+        used.clear()
+        monkeypatch.setattr(settings, "smtp_ssl", False)
+        assert email_mod.send_email("x@example.com", "s", "b")
+        assert used == ["FakeSMTP", "starttls", "sent"]
+
+    def test_account_change_own_password():
+        hdr = _bearer("pw-changer")                              # password "pw"
+        r = client.post("/account/password", headers=hdr, follow_redirects=False,
+                        data={"current_password": "nope", "password": "n1", "confirm": "n1"})
+        assert "err=" in r.headers["location"]
+        r = client.post("/account/password", headers=hdr, follow_redirects=False,
+                        data={"current_password": "pw", "password": "n1", "confirm": "n2"})
+        assert "err=" in r.headers["location"]
+        r = client.post("/account/password", headers=hdr, follow_redirects=False,
+                        data={"current_password": "pw", "password": "n1", "confirm": "n1"})
+        assert "msg=" in r.headers["location"]
+        assert settings.auth_cookie_name in r.cookies            # this session re-issued
+        with SessionLocal() as s:
+            u = s.query(User).filter_by(username="pw-changer").one()
+            assert authn.verify_password("n1", u.password_hash) and u.token_version == 1
+        # the old token is now revoked
+        client.cookies.clear()
+        assert client.get("/account", headers=hdr).status_code == 401
+    def test_settings_hub_admin_section_only_for_admins():
+        """4.1: profiles + administration live under /settings, not the top bar;
+        the Administration group only shows to admins (or with auth off)."""
+        settings.auth_required = True
+        try:
+            plain = client.get("/settings", headers=_bearer("hub-plain")).text
+            assert "Travel profile" in plain and "Account" in plain
+            assert "Administration" not in plain and "/admin/rule-setting" not in plain
+            admin = client.get("/settings", headers=_bearer("hub-admin", admin=True)).text
+            assert "Administration" in admin and "/users" in admin
+            # the top bar carries the daily links (Journal included), not admin ones
+            bar = client.get("/trips", headers=_bearer("hub-plain")).text
+            assert 'href="/admin/rule-setting/list"' not in bar and 'href="/journal"' in bar
+        finally:
+            settings.auth_required = False
+        # auth off = single-user world: everything, minus user-only entries
+        off = client.get("/settings").text
+        assert "Administration" in off and "/account" not in off

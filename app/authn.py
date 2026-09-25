@@ -342,6 +342,30 @@ def create_user(session, username: str, password: str | None = None, *,
     return user
 
 
+def email_in_use(session, email: str, *, exclude_id: str | None = None) -> bool:
+    """Emails are unique, case-insensitively: /forgot looks a user up by email,
+    so two accounts sharing one would make that lookup ambiguous."""
+    from sqlalchemy import func
+    q = session.query(User).filter(func.lower(User.email) == email.strip().lower())
+    if exclude_id:
+        q = q.filter(User.id != exclude_id)
+    return q.count() > 0
+
+
+def set_user_email(session, user: User, email: str | None) -> str | None:
+    """Set (or clear, with an empty value) a user's email. Returns an error
+    message instead of saving when it's malformed or already taken."""
+    email = (email or "").strip() or None
+    if email is not None:
+        if "@" not in email or " " in email or len(email) > 255:
+            return "That doesn't look like an email address."
+        if email_in_use(session, email, exclude_id=user.id):
+            return "That email is already used by another account."
+    user.email = email
+    session.commit()
+    return None
+
+
 def resolve_traveler(session, *, traveler_id: str | int | None,
                      new_name: str | None, kind: str = "guest") -> int | None:
     """Onboarding traveller link (D-117: pick existing OR create new). A non-empty
