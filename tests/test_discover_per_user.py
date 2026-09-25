@@ -155,3 +155,26 @@ if DEPS:
             assert launched["base_currencies"][0] == "USD"
             assert launched["discovery_profile"] is None          # hers, not his
         _run(body)
+
+    def test_packing_profile_is_per_person_too():
+        """She never starts from (or generates with) his packing profile, and a
+        user with no traveller can't overwrite the owner's unassigned row."""
+        from app.models import PackingProfile
+        from planning.runner import load_profile
+
+        def body(ids):
+            with SessionLocal() as s:
+                s.add(PackingProfile(traveler_id=ids["me_t"],
+                                     values={"must_have_items": ["du-his-kit"]}))
+                s.commit()
+            assert "du-his-kit" not in client.get("/trips/settings/packing-profile",
+                                                  headers=_h("du-sis")).text
+            with SessionLocal() as s:
+                assert "du-his-kit" in (load_profile(s, ids["me_t"], owner=False)
+                                        .get("must_have_items") or [])
+                assert "du-his-kit" not in (load_profile(s, ids["sis_t"], owner=False)
+                                            .get("must_have_items") or [])
+                s.query(PackingProfile).filter(PackingProfile.traveler_id.in_(
+                    [ids["me_t"], ids["sis_t"]])).delete(synchronize_session=False)
+                s.commit()
+        _run(body)

@@ -1451,21 +1451,18 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
         {"request": request, "trip": trip, **_packing_context(session, trip_id, uid)})
 
 
-def _profile_row(session: Session, traveler_id=None) -> PackingProfile | None:
-    """The packing profile to DISPLAY for a user (D-123): their own if it exists,
-    else the deployment default (traveler_id NULL) as a starting point."""
-    if traveler_id is not None:
-        own = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
-        if own is not None:
-            return own
-    return (session.query(PackingProfile).filter_by(traveler_id=None)
-            .order_by(PackingProfile.created_at).first())
+def _profile_row(session: Session, traveler_id=None, owner: bool = False):
+    """The packing profile to DISPLAY for one person (D-123, 4.1) — their own;
+    never another person's. See planning.runner.profile_row."""
+    from planning.runner import profile_row
+    return profile_row(session, traveler_id, owner=owner)
 
 
 def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -> dict:
     from planning.engine import default_profile
     from planning import catalog
-    row = _profile_row(session, _pack_identity(request)[1])
+    uid, tid = _pack_identity(request)
+    row = _profile_row(session, tid, owner=uid is None)
     values = {**default_profile(), **((row.values if row else None) or {})}
     bag = values.get("bag") or {}
     items = catalog.items(session)
@@ -1489,6 +1486,7 @@ def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -
     chosen_cons = set(values.get("style_constraints") or [])
     return {
         "request": request, "saved": saved,
+        "no_traveller": uid is not None and tid is None,
         "bag_opts": [{"value": v, "label": t,
                       "selected": v == bag.get("mode", "carry_on")}
                      for v, t in PROFILE_SELECTS["bag_mode"]],
@@ -1540,11 +1538,17 @@ def save_packing_profile(request: Request,
     # Save to the CURRENT user's OWN profile (D-123: tied to their traveller),
     # creating it if missing — never overwrite another traveller's or the shared
     # default when this user has their own.
-    traveler_id = _pack_identity(request)[1]
-    own = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
+    uid, traveler_id = _pack_identity(request)
+    if uid is not None and traveler_id is None:
+        # Signed in but no traveller linked: nowhere of their own to save it —
+        # and never into the owner's unassigned row.
+        return templates.TemplateResponse(request, "packing_profile.html",
+                                          _profile_form_ctx(request, session))
+    own = _profile_row(session, traveler_id, owner=uid is None)
     if own is None:
         session.add(PackingProfile(values=values, traveler_id=traveler_id))
     else:
+        own.traveler_id = traveler_id   # claims a pre-4.1 unassigned row for self
         own.values = values
     session.commit()
     # Re-render the page with a saved banner; the plan applies the new profile on
