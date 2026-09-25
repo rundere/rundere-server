@@ -1248,9 +1248,14 @@ def _apply_status(item: TravelItem, results: list[dict]) -> None:
 
 def commit_pending(session: Session, adventurelog, airtrail, *,
                    identities=None, dry_run: bool = True, limit: int = 0,
-                   progress=None) -> dict:
+                   progress=None, item_filter=None) -> dict:
     """Commit every approved, resolved item. Sequential (one flight at a time,
-    D-06); per-item commit so one failure never blocks the rest."""
+    D-06); per-item commit so one failure never blocks the rest.
+
+    `item_filter` (a TravelItem predicate, e.g. scope.capture_filter(user))
+    limits it to the captures that person may log — the web "Log approved"
+    button passes the pressing user's, so nobody logs someone else's approved
+    items (YONDER-105). None = every item (the operator CLI)."""
     flown_airports = flown_airlines = {}
     if airtrail is not None:
         try:
@@ -1264,8 +1269,10 @@ def commit_pending(session: Session, adventurelog, airtrail, *,
     airports = _Resolver(flown_airports, db, "airport")
     airlines = _Resolver(flown_airlines, db, "airline")
 
-    items = [i for i in session.query(TravelItem)
-             .order_by(TravelItem.created_at).all() if committable(i)]
+    q = session.query(TravelItem)
+    if item_filter is not None:
+        q = q.filter(item_filter)
+    items = [i for i in q.order_by(TravelItem.created_at).all() if committable(i)]
     if limit:
         items = items[:limit]
 

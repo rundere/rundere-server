@@ -1033,3 +1033,40 @@ def test_committed_flight_tagged_with_its_passengers_on_a_shared_trip():
         synchronize_session=False)
     s.query(TravelItem).filter(TravelItem.id == it.id).delete(synchronize_session=False)
     _cleanup_trips(s); s.close()
+
+
+def test_commit_only_logs_the_committers_own_approvals():
+    """YONDER-105: "Log approved" must not write someone else's approved
+    captures. The web passes scope.capture_filter(user): own + open (+ sharing
+    users' for an admin); the operator CLI passes nothing and logs everything."""
+    _skip()
+    from app import scope
+    from app.models import User
+    s = SessionLocal()
+    s.query(User).filter(User.username.in_(["c105-me", "c105-sis"])).delete(
+        synchronize_session=False)
+    s.query(TravelItem).delete(); s.commit()
+    me = User(username="c105-me", auth_source="local", is_admin=True)
+    sis = User(username="c105-sis", auth_source="local")
+    s.add_all([me, sis]); s.commit()
+    mine = _add(s, _flight_payload(), targets=["airtrail.flight"])
+    hers = _add(s, _flight_payload(), targets=["airtrail.flight"])
+    hers.canonical_key = "flight:pnr:HERS:AC:1:YYZ"
+    mine.owner_id, hers.owner_id = me.id, sis.id
+    s.commit()
+
+    def committed(user):
+        env = C.commit_pending(s, FakeAL(), FakeAT(), identities=[Ident("self", "vu75")],
+                               dry_run=True,
+                               item_filter=None if user is None else scope.capture_filter(user))
+        return {p["item_id"] for p in env["plans"]}
+
+    assert committed(sis) == {hers.id}                  # hers only, never mine
+    assert committed(me) == {mine.id, hers.id}          # admin: she shares by default
+    sis.share_with_admins = False; s.commit()
+    assert committed(me) == {mine.id}                   # opted out: not the admin's to log
+    assert committed(None) == {mine.id, hers.id}        # operator CLI: everything
+
+    s.query(TravelItem).delete()
+    s.query(User).filter(User.id.in_([me.id, sis.id])).delete(synchronize_session=False)
+    s.commit(); s.close()
