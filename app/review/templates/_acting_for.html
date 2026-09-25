@@ -1,0 +1,19 @@
+{# Admin-only "whose profile" picker (4.1, app/acting.py). Shown on the profile
+   pages; the viewer's own profile is the empty choice, so ?for= drops off. #}
+{% if acting and acting.choices %}
+<form method="get" class="acting-bar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+      padding:10px 16px;margin:0 0 4px;border-bottom:1px solid var(--line, #d5dce5)">
+  <label for="acting-for" style="font-size:12.5px;color:var(--ink-2, #43505f)">Profile of</label>
+  <select id="acting-for" name="for" onchange="this.form.submit()" style="width:auto">
+    {% for c in acting.choices %}
+      <option value="{{ '' if c.account == 'you' else c.id }}" {% if c.selected %}selected{% endif %}>
+        {{ c.name }}{% if c.account == 'you' %} (you){% endif %}</option>
+    {% endfor %}
+  </select>
+  <noscript><button class="act tiny" type="submit">Show</button></noscript>
+  {% if acting.is_other %}
+    <span style="font-size:12.5px;color:var(--warn, #b45309)">You're editing
+      <b>{{ acting.traveler.display_name }}</b>'s profile as an admin.</span>
+  {% endif %}
+</form>
+{% endif %}

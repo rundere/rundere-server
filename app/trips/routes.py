@@ -1461,8 +1461,10 @@ def _profile_row(session: Session, traveler_id=None, owner: bool = False):
 def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -> dict:
     from planning.engine import default_profile
     from planning import catalog
-    uid, tid = _pack_identity(request)
-    row = _profile_row(session, tid, owner=uid is None)
+    from app.acting import acting_for
+    acting = acting_for(session, request)
+    tid = acting.traveler.id if acting.traveler else None
+    row = _profile_row(session, tid, owner=acting.owner_mode)
     values = {**default_profile(), **((row.values if row else None) or {})}
     bag = values.get("bag") or {}
     items = catalog.items(session)
@@ -1485,8 +1487,8 @@ def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -
                 for v, t in PROFILE_SELECTS[field]]
     chosen_cons = set(values.get("style_constraints") or [])
     return {
-        "request": request, "saved": saved,
-        "no_traveller": uid is not None and tid is None,
+        "request": request, "saved": saved, "acting": acting,
+        "no_traveller": tid is None and not acting.owner_mode,
         "bag_opts": [{"value": v, "label": t,
                       "selected": v == bag.get("mode", "carry_on")}
                      for v, t in PROFILE_SELECTS["bag_mode"]],
@@ -1538,13 +1540,16 @@ def save_packing_profile(request: Request,
     # Save to the CURRENT user's OWN profile (D-123: tied to their traveller),
     # creating it if missing — never overwrite another traveller's or the shared
     # default when this user has their own.
-    uid, traveler_id = _pack_identity(request)
-    if uid is not None and traveler_id is None:
+    from app.acting import acting_for, audit_if_other
+    acting = acting_for(session, request)          # self, or an admin acting for someone
+    traveler_id = acting.traveler.id if acting.traveler else None
+    if traveler_id is None and not acting.owner_mode:
         # Signed in but no traveller linked: nowhere of their own to save it —
         # and never into the owner's unassigned row.
         return templates.TemplateResponse(request, "packing_profile.html",
                                           _profile_form_ctx(request, session))
-    own = _profile_row(session, traveler_id, owner=uid is None)
+    audit_if_other(session, request, acting, "packing profile")
+    own = _profile_row(session, traveler_id, owner=acting.owner_mode)
     if own is None:
         session.add(PackingProfile(values=values, traveler_id=traveler_id))
     else:
@@ -1555,14 +1560,6 @@ def save_packing_profile(request: Request,
     # the next Re-generate.
     return templates.TemplateResponse(request, "packing_profile.html",
                                       _profile_form_ctx(request, session, saved=True))
-
-
-def _my_traveller(session: Session, request: Request):
-    """The current user's own TravelerIdentity, or None (auth off / not linked)."""
-    from app.models import TravelerIdentity
-    user = scope.user_of(request)
-    tid = getattr(user, "traveler_id", None) if user else None
-    return session.get(TravelerIdentity, tid) if tid else None
 
 
 def _currency_options() -> list[tuple[str, str]]:
@@ -1583,12 +1580,15 @@ def _currency_options() -> list[tuple[str, str]]:
 def edit_travel_profile(request: Request, session: Session = Depends(get_session)):
     """A user edits THEIR OWN traveller's personal attributes (D-124): nationality
     (for visa research), base currency (for discovery currency conversion),
-    name-on-ticket aliases, AirTrail mapping, notes. These are deliberately NOT in
-    the admin UI — travel is personal."""
-    trav = _my_traveller(session, request)
+    name-on-ticket aliases, AirTrail mapping, notes. Not in the admin tables —
+    travel is personal. An admin may edit it FOR a traveller with no account or
+    one whose user shares with admins (4.1, app/acting.py)."""
+    from app.acting import acting_for
+    acting = acting_for(session, request)
+    trav = acting.traveler
     return templates.TemplateResponse(request, "travel_profile.html",
         {"request": request, "trav": trav, "no_traveller": trav is None,
-         "currencies": _currency_options(), "saved": False})
+         "acting": acting, "currencies": _currency_options(), "saved": False})
 
 
 @router.post("/settings/travel-profile", response_class=HTMLResponse)
@@ -1598,11 +1598,14 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
                         notes: str = Form(""), session: Session = Depends(get_session)):
     from sqlalchemy.orm.attributes import flag_modified
     from babel.numbers import list_currencies
-    trav = _my_traveller(session, request)
+    from app.acting import acting_for, audit_if_other
+    acting = acting_for(session, request)
+    trav = acting.traveler
     if trav is None:
         return templates.TemplateResponse(request, "travel_profile.html",
-            {"request": request, "trav": None, "no_traveller": True,
+            {"request": request, "trav": None, "no_traveller": True, "acting": acting,
              "currencies": _currency_options(), "saved": False})
+    audit_if_other(session, request, acting, "travel profile")
     trav.nationality = (nationality or "").strip().upper()[:2] or None
     bc = (base_currency or "").strip().upper()
     trav.base_currency = bc if bc in set(list_currencies()) else None
@@ -1613,7 +1616,7 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
     session.commit()
     session.refresh(trav)
     return templates.TemplateResponse(request, "travel_profile.html",
-        {"request": request, "trav": trav, "no_traveller": False,
+        {"request": request, "trav": trav, "no_traveller": False, "acting": acting,
          "currencies": _currency_options(), "saved": True})
 
 
@@ -1644,8 +1647,9 @@ def _discovery_profile_row(session: Session, traveler: TravelerIdentity | None,
 
 def _discovery_form_ctx(request: Request, session: Session,
                         saved: bool = False) -> dict:
-    trav = _viewer_traveler(session, request)
-    owner = scope.user_of(request) is None
+    from app.acting import acting_for
+    acting = acting_for(session, request)           # self, or an admin acting for someone
+    trav, owner = acting.traveler, acting.owner_mode
     row = _discovery_profile_row(session, trav, owner)
     d = _discovery_default()
     v = {**d, **((row.values if row else None) or {})}
@@ -1659,7 +1663,8 @@ def _discovery_form_ctx(request: Request, session: Session,
     budget = food.get("budget_ceiling") or 0
     mob = practical.get("mobility") or "no_limits"
     return {
-        "request": request, "saved": saved, "no_traveller": trav is None and not owner,
+        "request": request, "saved": saved, "acting": acting,
+        "no_traveller": trav is None and not owner,
         "dietary": [{"value": k, "label": t, "checked": k in diet}
                     for k, t in DISCOVERY_DIETARY],
         "cuisine_dislikes": ", ".join(food.get("cuisine_dislikes") or []),
@@ -1719,11 +1724,13 @@ def save_discovery_profile(request: Request,
         "activity": {"interests": [x for x in activity_interests if x in acts_ok]},
         "practical": {"mobility": mobility if mobility in mob_ok else "no_limits"},
     }
-    trav = _viewer_traveler(session, request)
-    owner = scope.user_of(request) is None
+    from app.acting import acting_for, audit_if_other
+    acting = acting_for(session, request)
+    trav, owner = acting.traveler, acting.owner_mode
     if trav is None and not owner:   # signed in, no traveller: nowhere to keep it
         return templates.TemplateResponse(request, "discovery_profile.html",
                                           _discovery_form_ctx(request, session))
+    audit_if_other(session, request, acting, "discovery profile")
     tid = trav.id if trav else None
     row = _discovery_profile_row(session, trav, owner)
     if row is None:

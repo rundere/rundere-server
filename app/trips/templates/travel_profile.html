@@ -3,8 +3,9 @@
 {% block content %}
 <div class="app">
   <div class="ops"><div class="ops-row">
-    <span class="pagetitle">My travel profile</span>
+    <span class="pagetitle">{% if acting and acting.is_other %}Travel profile{% else %}My travel profile{% endif %}</span>
   </div></div>
+  {% include "_acting_for.html" %}
 
   {% if saved %}<div class="saved-note">Saved.</div>{% endif %}
 
@@ -14,9 +15,11 @@
       link your account to a traveller (Settings → Users), then you can set your
       travel details here.</p>
   {% else %}
-    <p class="why">These are your own personal travel details — only you (and the
-      trips you're on) use them. They are never shown in the admin.</p>
-    <form method="post" action="/trips/settings/travel-profile">
+    <p class="why">{% if acting and acting.is_other %}{{ trav.display_name }}'s personal travel
+      details — used for their visa checks, currency and ticket matching.{% else %}These are your
+      own personal travel details — only you (and the trips you're on) use them. They are never
+      shown in the admin tables.{% endif %}</p>
+    <form method="post" action="/trips/settings/travel-profile{{ acting.qs if acting else '' }}">
       <div class="field"><label>Name</label>
         <span class="v ro">{{ trav.display_name }}</span></div>
       <div class="field"><label>Nationality</label>

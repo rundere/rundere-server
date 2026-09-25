@@ -56,12 +56,15 @@ def _photon():
 
 
 def _my_traveler(session: Session, request: Request):
-    """Whose homes this page shows: the signed-in user's traveller id, or
-    OWNER_HOMES with auth off. None = a user with no traveller linked yet."""
-    user = scope.user_of(request)
-    if user is None:
+    """Whose homes this page shows: the viewer's traveller id — or, for an admin
+    acting for someone (?for=, app/acting.py), theirs — or OWNER_HOMES with auth
+    off. None = a user with no traveller linked yet."""
+    from app.acting import acting_for
+    acting = acting_for(session, request)
+    request.state.acting = acting
+    if acting.owner_mode:
         return OWNER_HOMES
-    return user.traveler_id
+    return acting.traveler.id if acting.traveler else None
 
 
 def _profiles(session: Session, tid) -> list[HomeProfile]:
@@ -80,8 +83,9 @@ def _mine(session: Session, tid, profile_id) -> HomeProfile | None:
 
 
 def _page_ctx(session: Session, tid, *, edit: HomeProfile | None = None,
-              error: str = "", form: dict | None = None) -> dict:
+              error: str = "", form: dict | None = None, acting=None) -> dict:
     return {
+        "acting": acting,               # admin "whose profile" picker (app/acting.py)
         "no_traveller": tid is None,
         "profiles": _profiles(session, tid),
         "kinds": KINDS,
@@ -111,7 +115,7 @@ def home_page(request: Request, edit: str | None = None,
     tid = _my_traveler(session, request)
     editing = _mine(session, tid, edit) if edit else None
     return templates.TemplateResponse(request, "home.html",
-                                      _page_ctx(session, tid, edit=editing))
+                                      _page_ctx(session, tid, edit=editing, acting=request.state.acting))
 
 
 @router.get("/kind-fields", response_class=HTMLResponse)
@@ -206,7 +210,8 @@ async def save(request: Request, session: Session = Depends(get_session)):
         # base.html and so carries the global app header — injected a second
         # header into the body on every save/error (D-39 regression).
         return templates.TemplateResponse(request, "_home_app.html",
-                                          _page_ctx(session, tid, error=error, form=form))
+                                          _page_ctx(session, tid, error=error, form=form,
+                                                    acting=request.state.acting))
 
     target = (_mine(session, tid, edit_id) if edit_id else None) or HomeProfile()
     # Stamp the owner; with auth off that's the self traveller (or unassigned
@@ -223,11 +228,14 @@ async def save(request: Request, session: Session = Depends(get_session)):
     target.notes = (form.get("notes") or "").strip() or None
     if target.id is None:
         session.add(target)
+    from app.acting import audit_if_other
+    audit_if_other(session, request, request.state.acting, "home profiles")
     session.commit()
     # Fragment (#home-app): list refreshed, form reset. NOT the full page — the
     # form targets #home-app with hx-swap="outerHTML", so a full-page response
     # would graft a duplicate app header into the DOM each time.
-    return templates.TemplateResponse(request, "_home_app.html", _page_ctx(session, tid))
+    return templates.TemplateResponse(request, "_home_app.html",
+                                      _page_ctx(session, tid, acting=request.state.acting))
 
 
 @router.post("/delete/{profile_id}", response_class=HTMLResponse)
@@ -236,8 +244,11 @@ def delete(profile_id: int, request: Request,
     tid = _my_traveler(session, request)
     p = _mine(session, tid, profile_id)
     if p is not None:
+        from app.acting import audit_if_other
+        audit_if_other(session, request, request.state.acting, "home profiles")
         session.delete(p)
         session.commit()
     # Fragment (#home-app), same reason as save(): the delete button swaps this
     # into #home-app, so it must not carry the page header.
-    return templates.TemplateResponse(request, "_home_app.html", _page_ctx(session, tid))
+    return templates.TemplateResponse(request, "_home_app.html",
+                                      _page_ctx(session, tid, acting=request.state.acting))

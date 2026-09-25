@@ -12,6 +12,8 @@
     budget) and which extras to <em>add</em> (drinks, activities). Leave it blank
     for generic "best of" results. Re-run a trip's discovery to apply changes.</p>
 </div>
+{% include "_acting_for.html" %}
+
 
 {% if no_traveller %}
 <div class="card blueprint yn-note-card yn-todo">
@@ -29,7 +31,7 @@
 </div>
 {% endif %}
 
-<form method="post" action="/trips/settings/discovery-profile"
+<form method="post" action="/trips/settings/discovery-profile{{ acting.qs if acting else '' }}"
       class="card blueprint yn-profile-card">
   <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
 

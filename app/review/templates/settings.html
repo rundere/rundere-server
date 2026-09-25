@@ -22,6 +22,9 @@
     {% if admin %}
     <section>
       <h2 class="settings-h">Administration</h2>
+      <p class="why" style="margin:-4px 0 10px">To set up someone else's profiles — a traveller
+        with no account yet, or a user who shares with admins — open a profile page under
+        "You" and pick them in <b>Profile of</b>.</p>
       <div class="settings-grid">
         {% for e in admin %}
         <a class="settings-card" href="{{ e.href }}">
