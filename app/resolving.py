@@ -87,6 +87,20 @@ def load_home_profiles(session: Session) -> list[HomeProfileRef]:
         for p in session.query(HomeProfile).all()]
 
 
+def _capturer_identity(session: Session, item: TravelItem,
+                       identities: list[Identity]) -> Identity | None:
+    """The traveller of the user who captured this item (4.1) — who a booking
+    is assumed to be for when it names no one. None for an open capture or a
+    user with no traveller linked (the caller then falls back to `self`)."""
+    if not item.owner_id:
+        return None
+    from app.models import User
+    user = session.get(User, item.owner_id)
+    if user is None or user.traveler_id is None:
+        return None
+    return next((i for i in identities if i.id == str(user.traveler_id)), None)
+
+
 def load_identities(session: Session) -> list[Identity]:
     from app.models import TravelerIdentity
     return [Identity(id=str(t.id), display_name=t.display_name, kind=t.kind,
@@ -517,7 +531,8 @@ def resolve_item(session: Session, item: TravelItem,
     self_on_booking = True
     if payload.get("item_type") == "flight":
         if identities:
-            tr = resolve_travelers(payload, identities)
+            tr = resolve_travelers(payload, identities,
+                                   default=_capturer_identity(session, item, identities))
             payload["travelers"] = tr.travelers
             self_on_booking = tr.self_on_booking
             needs_traveler_review = tr.inferred

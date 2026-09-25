@@ -469,6 +469,19 @@ async def save(item_id: str, request: Request, bucket: str = "attention",
             payload["travelers"] = new_travelers
             changed.append("/travelers")
 
+    # "Who is this for" (non-flight, 4.1): a reviewer's choice, kept on the
+    # review so a re-resolve never drops it; the commit stage tags the timeline
+    # activity with it. Not a payload edit, so it doesn't lock any field.
+    if "who_present" in form:
+        picked = sorted({int(k[4:]) for k, _ in form.multi_items()
+                         if k.startswith("who:") and k[4:].isdigit()})
+        review = dict(item.review or {})
+        if review.get("traveler_ids") != picked:
+            review["traveler_ids"] = picked
+            item.review = review
+            flag_modified(item, "review")
+            session.commit()
+
     if changed:
         extraction["payload"] = payload
         item.extraction = extraction
@@ -665,13 +678,13 @@ def _yonder_trip_context(session: Session, item: TravelItem,
     show (item already staged/logged/ignored). Always available even with no
     trips yet — it then invites creating one. Trips whose dates contain the item
     sort first, then newest-first; the current link is preselected. Only offers
-    trips the user may see (Phase 2)."""
+    trips the user can file into — own, open, or travelling on (4.1)."""
     from app.models import Trip
     if view["bucket"] not in ("attention", "waiting", "ready"):
         return None
     from resolve.targets import item_date_span
     start, end = (item_date_span(view["payload"]) or (None, None))
-    trips = (session.query(Trip).filter(scope.trip_filter(session, user))
+    trips = (session.query(Trip).filter(scope.filing_trip_filter(session, user))
              .order_by(Trip.start_date.desc()).all())
     selected = item.trip_id
     selected_name = None
@@ -759,6 +772,38 @@ def _passenger_context(session: Session, payload: dict) -> dict | None:
     }
 
 
+def _who_context(session: Session, item: TravelItem, payload: dict) -> dict | None:
+    """4.1 "Who is this for" on a non-flight capture (a flight has "Who flew"
+    above, which does the same job and also drives AirTrail). Only once the
+    item is filed to a Yonder trip with 2+ travellers, listing only that trip's
+    travellers. Pre-ticked: the reviewer's earlier choice, else the traveller of
+    whoever captured it, else everyone."""
+    if payload.get("item_type") == "flight" or not item.trip_id:
+        return None
+    from app.models import TravelerIdentity
+    from app.trips import who
+    roster = who.roster_ids(session, item.trip_id)
+    if len(roster) < 2:
+        return None
+    names = {t.id: t.display_name for t in session.query(TravelerIdentity)
+             .filter(TravelerIdentity.id.in_(roster)).all()}
+    chosen = set((item.review or {}).get("traveler_ids") or [])
+    if not chosen:
+        chosen = {default_traveler(session, item)} & set(names)
+    chosen = (chosen & set(names)) or set(names)
+    return {"travelers": [{"id": tid, "name": n, "checked": tid in chosen}
+                          for tid, n in sorted(names.items(), key=lambda kv: kv[1].lower())]}
+
+
+def default_traveler(session: Session, item: TravelItem) -> int | None:
+    """The traveller of the user who captured the item (None if open/unlinked)."""
+    if not item.owner_id:
+        return None
+    from app.models import User
+    user = session.get(User, item.owner_id)
+    return user.traveler_id if user else None
+
+
 def _detail_response(request: Request, session: Session, item: TravelItem,
                      *, bucket: str = "attention", saved: bool = False,
                      oob_counts: bool = False):
@@ -771,6 +816,7 @@ def _detail_response(request: Request, session: Session, item: TravelItem,
                                               load_enablement(session))]
     ctx = {"i": view, "violations": violations, "saved": saved, "bucket": bucket,
            "pax": _passenger_context(session, view["payload"]),
+           "who": _who_context(session, item, view["payload"]),
            # Two independent trip pickers (2.1.2): the AdventureLog collection the
            # item files into (drives the commit; only when AL is configured), and
            # the in-house Yonder trip it belongs to (association only). Either can

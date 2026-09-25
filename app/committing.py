@@ -782,7 +782,7 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 session.flush()
                 act_id = act.id
             _tag_booked_travelers(session, act_id, tid, payload, identities,
-                                  keep_existing=existing is not None)
+                                  keep_existing=existing is not None, item=item)
             _record(target, op, {"trip_id": tid, "type": atype, "values": values},
                     (200, {"id": act_id}, ""), extra={"yonder_type": atype})
             continue
@@ -1047,28 +1047,41 @@ def _resolve_or_mint_yonder_trip(session: Session, item: TravelItem,
 
 
 def _tag_booked_travelers(session: Session, activity_id: str, trip_id: str,
-                          payload: dict, identities, *, keep_existing: bool) -> None:
-    """4.1: on a multi-traveller trip, tag the activity with the passengers the
-    booking actually names (two people on different flights of one trip). Only
-    names that match a known traveller ON THIS TRIP count, and inferred
-    passengers ("no names on the document, assume self") never do. A re-commit
-    of an activity someone already tagged by hand leaves their choice alone."""
+                          payload: dict, identities, *, keep_existing: bool,
+                          item: TravelItem | None = None) -> None:
+    """4.1: on a multi-traveller trip, tag the activity with who it's for.
+
+    - A flight: the passengers on the booking ("Who flew" in review), matched
+      to the trip's travellers. An unnamed booking was already assumed to be
+      the capturing user's at resolve.
+    - Anything else: the reviewer's "Who is this for" pick, else the traveller
+      of the user who captured it.
+    Only the trip's own travellers count; the whole roster means everyone. A
+    re-commit of an activity someone already tagged by hand keeps their tags."""
     from app.trips import who
-    from resolve.identity import match_identity
     roster = who.roster_ids(session, trip_id)
-    if len(roster) < 2 or not identities:
+    if len(roster) < 2:
         return
     if keep_existing and who.activity_map(session, [activity_id]):
         return
-    matched = set()
-    for t in (payload.get("travelers") or []):
-        if t.get("match_source") == "inferred_absent":
-            continue
-        ident, _, _ = match_identity(t.get("raw_name", ""), identities)
-        if ident is not None:
-            matched.add(ident.id)
-    if matched:
-        who.set_travelers(session, activity_id, trip_id, matched)
+    chosen: set = set()
+    if payload.get("item_type") == "flight":
+        if not identities:
+            return
+        from resolve.identity import match_identity
+        for t in (payload.get("travelers") or []):
+            ident, _, _ = match_identity(t.get("raw_name", ""), identities)
+            if ident is not None:
+                chosen.add(ident.id)
+    elif item is not None:
+        chosen = set((item.review or {}).get("traveler_ids") or [])
+        if not chosen and item.owner_id:
+            from app.models import User
+            user = session.get(User, item.owner_id)
+            if user is not None and user.traveler_id is not None:
+                chosen = {user.traveler_id}
+    if chosen:
+        who.set_travelers(session, activity_id, trip_id, chosen)
 
 
 def _unsuppressed_places(payload: dict) -> list[dict]:
