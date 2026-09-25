@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_starttls: bool = True
+    # Implicit TLS from the first byte (SMTPS, usually port 465) instead of
+    # upgrading a plain connection with STARTTLS (usually 587).
+    smtp_ssl: bool = False
     # Absolute base (e.g. https://yonder.home.example) for links in emails. Empty
     # => derive from the request that triggered the reset.
     public_base_url: str = ""
