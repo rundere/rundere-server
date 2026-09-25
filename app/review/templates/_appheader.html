@@ -5,9 +5,8 @@
    request path. #}
 {% set p = (request.url.path if request else '') %}
 {% set cu = request.state.user if request else none %}
-{% set in_settings = p.startswith('/settings') or p.startswith('/account')
-   or p.startswith('/users') or p.startswith('/admin') or p.startswith('/review/home')
-   or p.startswith('/trips/settings') or p.startswith('/about') %}
+{% import "_settings_menu.html" as settings_menu with context %}
+{% set in_settings = settings_menu.in_settings %}
 <header class="appbar">
   <a class="wordmark" href="/" style="text-decoration:none">Yonder
     <span>self-hosted</span></a>
