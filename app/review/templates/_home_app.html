@@ -1,6 +1,13 @@
 <div class="app" id="home-app">
   <div class="ops"><div class="ops-row"><h1 class="pagetitle">Home profiles</h1></div></div>
 
+  {% if no_traveller %}
+  <div class="home-wrap"><section class="home-list">
+    <p class="why">Your account isn't linked to a traveller yet, so there's nowhere to
+      keep your homes. Ask an admin to link your account (Settings → Users), then
+      add your home airports and residences here.</p>
+  </section></div>
+  {% else %}
   <div class="home-wrap">
     <section class="home-list">
       <h3>Your homes over time</h3>
@@ -105,4 +112,5 @@
       </form>
     </section>
   </div>
+  {% endif %}
 </div>
