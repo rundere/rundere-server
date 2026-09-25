@@ -245,3 +245,22 @@ if DEPS:
         monkeypatch.setattr(settings, "smtp_ssl", False)
         assert email_mod.send_email("x@example.com", "s", "b")
         assert used == ["FakeSMTP", "starttls", "sent"]
+
+    def test_account_change_own_password():
+        hdr = _bearer("pw-changer")                              # password "pw"
+        r = client.post("/account/password", headers=hdr, follow_redirects=False,
+                        data={"current_password": "nope", "password": "n1", "confirm": "n1"})
+        assert "err=" in r.headers["location"]
+        r = client.post("/account/password", headers=hdr, follow_redirects=False,
+                        data={"current_password": "pw", "password": "n1", "confirm": "n2"})
+        assert "err=" in r.headers["location"]
+        r = client.post("/account/password", headers=hdr, follow_redirects=False,
+                        data={"current_password": "pw", "password": "n1", "confirm": "n1"})
+        assert "msg=" in r.headers["location"]
+        assert settings.auth_cookie_name in r.cookies            # this session re-issued
+        with SessionLocal() as s:
+            u = s.query(User).filter_by(username="pw-changer").one()
+            assert authn.verify_password("n1", u.password_hash) and u.token_version == 1
+        # the old token is now revoked
+        client.cookies.clear()
+        assert client.get("/account", headers=hdr).status_code == 401

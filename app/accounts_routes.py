@@ -5,8 +5,8 @@
 - **/register** self-service sign-up, only when TX_AUTH_REGISTRATION_OPEN.
 - **/forgot**, **/reset/{token}** — password reset via a one-time link (emailed
   when SMTP is configured; otherwise an admin hands over the link).
-- **/account** your own account: set/change the email that reset links go to
-               (re-enter your password to change it).
+- **/account** your own account: change your password, and set/change the
+               email that reset links go to (both need your current password).
 - **/users**   Administer → Users: admin creates accounts, sets/【resets】
                passwords, toggles admin/active, and links a Traveller
                (pick existing OR create new).
@@ -188,6 +188,28 @@ def account_set_email(email: str = Form(""), current_password: str = Form(""),
     if error:
         return RedirectResponse(f"/account?err={quote_plus(error)}", status_code=303)
     return RedirectResponse("/account?msg=Email+saved", status_code=303)
+
+
+@router.post("/account/password")
+def account_set_password(current_password: str = Form(""), password: str = Form(""),
+                         confirm: str = Form(""),
+                         user: User = Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    user = session.get(User, user.id)
+    if user.auth_source != "local":
+        return RedirectResponse("/account?err=Your+password+is+managed+by+your+sign-in+provider",
+                                status_code=303)
+    if not authn.verify_password(current_password, user.password_hash):
+        return RedirectResponse("/account?err=Current+password+is+incorrect",
+                                status_code=303)
+    if not password or password != confirm:
+        return RedirectResponse("/account?err=New+passwords+did+not+match",
+                                status_code=303)
+    user.password_hash = authn.hash_password(password)
+    user.token_version += 1           # sign out every other session…
+    session.commit()
+    resp = RedirectResponse("/account?msg=Password+changed", status_code=303)
+    return _login_user(resp, user)    # …but keep this one signed in
 
 
 # --------------------------------------------------------------------------- admin: Users

@@ -32,6 +32,20 @@
       {% endif %}
       <button class="act primary" type="submit" style="margin-top:12px">Save email</button>
     </form>
+
+    {% if u.auth_source == "local" %}
+    <h3 style="margin-top:28px">Password</h3>
+    <p class="why">Changing it signs you out everywhere else.</p>
+    <form method="post" action="/account/password">
+      <div class="field"><label>Current password</label>
+        <input name="current_password" type="password" autocomplete="current-password" required></div>
+      <div class="field"><label>New password</label>
+        <input name="password" type="password" autocomplete="new-password" required></div>
+      <div class="field"><label>Confirm new</label>
+        <input name="confirm" type="password" autocomplete="new-password" required></div>
+      <button class="act primary" type="submit" style="margin-top:12px">Change password</button>
+    </form>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
