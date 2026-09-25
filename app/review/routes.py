@@ -395,6 +395,34 @@ def queue(request: Request, bucket: str = "attention",
     })
 
 
+def _to_process(session: Session, user=None) -> int:
+    """How much the "Process new captures" button has to do for this user:
+    captured emails not extracted yet (batches still `received`) plus extracted
+    items not resolved yet (resolve `pending`, which sit in no funnel stage).
+    Scoped like the queue: own + open captures (everything for admin/auth-off)."""
+    from app.models import IngestBatch
+    q = session.query(IngestBatch).filter(IngestBatch.status == "received")
+    if not scope.unrestricted(user):
+        from sqlalchemy import or_
+        q = q.filter(or_(IngestBatch.user_id.is_(None), IngestBatch.user_id == user.id))
+    pending = sum(1 for i in session.query(TravelItem)
+                  .filter(scope.capture_filter(user)).all()
+                  if (i.status or {}).get("resolve") == "pending")
+    return q.count() + pending
+
+
+@router.get("/to-process", response_class=HTMLResponse)
+def to_process_stage(request: Request, session: Session = Depends(get_session)):
+    """The funnel's first stage, fetched on its own (hx-trigger=load) so every
+    re-render of the funnel — after an action or a processing run — refreshes
+    it without threading a count through every response."""
+    n = _to_process(session, scope.user_of(request))
+    return HTMLResponse(
+        f'<div class="stage{"" if n else " muted"}" id="to-process" '
+        f'title="Captured but not processed yet — use Process new captures">'
+        f'<b>{n}</b><span>to process</span></div>')
+
+
 @router.get("/item/{item_id}", response_class=HTMLResponse)
 def detail(item_id: str, request: Request, bucket: str = "attention",
            session: Session = Depends(get_session)):

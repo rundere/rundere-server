@@ -181,3 +181,35 @@ if DEPS:
         finally:
             with SessionLocal() as s:
                 _teardown(s)
+
+    def test_review_shows_how_many_captures_are_waiting_to_be_processed():
+        """The Review funnel's "to process" stage: emails not extracted yet +
+        items not resolved yet, scoped to the viewer's own (+ open) captures."""
+        import re
+        from app.models import IngestBatch
+        ids = _setup()
+        settings.auth_required = True
+
+        def n(user):
+            html = client.get("/review/to-process", headers=_h(user)).text
+            return int(re.search(r"<b>(\d+)</b>", html).group(1))
+        try:
+            base_me, base_sis = n("ct-me"), n("ct-sis")
+            with SessionLocal() as s:
+                s.add_all([IngestBatch(api_key_id="k-ct", user_id=ids["sis"],
+                                       payload={}, status="received"),
+                           IngestBatch(api_key_id="k-ct", user_id=ids["sis"],
+                                       payload={}, status="processed")])     # done: not counted
+                it = s.get(TravelItem, ids["item"])
+                it.status = {**it.status, "resolve": "pending"}
+                s.commit()
+            assert n("ct-sis") == base_sis + 2          # her batch + her pending item
+            assert n("ct-me") == base_me + 2            # admin sees all (unrestricted)
+            assert 'hx-get="/review/to-process"' in client.get(
+                "/review", headers=_h("ct-sis")).text
+        finally:
+            settings.auth_required = False
+            with SessionLocal() as s:
+                s.query(IngestBatch).filter_by(api_key_id="k-ct").delete()
+                s.commit()
+                _teardown(s)
