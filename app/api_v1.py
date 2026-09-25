@@ -47,11 +47,29 @@ class PlaceOut(BaseModel):
     lon: float | None = None
 
 
+class ActivityFieldOut(BaseModel):
+    key: str
+    label: str
+    value: Any
+    kind: str = "text"          # text | textarea | url | datetime-local
+
+
 class ActivityOut(BaseModel):
     id: str
     type: str
     starts_at: str | None = None
     values: dict[str, Any] = {}
+    # Rendered view of `values`, from the same activity-type registry the web
+    # timeline uses — so clients show identical titles, labels and map links.
+    type_label: str | None = None
+    title: str | None = None
+    subtitle: str | None = None
+    ends_at: str | None = None
+    start_label: str | None = None      # "Departure", "Check-in", …
+    end_label: str | None = None        # "Arrival", "Check-out", …
+    fields: list[ActivityFieldOut] = []  # labelled, non-empty, display order
+    map_query: str | None = None        # place text to hand to a maps app
+    map_url: str | None = None          # Google Maps search/directions link
 
 
 class TravelerOut(BaseModel):
@@ -212,7 +230,21 @@ def _trip_summary(session: Session, t: Trip) -> TripSummary:
 
 
 def _activity_out(a: TripActivity) -> ActivityOut:
-    return ActivityOut(id=a.id, type=a.type, starts_at=a.starts_at, values=a.values or {})
+    from app.trips import types as activity_types
+
+    v = a.values or {}
+    t = activity_types.get_type(a.type)
+    start_label, end_label = activity_types.time_labels(a.type)
+    return ActivityOut(
+        id=a.id, type=a.type, starts_at=a.starts_at, values=v,
+        type_label=t.label, title=t.title(v) or None, subtitle=t.subtitle(v) or None,
+        ends_at=v.get("endWhen") or None,
+        start_label=start_label, end_label=end_label,
+        fields=[ActivityFieldOut(key=f["key"], label=f["label"], value=f["value"],
+                                 kind=f["kind"])
+                for f in activity_types.detail_fields(a.type, v)],
+        map_query=activity_types.map_query(a.type, v),
+        map_url=activity_types.map_url(a.type, v))
 
 
 def _packing_item_out(i: PackingItem) -> PackingItemOut:
@@ -244,8 +276,7 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
     from discover.places import derive_locations
 
     acts = list(trip_activities(session, trip.id))
-    activities = [ActivityOut(id=a.id, type=a.type, starts_at=a.starts_at,
-                              values=a.values or {}) for a in acts]
+    activities = [_activity_out(a) for a in acts]
 
     # travellers (+ resolved names)
     travelers = []

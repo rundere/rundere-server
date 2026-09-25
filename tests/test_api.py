@@ -124,6 +124,34 @@ if DEPS:
         assert snap["activities"][0]["values"]["property"] == "Riad X"
         _cleanup_trips("api-snaptrip")
 
+    def test_api_snapshot_activity_details():
+        """Activities carry the web timeline's rendering: title, labelled
+        fields (incl. confirmation #), start/end labels and a map query."""
+        owner = _user("api-snapdetail")
+        with SessionLocal() as s:
+            t = Trip(name="api-snapdetail", source="manual", owner_id=owner.id)
+            s.add(t)
+            s.commit()
+            s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2026-09-01T15:00",
+                               values={"when": "2026-09-01T15:00", "endWhen": "2026-09-04T11:00",
+                                       "name": "Riad X", "address": "1 Derb Y, Harar",
+                                       "confirmation": "ABC123"}))
+            s.commit()
+            tid = t.id
+        a = client.get(f"/api/v1/trips/{tid}", headers=_bearer(owner)).json()["activities"][0]
+        assert a["type_label"] == "Lodging"
+        assert a["title"] == "Riad X" and a["subtitle"] == "1 Derb Y, Harar"
+        assert (a["start_label"], a["end_label"]) == ("Check-in", "Check-out")
+        assert a["ends_at"] == "2026-09-04T11:00"
+        fields = {f["key"]: f for f in a["fields"]}
+        assert fields["confirmation"]["label"] == "Confirmation #"
+        assert fields["confirmation"]["value"] == "ABC123"
+        assert fields["endWhen"]["kind"] == "datetime-local"
+        assert "when" not in fields
+        assert a["map_query"] == "Riad X, 1 Derb Y, Harar"
+        assert a["map_url"].startswith("https://www.google.com/maps/search/")
+        _cleanup_trips("api-snapdetail")
+
     def _owned_trip(name, owner):
         with SessionLocal() as s:
             t = Trip(name=name, source="manual", owner_id=owner.id)
