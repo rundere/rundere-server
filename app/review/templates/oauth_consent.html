@@ -1,0 +1,22 @@
+{% extends "authcard.html" %}
+{% block title %}Allow access{% endblock %}
+{% block body %}
+<form class="card" method="post" action="/oauth/authorize">
+  <div class="brand"><h1>Yonder</h1><span>connect an app</span></div>
+  <p class="sub">Allow <b>{{ client.name }}</b> to access your Yonder data?</p>
+  <p class="hint">Signed in as <b>{{ user.username }}</b>. {{ client.name }} will be able to
+    read and change your trips, timeline, packing, journal, captures and Discover
+    findings — exactly what you can see and edit in Yonder, nothing more.</p>
+  <p class="hint">After you allow it, you'll be sent to <b>{{ redirect_host }}</b>.</p>
+  {% if loopback_only %}
+  <div class="err">This app only returns to your own computer ({{ redirect_host }}).
+    Allow it only if you just started the connection yourself, e.g. from Claude Code.</div>
+  {% endif %}
+  <input type="hidden" name="req" value="{{ req }}">
+  <button type="submit" name="decision" value="allow">Allow</button>
+  <button type="submit" name="decision" value="deny"
+          style="background:transparent;color:var(--ink);border-color:var(--line-strong)">Deny</button>
+  <p class="hint" style="margin-top:14px">You can disconnect it any time under
+    Account → Connected apps.</p>
+</form>
+{% endblock %}

@@ -120,6 +120,19 @@ class Settings(BaseSettings):
     oidc_auto_create: bool = True            # provision a User on first SSO login
     oidc_admin_group: str = ""               # a `groups` claim value that grants admin (optional)
 
+    # Yonder as an OAuth 2.1 authorization server (YONDER-107) — for the
+    # claude.ai connector and other OAuth clients. Yonder always issues these
+    # tokens itself; sign-in at /oauth/authorize is local, OIDC or proxy-header,
+    # whatever the deployment has. Set TX_PUBLIC_BASE_URL in prod so the
+    # metadata documents carry the public https URLs.
+    oauth_access_ttl_seconds: int = 3600                    # access token (1 h)
+    oauth_refresh_idle_ttl_seconds: int = 60 * 60 * 24 * 90  # grant dies after 90 idle days
+    oauth_code_ttl_seconds: int = 60                        # authorization code lifetime
+    oauth_register_rate_limit: int = 10                     # DCR registrations per IP…
+    oauth_register_rate_window_seconds: int = 3600          # …per hour
+    oauth_token_rate_limit: int = 60                        # /oauth/token calls per IP…
+    oauth_token_rate_window_seconds: int = 60               # …per minute
+
     app_version: str = "4.1.2"
 
     @property

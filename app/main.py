@@ -25,6 +25,7 @@ app.include_router(ingest_router)
 # onboarding (first-run setup, register, password reset, Administer → Users).
 from app.accounts_routes import router as accounts_router  # noqa: E402
 from app.authn_routes import router as authn_router  # noqa: E402
+from app.oauth_routes import router as oauth_router  # noqa: E402
 from app.oidc_routes import router as oidc_router  # noqa: E402
 from app.settings_routes import router as settings_router  # noqa: E402
 
@@ -32,6 +33,7 @@ app.include_router(authn_router)
 app.include_router(accounts_router)
 app.include_router(settings_router)
 app.include_router(oidc_router)
+app.include_router(oauth_router)
 
 # The JSON API (Phase 3). Every /api/v1/* route (except /api/v1/auth/*) requires
 # a bearer access token via Depends(authn.current_user) — always authenticated,
@@ -48,10 +50,13 @@ app.include_router(api_router)
 # needs an authenticated user; /admin additionally requires is_admin. /ingest,
 # /capture (self-authenticated), static, and the login/token endpoints stay open.
 # Onboarding endpoints (setup/register/reset) are public; /users is admin-only.
+# YONDER-107: the OAuth metadata/token/register/revoke endpoints are public
+# (they authenticate clients themselves); /oauth/authorize resolves the signed-in
+# user itself so it can send them to /login with the WHOLE request as `next`.
 _PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
                  "/setup", "/register", "/forgot"}
 _PUBLIC_PREFIX = ("/ingest", "/capture", "/review/static", "/trips/static",
-                  "/api/v1/auth/", "/reset/", "/oidc/")
+                  "/api/v1/auth/", "/reset/", "/oidc/", "/oauth/", "/.well-known/")
 _ADMIN_PREFIX = ("/admin", "/users")
 
 
