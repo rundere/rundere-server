@@ -872,6 +872,7 @@ def test_yonder_trip_minted_alongside_new_adventurelog_collection():
     minter.resolution = {**minter.resolution,
                          "mint_group": "MINTTEST1:2026-11-20..2026-11-29",
                          "is_minter": True, "mint_yonder_trip": True}
+    minter.owner_id = "user-minter"          # captured via a user-scoped key
     s.commit()
 
     attach_payload = _flight_payload()
@@ -895,12 +896,42 @@ def test_yonder_trip_minted_alongside_new_adventurelog_collection():
     assert trip.name == "United States — November 2026"
     assert trip.start_date == "2026-11-20" and trip.end_date == "2026-11-29"
     assert trip.adventurelog_collection_id == "coll-1"   # linked to the mint
+    assert trip.owner_id == "user-minter"                # owned like the capture
     assert minter.trip_id == trip.id and attach.trip_id == trip.id
     acts = s.query(TripActivity).filter_by(trip_id=trip.id).all()
     assert len(acts) == 2                                # both legs filed
 
     s.query(TripActivity).delete(); s.query(Trip).delete()
     s.query(TravelItem).filter(TravelItem.id.in_([minter.id, attach.id])).delete(
+        synchronize_session=False)
+    s.commit()
+    s.close()
+
+
+def test_resolver_minted_trip_stays_open_for_open_capture():
+    """A capture from an unscoped key (owner_id NULL) mints an open trip --
+    no owner is invented for it."""
+    _skip()
+    from app.models import Trip, TripActivity
+    s = SessionLocal()
+    s.query(TripActivity).delete(); s.query(Trip).delete(); s.commit()
+
+    minter = _add(s, _flight_payload(),
+                 targets=["adventurelog.collection", "yonder.activity"])
+    minter.canonical_key = "flight:pnr:MINT3:AC:8783:YYZ"
+    minter.resolution = {**minter.resolution,
+                         "mint_group": "MINTTEST3:2026-11-20..2026-11-29",
+                         "is_minter": True, "mint_yonder_trip": True}
+    s.commit()
+
+    C.commit_item(s, minter, FakeAL(), FakeAT(),
+                  identities=[Ident("self", "vu75")], dry_run=False)
+    s.commit()
+    trip = s.query(Trip).one()
+    assert trip.source == "resolver" and trip.owner_id is None
+
+    s.query(TripActivity).delete(); s.query(Trip).delete()
+    s.query(TravelItem).filter(TravelItem.id == minter.id).delete(
         synchronize_session=False)
     s.commit()
     s.close()
