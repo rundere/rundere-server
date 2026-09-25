@@ -403,8 +403,7 @@ def _to_process(session: Session, user=None) -> int:
     from app.models import IngestBatch
     q = session.query(IngestBatch).filter(IngestBatch.status == "received")
     if not scope.unrestricted(user):
-        from sqlalchemy import or_
-        q = q.filter(or_(IngestBatch.user_id.is_(None), IngestBatch.user_id == user.id))
+        q = q.filter(scope.batch_filter(user))              # own + open (+ sharing, admin)
     pending = sum(1 for i in session.query(TravelItem)
                   .filter(scope.capture_filter(user)).all()
                   if (i.status or {}).get("resolve") == "pending")

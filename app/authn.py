@@ -221,8 +221,10 @@ def provision_oidc_user(session, *, sub: str, username: str, email: str | None =
     if user is None:
         if not settings.oidc_auto_create:
             return None
+        # Signed themselves up via SSO: ask at first sign-in whether to share
+        # their data with admins (4.1).
         user = User(username=username, email=email, auth_source="oidc",
-                    external_subject=subject, is_admin=is_admin)
+                    external_subject=subject, is_admin=is_admin, sharing_prompt=True)
         session.add(user)
         session.commit()
         session.refresh(user)
@@ -253,7 +255,7 @@ def resolve_proxy_user(session, request) -> User | None:
     ).one_or_none()
     if user is None:
         user = User(username=name, auth_source="proxy", external_subject=subject,
-                    is_active=True, is_admin=settings.auth_proxy_auto_admin)
+                    is_active=True, is_admin=settings.auth_proxy_auto_admin, sharing_prompt=True)
         session.add(user)
         session.commit()
     return user
@@ -331,11 +333,13 @@ def user_count(session) -> int:
 def create_user(session, username: str, password: str | None = None, *,
                 email: str | None = None, is_admin: bool = False,
                 auth_source: str = "local", traveler_id: int | None = None,
-                external_subject: str | None = None) -> User:
+                external_subject: str | None = None,
+                sharing_prompt: bool = False) -> User:
     user = User(username=username.strip(), email=(email or "").strip() or None,
                 password_hash=hash_password(password) if password else None,
                 is_admin=is_admin, auth_source=auth_source,
-                traveler_id=traveler_id, external_subject=external_subject)
+                traveler_id=traveler_id, external_subject=external_subject,
+                sharing_prompt=sharing_prompt)
     session.add(user)
     session.commit()
     session.refresh(user)

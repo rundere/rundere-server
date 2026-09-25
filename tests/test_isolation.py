@@ -63,7 +63,8 @@ if DEPS:
 
             own_ids = scope.visible_trip_ids(s, owner)
             assert priv.id in own_ids and opn.id in own_ids
-            assert scope.visible_trip_ids(s, admin) is None       # "all"
+            # 4.1: an admin sees a sharing owner's trips (owners share by default)
+            assert priv.id in scope.visible_trip_ids(s, admin)
             assert priv.id not in scope.visible_trip_ids(s, stranger)
             assert shared.id in scope.visible_trip_ids(s, stranger)
 

@@ -205,8 +205,34 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)  # -> traveler_identities.id
+    # 4.1 admin sharing (migration 0027). ON (default): admins can view and edit
+    # this user's data. OFF (opted out): admins see only what the user invites
+    # them into, like any other user. A UI policy, not encryption — the server
+    # operator can always read the database. Opting out needs SMTP + an email so
+    # a password reset never has to pass through an admin.
+    share_with_admins: Mapped[bool] = mapped_column(Boolean, default=True,
+                                                    server_default="1")
+    # Self-registered / SSO-provisioned accounts are asked to choose at their
+    # first sign-in; accounts an admin creates share by default, unasked.
+    sharing_prompt: Mapped[bool] = mapped_column(Boolean, default=False,
+                                                 server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AccountEvent(Base):
+    """4.1 audit trail of account actions taken by someone OTHER than the account
+    holder (an admin resetting a password, changing a role...) plus sharing
+    changes. The account holder is emailed about admin actions when they've
+    opted out of sharing. Append-only; soft links (house convention)."""
+    __tablename__ = "account_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)      # the account
+    actor_id: Mapped[str | None] = mapped_column(String(36))          # who did it (None = CLI)
+    action: Mapped[str] = mapped_column(String(32))
+    detail: Mapped[str | None] = mapped_column(String(255))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 
 
 class RefreshToken(Base):

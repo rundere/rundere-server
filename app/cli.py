@@ -110,6 +110,9 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
             return 1
         user.password_hash = authn.hash_password(pw)
         user.token_version += 1        # invalidate existing sessions on a reset
+        from app.models import AccountEvent   # audit: the operator, via the CLI
+        session.add(AccountEvent(user_id=user.id, actor_id=None, action="password_set",
+                                 detail="cli"))
         session.commit()
         print(f"password updated for {username!r} (existing sessions signed out)")
         return 0
@@ -122,6 +125,10 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         if error:
             print(error)
             return 1
+        from app.models import AccountEvent
+        session.add(AccountEvent(user_id=user.id, actor_id=None, action="email_set",
+                                 detail="cli"))
+        session.commit()
         print(f"email for {username!r} " + (f"set to {user.email}" if user.email else "cleared"))
         return 0
 
