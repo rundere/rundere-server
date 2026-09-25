@@ -752,6 +752,8 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                     continue
                 extra = {"deleted_id": existing.id}
                 if not dry_run:
+                    from app.trips import who
+                    who.clear_activity(session, existing.id)
                     session.delete(existing)
                 _record(target, "cancel", {"trip_id": tid},
                         None if dry_run else (200, {}, ""), extra=extra)
@@ -779,6 +781,8 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 session.add(act)
                 session.flush()
                 act_id = act.id
+            _tag_booked_travelers(session, act_id, tid, payload, identities,
+                                  keep_existing=existing is not None)
             _record(target, op, {"trip_id": tid, "type": atype, "values": values},
                     (200, {"id": act_id}, ""), extra={"yonder_type": atype})
             continue
@@ -1040,6 +1044,31 @@ def _resolve_or_mint_yonder_trip(session: Session, item: TravelItem,
     item.resolution = {**(item.resolution or {}), "yonder_trip_id": trip.id}
     flag_modified(item, "resolution")
     return trip.id
+
+
+def _tag_booked_travelers(session: Session, activity_id: str, trip_id: str,
+                          payload: dict, identities, *, keep_existing: bool) -> None:
+    """4.1: on a multi-traveller trip, tag the activity with the passengers the
+    booking actually names (two people on different flights of one trip). Only
+    names that match a known traveller ON THIS TRIP count, and inferred
+    passengers ("no names on the document, assume self") never do. A re-commit
+    of an activity someone already tagged by hand leaves their choice alone."""
+    from app.trips import who
+    from resolve.identity import match_identity
+    roster = who.roster_ids(session, trip_id)
+    if len(roster) < 2 or not identities:
+        return
+    if keep_existing and who.activity_map(session, [activity_id]):
+        return
+    matched = set()
+    for t in (payload.get("travelers") or []):
+        if t.get("match_source") == "inferred_absent":
+            continue
+        ident, _, _ = match_identity(t.get("raw_name", ""), identities)
+        if ident is not None:
+            matched.add(ident.id)
+    if matched:
+        who.set_travelers(session, activity_id, trip_id, matched)
 
 
 def _unsuppressed_places(payload: dict) -> list[dict]:

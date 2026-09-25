@@ -67,6 +67,9 @@ class ActivityOut(BaseModel):
     ends_at: str | None = None
     start_label: str | None = None      # "Departure", "Check-in", …
     end_label: str | None = None        # "Arrival", "Check-out", …
+    # 4.1: which of the trip's travellers this is for. EMPTY = everyone on the
+    # trip (the default; ids are TravelerOut.id from the snapshot's roster).
+    traveler_ids: list[int] = []
     fields: list[ActivityFieldOut] = []  # labelled, non-empty, display order
     map_query: str | None = None        # place text to hand to a maps app
     map_url: str | None = None          # Google Maps search/directions link
@@ -195,12 +198,14 @@ class ActivityIn(BaseModel):
     type: str
     values: dict[str, Any] = {}
     starts_at: str | None = None
+    traveler_ids: list[int] | None = None     # None/[] = everyone on the trip
 
 
 class ActivityPatch(BaseModel):
     type: str | None = None
     values: dict[str, Any] | None = None
     starts_at: str | None = None
+    traveler_ids: list[int] | None = None     # omit = unchanged, [] = everyone
 
 
 class PackingItemPatch(BaseModel):
@@ -229,7 +234,7 @@ def _trip_summary(session: Session, t: Trip) -> TripSummary:
                        activity_count=n)
 
 
-def _activity_out(a: TripActivity) -> ActivityOut:
+def _activity_out(a: TripActivity, traveler_ids: list[int] | None = None) -> ActivityOut:
     from app.trips import types as activity_types
 
     v = a.values or {}
@@ -244,7 +249,17 @@ def _activity_out(a: TripActivity) -> ActivityOut:
                                  kind=f["kind"])
                 for f in activity_types.detail_fields(a.type, v)],
         map_query=activity_types.map_query(a.type, v),
-        map_url=activity_types.map_url(a.type, v))
+        map_url=activity_types.map_url(a.type, v),
+        traveler_ids=traveler_ids or [])
+
+
+def _set_activity_travelers(session: Session, a: TripActivity,
+                            ids: list[int]) -> list[int]:
+    from app.trips import who
+    off_trip = set(ids) - set(who.roster_ids(session, a.trip_id))
+    if off_trip:
+        raise HTTPException(400, f"not travellers on this trip: {sorted(off_trip)}")
+    return who.set_travelers(session, a.id, a.trip_id, ids)
 
 
 def _packing_item_out(i: PackingItem) -> PackingItemOut:
@@ -276,7 +291,9 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
     from discover.places import derive_locations
 
     acts = list(trip_activities(session, trip.id))
-    activities = [_activity_out(a) for a in acts]
+    from app.trips import who
+    tags = who.activity_map(session, [a.id for a in acts])
+    activities = [_activity_out(a, tags.get(a.id)) for a in acts]
 
     # travellers (+ resolved names)
     travelers = []
@@ -486,9 +503,11 @@ def api_add_activity(trip_id: str, body: ActivityIn,
     a = TripActivity(trip_id=trip.id, type=t.key, values=values,
                      starts_at=body.starts_at or values.get("when") or "")
     session.add(a)
+    session.flush()
+    tagged = _set_activity_travelers(session, a, body.traveler_ids or [])
     session.commit()
     session.refresh(a)
-    return _activity_out(a)
+    return _activity_out(a, tagged)
 
 
 @router.patch("/trips/{trip_id}/activities/{activity_id}", response_model=ActivityOut)
@@ -506,9 +525,13 @@ def api_update_activity(trip_id: str, activity_id: str, body: ActivityPatch,
         a.starts_at = body.starts_at or ""
     elif body.values is not None:
         a.starts_at = (a.values or {}).get("when") or a.starts_at
+    from app.trips import who
+    tagged = (_set_activity_travelers(session, a, body.traveler_ids)
+              if body.traveler_ids is not None
+              else who.activity_map(session, [a.id]).get(a.id, []))
     session.commit()
     session.refresh(a)
-    return _activity_out(a)
+    return _activity_out(a, tagged)
 
 
 @router.delete("/trips/{trip_id}/activities/{activity_id}", status_code=204)
@@ -517,6 +540,8 @@ def api_delete_activity(trip_id: str, activity_id: str,
     scope.require_trip(session, user, trip_id, edit=True)
     a = session.get(TripActivity, activity_id)
     if a is not None and a.trip_id == trip_id:
+        from app.trips import who
+        who.clear_activity(session, a.id)
         session.delete(a)
         session.commit()
     return None

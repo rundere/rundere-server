@@ -73,6 +73,7 @@
       <div class="type">{{ a.type_label }}</div>
       <div class="title">{{ a.title }}</div>
       {% if a.subtitle %}<div class="subtitle">{{ a.subtitle }}</div>{% endif %}
+      {% if a.traveler_names %}<div class="subtitle">For: {{ a.traveler_names | join(", ") }}</div>{% endif %}
       {% set short = a.rows | rejectattr("long") | list %}
       {% if short %}
       <table class="fields">

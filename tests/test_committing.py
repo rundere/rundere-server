@@ -966,3 +966,39 @@ def test_ground_modes_map_to_adventurelog_enum():
     for mode, expected in cases.items():
         body, _ = C.build_transportation(_ground(mode), collection_id="c1")
         assert body["type"] == expected, f"{mode} -> {body['type']}, want {expected}"
+
+
+def test_committed_flight_tagged_with_its_passengers_on_a_shared_trip():
+    """4.1: on a multi-traveller trip, a committed flight is tagged with the
+    passengers the booking names (Amara's flight isn't everyone's), matched
+    against the trip's own roster; an inferred passenger never tags."""
+    _skip()
+    from app.models import TravelerIdentity, TripActivity, TripTraveler
+    from app.trips import who
+    from resolve.identity import Identity
+    s = SessionLocal()
+    it, tr = _add_linked(s, ["yonder.activity"])
+    me = TravelerIdentity(display_name="Tag Self", kind="self", aliases=["SELF/TAG MR"])
+    her = TravelerIdentity(display_name="Tag Companion", kind="guest")
+    s.add_all([me, her]); s.flush()
+    s.add_all([TripTraveler(trip_id=tr.id, traveler_id=me.id, role="self"),
+               TripTraveler(trip_id=tr.id, traveler_id=her.id, role="companion")])
+    payload = _flight_payload()
+    payload["travelers"] = [{"raw_name": "COMPANION/TAG MS", "role": "guest",
+                             "match_source": "alias", "match_confidence": 1.0}]
+    it.extraction = {**it.extraction, "payload": payload}
+    s.commit()
+    idents = [Identity(id=str(me.id), display_name="Tag Self", kind="self",
+                       aliases=("SELF/TAG MR",), airtrail_user_id="vu75"),
+              Identity(id=str(her.id), display_name="Tag Companion", kind="guest")]
+    C.commit_item(s, it, FakeAL(), FakeAT(), identities=idents, dry_run=False)
+    s.commit()
+    act = s.query(TripActivity).filter_by(trip_id=tr.id).one()
+    assert who.activity_map(s, [act.id]).get(act.id) == [her.id]
+
+    who.clear_activity(s, act.id)
+    s.query(TripTraveler).filter_by(trip_id=tr.id).delete()
+    s.query(TravelerIdentity).filter(TravelerIdentity.id.in_([me.id, her.id])).delete(
+        synchronize_session=False)
+    s.query(TravelItem).filter(TravelItem.id == it.id).delete(synchronize_session=False)
+    _cleanup_trips(s); s.close()
