@@ -154,6 +154,38 @@ if DEPS:
         assert a["map_url"].startswith("https://www.google.com/maps/search/")
         _cleanup_trips("api-snapdetail")
 
+    def test_api_timeline_pdf():
+        """The timeline exports as a real PDF carrying the booking details;
+        invisible trips 404."""
+        import io
+        from pypdf import PdfReader
+        owner, stranger = _user("api-pdf-owner"), _user("api-pdf-stranger")
+        with SessionLocal() as s:
+            t = Trip(name="api-pdf trip", source="manual", owner_id=owner.id,
+                     start_date="2026-09-01", end_date="2026-09-04")
+            s.add(t)
+            s.commit()
+            s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2026-09-01T15:00",
+                               values={"when": "2026-09-01T15:00",
+                                       "endWhen": "2026-09-04T11:00", "name": "Riad X",
+                                       "address": "1 Derb Y, Harar",
+                                       "confirmation": "ABC123",
+                                       "sourceLink": "http://internal/doc"}))
+            s.commit()
+            tid = t.id
+        assert client.get(f"/api/v1/trips/{tid}/timeline.pdf",
+                          headers=_bearer(stranger)).status_code == 404
+        r = client.get(f"/api/v1/trips/{tid}/timeline.pdf", headers=_bearer(owner))
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/pdf"
+        assert 'filename="api-pdf-trip-timeline.pdf"' in r.headers["content-disposition"]
+        text = "".join(p.extract_text() for p in PdfReader(io.BytesIO(r.content)).pages)
+        for want in ("api-pdf trip", "Riad X", "ABC123", "1 Derb Y, Harar",
+                     "Check-in", "Check-out"):
+            assert want in text, want
+        assert "http://internal/doc" not in text          # internal links stay out
+        _cleanup_trips("api-pdf trip")
+
     def _owned_trip(name, owner):
         with SessionLocal() as s:
             t = Trip(name=name, source="manual", owner_id=owner.id)

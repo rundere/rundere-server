@@ -1,6 +1,12 @@
 FROM python:3.12-slim
 
 WORKDIR /srv
+# WeasyPrint (timeline PDF export) renders through pango; slim ships no fonts,
+# so add DejaVu (Latin/Greek/Cyrillic + arrows and symbols).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml .
 COPY app/ app/
 COPY resolve/ resolve/

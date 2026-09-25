@@ -67,6 +67,8 @@
     {% if has_activities %}
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('timeline', true)">Expand all</button>
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('timeline', false)">Collapse all</button>
+    <a class="btn btn-secondary bp-sm" href="/trips/{{ trip.id }}/timeline.pdf" target="_blank"
+       rel="noopener" title="A printable itinerary to share with anyone">Export PDF</a>
     {% endif %}
     <button class="btn btn-primary"
             hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>

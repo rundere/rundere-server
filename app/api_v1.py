@@ -362,6 +362,18 @@ def api_trip_snapshot(trip_id: str, user=Depends(authn.current_user),
     return _snapshot(session, trip, user)
 
 
+@router.get("/trips/{trip_id}/timeline.pdf",
+            responses={200: {"content": {"application/pdf": {}}}})
+def api_trip_timeline_pdf(trip_id: str, download: bool = False,
+                          user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """The trip timeline as a shareable PDF itinerary — identical to the web
+    export (server-rendered)."""
+    trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
+    from app.trips import pdf
+    return pdf.pdf_response(session, trip, download=download)
+
+
 @router.get("/review", response_model=ReviewListOut)
 def api_review(bucket: str = "all", user=Depends(authn.current_user),
                session: Session = Depends(get_session)):

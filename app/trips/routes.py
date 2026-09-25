@@ -186,6 +186,11 @@ def _activity_display(a: TripActivity) -> dict:
         "span_label": ("→ " + fmt_date_short(end_when)) if multi_day else "",
         "fields": activity_types.detail_fields(a.type, v),
         "map_url": activity_types.map_url(a.type, v),
+        # The typed start ("Check-in: Apr 10, 3:00 PM") — the PDF pairs it with
+        # the end field when there is one.
+        "start_label": activity_types.time_labels(a.type)[0] or "Start",
+        "start_display": fmt_datetime(when),
+        "has_end": bool(end_when),
     }
 
 
@@ -223,7 +228,9 @@ def _sharing_context(session: Session, trip: Trip, user=None) -> dict:
     }}
 
 
-def _detail_context(session: Session, trip: Trip, user=None) -> dict:
+def timeline_day_groups(session: Session, trip: Trip) -> list[dict]:
+    """The timeline as day groups of display-ready activities — shared by the
+    trip page and the PDF export."""
     acts = list(trip_activities(session, trip.id))
     # Sort by the denormalized starts_at; '' (undated) sorts to the end.
     acts.sort(key=lambda a: (a.starts_at or "￿"))
@@ -234,10 +241,17 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         grp = index.get(key)
         if grp is None:
             grp = {"label": "Date not set" if key == "_unscheduled"
-                   else fmt_date(key), "activities": []}
+                   else fmt_date(key), "day": "" if key == "_unscheduled" else key,
+                   "activities": []}
             index[key] = grp
             day_groups.append(grp)
         grp["activities"].append(_activity_display(a))
+    return day_groups
+
+
+def _detail_context(session: Session, trip: Trip, user=None) -> dict:
+    day_groups = timeline_day_groups(session, trip)
+    acts = [a for g in day_groups for a in g["activities"]]
     notes = (trip.notes or "").strip()
     return {
         "trip": {
@@ -490,6 +504,19 @@ def detail(trip_id: str, request: Request,
                             status_code=404)
     ctx = {"request": request, **_detail_context(session, trip, scope.user_of(request))}
     return templates.TemplateResponse(request, "detail.html", ctx)
+
+
+@router.get("/{trip_id}/timeline.pdf")
+def timeline_pdf(trip_id: str, request: Request, download: bool = False,
+                 session: Session = Depends(get_session)):
+    """The Timeline tab as a shareable PDF itinerary (same visibility rules as
+    the trip page)."""
+    trip = scope.trip_or_none(session, request, trip_id)
+    if trip is None:
+        return HTMLResponse("<p class='bp-empty'>That trip no longer exists.</p>",
+                            status_code=404)
+    from app.trips import pdf
+    return pdf.pdf_response(session, trip, download=download)
 
 
 @router.post("/{trip_id}/share", response_class=HTMLResponse)
