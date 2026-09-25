@@ -91,6 +91,7 @@
             <div class="bp-act-title">{{ act.title }}</div>
             {% if act.subtitle %}<div class="bp-act-sub">{{ act.subtitle }}</div>{% endif %}
           </div>
+          {% if act.traveler_names %}<span class="bp-who" title="Who this is for">{% for n in act.traveler_names %}<span class="tag tag-neutral bp-who-tag">{{ n }}</span>{% endfor %}</span>{% endif %}
           {% if act.multi_day %}<span class="tag tag-neutral bp-span">{{ act.span_label }}</span>{% endif %}
           {% if act.time_label %}<div class="bp-act-time">{{ act.time_label }}</div>{% endif %}
           <span class="bp-chevron">▸</span>

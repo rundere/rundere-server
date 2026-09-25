@@ -411,6 +411,18 @@ class TripActivity(Base):
         DateTime(timezone=True), default=_now, onupdate=_now)
 
 
+class TripActivityTraveler(Base):
+    """4.1 — which of the trip's travellers an activity is for (migration 0025).
+    NO rows for an activity = everyone on the trip, the default, so a solo trip
+    or a shared dinner never needs tagging. Only ids on the trip's roster are
+    ever stored (app/trips/who.py); removing someone from the roster or deleting
+    the activity removes their rows. Soft links, no DB FK."""
+    __tablename__ = "trip_activity_travelers"
+
+    activity_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    traveler_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+
 class RuleSetting(Base):
     """D-25: rule logic is code (rules.py registry), rule ENABLEMENT is data.
     Seeded from the registry at startup; SQLAdmin over this table is the

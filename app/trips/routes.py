@@ -28,6 +28,7 @@ from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
                         TripActivity, TravelerIdentity, TripTraveler)
 from app.trips import types as activity_types
+from app.trips import who
 
 log = logging.getLogger("yonder.trips")
 router = APIRouter(prefix="/trips")
@@ -172,8 +173,14 @@ def _list_context(session: Session, q: str, status: str, user=None) -> dict:
     }
 
 
-def _activity_display(a: TripActivity) -> dict:
+def _activity_display(a: TripActivity, tagged: list[int] | None = None,
+                      names: dict[int, str] | None = None) -> dict:
+    """`tagged` is who this activity is for ([]/None = everyone) and `names`
+    the trip's roster (id -> name). Names are only shown when the activity is
+    for part of a multi-traveller trip."""
     t = activity_types.get_type(a.type)
+    names = names or {}
+    who_ids = [tid for tid in (tagged or []) if tid in names]
     v = a.values or {}
     when = v.get("when") or ""
     end_when = v.get("endWhen") or ""
@@ -191,7 +198,17 @@ def _activity_display(a: TripActivity) -> dict:
         "start_label": activity_types.time_labels(a.type)[0] or "Start",
         "start_display": fmt_datetime(when),
         "has_end": bool(end_when),
+        "traveler_ids": who_ids,
+        "traveler_names": [names[tid] for tid in who_ids],
     }
+
+
+def _roster_names(session: Session, trip_id: str) -> dict[int, str]:
+    ids = who.roster_ids(session, trip_id)
+    if not ids:
+        return {}
+    return {t.id: t.display_name for t in session.query(TravelerIdentity)
+            .filter(TravelerIdentity.id.in_(ids)).all()}
 
 
 def _sharing_context(session: Session, trip: Trip, user=None) -> dict:
@@ -234,6 +251,8 @@ def timeline_day_groups(session: Session, trip: Trip) -> list[dict]:
     acts = list(trip_activities(session, trip.id))
     # Sort by the denormalized starts_at; '' (undated) sorts to the end.
     acts.sort(key=lambda a: (a.starts_at or "￿"))
+    names = _roster_names(session, trip.id)
+    tags = who.activity_map(session, [a.id for a in acts]) if len(names) > 1 else {}
     day_groups: list[dict] = []
     index: dict[str, dict] = {}
     for a in acts:
@@ -245,7 +264,7 @@ def timeline_day_groups(session: Session, trip: Trip) -> list[dict]:
                    "activities": []}
             index[key] = grp
             day_groups.append(grp)
-        grp["activities"].append(_activity_display(a))
+        grp["activities"].append(_activity_display(a, tags.get(a.id), names))
     return day_groups
 
 
@@ -1739,6 +1758,8 @@ def delete_trip(trip_id: str, request: Request, session: Session = Depends(get_s
         # Explicit child delete: SQLite in tests does not enforce ON DELETE
         # CASCADE unless PRAGMA foreign_keys is on, so never rely on the DB to
         # sweep the activities.
+        who.clear_activities(session, [a.id for a in session.query(TripActivity.id)
+                                       .filter(TripActivity.trip_id == trip_id).all()])
         session.query(TripActivity).filter(
             TripActivity.trip_id == trip_id).delete(synchronize_session=False)
         session.query(TripTraveler).filter(
@@ -1822,6 +1843,7 @@ def remove_traveler(trip_id: str, traveler_id: int, request: Request,
                       {"trip_id": trip_id, "traveler_id": traveler_id})
     if row is not None:
         session.delete(row)
+        who.remove_from_trip(session, trip_id, traveler_id)
         session.commit()
     return _travelers_section(request, session, trip_id)
 
@@ -2347,9 +2369,18 @@ def adventurelog_pull(trip_id: str, request: Request,
 # ----------------------------------------------------------------- activities
 
 def _activity_modal_ctx(request: Request, trip_id: str, *, mode: str,
-                        action: str, atype: str, values: dict) -> dict:
+                        action: str, atype: str, values: dict,
+                        session: Session | None = None,
+                        tagged: list[int] | None = None) -> dict:
     t = activity_types.get_type(atype)
+    names = _roster_names(session, trip_id) if session is not None else {}
+    # "Who is this for" only appears once the trip has more than one traveller;
+    # an untagged activity (everyone) shows every box ticked.
+    chosen = set(tagged or []) & set(names) or set(names)
     return {
+        "travelers": ([{"id": tid, "name": n, "checked": tid in chosen}
+                       for tid, n in sorted(names.items(), key=lambda kv: kv[1].lower())]
+                      if len(names) > 1 else []),
         "request": request, "mode": mode,
         "title": "New activity" if mode == "create" else "Edit activity",
         "action": action, "trip_id": trip_id,
@@ -2366,11 +2397,14 @@ def _modal_fields(t: activity_types.ActivityType, values: dict) -> list[dict]:
 
 @router.get("/{trip_id}/activity/new", response_class=HTMLResponse)
 def new_activity(trip_id: str, request: Request,
-                 type: str = activity_types.DEFAULT_TYPE):
+                 type: str = activity_types.DEFAULT_TYPE,
+                 session: Session = Depends(get_session)):
+    if scope.trip_or_none(session, request, trip_id) is None:
+        return HTMLResponse("", status_code=404)
     return templates.TemplateResponse(request, "_activity_modal.html",
         _activity_modal_ctx(request, trip_id, mode="create",
                             action=f"/trips/{trip_id}/activity",
-                            atype=type, values={}))
+                            atype=type, values={}, session=session))
 
 
 @router.get("/{trip_id}/activity/fields", response_class=HTMLResponse)
@@ -2392,12 +2426,14 @@ def activity_fields(trip_id: str, request: Request,
 def edit_activity(trip_id: str, activity_id: str, request: Request,
                   session: Session = Depends(get_session)):
     a = session.get(TripActivity, activity_id)
-    if a is None or a.trip_id != trip_id:
+    if (a is None or a.trip_id != trip_id
+            or scope.trip_or_none(session, request, trip_id) is None):
         return HTMLResponse("", status_code=404)
     return templates.TemplateResponse(request, "_activity_modal.html",
         _activity_modal_ctx(request, trip_id, mode="edit",
                             action=f"/trips/{trip_id}/activity/{a.id}",
-                            atype=a.type, values=a.values or {}))
+                            atype=a.type, values=a.values or {}, session=session,
+                            tagged=who.activity_map(session, [a.id]).get(a.id)))
 
 
 def _collect_values(t: activity_types.ActivityType, form) -> dict:
@@ -2422,6 +2458,9 @@ async def create_activity(trip_id: str, request: Request,
     a = TripActivity(trip_id=trip_id, type=t.key, values=values,
                      starts_at=values.get("when") or "")
     session.add(a)
+    session.flush()
+    if "travelers_shown" in form:
+        who.set_travelers(session, a.id, trip_id, form.getlist("traveler_ids"))
     session.commit()
     return _redirect(f"/trips/{trip_id}")
 
@@ -2430,7 +2469,8 @@ async def create_activity(trip_id: str, request: Request,
 async def update_activity(trip_id: str, activity_id: str, request: Request,
                           session: Session = Depends(get_session)):
     a = session.get(TripActivity, activity_id)
-    if a is None or a.trip_id != trip_id:
+    if (a is None or a.trip_id != trip_id
+            or scope.trip_or_none(session, request, trip_id) is None):
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or a.type)
@@ -2438,15 +2478,21 @@ async def update_activity(trip_id: str, activity_id: str, request: Request,
     a.type = t.key
     a.values = values
     a.starts_at = values.get("when") or ""
+    # Only touch the tags when the form showed the picker (a multi-traveller
+    # trip); a solo trip's form never posts them, so nothing is cleared.
+    if "travelers_shown" in form:
+        who.set_travelers(session, a.id, trip_id, form.getlist("traveler_ids"))
     session.commit()
     return _redirect(f"/trips/{trip_id}")
 
 
 @router.post("/{trip_id}/activity/{activity_id}/delete", response_class=HTMLResponse)
-def delete_activity(trip_id: str, activity_id: str,
+def delete_activity(trip_id: str, activity_id: str, request: Request,
                     session: Session = Depends(get_session)):
     a = session.get(TripActivity, activity_id)
-    if a is not None and a.trip_id == trip_id:
+    if (a is not None and a.trip_id == trip_id
+            and scope.trip_or_none(session, request, trip_id) is not None):
+        who.clear_activity(session, a.id)
         session.delete(a)
         session.commit()
     return _redirect(f"/trips/{trip_id}")
