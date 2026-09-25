@@ -8,21 +8,10 @@
 
 {% if has_any %}
 <form id="trip-controls" class="bp-controls" onsubmit="return false">
-  <input class="input bp-search" name="q" value="{{ q }}" placeholder="Search trips…"
+  <input class="input bp-search" type="search" name="q" value="{{ q }}" placeholder="Search trips…"
          hx-get="/trips/list" hx-trigger="input changed delay:250ms, search"
-         hx-target="#trip-groups" hx-include="#trip-controls">
-  <div class="seg">
-    {% for sf in status_filters %}
-    <label class="seg-opt">
-      <input type="radio" name="status" value="{{ sf.key }}" {% if sf.checked %}checked{% endif %}
-             hx-get="/trips/list" hx-trigger="change"
-             hx-target="#trip-groups" hx-include="#trip-controls">
-      {{ sf.label }}
-    </label>
-    {% endfor %}
-  </div>
+         hx-target="#trip-groups" hx-include="#trip-controls, #trip-status">
 </form>
 {% endif %}
-
 <div id="trip-groups">{% include "_groups.html" %}</div>
 {% endblock %}

@@ -23,6 +23,8 @@
   --color-neutral-500: #6a6a6f; --color-neutral-600: #545459;
   --color-neutral-700: #3d3d42; --color-neutral-800: #2a2a2d;
   --color-neutral-900: #1a1a1c;
+  --yn-tab-track: color-mix(in srgb, var(--color-neutral-200) 70%, transparent);
+  --yn-tab-on: #ffffff;
 
   --color-accent-100: #e7f0fb; --color-accent-200: #cfe2f6;
   --color-accent-300: #a9c9ec; --color-accent-400: #7ba6d8;
@@ -45,6 +47,7 @@
   --color-neutral-300: #38424c; --color-neutral-400: #55606b;
   --color-neutral-500: #7c8792; --color-neutral-600: #97a1ab;
   --color-neutral-700: #b6bfc8; --color-neutral-800: #d2d9df; --color-neutral-900: #eef1f4;
+  --yn-tab-track: var(--color-neutral-100); --yn-tab-on: var(--color-neutral-300);
   --color-accent: #7ea6cd;
   --color-accent-100: #1e2731; --color-accent-200: #24313d;
   --color-accent-300: #33475a; --color-accent-600: #7ea6cd;
@@ -57,6 +60,7 @@
   --color-neutral-300: #38424c; --color-neutral-400: #55606b;
   --color-neutral-500: #7c8792; --color-neutral-600: #97a1ab;
   --color-neutral-700: #b6bfc8; --color-neutral-800: #d2d9df; --color-neutral-900: #eef1f4;
+  --yn-tab-track: var(--color-neutral-100); --yn-tab-on: var(--color-neutral-300);
   --color-accent: #7ea6cd;
   --color-accent-100: #1e2731; --color-accent-200: #24313d;
   --color-accent-300: #33475a; --color-accent-600: #7ea6cd;
@@ -381,9 +385,24 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
   align-items: center; justify-content: space-between; gap: 10px 16px;
   padding: 8px 2px; margin: 0 0 8px; background: var(--color-bg);
   border-bottom: 1px solid var(--color-divider); }
-.yn-jump-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
-.yn-jump-links a { color: var(--color-neutral-700); text-decoration: none; font-weight: 600; }
-.yn-jump-links a:hover { color: var(--color-accent); }
+/* Section tabs: one section visible at a time. While a filter is active every
+   tab's matches show together (the non-matching sections hide themselves). */
+.yn-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px;
+  border-radius: 9px; background: var(--yn-tab-track); }
+.yn-tab { border: none; background: none; cursor: pointer; padding: 5px 14px;
+  border-radius: 7px; font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--color-neutral-700); }
+.yn-tab:hover { color: var(--color-accent); }
+.yn-tab.active { background: var(--yn-tab-on); color: var(--color-neutral-900);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+.yn-filtering .yn-tab.active { background: none; box-shadow: none; }
+.yn-tab-count { margin-left: 4px; font-weight: 500; font-size: 12px;
+  color: var(--color-neutral-500); font-variant-numeric: tabular-nums; }
+.bp-trip-tabs { display: inline-flex; margin: 0 0 12px; }
+.yn-tabpanel { display: none; }
+.yn-tabpanel.active, .yn-filtering .yn-tabpanel { display: block; }
+/* In a tab the section is the whole view — no section-level collapse. */
+.yn-tabpanel > .yn-sec > .bp-timeline-head .yn-sec-caret { display: none; }
 .yn-jump-tools { display: flex; align-items: center; gap: 8px; }
 .yn-jump-filter { min-height: 32px; min-width: 170px; max-width: 240px; }
 .yn-anchor { display: block; height: 0; scroll-margin-top: 72px; }

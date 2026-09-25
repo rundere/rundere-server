@@ -43,8 +43,9 @@ templates.env.loader = ChoiceLoader([
 
 STATUS_LABELS = [("inprogress", "In progress"), ("upcoming", "Upcoming"),
                  ("past", "Past")]
-STATUS_FILTERS = [("all", "All"), ("inprogress", "In progress"),
-                  ("upcoming", "Upcoming"), ("past", "Past")]
+# The list's two tabs. "Upcoming" also holds in-progress (and undated) trips;
+# "Past" is grouped by year so a long history stays scannable.
+TRIP_TABS = [("upcoming", "Upcoming"), ("past", "Past")]
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
            "Oct", "Nov", "Dec"]
@@ -123,34 +124,51 @@ def _trip_display(t: Trip) -> dict:
 
 def _list_context(session: Session, q: str, status: str, user=None) -> dict:
     today = date.today().isoformat()
+    tab = "past" if status == "past" else "upcoming"   # always default: Upcoming
     # Phase 2: only trips the user may see (own + open + shared); no-op when
     # auth is off or the user is admin.
     trips = session.query(Trip).filter(scope.trip_filter(session, user)).all()
+    total = len(trips)
     ql = q.lower().strip()
     if ql:
         trips = [t for t in trips if ql in (t.name or "").lower()]
     annotated = [(t, trip_status(t, today)) for t in trips]
-    if status != "all":
-        annotated = [(t, s) for (t, s) in annotated if s == status]
+    in_tab = {k: [(t, st) for (t, st) in annotated if (st == "past") == (k == "past")]
+              for k, _ in TRIP_TABS}
 
     groups = []
-    for key, label in STATUS_LABELS:
-        members = [t for (t, s) in annotated if s == key]
-        # Upcoming/in-progress ascend by start; past descends (most recent first).
-        members.sort(key=lambda t: (t.start_date or ""), reverse=(key == "past"))
-        if members:
-            groups.append({"label": label,
-                           "trips": [_trip_display(t) for t in members]})
+    if tab == "upcoming":
+        for key, label in STATUS_LABELS:
+            if key == "past":
+                continue
+            # In progress first, then upcoming — both ascending by start.
+            members = sorted((t for (t, st) in in_tab[tab] if st == key),
+                             key=lambda t: t.start_date or "")
+            if members:
+                groups.append({"label": label,
+                               "trips": [_trip_display(t) for t in members]})
+    else:
+        # Most recent first, one group per year.
+        members = sorted((t for (t, _) in in_tab[tab]),
+                         key=lambda t: t.start_date or t.end_date or "", reverse=True)
+        for t in members:
+            year = (t.start_date or t.end_date or "")[:4] or "Undated"
+            if not groups or groups[-1]["label"] != year:
+                groups.append({"label": year, "trips": []})
+            groups[-1]["trips"].append(_trip_display(t))
 
-    total = session.query(Trip).filter(scope.trip_filter(session, user)).count()
+    other = "past" if tab == "upcoming" else "upcoming"
     return {
         "groups": groups,
         "has_visible": bool(groups),
         "has_any": total > 0,
         "search_no_results": total > 0 and not groups,
-        "q": q, "status": status,
-        "status_filters": [{"key": k, "label": l, "checked": status == k}
-                           for k, l in STATUS_FILTERS],
+        "q": q, "status": tab,
+        "tabs": [{"key": k, "label": l, "count": len(in_tab[k]), "active": k == tab}
+                 for k, l in TRIP_TABS],
+        # When a search misses in this tab but hits in the other, say so.
+        "other_tab": {"key": other, "label": dict(TRIP_TABS)[other],
+                      "count": len(in_tab[other])},
     }
 
 
@@ -434,16 +452,16 @@ def _redirect(url: str) -> HTMLResponse:
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-def index(request: Request, q: str = "", status: str = "all",
+def index(request: Request, q: str = "", status: str = "upcoming",
           session: Session = Depends(get_session)):
     ctx = {"request": request, **_list_context(session, q, status, scope.user_of(request))}
     return templates.TemplateResponse(request, "list.html", ctx)
 
 
 @router.get("/list", response_class=HTMLResponse)
-def list_partial(request: Request, q: str = "", status: str = "all",
+def list_partial(request: Request, q: str = "", status: str = "upcoming",
                  session: Session = Depends(get_session)):
-    """Groups-only fragment for the live search + status filter."""
+    """Tabs + groups fragment for the live search and the Upcoming/Past tabs."""
     ctx = {"request": request, **_list_context(session, q, status, scope.user_of(request))}
     return templates.TemplateResponse(request, "_groups.html", ctx)
 

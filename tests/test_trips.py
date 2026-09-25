@@ -130,13 +130,29 @@ def test_status_grouping_and_filter():
     _mk("Now trip", (TODAY - timedelta(days=1)).isoformat(),
         (TODAY + timedelta(days=1)).isoformat())
 
+    # Defaults to the Upcoming tab: in-progress + upcoming, never past.
     html = client.get("/trips").text
     for label in ("In progress", "Upcoming", "Past"):
         assert label in html
+    assert "Now trip" in html and "Upcoming trip" in html
+    assert "Past trip" not in html
 
     only_past = client.get("/trips/list", params={"status": "past"}).text
     assert "Past trip" in only_past
     assert "Upcoming trip" not in only_past and "Now trip" not in only_past
+    # Past trips are grouped by year.
+    assert f">{(TODAY - timedelta(days=40)).year}<" in only_past
+
+
+def test_search_miss_points_to_other_tab():
+    if not DEPS:
+        return
+    _clear()
+    _mk("Old Kyoto", (TODAY - timedelta(days=400)).isoformat(),
+        (TODAY - timedelta(days=395)).isoformat())
+    html = client.get("/trips/list", params={"q": "kyoto"}).text
+    assert "No upcoming trips match your search" in html
+    assert "1 in Past" in html
 
 
 def test_search_filters_by_name():
