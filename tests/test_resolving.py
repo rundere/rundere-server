@@ -612,6 +612,44 @@ def test_resolve_auto_links_a_single_matching_yonder_trip():
     _skip_or(run)
 
 
+def test_resolve_auto_link_only_considers_the_owners_trips():
+    """4.1: a capture is only auto-filed into a trip its owner could edit — not
+    another user's trip that merely has matching dates. Here the sister's
+    capture ignores her brother's trip (so the one match is her own) and a
+    trip she travels on counts as hers."""
+    def run():
+        from app.models import TravelerIdentity, Trip, TripTraveler, User
+        with SessionLocal() as s:
+            _reset_items_and_trips(s); _seed_home(s)
+            s.query(User).filter(User.username.in_(["al-bro", "al-sis"])).delete(
+                synchronize_session=False)
+            s.query(TravelerIdentity).filter_by(display_name="AL Sister").delete()
+            sis_t = TravelerIdentity(display_name="AL Sister", kind="guest")
+            s.add(sis_t); s.flush()
+            bro = User(username="al-bro", auth_source="local", is_admin=True)
+            sis = User(username="al-sis", auth_source="local", traveler_id=sis_t.id)
+            s.add_all([bro, sis]); s.flush()
+            his = Trip(name="His Lisbon", start_date="2027-05-01",
+                       end_date="2027-05-31", owner_id=bro.id)
+            s.add(his); s.commit()
+            it = _add_item(s, _lodging_payload())     # 2027-05-10 -> 2027-05-14
+            it.owner_id = sis.id; s.commit()
+            resolve_pending(s, adventurelog=None)
+            assert s.get(TravelItem, it.id).trip_id is None      # not his trip
+            # ...but a trip of his that she's travelling on is fair game
+            s.add(TripTraveler(trip_id=his.id, traveler_id=sis_t.id, role="companion"))
+            it2 = _add_item(s, _lodging_payload())
+            it2.canonical_key = (it2.canonical_key or "") + ":2"
+            it2.owner_id = sis.id; s.commit()
+            resolve_pending(s, adventurelog=None)
+            assert s.get(TravelItem, it2.id).trip_id == his.id
+            s.query(TripTraveler).filter_by(trip_id=his.id).delete()
+            s.query(User).filter(User.id.in_([bro.id, sis.id])).delete(
+                synchronize_session=False)
+            s.delete(sis_t); s.commit()
+    _skip_or(run)
+
+
 def test_resolve_does_not_link_when_two_yonder_trips_match():
     """Overlapping trips -> ambiguous -> left for the operator; never guess."""
     def run():

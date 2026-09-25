@@ -531,7 +531,7 @@ def api_generate_packing(trip_id: str, user=Depends(authn.current_user),
     from app.trips.routes import _airport_resolver, _photon
     from planning.runner import generate_plan
     generate_plan(session, trip, resolve_airport=_airport_resolver(), geocoder=_photon(),
-                  home_profiles=load_home_profiles(session),
+                  home_profiles=load_home_profiles(session, user.traveler_id),
                   user_id=user.id, traveler_id=user.traveler_id)
     return _packing_out(session, trip.id, user.id) or PackingOut(items=[])
 

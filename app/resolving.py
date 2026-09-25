@@ -54,6 +54,25 @@ def _collection_reason(coll) -> str:
     return "no_collection_match"
 
 
+def _linkable_trips(session: Session, item: TravelItem) -> list:
+    """Trips a capture may be auto-filed into: ones its owner could edit — their
+    own, open ones, and ones they travel on (D-122) — never someone else's just
+    because the dates fit, admins included. An open capture (no owner) keeps
+    the pre-4.1 behaviour and considers every trip."""
+    from sqlalchemy import or_
+    from app.models import Trip, TripTraveler, User
+    q = session.query(Trip)
+    if not item.owner_id:
+        return q.all()
+    user = session.get(User, item.owner_id)
+    cond = or_(Trip.owner_id.is_(None), Trip.owner_id == item.owner_id)
+    if user is not None and user.traveler_id is not None:
+        on_roster = session.query(TripTraveler.trip_id).filter(
+            TripTraveler.traveler_id == user.traveler_id)
+        cond = or_(cond, Trip.id.in_(on_roster))
+    return q.filter(cond).all()
+
+
 def _auto_link_yonder_trip(session: Session, item: TravelItem,
                            start: str | None, end: str | None) -> None:
     """Link the item to a Yonder trip when EXACTLY ONE trip's dates contain it
@@ -69,7 +88,7 @@ def _auto_link_yonder_trip(session: Session, item: TravelItem,
     if not (start and end):
         return
     from app.models import Trip
-    matches = [t for t in session.query(Trip).all()
+    matches = [t for t in _linkable_trips(session, item)
                if t.start_date and t.end_date
                and t.start_date <= start and end <= t.end_date]
     if len(matches) == 1:
@@ -77,14 +96,63 @@ def _auto_link_yonder_trip(session: Session, item: TravelItem,
         log.info("auto-linked item %s to Yonder trip %s", item.id, matches[0].id)
 
 
-def load_home_profiles(session: Session) -> list[HomeProfileRef]:
+# Home profiles are per person (4.1): each belongs to a traveller, and a user's
+# homes are their linked traveller's. Rows with no traveller predate this and
+# belong to the deployment owner — the `self` traveller (D-94).
+OWNER_HOMES = object()          # "the deployment owner", not a traveller id
+
+
+def self_traveler_id(session: Session) -> int | None:
+    from app.models import TravelerIdentity
+    row = (session.query(TravelerIdentity.id)
+           .filter(TravelerIdentity.kind == "self")
+           .order_by(TravelerIdentity.id).first())
+    return row[0] if row else None
+
+
+def home_rows_query(session: Session, who):
+    """HomeProfile rows for `who`: a traveller id, OWNER_HOMES (the self
+    traveller's rows plus the unassigned legacy rows), or None (nobody: a user
+    with no traveller linked has no homes)."""
+    from sqlalchemy import false, or_
     from app.models import HomeProfile
+    q = session.query(HomeProfile)
+    if who is None:
+        return q.filter(false())
+    self_id = self_traveler_id(session)
+    if who is OWNER_HOMES or who == self_id:
+        cond = HomeProfile.traveler_id.is_(None)
+        if self_id is not None:
+            cond = or_(cond, HomeProfile.traveler_id == self_id)
+        return q.filter(cond)
+    return q.filter(HomeProfile.traveler_id == who)
+
+
+def home_traveler_for_user(session: Session, user_id: str | None):
+    """Whose homes apply for a user id: their linked traveller; a user with no
+    traveller has none (None). No user at all (an open capture, auth off) means
+    the deployment owner's, which is what everything used before 4.1."""
+    if not user_id:
+        return OWNER_HOMES
+    from app.models import User
+    user = session.get(User, user_id)
+    if user is None:
+        return OWNER_HOMES
+    return user.traveler_id
+
+
+def load_home_profiles(session: Session, who=OWNER_HOMES) -> list[HomeProfileRef]:
+    """One person's home profiles (default: the deployment owner's)."""
     return [HomeProfileRef(
         id=str(p.id), kind=p.kind, label=p.label, iata=p.iata,
         lat=p.lat, lon=p.lon, radius_km=p.radius_km or 50.0,
         country=p.country, effective_from=p.effective_from,
         effective_to=p.effective_to)
-        for p in session.query(HomeProfile).all()]
+        for p in home_rows_query(session, who).all()]
+
+
+def load_homes_for_user(session: Session, user_id: str | None) -> list[HomeProfileRef]:
+    return load_home_profiles(session, home_traveler_for_user(session, user_id))
 
 
 def load_identities(session: Session) -> list[Identity]:
@@ -792,12 +860,17 @@ def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
 
     total = len(pending)
     summary: dict[str, int] = {}
+    homes_by_owner: dict[str | None, list] = {None: profiles}
     for idx, item in enumerate(pending):
         if progress:
             progress("resolving", idx, total,
                      str(item.canonical_key or item.id)[:70])
         try:
-            state = resolve_item(session, item, profiles, collections, enablement,
+            # A capture is judged against the homes of whoever captured it.
+            if item.owner_id not in homes_by_owner:
+                homes_by_owner[item.owner_id] = load_homes_for_user(session, item.owner_id)
+            state = resolve_item(session, item, homes_by_owner[item.owner_id],
+                                 collections, enablement,
                                  airports=airports, geocoder=geocoder,
                                  country_names=country_names,
                                  identities=identities)

@@ -575,13 +575,14 @@ def _excluded_keys(session: Session, trip_id: str) -> set[str]:
 
 
 def _derived_locations_ctx(request: Request, session: Session, trip: Trip) -> dict:
-    from app.resolving import load_home_profiles
+    from app.resolving import load_homes_for_user
     from discover.home_filter import home_country_set, is_home_place
     from discover.places import derive_locations
     acts = trip_activities(session, trip.id)
     result = derive_locations(acts, resolve_airport=_airport_resolver(),
                               geocoder=_photon())
-    profiles = load_home_profiles(session)
+    # Discovery is joint per trip, so it goes by the trip owner's homes.
+    profiles = load_homes_for_user(session, trip.owner_id)
     hc = home_country_set(result.places, profiles, trip.start_date)
     excluded = _excluded_keys(session, trip.id)
     places = [{
@@ -803,7 +804,7 @@ def run_discovery_route(trip_id: str, request: Request,
     return the self-polling section. The deterministic findings land in the first
     few seconds; the LLM findings stream in as each resolver finishes. A run is
     already in flight for this trip? Just show its panel (one run per trip)."""
-    from app.resolving import load_home_profiles
+    from app.resolving import load_homes_for_user
     from app.trips import discovery_jobs as dj
     from datetime import date as _date
     trip = scope.trip_or_none(session, request, trip_id)
@@ -815,7 +816,7 @@ def run_discovery_route(trip_id: str, request: Request,
         today = _date.today().isoformat()
         dj.launch(trip_id, resolve_airport=_airport_resolver(), geocoder=_photon(),
                   det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(),
-                  home_profiles=load_home_profiles(session),
+                  home_profiles=load_homes_for_user(session, trip.owner_id),
                   excluded=_excluded_keys(session, trip_id),
                   discovery_profile=(profile.values if profile else None),
                   nationality=(ident.nationality if ident else None),
@@ -1194,14 +1195,14 @@ def generate_packing_plan_route(trip_id: str, request: Request,
                                 session: Session = Depends(get_session)):
     """Generate (or re-generate) the Packing Plan and reload the detail. Preserves
     your ticked-off / removed items."""
-    from app.resolving import load_home_profiles
+    from app.resolving import load_homes_for_user
     from planning.runner import generate_plan
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     uid, tid = _pack_identity(request)
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_home_profiles(session),
+                  geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
                   user_id=uid, traveler_id=tid)
     return _redirect(f"/trips/{trip_id}")
 
@@ -1216,11 +1217,11 @@ def _current_archetype_ids(session: Session, trip_id: str, user_id=None) -> list
 
 def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
                                 ids: list[str]) -> HTMLResponse:
-    from app.resolving import load_home_profiles
+    from app.resolving import load_homes_for_user
     from planning.runner import generate_plan
     uid, tid = _pack_identity(request)
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_home_profiles(session),
+                  geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
                   manual_archetypes=ids, user_id=uid, traveler_id=tid)
     return templates.TemplateResponse(request, "_packing_section.html",
         {"request": request, "trip": {"id": trip.id},
