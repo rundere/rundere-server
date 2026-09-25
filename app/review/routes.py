@@ -697,7 +697,7 @@ def _reresolve(session: Session, item: TravelItem) -> None:
     """Resolve this one item in place, reusing the full resolver so the review
     path and the batch path can never diverge."""
     from app.config import settings
-    from app.resolving import (load_enablement, load_home_profiles, resolve_item)
+    from app.resolving import (load_enablement, load_homes_for_user, resolve_item)
     from resolve.collections import CollectionRef
 
     collections: list[CollectionRef] = []
@@ -723,7 +723,7 @@ def _reresolve(session: Session, item: TravelItem) -> None:
 
     try:
         from app.resolving import load_identities
-        resolve_item(session, item, load_home_profiles(session), collections,
+        resolve_item(session, item, load_homes_for_user(session, item.owner_id), collections,
                      load_enablement(session), airports=airports,
                      country_names=country_names,
                      identities=load_identities(session))  # self/guest needs these
