@@ -2333,7 +2333,7 @@ def _activity_modal_ctx(request: Request, trip_id: str, *, mode: str,
 
 def _modal_fields(t: activity_types.ActivityType, values: dict) -> list[dict]:
     return [{"key": f["key"], "label": f["label"], "type": f["type"],
-             "is_textarea": f["type"] == "textarea",
+             "is_textarea": f["type"] == "textarea", "hint": f.get("hint", ""),
              "value": values.get(f["key"], "")} for f in t.fields]
 
 

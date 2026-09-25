@@ -36,8 +36,11 @@ class ActivityType:
         return next((f for f in self.fields if f["key"] == key), None)
 
 
-def _f(key: str, label: str, kind: str = "text") -> Field:
-    return {"key": key, "label": label, "type": kind}
+def _f(key: str, label: str, kind: str = "text", hint: str = "") -> Field:
+    f = {"key": key, "label": label, "type": kind}
+    if hint:
+        f["hint"] = hint          # input placeholder only, never a label
+    return f
 
 
 # Order here is the order shown in the type dropdown.
@@ -111,7 +114,7 @@ _TYPES: tuple[ActivityType, ...] = (
             # Accommodation kind — feeds the packing archetype (resort→beach,
             # campground/cabin→outdoors, …) and AdventureLog's Lodging.type on
             # push (D-81). Free text; the planning context normalises it.
-            _f("type", "Type (hotel, hostel, resort, bnb, campground, cabin, …)"),
+            _f("type", "Type", hint="hotel, hostel, resort, bnb, campground, cabin, …"),
             _f("address", "Address"),
             _f("confirmation", "Confirmation #"),
             _f("sourceLink", "Source document", "url"),

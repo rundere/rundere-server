@@ -134,7 +134,8 @@ if DEPS:
             s.commit()
             s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2026-09-01T15:00",
                                values={"when": "2026-09-01T15:00", "endWhen": "2026-09-04T11:00",
-                                       "name": "Riad X", "address": "1 Derb Y, Harar",
+                                       "name": "Riad X", "type": "riad",
+                                       "address": "1 Derb Y, Harar",
                                        "confirmation": "ABC123"}))
             s.commit()
             tid = t.id
@@ -148,6 +149,7 @@ if DEPS:
         assert fields["confirmation"]["value"] == "ABC123"
         assert fields["endWhen"]["kind"] == "datetime-local"
         assert "when" not in fields
+        assert fields["type"]["label"] == "Type"          # examples are a hint, not the label
         assert a["map_query"] == "Riad X, 1 Derb Y, Harar"
         assert a["map_url"].startswith("https://www.google.com/maps/search/")
         _cleanup_trips("api-snapdetail")
