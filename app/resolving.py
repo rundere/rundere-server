@@ -55,22 +55,15 @@ def _collection_reason(coll) -> str:
 
 
 def _linkable_trips(session: Session, item: TravelItem) -> list:
-    """Trips a capture may be auto-filed into: ones its owner could edit — their
-    own, open ones, and ones they travel on (D-122) — never someone else's just
-    because the dates fit, admins included. An open capture (no owner) keeps
-    the pre-4.1 behaviour and considers every trip."""
-    from sqlalchemy import or_
-    from app.models import Trip, TripTraveler, User
+    """Trips a capture may be auto-filed into: the ones its owner could file it
+    into by hand (scope.filing_trip_filter: own, open, or travelling on) —
+    never someone else's just because the dates fit, admins included. An open
+    capture (no owner) keeps the pre-4.1 behaviour and considers every trip."""
+    from app import scope
+    from app.models import Trip, User
+    user = session.get(User, item.owner_id) if item.owner_id else None
     q = session.query(Trip)
-    if not item.owner_id:
-        return q.all()
-    user = session.get(User, item.owner_id)
-    cond = or_(Trip.owner_id.is_(None), Trip.owner_id == item.owner_id)
-    if user is not None and user.traveler_id is not None:
-        on_roster = session.query(TripTraveler.trip_id).filter(
-            TripTraveler.traveler_id == user.traveler_id)
-        cond = or_(cond, Trip.id.in_(on_roster))
-    return q.filter(cond).all()
+    return (q.filter(scope.filing_trip_filter(session, user)) if user else q).all()
 
 
 def _auto_link_yonder_trip(session: Session, item: TravelItem,
