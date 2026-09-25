@@ -85,6 +85,16 @@ def test_absent_passenger_list_assumes_self_and_flags_it():
     assert tr.travelers[0]["match_source"] == "inferred_absent"
 
 
+def test_absent_passenger_list_assumes_the_capturer_when_given():
+    """4.1: a companion's unnamed booking is assumed to be theirs — a guest,
+    so it stays out of the owner's AirTrail — not the deployment owner's."""
+    guest = next(i for i in ALL if i.kind == "guest")
+    tr = resolve_travelers({"item_type": "flight"}, ALL, default=guest)
+    assert tr.self_on_booking is False and tr.inferred is True
+    assert tr.travelers[0]["raw_name"] == guest.display_name
+    assert tr.travelers[0]["role"] == "guest"
+
+
 def test_targets_exclude_airtrail_for_guest_only():
     from resolve.targets import compute_targets
     targets = compute_targets({"item_type": "flight"}, self_on_booking=False,

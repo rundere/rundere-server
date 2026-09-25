@@ -314,12 +314,13 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
     except Exception:                                   # never fail the snapshot on geocode
         places = []
 
-    # discovery findings (trip-wide/joint)
+    # discovery findings — PER-USER (4.1): the caller's own Discover tab
     discovery = [FindingOut(id=f.id, topic=f.topic, place_key=f.place_key,
                             body_md=f.body_md, data=f.data, confidence=f.confidence,
                             status=f.status, sources=f.sources)
                  for f in session.query(DiscoveryFinding)
-                 .filter(DiscoveryFinding.trip_id == trip.id).all()]
+                 .filter(DiscoveryFinding.trip_id == trip.id,
+                         DiscoveryFinding.user_id == user.id).all()]
 
     # packing — PER-USER (D-123)
     packing = _packing_out(session, trip.id, user.id)

@@ -164,6 +164,22 @@
 </div>
 {% endif %}
 
+{% if who %}
+<div class="pax">
+  <h3>Who is this for</h3>
+  <input type="hidden" name="who_present" value="1">
+  <p class="why">From the travellers on this trip. Leave everyone ticked if it's shared.</p>
+  <div class="pax-list">
+    {% for t in who.travelers %}
+      <label class="pax-opt {% if t.checked %}on{% endif %}">
+        <input type="checkbox" name="who:{{ t.id }}" {% if t.checked %}checked{% endif %}>
+        <span>{{ t.name }}</span>
+      </label>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="writes">
   <h3>What logging this will write</h3>
   {% if i.writes %}

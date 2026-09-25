@@ -55,22 +55,15 @@ def _collection_reason(coll) -> str:
 
 
 def _linkable_trips(session: Session, item: TravelItem) -> list:
-    """Trips a capture may be auto-filed into: ones its owner could edit — their
-    own, open ones, and ones they travel on (D-122) — never someone else's just
-    because the dates fit, admins included. An open capture (no owner) keeps
-    the pre-4.1 behaviour and considers every trip."""
-    from sqlalchemy import or_
-    from app.models import Trip, TripTraveler, User
+    """Trips a capture may be auto-filed into: the ones its owner could file it
+    into by hand (scope.filing_trip_filter: own, open, or travelling on) —
+    never someone else's just because the dates fit, admins included. An open
+    capture (no owner) keeps the pre-4.1 behaviour and considers every trip."""
+    from app import scope
+    from app.models import Trip, User
+    user = session.get(User, item.owner_id) if item.owner_id else None
     q = session.query(Trip)
-    if not item.owner_id:
-        return q.all()
-    user = session.get(User, item.owner_id)
-    cond = or_(Trip.owner_id.is_(None), Trip.owner_id == item.owner_id)
-    if user is not None and user.traveler_id is not None:
-        on_roster = session.query(TripTraveler.trip_id).filter(
-            TripTraveler.traveler_id == user.traveler_id)
-        cond = or_(cond, Trip.id.in_(on_roster))
-    return q.filter(cond).all()
+    return (q.filter(scope.filing_trip_filter(session, user)) if user else q).all()
 
 
 def _auto_link_yonder_trip(session: Session, item: TravelItem,
@@ -153,6 +146,20 @@ def load_home_profiles(session: Session, who=OWNER_HOMES) -> list[HomeProfileRef
 
 def load_homes_for_user(session: Session, user_id: str | None) -> list[HomeProfileRef]:
     return load_home_profiles(session, home_traveler_for_user(session, user_id))
+
+
+def _capturer_identity(session: Session, item: TravelItem,
+                       identities: list[Identity]) -> Identity | None:
+    """The traveller of the user who captured this item (4.1) — who a booking
+    is assumed to be for when it names no one. None for an open capture or a
+    user with no traveller linked (the caller then falls back to `self`)."""
+    if not item.owner_id:
+        return None
+    from app.models import User
+    user = session.get(User, item.owner_id)
+    if user is None or user.traveler_id is None:
+        return None
+    return next((i for i in identities if i.id == str(user.traveler_id)), None)
 
 
 def load_identities(session: Session) -> list[Identity]:
@@ -585,7 +592,8 @@ def resolve_item(session: Session, item: TravelItem,
     self_on_booking = True
     if payload.get("item_type") == "flight":
         if identities:
-            tr = resolve_travelers(payload, identities)
+            tr = resolve_travelers(payload, identities,
+                                   default=_capturer_identity(session, item, identities))
             payload["travelers"] = tr.travelers
             self_on_booking = tr.self_on_booking
             needs_traveler_review = tr.inferred

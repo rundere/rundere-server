@@ -1,6 +1,8 @@
 {# Pipeline counts. Rendered inline in the topbar, and re-rendered
    out-of-band after every action so the numbers update without a refresh. #}
 <div class="funnel" id="funnel"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <div class="stage muted" id="to-process" hx-get="/review/to-process"
+       hx-trigger="load" hx-swap="outerHTML"><b>·</b><span>to process</span></div>
   <div class="stage {% if counts.attention %}blocked{% else %}muted{% endif %}">
     <b>{{ counts.attention }}</b><span>need you</span>
   </div>

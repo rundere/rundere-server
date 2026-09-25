@@ -10,6 +10,14 @@
     changing them, re-generate a trip's plan to apply.</p>
 </div>
 
+{% if no_traveller %}
+<div class="card blueprint yn-note-card yn-todo">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <p class="bp-trip-notes">Your account isn't linked to a traveller yet, so there's nowhere to
+    keep your packing preferences. Ask an admin to link your account (Settings → Users).</p>
+</div>
+{% endif %}
+
 {% if saved %}
 <div class="card blueprint yn-note-card yn-todo yn-profile-saved">
   <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>

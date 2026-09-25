@@ -65,6 +65,7 @@ def set_travelers(session: Session, activity_id: str, trip_id: str,
     clear_activity(session, activity_id)
     for tid in ids:
         session.add(TripActivityTraveler(activity_id=activity_id, traveler_id=tid))
+    session.flush()                 # sessions run with autoflush off (app/db.py)
     return ids
 
 

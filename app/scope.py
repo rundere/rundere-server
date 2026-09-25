@@ -75,6 +75,17 @@ def trip_filter(session, user):
     return or_(cond, Trip.id.in_(extra)) if extra else cond
 
 
+def filing_trip_filter(session, user):
+    """Trips a user's captures can be FILED into (4.1): their own, open ones,
+    and ones they travel on — never someone else's just because the user is an
+    admin, and not view-only shares. `true()` with auth off (user None)."""
+    if user is None:
+        return true()
+    cond = or_(Trip.owner_id.is_(None), Trip.owner_id == user.id)
+    roster = _roster_trip_ids(session, user)
+    return or_(cond, Trip.id.in_(roster)) if roster else cond
+
+
 def visible_trip_ids(session, user) -> set[str] | None:
     """The set of VIEW-visible trip ids, or None meaning "all" (unrestricted) —
     for scoping child tables by trip_id without a join."""

@@ -92,24 +92,29 @@ class TravelerResolution:
     inferred: bool = False          # no passenger list at all -> assumed self
 
 
-def resolve_travelers(payload: dict,
-                      identities: list[Identity]) -> TravelerResolution:
+def resolve_travelers(payload: dict, identities: list[Identity],
+                      default: Identity | None = None) -> TravelerResolution:
     """Assign role/match_source/match_confidence to each traveler.
 
     An empty passenger list means the document never named anyone. Policy
-    (D-22) is assume self AND notify — RULE-11 then enforces that
-    review.required was actually set, so the policy is checked rather than
-    trusted.
+    (D-22) is assume AND notify — RULE-11 then enforces that review.required
+    was actually set, so the policy is checked rather than trusted. Who is
+    assumed (4.1): `default`, the traveller of the user who captured it, so a
+    companion's unnamed booking is theirs, not the deployment owner's (and so
+    never lands in the owner's AirTrail). Without one, the `self` traveller.
     """
     raw = payload.get("travelers") or []
     selves = [i for i in identities if i.kind == "self"]
 
     if not raw:
+        assumed = default or (selves[0] if selves else None)
+        is_self = assumed is None or assumed.kind == "self"
         return TravelerResolution(
-            travelers=[{"raw_name": (selves[0].display_name if selves else "self"),
-                        "role": "self", "match_source": "inferred_absent",
+            travelers=[{"raw_name": assumed.display_name if assumed else "self",
+                        "role": "self" if is_self else assumed.kind,
+                        "match_source": "inferred_absent",
                         "match_confidence": 0.0}],
-            self_on_booking=True, inferred=True)
+            self_on_booking=is_self, inferred=True)
 
     out: list[dict] = []
     found_self = False

@@ -41,11 +41,12 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def running_run(session, trip_id: str) -> DiscoveryRun | None:
-    """The trip's live run, or None. A row that says `running` but whose id is
-    not in _LIVE was orphaned by a restart — mark it failed and return None."""
+def running_run(session, trip_id: str, user_id: str | None = None) -> DiscoveryRun | None:
+    """This person's live run on the trip, or None (4.1: runs are per person). A
+    row that says `running` but whose id is not in _LIVE was orphaned by a
+    restart — mark it failed and return None."""
     run = (session.query(DiscoveryRun)
-           .filter(DiscoveryRun.trip_id == trip_id)
+           .filter(DiscoveryRun.trip_id == trip_id, DiscoveryRun.user_id == user_id)
            .order_by(DiscoveryRun.started_at.desc()).first())
     if run is None or run.status != "running":
         return None
@@ -62,11 +63,13 @@ def running_run(session, trip_id: str) -> DiscoveryRun | None:
 
 def launch(trip_id: str, *, resolve_airport, geocoder, det_resolvers,
            llm_resolvers, home_profiles, excluded, discovery_profile,
-           nationality, base_currencies, today) -> str:
-    """Create the run row and submit the worker. Returns the new run id."""
+           nationality, base_currencies, today, user_id: str | None = None) -> str:
+    """Create the run row and submit the worker. Returns the new run id. The run
+    (and so every finding it writes) belongs to `user_id` — the person whose
+    profile, nationality, currency and homes the inputs came from."""
     with SessionLocal() as s:
-        run = DiscoveryRun(trip_id=trip_id, status="running", phase="starting",
-                           started_at=_now())
+        run = DiscoveryRun(trip_id=trip_id, user_id=user_id, status="running",
+                           phase="starting", started_at=_now())
         s.add(run)
         s.commit()
         run_id = run.id
@@ -138,7 +141,7 @@ def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
                 run.done = done
                 s.commit()                       # stream the finding in
 
-            _prune_stale_drafts(s, trip_id, _in_scope_keys(derived))
+            _prune_stale_drafts(s, trip_id, _in_scope_keys(derived), run.user_id)
             run.done = run.total
             run.status = "done"
             run.phase = "done"

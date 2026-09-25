@@ -81,14 +81,16 @@ def _plan_tasks(derived: DerivedLocations, resolvers: list[Resolver],
 
 
 def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> None:
+    # Keyed per person too (4.1): each viewer has their own findings.
     existing = (session.query(DiscoveryFinding)
-                .filter_by(trip_id=trip_id, topic=f.topic, place_key=f.place_key)
+                .filter_by(trip_id=trip_id, user_id=run.user_id, topic=f.topic,
+                           place_key=f.place_key)
                 .first())
     if existing is not None and existing.status in ("approved", "edited", "rejected"):
         return                      # preserve human decisions across a re-run
     if existing is None:
-        existing = DiscoveryFinding(trip_id=trip_id, topic=f.topic,
-                                    place_key=f.place_key)
+        existing = DiscoveryFinding(trip_id=trip_id, user_id=run.user_id,
+                                    topic=f.topic, place_key=f.place_key)
         session.add(existing)
     existing.run_id = run.id
     existing.scope = f.scope
@@ -117,7 +119,7 @@ def _in_scope_keys(derived: DerivedLocations) -> set[str]:
 
 
 def _prune_stale_drafts(session: Session, trip_id: str,
-                        in_scope_keys: set[str]) -> None:
+                        in_scope_keys: set[str], user_id: str | None = None) -> None:
     """Delete a DRAFT finding only when its PLACE has left the trip — excluded in
     the viewer, or its activity removed / no longer geocodes.
 
@@ -129,6 +131,7 @@ def _prune_stale_drafts(session: Session, trip_id: str,
     Human-touched findings (approved/edited/rejected) are always kept."""
     for f in (session.query(DiscoveryFinding)
               .filter(DiscoveryFinding.trip_id == trip_id,
+                      DiscoveryFinding.user_id == user_id,
                       DiscoveryFinding.status == "draft").all()):
         if f.place_key not in in_scope_keys:
             session.delete(f)
@@ -193,15 +196,15 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
                   resolvers: list[Resolver], home_profiles: list = (),
                   excluded: set[str] = frozenset(),
                   base_currencies: tuple[str, ...] = ("CAD", "USD"),
-                  today: str | None = None) -> DiscoveryRun:
+                  today: str | None = None, user_id: str | None = None) -> DiscoveryRun:
     """Execute one Discovery pass over `trip` and persist its findings.
 
     `home_profiles` (HomeProfileRef list) suppresses research of home — see
     discover/home_filter. `excluded` is the set of DerivedPlace place_keys the
     operator excluded in the viewer. Returns the finished (or failed)
     DiscoveryRun row, already committed."""
-    run = DiscoveryRun(trip_id=trip.id, status="running", phase="deriving locations",
-                       started_at=_now())
+    run = DiscoveryRun(trip_id=trip.id, user_id=user_id, status="running",
+                       phase="deriving locations", started_at=_now())
     session.add(run)
     session.flush()                 # need run.id for finding.run_id
 
@@ -247,7 +250,7 @@ def run_discovery(session: Session, trip, *, resolve_airport, geocoder,
                 langdata.persist_finding_generated(session, finding.data)
             session.flush()
 
-        _prune_stale_drafts(session, trip.id, _in_scope_keys(derived))
+        _prune_stale_drafts(session, trip.id, _in_scope_keys(derived), run.user_id)
         run.done = len(tasks)
         run.status = "done"
         run.phase = "done"
