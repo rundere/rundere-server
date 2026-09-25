@@ -6,6 +6,7 @@
     python -m app.cli list-keys
     python -m app.cli create-user <username> [--admin] [--password PW]  # 4.0 auth
     python -m app.cli set-password <username> [--password PW]
+    python -m app.cli set-email <username> <email>     # blank "" clears it
     python -m app.cli make-admin <username> [--revoke]
     python -m app.cli link-traveler <username> <traveler_id>
     python -m app.cli list-users
@@ -43,6 +44,7 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
 
         create-user <username> [--admin] [--password PW] [--email E] [--traveler ID]
         set-password <username> [--password PW]
+        set-email   <username> <email>   ("" clears)
         make-admin  <username> [--revoke]
         link-traveler <username> <traveler_id>
         list-users
@@ -68,7 +70,8 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         for u in rows:
             flags = ",".join(f for f, on in
                              (("admin", u.is_admin), ("inactive", not u.is_active)) if on)
-            print(f"{u.username:24} {u.auth_source:6} traveler={u.traveler_id} "
+            print(f"{u.username:24} {u.auth_source:6} email={u.email or '—':28} "
+                  f"traveler={u.traveler_id} "
                   f"[{flags or 'user'}] last_login={u.last_login_at}")
         return 0
 
@@ -109,6 +112,17 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         user.token_version += 1        # invalidate existing sessions on a reset
         session.commit()
         print(f"password updated for {username!r} (existing sessions signed out)")
+        return 0
+
+    if cmd == "set-email":
+        if len(args) < 2:
+            print('usage: set-email <username> <email>   (use "" to clear)')
+            return 2
+        error = authn.set_user_email(session, user, args[1])
+        if error:
+            print(error)
+            return 1
+        print(f"email for {username!r} " + (f"set to {user.email}" if user.email else "cleared"))
         return 0
 
     if cmd == "make-admin":
@@ -195,7 +209,7 @@ def main(argv: list[str]) -> int:
                 state = "REVOKED" if r.revoked_at else "active"
                 who = session.get(User, r.user_id).username if r.user_id else "—(open)"
                 print(f"{r.client_name:30} {state:8} user={who:16} last_used={r.last_used_at}")
-        elif cmd in ("create-user", "set-password", "make-admin", "list-users",
+        elif cmd in ("create-user", "set-password", "set-email", "make-admin", "list-users",
                      "link-traveler", "mint-api-token"):
             return _user_cmd(session, cmd, args)
         elif cmd == "import-home":

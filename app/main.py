@@ -26,9 +26,11 @@ app.include_router(ingest_router)
 from app.accounts_routes import router as accounts_router  # noqa: E402
 from app.authn_routes import router as authn_router  # noqa: E402
 from app.oidc_routes import router as oidc_router  # noqa: E402
+from app.settings_routes import router as settings_router  # noqa: E402
 
 app.include_router(authn_router)
 app.include_router(accounts_router)
+app.include_router(settings_router)
 app.include_router(oidc_router)
 
 # The JSON API (Phase 3). Every /api/v1/* route (except /api/v1/auth/*) requires

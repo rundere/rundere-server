@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <h1 class="pagetitle">Settings</h1>
+  </div></div>
+
+  <div class="settings-hub">
+    <section>
+      <h2 class="settings-h">You</h2>
+      <div class="settings-grid">
+        {% for e in you %}
+        <a class="settings-card" href="{{ e.href }}">
+          <span class="settings-title">{{ e.title }}</span>
+          <span class="settings-desc">{{ e.desc }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+
+    {% if admin %}
+    <section>
+      <h2 class="settings-h">Administration</h2>
+      <div class="settings-grid">
+        {% for e in admin %}
+        <a class="settings-card" href="{{ e.href }}">
+          <span class="settings-title">{{ e.title }}</span>
+          <span class="settings-desc">{{ e.desc }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <p class="settings-foot">
+      {% if me %}<form method="post" action="/logout" style="display:inline;margin:0">
+        <button class="act tiny" type="submit">Sign out {{ me.username }}</button>
+      </form> · {% endif %}<a href="/about">About Yonder</a></p>
+  </div>
+</div>
+{% endblock %}
