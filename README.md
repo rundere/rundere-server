@@ -1,6 +1,6 @@
 # Yonder
 
-**Version 4.2.1** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/yonder/releases) · [releasing](RELEASING.md)
+**Version 4.3.0** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/yonder/releases) · [releasing](RELEASING.md)
 
 Yonder turns travel documents — booking emails, calendar invites, PDF
 confirmations, and Google Maps directions — into clean records in your
