@@ -67,15 +67,53 @@ def fingerprint(atype: str, values: dict) -> str:
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
-def _query(atype: str, role: str, tried: tuple[str, ...], values: dict) -> str | None:
-    """The text to locate one point: a lodging/restaurant is its name AND
-    address together when both are given (a chain name alone lands on the
-    wrong branch — see resolve/geocode.py)."""
-    if atype in ("lodging", "dining") and values.get("address"):
+def _route_ends(route: str) -> tuple[str, str] | None:
+    """'A → B' / 'A -> B' / 'A to B' — the two ends a route-only road trip
+    names (older entries have no From/To)."""
+    import re
+    parts = re.split(r"\s*(?:→|->|—>)\s*|\s+to\s+", route or "", maxsplit=1,
+                     flags=re.IGNORECASE)
+    if len(parts) == 2 and all(p.strip() for p in parts):
+        return parts[0].strip(), parts[1].strip()
+    return None
+
+
+def _queries(atype: str, role: str, tried: tuple[str, ...], values: dict) -> list[str]:
+    """The texts to try for one point, best first.
+
+    A lodging/restaurant with a full address (one with a comma: street, city…)
+    is searched by the ADDRESS alone first — Photon finds a postal address and
+    a long property name in front of it ruins the match (resolve/geocode.py
+    measured this); then name + address, then the name. A bare street line
+    ("311 Ocotillo Ln") needs the name beside it to pick the right town. A road
+    trip with only a route ("A → B") takes its ends from the route."""
+    if atype in ("lodging", "dining") and (values.get("address") or "").strip():
         name = (values.get("name") or "").strip()
         addr = values["address"].strip()
-        return addr if not name or name.lower() in addr.lower() else f"{name}, {addr}"
-    return next((values[k].strip() for k in tried if (values.get(k) or "").strip()), None)
+        combined = addr if not name or name.lower() in addr.lower() else f"{name}, {addr}"
+        order = [addr, combined, name] if "," in addr else [combined, addr, name]
+        out: list[str] = []
+        for q in order:
+            if q and q not in out:
+                out.append(q)
+        return out
+    found = [values[k].strip() for k in tried if (values.get(k) or "").strip()]
+    if not found and atype == "drive" and role in ("from", "to"):
+        ends = _route_ends(values.get("route") or "")
+        if ends:
+            found = [ends[0] if role == "from" else ends[1]]
+    return found
+
+
+def _query(atype: str, role: str, tried: tuple[str, ...], values: dict) -> str | None:
+    """The label for one point: its best query."""
+    qs = _queries(atype, role, tried, values)
+    return qs[0] if qs else None
+
+
+def _norm(text: str) -> str:
+    import re
+    return " ".join(re.sub(r"[^\w\s]", " ", (text or "").lower()).split())
 
 
 class Locator:
@@ -84,19 +122,23 @@ class Locator:
     airport or hotel is geocoded once."""
 
     def __init__(self, *, geocoder=None, airport: Callable[[str], object] | None = None,
-                 route_url: str | None = None):
+                 route_url: str | None = None, known: dict | None = None):
         self._geocoder = geocoder
         self._airport = airport
+        # Places already located on the same trip, by normalised name/label:
+        # "Phoenix Marriott Saguaro Vista Hotel" in a drive's route is the hotel
+        # the trip already has, not a fresh guess (see trip_places()).
+        self.known: dict[str, tuple[float, float]] = known or {}
         # None = the configured router chain; a string pins one OSRM ("" = off)
         self.route_url = route_url
         self._cache: dict[str, tuple[float, float, str] | None] = {}
         self.links: dict[str, tuple[list[dict], object]] = {}
 
     @classmethod
-    def default(cls) -> "Locator":
+    def default(cls, known: dict | None = None) -> "Locator":
         """Photon + AirTrail airports + the router chain from settings, built
-        on first use."""
-        loc = cls()
+        on first use; `known` = the trip's already-located places."""
+        loc = cls(known=known)
         loc._lazy = True
         return loc
 
@@ -131,12 +173,39 @@ class Locator:
                 self.links[link] = ([], None)
         return self.links[link]
 
+    def _known(self, text: str) -> tuple[float, float] | None:
+        n = _norm(text)
+        if not n or not self.known:
+            return None
+        if n in self.known:
+            return self.known[n]
+        # A longer text naming a known place ("Mesquite Springs Spa Resort, Santa
+        # Fe") or a short one inside a known name — only for real names, not
+        # codes or fragments that would match anything.
+        for k, v in self.known.items():
+            if min(len(k), len(n)) >= 10 and (k in n or n in k):
+                return v
+        return None
+
+    def first(self, queries: list[str], *, airport: bool = False
+              ) -> tuple[float, float, str] | None:
+        """The first query that locates."""
+        for q in queries:
+            hit = self.text(q, airport=airport)
+            if hit:
+                return hit
+        return None
+
     def text(self, text: str, *, airport: bool = False) -> tuple[float, float, str] | None:
         """(lat, lon, source) for place text, or None."""
         key = f"{'A' if airport else 'T'}:{text.strip().lower()}"
         if key in self._cache:
             return self._cache[key]
         hit = None
+        if not airport:
+            k = self._known(text)
+            if k:
+                hit = (k[0], k[1], "trip")
         code = text.strip().upper()
         if airport and code.isalpha() and len(code) in (3, 4):
             ap = self.airport(code)
@@ -209,7 +278,8 @@ def _locate(atype, values, spec, key, loc: Locator) -> dict:
                 continue
             if not q:
                 continue
-            hit = loc.text(q, airport=atype in _AIRPORT_TYPES)
+            hit = loc.first(_queries(atype, role, tried, values),
+                            airport=atype in _AIRPORT_TYPES)
             if hit:
                 points.append(_point(role, q, hit[0], hit[1], hit[2]))
         expected = sum(1 for role, tried in spec
@@ -283,29 +353,68 @@ def public_geo(geo: dict | None) -> dict | None:
     return out
 
 
+def trip_places(session, trip_id: str, *, exclude_id: str | None = None) -> dict:
+    """{normalised name: (lat, lon)} of the places a trip already has located —
+    each single-place activity by its name and its point label, and the
+    labelled ends of transport. What a route or a From/To on the same trip
+    most likely means."""
+    from app.models import TripActivity
+    known: dict[str, tuple[float, float]] = {}
+    for a in session.query(TripActivity).filter(TripActivity.trip_id == trip_id).all():
+        if a.id == exclude_id or not a.geo:
+            continue
+        v = a.values or {}
+        for p in a.geo.get("points") or []:
+            names = [p.get("label") or ""]
+            if p.get("role") == "place":
+                names.append(v.get("name") or "")
+            for n in names:
+                n = _norm(n)
+                if len(n) >= 5 and n not in known:
+                    known[n] = (p["lat"], p["lon"])
+    return known
+
+
 def backfill(session, *, trip_id: str | None = None, redo: bool = False,
              progress: Callable[[str], None] | None = None) -> dict:
     """Locate existing activities (NULL or incomplete geo; all of them with
     `redo`). One Locator for the whole run, so a shared airport or hotel is
-    looked up once. Commits per activity; returns counts."""
+    looked up once; a second pass per trip retries what's still missing
+    against the places the trip now has. Commits per trip; returns counts and
+    reports each activity that isn't fully located."""
     from app.models import TripActivity
     q = session.query(TripActivity)
     if trip_id:
         q = q.filter(TripActivity.trip_id == trip_id)
-    loc = Locator.default()
+    base = Locator.default()
     counts = {"located": 0, "partial": 0, "unlocated": 0, "skipped": 0}
+    todo: dict[str, list] = {}
     for a in q.order_by(TripActivity.trip_id, TripActivity.starts_at).all():
         if not redo and a.geo and a.geo.get("complete") \
                 and a.geo.get("key") == fingerprint(a.type, a.values or {}):
             counts["skipped"] += 1
             continue
-        geo = locate_activity(a.type, a.values or {}, locator=loc)
-        a.geo = geo
+        todo.setdefault(a.trip_id, []).append(a)
+    for tid, acts in todo.items():
+        # Two passes per trip: places first, then anything still missing with
+        # what the trip now knows (a route naming its hotels).
+        for a in acts:
+            a.geo = locate_activity(a.type, a.values or {}, locator=base)
         session.commit()
-        state = ("skipped" if geo is None else "located" if geo.get("complete")
-                 else "partial" if geo.get("points") else "unlocated")
-        counts[state] += 1
-        if progress:
-            title = activity_types.get_type(a.type).title(a.values or {})
-            progress(f"{state:9} {a.type:9} {title}")
+        pending = [a for a in acts if a.geo is not None and not a.geo.get("complete")]
+        if pending:
+            known = trip_places(session, tid)
+            loc = Locator(geocoder=base.geocoder, airport=base.airport,
+                          route_url=base.route_url, known=known)
+            for a in pending:
+                a.geo = locate_activity(a.type, a.values or {}, locator=loc)
+            session.commit()
+        for a in acts:
+            geo = a.geo
+            state = ("skipped" if geo is None else "located" if geo.get("complete")
+                     else "partial" if geo.get("points") else "unlocated")
+            counts[state] += 1
+            if progress and state != "located":
+                title = activity_types.get_type(a.type).title(a.values or {})
+                progress(f"{state:9} {a.type:9} {title}")
     return counts

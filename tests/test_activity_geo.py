@@ -77,7 +77,9 @@ def test_lodging_located_from_name_and_address():
     assert g["complete"] is True
     [p] = g["points"]
     assert (p["role"], p["lat"], p["lon"], p["source"]) == ("place", 35.098, -106.664, "photon")
-    assert "Hotel Palo Verde, 2000 Palo Verde Ave" in loc.geocoder.asked[0]   # name + address together
+    # a full address (with its city) is searched on its own first — a long
+    # property name in front of it spoils Photon's match
+    assert loc.geocoder.asked[0] == "2000 Palo Verde Ave Ave NW, Phoenix"
 
 
 def test_maps_place_link_pin_beats_geocoding():
@@ -185,7 +187,7 @@ def test_backfill_locates_old_activities_once(monkeypatch):
         return
     table = {"Palo Verde Ave": (35.098, -106.664)}
     monkeypatch.setattr(geo.Locator, "default",
-                        classmethod(lambda cls: _loc(table)))
+                        classmethod(lambda cls, known=None: _loc(table)))
     with SessionLocal() as s:
         t = Trip(name="Geo backfill test", start_date="2027-01-01", end_date="2027-01-05")
         s.add(t)
@@ -217,7 +219,7 @@ def test_saving_an_activity_stores_its_geo(monkeypatch):
     from app.main import app
     from app.models import User
     monkeypatch.setattr(geo.Locator, "default",
-                        classmethod(lambda cls: _loc({"Palo Verde Ave": (35.098, -106.664)})))
+                        classmethod(lambda cls, known=None: _loc({"Palo Verde Ave": (35.098, -106.664)})))
     with SessionLocal() as s:
         u = User(username="geo-api", password_hash=authn.hash_password("pw"),
                  auth_source="local")
@@ -247,6 +249,78 @@ def test_saving_an_activity_stores_its_geo(monkeypatch):
         assert r.json()["geo"] is None                    # moved, and not found
     finally:
         with SessionLocal() as s:
+            s.query(TripActivity).filter(TripActivity.trip_id == tid).delete()
+            s.delete(s.get(Trip, tid))
+            s.commit()
+
+
+def test_live_misses_from_the_new_mexico_trip(monkeypatch):
+    """The three unlocated Arizona activities after the 4.3.0 backfill:
+    - a long property name + full address: the address alone locates it;
+    - a bare street line still needs the name beside it (right town);
+    - a route-only drive ("A → B") takes its ends from the route, and matches
+      the hotels the trip already has before asking Photon."""
+    if not DEPS:
+        return
+    loc = _loc({"501 Hot Springs St": (33.13, -107.25)})
+    g = geo.locate_activity("lodging", {
+        "name": "Desert Springs Retreat",
+        "address": "501 Hot Springs St, Wickenburg, NM 87901, United States"},
+        locator=loc)
+    assert g["complete"] and g["points"][0]["lat"] == 33.13
+    assert loc.geocoder.asked[0].startswith("501 Hot Springs St")
+
+    loc = _loc({"Cactus Ridge Suites by Marriott Glendale, 311 Ocotillo Ln": (32.41, -104.23)})
+    g = geo.locate_activity("lodging", {"name": "Cactus Ridge Suites by Marriott Glendale",
+                                        "address": "311 Ocotillo Ln"}, locator=loc)
+    assert g["complete"] and loc.geocoder.asked[0].startswith("Cactus Ridge")
+
+    from resolve import routing
+    monkeypatch.setattr(routing, "route", lambda pts, base_url=None, timeout=8:
+                        routing.RouteEstimate(80.0, 60, "pl"))
+    known = {geo._norm("Phoenix Marriott Saguaro Vista Hotel"): (35.168, -106.587),
+             geo._norm("Mesquite Springs Spa Resort"): (35.584, -106.102)}
+    loc = geo.Locator(geocoder=_Geocoder({}), airport=lambda c: None,
+                      route_url="http://osrm", known=known)
+    g = geo.locate_activity("drive", {
+        "route": "Phoenix Marriott Saguaro Vista Hotel → Mesquite Springs Spa Resort"}, locator=loc)
+    assert [(p["role"], p["source"]) for p in g["points"]] == [("from", "trip"), ("to", "trip")]
+    assert g["complete"] and g["route"]["polyline"] == "pl"
+    assert loc.geocoder.asked == []                  # never needed Photon
+
+
+def test_route_ends_parsing():
+    if not DEPS:
+        return
+    assert geo._route_ends("PHX to Sedona") == ("PHX", "Sedona")
+    assert geo._route_ends("A -> B") == ("A", "B")
+    assert geo._route_ends("Scenic loop") is None
+
+
+def test_backfill_second_pass_uses_the_trips_own_places(monkeypatch):
+    if not DEPS:
+        return
+    from resolve import routing
+    monkeypatch.setattr(routing, "route", lambda pts, base_url=None, timeout=8: None)
+    table = {"5151 Saguaro Vista Rd NE": (35.168, -106.587)}
+    monkeypatch.setattr(geo.Locator, "default",
+                        classmethod(lambda cls, known=None: _loc(table)))
+    with SessionLocal() as s:
+        t = Trip(name="Geo two-pass test", start_date="2027-05-01", end_date="2027-05-03")
+        s.add(t)
+        s.flush()
+        s.add(TripActivity(trip_id=t.id, type="drive", starts_at="2027-05-01T09:00",
+                           values={"route": "Phoenix Marriott Saguaro Vista Hotel → "
+                                            "Phoenix Marriott Saguaro Vista Hotel"}))
+        s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2027-05-01T15:00",
+                           values={"name": "Phoenix Marriott Saguaro Vista Hotel",
+                                   "address": "5151 Saguaro Vista Rd NE, Phoenix, NM"}))
+        s.commit()
+        tid = t.id
+        try:
+            counts = geo.backfill(s, trip_id=tid)
+            assert counts["located"] == 2, counts
+        finally:
             s.query(TripActivity).filter(TripActivity.trip_id == tid).delete()
             s.delete(s.get(Trip, tid))
             s.commit()
