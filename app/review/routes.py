@@ -693,11 +693,16 @@ def _reresolve(session: Session, item: TravelItem) -> None:
     except Exception:
         log.warning("re-resolve ran without target lookups", exc_info=True)
 
+    # Photon too, as the batch path uses it: an edited From/To address or city
+    # is only useful if the re-resolve can locate it (YONDER-121).
+    from resolve.geocode import PhotonGeocoder
+    geocoder = PhotonGeocoder(settings.photon_url)
+
     try:
         from app.resolving import load_identities
         resolve_item(session, item, load_homes_for_user(session, item.owner_id), collections,
                      load_enablement(session), airports=airports,
-                     country_names=country_names,
+                     geocoder=geocoder, country_names=country_names,
                      identities=load_identities(session))  # self/guest needs these
         session.commit()
     except Exception:

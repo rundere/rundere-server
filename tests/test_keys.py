@@ -297,3 +297,43 @@ if __name__ == "__main__":
                 print(f"  FAIL {name}: {ex}")
     print(f"\n{failures} failure(s)")
     sys.exit(1 if failures else 0)
+
+
+def test_drive_without_coordinates_names_an_actionable_reason():
+    """YONDER-121: a Google Maps link that names its stops but embeds no
+    coordinates is a perfectly-typed drive. When a stop can't be located it must
+    say so ('add an address or city') — not 'unknown_type', whose 'set the type'
+    can't be done because the Kind field isn't editable."""
+    from resolve.keys import unkeyable_reason
+    payload = {
+        "item_type": "ground_transport",
+        "ground_transport": {
+            "mode": "car",
+            "departure": {"place": {"name": "Phoenix International Sunport"}},
+            "arrival": {"place": {"name": "Heritage Square, Phoenix, NM",
+                                  "city": "Phoenix", "region": "NM"}},
+            "waypoints": [],
+        },
+    }
+    ctx = {"travel_date": "2026-10-10"}
+    assert keys_for(payload, ctx) is None
+    assert unkeyable_reason(payload, ctx) == "geocode_failed"
+    # no date at all is the other missing piece of a road key
+    assert unkeyable_reason(payload) == "missing_travel_date"
+
+    # once both stops are located (the geocoder, or a reviewer's edit), it keys
+    payload["ground_transport"]["departure"]["place"].update(lat=35.04, lon=-106.61)
+    payload["ground_transport"]["arrival"]["place"].update(lat=35.10, lon=-106.67)
+    r = keys_for(payload, ctx)
+    assert r is not None and r.primary.startswith("road:2026-10-10:")
+
+
+def test_scheduled_ground_transport_keeps_the_generic_reason():
+    """A train with a service number keys on the service, not on coordinates,
+    so a missing coordinate is not what blocks it."""
+    from resolve.keys import unkeyable_reason
+    payload = {"item_type": "ground_transport",
+               "ground_transport": {"mode": "train", "service_number": "3",
+                                    "departure": {}, "arrival": {}}}
+    assert keys_for(payload) is None
+    assert unkeyable_reason(payload) == "unknown_type"

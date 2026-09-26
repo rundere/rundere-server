@@ -471,6 +471,14 @@ def resolve_item(session: Session, item: TravelItem,
 
     # ---- 1. keys
     key_result = keys_mod.keys_for(payload, cc)
+    if key_result is None and geocoder is not None \
+            and payload.get("item_type") == "ground_transport":
+        # A drive keys on its endpoint coordinates, but a Maps link that only
+        # names its stops carries none — locate them now rather than after
+        # keying, or the drive can never key (YONDER-121). Step 3 only fills
+        # blanks, so this is not repeated there.
+        payload = _geocode_places(payload, geocoder)
+        key_result = keys_mod.keys_for(payload, cc)
     if key_result is None:
         item.review = {**(item.review or {}), "required": True,
                        "reasons": [keys_mod.unkeyable_reason(payload, cc)]}

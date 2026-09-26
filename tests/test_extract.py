@@ -790,3 +790,16 @@ if __name__ == "__main__":
                 print(f"  FAIL {name}: {str(ex)[:300]}")
     print(f"\n{failures} failure(s)")
     sys.exit(1 if failures else 0)
+
+
+def test_directions_stop_place_city_state_splits_on_the_city():
+    """YONDER-121: Google writes a named stop as 'Place, City, ST'. The city is
+    the part before the state code — not the place name — or the geocoder's city
+    check rejects the right hit. 'City, Region, Country' and street addresses
+    keep their existing parse."""
+    from extract.directions_common import _parse_place
+    p = _parse_place("Heritage Square, Phoenix, NM")
+    assert (p["city"], p["region"]) == ("Phoenix", "NM")
+    p = _parse_place("Toronto, ON, Canada")
+    assert (p["city"], p["region"]) == ("Toronto", "ON")
+    assert "city" not in _parse_place("2074 Donald Harbour Pkwy, Locust Hill, ON")

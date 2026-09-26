@@ -701,3 +701,66 @@ def test_resolve_adds_yonder_target_when_linked_to_a_trip():
             assert "yonder.activity" in (done.resolution or {}).get("targets", [])
             assert (done.status or {}).get("resolve") == "ok"   # writable to Yonder
     _skip_or(run)
+
+
+def test_named_maps_drive_is_geocoded_before_keying():
+    """YONDER-121: a Maps directions capture that names its stops (no embedded
+    coords) must be located BEFORE keying — the road key is built from the
+    endpoint coordinates — instead of blocking as unknown_type. Unlocatable
+    stops fall back to the actionable geocode_failed."""
+    if not DEPS:
+        return
+
+    class _StubPhoton:
+        def __init__(self, known):
+            self.known = known
+
+        def geocode_place(self, place):
+            from resolve.geocode import GeocodeResult
+            hit = self.known.get(place.get("city") or place.get("name"))
+            if not hit:
+                return None
+            return GeocodeResult(lat=hit[0], lon=hit[1], country="US",
+                                 city=place.get("city"), name=place.get("name"),
+                                 confidence="verified")
+
+    def drive():
+        return {"item_type": "ground_transport", "booking_status": "planned",
+                "ground_transport": {
+                    "mode": "car",
+                    "departure": {"place": {"raw": "Phoenix International Sunport",
+                                            "name": "Phoenix International Sunport"},
+                                  "time": {"local": "2027-10-10", "precision": "date",
+                                           "origin": "capture_context"}},
+                    "arrival": {"place": {"raw": "Heritage Square, Phoenix, NM",
+                                          "name": "Heritage Square, Phoenix, NM",
+                                          "city": "Phoenix", "region": "NM"},
+                                "time": {"local": "2027-10-10", "precision": "date",
+                                         "origin": "capture_context"}},
+                    "waypoints": [],
+                    "route": {"provider": "google_maps", "is_estimate": True,
+                              "source_url": "https://www.google.com/maps/dir/A/B/"}}}
+
+    def add_drive(s):
+        it = _add_item(s, drive())
+        # a directions capture's date comes from the person (RULE-31/34)
+        it.source = {**it.source, "capture_context": {"travel_date": "2027-10-10"}}
+        s.commit()
+        return it
+
+    with SessionLocal() as s:
+        _seed_home(s)
+        found = add_drive(s)
+        resolve_pending(s, adventurelog=None,
+                        geocoder=_StubPhoton({
+                            "Phoenix International Sunport": (35.04, -106.61),
+                            "Phoenix": (35.10, -106.67)}))
+        done = s.get(TravelItem, found.id)
+        assert "unknown_type" not in ((done.review or {}).get("reasons") or [])
+        assert s.query(ItemKey).filter(ItemKey.item_id == done.id,
+                                       ItemKey.key.like("road:2027-10-10:%")).first()
+
+        lost = add_drive(s)
+        resolve_pending(s, adventurelog=None, geocoder=_StubPhoton({}))
+        done = s.get(TravelItem, lost.id)
+        assert done.review["reasons"] == ["geocode_failed"]

@@ -16,6 +16,13 @@ import re
 
 _COORD = re.compile(r"^\s*(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)\s*$")
 _HAS_DIGIT = re.compile(r"\d")
+# US state and Canadian province codes — how Google writes the region at the end
+# of a "Place, City, ST" stop. Seeing one last marks the part before it as the
+# city, not the first part (YONDER-121: "Heritage Square, Phoenix, NM").
+_SUBDIVISION_CODES = frozenset((
+    "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS "
+    "MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI "
+    "WY PR AB BC MB NB NL NS NT NU ON PE QC SK YT").split())
 
 # The user-facing capture selection -> the ground_transport.mode written to the
 # payload. Transit is `other` (a transit *directions* link is a plan, not a
@@ -67,7 +74,12 @@ def _parse_place(segment: str) -> dict:
     # Only treat it as "City, Region[, Country]" when the FIRST part is not a
     # street line (no house number) — an address keeps its whole string for the
     # D-59 formatted-address tier instead.
-    if len(parts) >= 2 and not _HAS_DIGIT.search(parts[0]):
+    if len(parts) >= 3 and parts[-1] in _SUBDIVISION_CODES \
+            and not any(_HAS_DIGIT.search(p) for p in parts):
+        # "Place, City, ST": the city sits just before the region code.
+        place["city"] = parts[-2]
+        place["region"] = parts[-1]
+    elif len(parts) >= 2 and not _HAS_DIGIT.search(parts[0]):
         place["city"] = parts[0]
         place["region"] = parts[1]
     return place
