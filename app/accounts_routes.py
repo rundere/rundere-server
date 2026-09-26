@@ -70,7 +70,7 @@ def opt_out_blocker(user: User) -> str:
         return ("Email isn't set up on this server yet, so a password reset would "
                 "have to go through an admin. Ask the admin to configure email.")
     if not user.email:
-        return "Add your email above first, so password resets can reach you directly."
+        return "Add your email address first, so password resets can reach you directly."
     return ""
 
 

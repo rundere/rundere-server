@@ -338,6 +338,30 @@ def current_user_optional(request: "Request") -> "User | None":
         return user
 
 
+def is_first_party(request) -> bool:
+    """Was this request made by Yonder itself — the web session cookie, or the
+    app's own login token (`typ="access"`, from /api/v1/auth/login|refresh)?
+    Connected apps / agents (OAuth tokens), personal API tokens and CLI-minted
+    API tokens are NOT: they may use the user's data, but must not change the
+    account's own settings (sharing with admins, email). YONDER-101."""
+    authz = request.headers.get("authorization", "")
+    if authz[:7].lower() == "bearer ":
+        claims = jwt_decode(authz[7:].strip()) or {}
+        return claims.get("typ") == "access"
+    return bool(request.cookies.get(settings.auth_cookie_name))
+
+
+def first_party_user(request: "Request") -> "User":
+    """FastAPI dependency: an authenticated user on a first-party credential
+    (403 for connected apps and API tokens)."""
+    from fastapi import HTTPException
+    user = current_user(request)
+    if not is_first_party(request):
+        raise HTTPException(status_code=403, detail="change this in the Yonder app or on "
+                            "the web — connected apps and API tokens can't")
+    return user
+
+
 def current_user(request: "Request") -> "User":
     """FastAPI dependency: require an authenticated user (401 otherwise)."""
     from fastapi import HTTPException

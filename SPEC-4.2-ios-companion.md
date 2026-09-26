@@ -76,6 +76,17 @@ Server-brokered PKCE handoff — the app never talks to Authentik directly:
 The user payload then carries `sharing_prompt` (§3.3).
 
 ### 3.3 Sharing prompt in the app
+> **Status: server side implemented (YONDER-101).** The user payload (`/me`,
+> login, refresh) carries `email`, `share_with_admins`, `sharing_prompt`,
+> `opt_out_blocker`. `PUT /api/v1/auth/me/sharing {share}` and — added by the
+> owner, 2026-09-26 — `PUT /api/v1/auth/me/email {email, current_password}` so
+> the app can set/change the address resets go to (local accounts need their
+> current password; can't remove it while opted out). Both are **first-party
+> only**: the app's login token or the web session; connected apps (OAuth
+> agents), personal API tokens and CLI API tokens get 403 — they may use your
+> data, not change your account settings. (When the app moves to OAuth sign-in,
+> YONDER-104, its client must be marked first-party.) Tests:
+> `tests/test_api_sharing.py`.
 Extend the user payload (`/api/v1/auth/me`, login/exchange responses) with
 `email`, `share_with_admins`, `sharing_prompt`, and `opt_out_blocker` (the
 same text the web shows, `accounts_routes.opt_out_blocker`). Add
@@ -214,7 +225,7 @@ with Docker Desktop; each ships with tests like everything in 4.1.
 | 0b | ✅ Remote MCP at `/mcp`, tools up to date + "save to my Discover" (§3.7) | YONDER-108 | server | 0a |
 | 0c | Traefik machine-endpoint route (no Authentik; geoblock + CrowdSec), stack file synced (§3.7) | YONDER-109 | ops | 0a |
 | 1 | OpenAPI for `/api/v1` behind auth + DTO drift check | YONDER-58 | server + app | — |
-| 2 | User payload + sharing endpoint (§3.3) | YONDER-101 | server | — |
+| 2 | ✅ User payload + sharing endpoint (§3.3) | YONDER-101 | server | — |
 | 3 | DTO sync: `traveler_ids`, user fields, lenient decoding; per-person cache keys (§3.4) | YONDER-102 | app | 1, 2 |
 | 4 | Finish the core tabs (define done: pull-to-refresh everywhere, empty/offline states, Settings links §3.6) | YONDER-52 | app | 3 |
 | 5 | **Trip editing**: edit trip, add/edit/delete activity (APIs exist, D-125), packing check-off + custom line (APIs exist) | YONDER-103 | app | 3 |
