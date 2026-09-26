@@ -9,7 +9,7 @@
 {% set cur_q = ('?for=' ~ cur_for) if cur_for else '' %}
 {% set you_all = [
   {"title": "Account", "href": "/account", "match": "/account", "needs_user": true,
-   "desc": "Change your password and the email reset links go to."},
+   "desc": "Password, reset email, connected apps and personal API tokens."},
   {"title": "Travel profile", "href": "/trips/settings/travel-profile" ~ cur_q, "match": "/trips/settings/travel-profile", "needs_user": false,
    "desc": "Nationality, base currency, names on tickets."},
   {"title": "Home profiles", "href": "/review/home" ~ cur_q, "match": "/review/home", "needs_user": false,

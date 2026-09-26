@@ -252,6 +252,82 @@ class RefreshToken(Base):
     user_agent: Mapped[str | None] = mapped_column(String(256))
 
 
+class OAuthClient(Base):
+    """YONDER-107: an OAuth 2.1 client (claude.ai, Claude Code, the iOS app).
+    Registered dynamically (RFC 7591, `source="dcr"`) or pre-registered with
+    `app.cli oauth-client create` (`source="cli"`). Registering grants nothing by
+    itself — every user still signs in and consents. `secret_hash` (sha256) is
+    set only for confidential clients; public clients rely on PKCE."""
+    __tablename__ = "oauth_clients"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    redirect_uris: Mapped[list] = mapped_column(JsonCol)
+    secret_hash: Mapped[str | None] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(8), default="dcr")      # dcr | cli
+    created_by: Mapped[str | None] = mapped_column(String(36))         # user id (None = DCR/CLI)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class OAuthCode(Base):
+    """A single-use authorization code (≤60 s), bound to client + redirect_uri +
+    PKCE challenge + user. Only its sha256 is stored. `grant_id` is filled when
+    it's exchanged, so a replayed code can revoke the grant it produced."""
+    __tablename__ = "oauth_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    redirect_uri: Mapped[str] = mapped_column(Text)
+    code_challenge: Mapped[str] = mapped_column(String(128))
+    scope: Mapped[str | None] = mapped_column(String(255))
+    resource: Mapped[str | None] = mapped_column(String(512))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    grant_id: Mapped[str | None] = mapped_column(String(36))
+
+
+class OAuthGrant(Base):
+    """One user's consent to one client — what Account → Connected apps lists.
+    Holds the CURRENT rotating refresh token's sha256; `prev_refresh_hashes`
+    keeps recently retired ones so a replayed (stolen) refresh token is
+    recognised and revokes the whole grant. Sliding expiry: every refresh
+    pushes `expires_at` out. `token_version` snapshots User.token_version so
+    "sign out everywhere" also ends the grant."""
+    __tablename__ = "oauth_grants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    scope: Mapped[str | None] = mapped_column(String(255))
+    resource: Mapped[str | None] = mapped_column(String(512))
+    refresh_hash: Mapped[str | None] = mapped_column(String(64))
+    prev_refresh_hashes: Mapped[list | None] = mapped_column(JsonCol)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PersonalApiToken(Base):
+    """A personal API token (`ypat_…`) for non-OAuth clients (Claude Code, the
+    stdio MCP script). Created and revoked on the Account page, shown once,
+    stored as sha256. Optional expiry; `token_version` snapshot as for grants."""
+    __tablename__ = "personal_api_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class PasswordResetToken(Base):
     """One-time password-reset link (Phase 1a.1, D-117). Only the sha256 of the
     opaque token is stored; the link carries the plaintext. Single-use (used_at)

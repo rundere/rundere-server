@@ -11,6 +11,12 @@
     python -m app.cli link-traveler <username> <traveler_id>
     python -m app.cli list-users
     python -m app.cli mint-api-token <username> [--days N]  # long-lived MCP/API token
+                                                      # (prefer Account → Personal API tokens)
+    python -m app.cli oauth-client create <name> --redirect <uri> [--redirect <uri>…] [--confidential]
+                                                      # pre-register an OAuth client (e.g. for
+                                                      # claude.ai's advanced settings); prints
+                                                      # the id (+ secret, once)
+    python -m app.cli oauth-client list
     python -m app.cli process [--no-llm] [--limit N]   # extract received batches
     python -m app.cli import-home <file.json>          # bootstrap home_profiles;
                                                       # manage them in /admin after
@@ -157,9 +163,41 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         token = authn.issue_api_token(user, ttl=days * 24 * 3600)
         print(f"API token for {username!r} (valid {days} days; scoped to this user; "
               f"revoke by resetting their password or `make-admin`/token bump).\n"
-              f"Store it as YONDER_TOKEN for the MCP server:\n{token}")
+              f"Store it as YONDER_TOKEN for the MCP server:\n{token}\n"
+              f"(Tip: Account → Personal API tokens makes individually revocable tokens.)")
         return 0
     return 2
+
+
+def _oauth_client_cmd(session, args: list[str]) -> int:
+    """YONDER-107: pre-registered OAuth clients (claude.ai "advanced settings"
+    takes a client id + optional secret; DCR needs none of this)."""
+    from app import oauth
+    from app.models import OAuthClient
+    sub = args[0] if args else ""
+    if sub == "list":
+        for c in session.query(OAuthClient).order_by(OAuthClient.created_at).all():
+            kind = "confidential" if c.secret_hash else "public"
+            print(f"{c.id:30} {kind:12} {c.source:4} {c.name!r} {c.redirect_uris}")
+        return 0
+    if sub != "create" or len(args) < 2 or args[1].startswith("--"):
+        print("usage: python -m app.cli oauth-client create <name> --redirect <uri> "
+              "[--redirect <uri>…] [--confidential]\n       python -m app.cli oauth-client list")
+        return 2
+    name = args[1]
+    redirects = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--redirect"]
+    try:
+        client, secret = oauth.register_client(
+            session, name=name, redirect_uris=redirects,
+            confidential="--confidential" in args, source="cli")
+    except oauth.OAuthError as e:
+        print(f"error: {e.description or e.error}")
+        return 1
+    print(f"OAuth client {client.name!r}\n  client_id:     {client.id}")
+    if secret:
+        print(f"  client_secret: {secret}\n  (shown once — store it now)")
+    print(f"  redirect_uris: {', '.join(client.redirect_uris)}")
+    return 0
 
 
 def main(argv: list[str]) -> int:
@@ -219,6 +257,8 @@ def main(argv: list[str]) -> int:
         elif cmd in ("create-user", "set-password", "set-email", "make-admin", "list-users",
                      "link-traveler", "mint-api-token"):
             return _user_cmd(session, cmd, args)
+        elif cmd == "oauth-client":
+            return _oauth_client_cmd(session, args)
         elif cmd == "import-home":
             # Home profiles are per-deployment personal config and are MANAGED
             # IN THE ADMIN UI (/admin -> Home Profiles). This importer exists

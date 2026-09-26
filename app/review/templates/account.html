@@ -54,6 +54,57 @@
     <p class="why" style="margin-top:8px">This controls what admins see in Yonder; it isn't
       encryption — whoever runs the server can reach the database directly.</p>
 
+    <h3 style="margin-top:28px" id="connected-apps">Connected apps</h3>
+    <p class="why">Apps you've allowed to use Yonder as you — e.g. Claude, via the
+      connector. Disconnecting one ends its access straight away.</p>
+    {% if apps %}
+      {% for a in apps %}
+      <div class="field" style="align-items:center">
+        <label>{{ a.client }}</label>
+        <span class="v ro">connected {{ a.created_at.strftime('%Y-%m-%d') }}{% if a.last_used_at %}
+          · last used {{ a.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span>
+        <form method="post" action="/account/connected-apps/{{ a.id }}/revoke" style="margin-left:8px">
+          <button class="act" type="submit">Disconnect</button>
+        </form>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="why"><i>No connected apps.</i></p>
+    {% endif %}
+
+    <h3 style="margin-top:28px" id="api-tokens">Personal API tokens</h3>
+    <p class="why">For tools that can't sign in with a browser — Claude Code or the
+      Yonder MCP script (<code>YONDER_TOKEN</code>). A token acts as you; keep it secret.</p>
+    {% if new_token %}
+      <div class="saved-note">
+        <b>{{ new_token_name }}</b> — copy this now; it won't be shown again:<br>
+        <code style="user-select:all;word-break:break-all">{{ new_token }}</code>
+      </div>
+    {% endif %}
+    {% for t in pats %}
+      <div class="field" style="align-items:center">
+        <label>{{ t.name }}</label>
+        <span class="v ro">created {{ t.created_at.strftime('%Y-%m-%d') }}
+          · {% if t.expires_at %}expires {{ t.expires_at.strftime('%Y-%m-%d') }}{% else %}no expiry{% endif %}
+          {% if t.last_used_at %}· last used {{ t.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span>
+        <form method="post" action="/account/tokens/{{ t.id }}/revoke" style="margin-left:8px">
+          <button class="act" type="submit">Revoke</button>
+        </form>
+      </div>
+    {% endfor %}
+    <form method="post" action="/account/tokens">
+      <div class="field"><label>Name</label>
+        <input name="name" maxlength="128" placeholder="e.g. Claude Code on my laptop" required></div>
+      <div class="field"><label>Expires after</label>
+        <select name="days">
+          <option value="30">30 days</option>
+          <option value="90" selected>90 days</option>
+          <option value="365">1 year</option>
+          <option value="">Never</option>
+        </select></div>
+      <button class="act primary" type="submit" style="margin-top:12px">Create token</button>
+    </form>
+
     {% if u.auth_source == "local" %}
     <h3 style="margin-top:28px">Password</h3>
     <p class="why">Changing it signs you out everywhere else.</p>

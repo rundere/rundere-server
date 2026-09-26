@@ -136,7 +136,10 @@ def issue_api_token(user: User, *, ttl: int | None = None) -> str:
     return _token(user, "api", ttl if ttl is not None else settings.jwt_api_ttl_seconds)
 
 
-def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "web")) -> User | None:
+def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "web"),
+                    audiences: set[str] | None = None) -> User | None:
+    """Resolve a Yonder JWT to its user. An `oauth` token (YONDER-107) must also
+    name an audience in `audiences` (when given) and a grant that is still live."""
     claims = jwt_decode(token)
     if not claims or claims.get("typ") not in kinds:
         return None
@@ -145,7 +148,34 @@ def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "we
         return None
     if claims.get("ver") != user.token_version:   # revoked via "sign out everywhere"
         return None
+    if claims.get("typ") == "oauth":
+        from app import oauth
+        if audiences is not None and claims.get("aud") not in audiences:
+            return None
+        if not oauth.grant_allows(session, claims, user):
+            return None
     return user
+
+
+def user_from_bearer(session, token: str, request=None) -> User | None:
+    """A bearer credential → user: a personal API token (`ypat_…`), or a JWT of
+    kind access / api (CLI-minted) / oauth (YONDER-107)."""
+    from app import oauth
+    if token.startswith(oauth.PAT_PREFIX):
+        return oauth.pat_user(session, token)
+    auds = oauth.audiences(request) if request is not None else None
+    return user_from_token(session, token, kinds=("access", "api", "oauth"), audiences=auds)
+
+
+# Machine endpoints (YONDER-107/109): reached from the open internet without the
+# Authentik forward-auth, so an identity header on them is never trusted — even
+# with TX_AUTH_PROXY_HEADER_TRUST on (Traefik strips it there too).
+_MACHINE_EXACT = {"/mcp", "/oauth/token", "/oauth/register", "/oauth/revoke"}
+_MACHINE_PREFIX = ("/mcp/", "/api/", "/.well-known/")
+
+
+def is_machine_path(path: str) -> bool:
+    return path in _MACHINE_EXACT or path.startswith(_MACHINE_PREFIX)
 
 
 # --------------------------------------------------------------------------- refresh tokens
@@ -263,10 +293,11 @@ def resolve_proxy_user(session, request) -> User | None:
 
 def resolve_user(session, request) -> User | None:
     """The one request→user resolver used by the web gate and the API. Order:
-    bearer access token → session cookie (web token) → trusted proxy header."""
+    bearer token (JWT or personal API token) → session cookie (web token) →
+    trusted proxy header (browser routes only, never machine endpoints)."""
     authz = request.headers.get("authorization", "")
     if authz[:7].lower() == "bearer ":
-        u = user_from_token(session, authz[7:].strip(), kinds=("access", "api"))
+        u = user_from_bearer(session, authz[7:].strip(), request)
         if u:
             return u
     cookie = request.cookies.get(settings.auth_cookie_name)
@@ -274,7 +305,7 @@ def resolve_user(session, request) -> User | None:
         u = user_from_token(session, cookie, kinds=("web", "access"))
         if u:
             return u
-    if settings.auth_proxy_header_trust:
+    if settings.auth_proxy_header_trust and not is_machine_path(request.url.path):
         return resolve_proxy_user(session, request)
     return None
 
@@ -305,6 +336,30 @@ def current_user_optional(request: "Request") -> "User | None":
         if user is not None:
             session.expunge(user)
         return user
+
+
+def is_first_party(request) -> bool:
+    """Was this request made by Yonder itself — the web session cookie, or the
+    app's own login token (`typ="access"`, from /api/v1/auth/login|refresh)?
+    Connected apps / agents (OAuth tokens), personal API tokens and CLI-minted
+    API tokens are NOT: they may use the user's data, but must not change the
+    account's own settings (sharing with admins, email). YONDER-101."""
+    authz = request.headers.get("authorization", "")
+    if authz[:7].lower() == "bearer ":
+        claims = jwt_decode(authz[7:].strip()) or {}
+        return claims.get("typ") == "access"
+    return bool(request.cookies.get(settings.auth_cookie_name))
+
+
+def first_party_user(request: "Request") -> "User":
+    """FastAPI dependency: an authenticated user on a first-party credential
+    (403 for connected apps and API tokens)."""
+    from fastapi import HTTPException
+    user = current_user(request)
+    if not is_first_party(request):
+        raise HTTPException(status_code=403, detail="change this in the Yonder app or on "
+                            "the web — connected apps and API tokens can't")
+    return user
 
 
 def current_user(request: "Request") -> "User":

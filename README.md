@@ -335,6 +335,23 @@ deployment stack.
 | `TX_SEARXNG_URL` | `http://searxng:8080` | Metasearch backend for Discovery's LLM tier (visa/safety/events/food/regional language). Empty = those topics degrade to absent findings |
 | `TX_FORWARDED_ALLOW_IPS` | `*` | Trust Traefik's `X-Forwarded-Proto` |
 
+| `TX_PUBLIC_BASE_URL` | `""` | Public https base (e.g. `https://yonder.example.net`) for email links and the OAuth/MCP metadata. Set it when using the Claude connector |
+| `TX_OAUTH_ACCESS_TTL_SECONDS` | `3600` | OAuth access-token lifetime (Claude connector) |
+| `TX_OAUTH_REFRESH_IDLE_TTL_SECONDS` | `7776000` | A connected app's grant expires after this long unused (90 days) |
+
+---
+
+## Use Yonder from Claude (remote MCP)
+
+Yonder serves an MCP endpoint at `/mcp` and is its own OAuth server. Add
+`https://<yonder-host>/mcp` as a custom connector in claude.ai to read and edit
+your trips, timeline, packing and journal, capture links, and save Claude's
+research to your Discover tab. Everything runs as you and is scoped like the web
+app. It's opt-in per user: nothing reaches Claude unless you connect it (the
+capture pipeline itself still uses only the local LLM). See
+[`docs/claude-connector.md`](docs/claude-connector.md). Connected apps and
+personal API tokens are managed on the Account page.
+
 ---
 
 ## Rules

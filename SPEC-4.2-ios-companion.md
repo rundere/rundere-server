@@ -54,6 +54,13 @@ trip snapshot, review list, health, capture, timeline PDF. **No other writes.**
 ## 3. Design decisions for this phase
 
 ### 3.1 API contract as a build input
+> **Status: implemented (YONDER-58).** `/api/v1/openapi.json` + `/api/v1/docs`
+> behind auth (the old public `/openapi.json` is off); login / refresh / me now
+> declare `TokenOut` / `UserOut`. `scripts/dto_drift.py` checks
+> `ios/Yonder/Models/DTOs.swift` against it; `tests/test_api_contract.py` runs
+> it in CI (errors fail the build; "not adopted yet" fields are informational —
+> today: `traveler_ids`, the user sharing fields, finding `locked/external/agent`,
+> review `to_process`, i.e. YONDER-102's work).
 Enable FastAPI's own OpenAPI for `/api/v1` (currently `docs_url=None`):
 serve `/api/v1/openapi.json` **behind auth** (not public, the repo will be
 public but servers aren't). The iOS agent diffs `Models/DTOs.swift` against it;
@@ -76,6 +83,17 @@ Server-brokered PKCE handoff — the app never talks to Authentik directly:
 The user payload then carries `sharing_prompt` (§3.3).
 
 ### 3.3 Sharing prompt in the app
+> **Status: server side implemented (YONDER-101).** The user payload (`/me`,
+> login, refresh) carries `email`, `share_with_admins`, `sharing_prompt`,
+> `opt_out_blocker`. `PUT /api/v1/auth/me/sharing {share}` and — added by the
+> owner, 2026-09-26 — `PUT /api/v1/auth/me/email {email, current_password}` so
+> the app can set/change the address resets go to (local accounts need their
+> current password; can't remove it while opted out). Both are **first-party
+> only**: the app's login token or the web session; connected apps (OAuth
+> agents), personal API tokens and CLI API tokens get 403 — they may use your
+> data, not change your account settings. (When the app moves to OAuth sign-in,
+> YONDER-104, its client must be marked first-party.) Tests:
+> `tests/test_api_sharing.py`.
 Extend the user payload (`/api/v1/auth/me`, login/exchange responses) with
 `email`, `share_with_admins`, `sharing_prompt`, and `opt_out_blocker` (the
 same text the web shows, `accounts_routes.opt_out_blocker`). Add
@@ -92,6 +110,15 @@ Discover and Packing in a snapshot are the signed-in person's — never reuse a
 snapshot across users.
 
 ### 3.5 Review writes (YONDER-57 server, YONDER-78 app)
+> **Status: server side implemented (YONDER-57).** `GET /api/v1/review` (+
+> `to_process`), `GET/PATCH /api/v1/review/{id}` (fields, `passengers`,
+> `traveler_ids`, `approve`), `POST …/approve|unapprove|ignore`,
+> `POST /api/v1/review/process` and `POST /api/v1/review/commit {dry_run}`
+> (jobs at `GET /api/v1/jobs/{id}`, visible only to their starter). Web and API
+> share `app/review/service.py`. Commit was already scoped to the caller on the
+> web (YONDER-105); the API uses the same filter. assign-trip uses the filing
+> rule (fixed with YONDER-108). Tests: `tests/test_api_review.py`.
+
 Server first. The web review pipeline (`app/review/routes.py`) becomes JSON:
 - `GET /api/v1/review` adds `counts` and `to_process` (reuse `_counts`,
   `_to_process`).
@@ -118,6 +145,13 @@ Discovery profiles, and for admins Users + admin tables. Native profile
 editing is out of scope for 4.2.
 
 ### 3.7 Claude connector: remote MCP inside Yonder (owner, 2026-09-25)
+
+> **Status: implemented** (server side). YONDER-107 (OAuth 2.1 authorization
+> server, Connected apps, personal API tokens; migration 0028) and YONDER-108
+> (`/mcp`, 21 tools incl. `save_research`; assign-trip filing fix). Setup and
+> the tool list: [`docs/claude-connector.md`](docs/claude-connector.md).
+> Still open: YONDER-109 (Traefik machine-endpoint route) and the owner's
+> post-deploy verification.
 
 > **Implementation brief for YONDER-107/108:**
 > [`docs/handoff/YONDER-107-108-claude-connector.md`](docs/handoff/YONDER-107-108-claude-connector.md)
@@ -194,17 +228,17 @@ with Docker Desktop; each ships with tests like everything in 4.1.
 
 | # | Work | Plane | Side | Depends on |
 |---|---|---|---|---|
-| 0a | Yonder OAuth 2.1 authorization server + connected-apps UI (§3.7) | YONDER-107 | server | — |
-| 0b | Remote MCP at `/mcp`, tools up to date + "save to my Discover" (§3.7) | YONDER-108 | server | 0a |
+| 0a | ✅ Yonder OAuth 2.1 authorization server + connected-apps UI (§3.7) | YONDER-107 | server | — |
+| 0b | ✅ Remote MCP at `/mcp`, tools up to date + "save to my Discover" (§3.7) | YONDER-108 | server | 0a |
 | 0c | Traefik machine-endpoint route (no Authentik; geoblock + CrowdSec), stack file synced (§3.7) | YONDER-109 | ops | 0a |
-| 1 | OpenAPI for `/api/v1` behind auth + DTO drift check | YONDER-58 | server + app | — |
-| 2 | User payload + sharing endpoint (§3.3) | YONDER-101 | server | — |
+| 1 | ✅ OpenAPI for `/api/v1` behind auth + DTO drift check | YONDER-58 | server + app | — |
+| 2 | ✅ User payload + sharing endpoint (§3.3) | YONDER-101 | server | — |
 | 3 | DTO sync: `traveler_ids`, user fields, lenient decoding; per-person cache keys (§3.4) | YONDER-102 | app | 1, 2 |
 | 4 | Finish the core tabs (define done: pull-to-refresh everywhere, empty/offline states, Settings links §3.6) | YONDER-52 | app | 3 |
 | 5 | **Trip editing**: edit trip, add/edit/delete activity (APIs exist, D-125), packing check-off + custom line (APIs exist) | YONDER-103 | app | 3 |
 | 6 | Who each activity is for: chips on rows/detail; picker in the activity editor only for 2+ traveller trips | YONDER-90 | app | 5 |
 | 7 | Capture + journal compose (APIs exist) | YONDER-79 | app | 3 |
-| 8 | Review over the API incl. commit scoping + assign-trip filing fixes (§3.5) | YONDER-57 | server | — |
+| 8 | ✅ Review over the API incl. commit scoping + assign-trip filing fixes (§3.5) | YONDER-57 | server | — |
 | 9 | Review write actions in the app | YONDER-78 | app | 8 |
 | 10 | Turn on OIDC in prod (Authentik) | YONDER-92 | ops | — |
 | 11 | App SSO via Yonder's OAuth server (§3.7; supersedes the handoff in §3.2) | YONDER-104 | server | 10 |

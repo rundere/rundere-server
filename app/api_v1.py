@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -91,6 +91,9 @@ class FindingOut(BaseModel):
     confidence: str | None = None
     status: str
     sources: Any = None
+    locked: bool = False        # approved/edited on a lockable topic: nobody overwrites it
+    external: bool = False      # written by an external AI agent over MCP/API
+    agent: str | None = None    # which one (its OAuth app / API token name)
 
 
 class PackingItemOut(BaseModel):
@@ -145,7 +148,90 @@ class ReviewItemOut(BaseModel):
 
 class ReviewListOut(BaseModel):
     counts: dict[str, int]
+    to_process: int = 0          # captured but not processed yet (the funnel's first stage)
     items: list[ReviewItemOut]
+
+
+class ReviewFieldOut(BaseModel):
+    """One editable field of a capture (same specs as the web detail pane)."""
+    label: str
+    path: str                    # JSON pointer; PATCH `fields` keys
+    kind: str                    # text | datetime | select
+    value: str = ""
+    tz: str | None = None        # datetime: the place's zone (display only)
+    precision: str | None = None  # datetime: date | datetime
+    options: list[str] | None = None
+    missing: bool = False        # required and empty — why it can't log yet
+    editable: bool = True
+
+
+class TravelerOptionOut(BaseModel):
+    id: str                      # passengers: identity id (str); who: traveller id
+    name: str
+    kind: str | None = None
+    selected: bool = False
+
+
+class TripOptionOut(BaseModel):
+    id: str
+    name: str
+    start_date: str | None = None
+    end_date: str | None = None
+    contains: bool = False       # the trip's dates contain the capture's
+    selected: bool = False
+
+
+class ReviewItemDetail(ReviewItemOut):
+    """GET /review/{id}: everything the review screen shows and edits."""
+    note: str | None = None
+    action_hint: str | None = None
+    stages: Any = None
+    fields: list[ReviewFieldOut] = []
+    locked_fields: list[str] = []            # human-corrected pointers (D-13)
+    violations: list[str] = []
+    writes: Any = None                       # what logging would write, per target
+    collection_name: str | None = None
+    trip_id: str | None = None
+    # Flights: "Who flew" — chosen from Travellers, never free text.
+    passengers: list[TravelerOptionOut] | None = None
+    passenger_names_unmatched: list[str] = []
+    # Others filed to a 2+ traveller trip: "Who is this for" (that trip's roster).
+    who: list[TravelerOptionOut] | None = None
+    trip_options: list[TripOptionOut] = []   # trips the caller can FILE into
+    can_approve: bool = False
+    can_unapprove: bool = False
+    can_ignore: bool = False
+
+
+class ReviewPatch(BaseModel):
+    fields: dict[str, str | None] | None = None   # {path: value} — editable fields only
+    passengers: list[str] | None = None           # flights: identity ids ([] clears)
+    traveler_ids: list[int] | None = None         # others: that trip's traveller ids
+    approve: bool = False                         # "Save & approve"
+
+
+class ReviewActionOut(BaseModel):
+    ok: bool
+    message: str | None = None
+    changed: list[str] = []
+    item: ReviewItemDetail
+
+
+class CommitIn(BaseModel):
+    dry_run: bool = True
+
+
+class JobOut(BaseModel):
+    id: str
+    kind: str
+    phase: str | None = None
+    done: int = 0
+    total: int = 0
+    current: str | None = None
+    finished: bool = False
+    error: str | None = None
+    toast: str | None = None
+    details: list[str] = []
 
 
 class NextTripOut(BaseModel):
@@ -213,6 +299,26 @@ class PackingItemPatch(BaseModel):
     quantity: int | None = None
     bag: str | None = None
     label: str | None = None
+
+
+class ActivityTypeOut(BaseModel):
+    key: str
+    label: str
+    fields: list[dict[str, Any]] = []     # {key, label, type, hint?} — the `values` keys
+
+
+class SourceIn(BaseModel):
+    title: str | None = None
+    url: str
+
+
+class FindingIn(BaseModel):
+    """A finding from an external agent for the caller's Discover tab (YONDER-108)."""
+    topic: str | None = None               # research (default) | food | events | safety | visa | plugs | packing
+    title: str                             # short heading, e.g. "Hikes near Banff"
+    body_md: str                           # markdown: **bold**, ### headings, - bullets, [text](url)
+    place_key: str | None = None           # "CA" / "CA:Banff"; research may omit it (= whole trip)
+    sources: list[SourceIn] = []
 
 
 class PackingItemIn(BaseModel):
@@ -315,9 +421,7 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
         places = []
 
     # discovery findings — PER-USER (4.1): the caller's own Discover tab
-    discovery = [FindingOut(id=f.id, topic=f.topic, place_key=f.place_key,
-                            body_md=f.body_md, data=f.data, confidence=f.confidence,
-                            status=f.status, sources=f.sources)
+    discovery = [_finding_out(f)
                  for f in session.query(DiscoveryFinding)
                  .filter(DiscoveryFinding.trip_id == trip.id,
                          DiscoveryFinding.user_id == user.id).all()]
@@ -345,6 +449,62 @@ def _review_item(v: dict) -> ReviewItemOut:
         subline=v.get("subline"), reference=v.get("reference"), note=v.get("note"),
         reason_codes=v.get("reason_codes") or [], blocked=bool(v.get("blocked")),
         confidence=v.get("confidence"), created_at=v.get("created_at"))
+
+
+# --------------------------------------------------------------------------- API contract (YONDER-58)
+def _collect_refs(node, out: set[str]) -> None:
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+            out.add(ref.rsplit("/", 1)[-1])
+        for v in node.values():
+            _collect_refs(v, out)
+    elif isinstance(node, list):
+        for v in node:
+            _collect_refs(v, out)
+
+
+def api_openapi_spec() -> dict:
+    """The OpenAPI document for /api/v1 only (the app's contract): the app's
+    full schema filtered to /api/v1 paths, pruned to the schemas they use.
+    `scripts/dto_drift.py` checks the iOS DTOs against it."""
+    from app.config import settings
+    from app.main import app
+    full = app.openapi()
+    paths = {p: v for p, v in full.get("paths", {}).items() if p.startswith("/api/v1")}
+    schemas = full.get("components", {}).get("schemas", {})
+    keep: set[str] = set()
+    _collect_refs(paths, keep)
+    pending = list(keep)
+    while pending:
+        found: set[str] = set()
+        _collect_refs(schemas.get(pending.pop(), {}), found)
+        for name in found - keep:
+            keep.add(name)
+            pending.append(name)
+    return {"openapi": full.get("openapi", "3.1.0"),
+            "info": {"title": "Yonder API", "version": settings.app_version,
+                     "description": "Every route needs a bearer token (or a web session); "
+                                    "all data is scoped to the signed-in user."},
+            "paths": paths,
+            "components": {"schemas": {k: schemas[k] for k in sorted(keep)},
+                           "securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}}},
+            "security": [{"bearer": []}]}
+
+
+@router.get("/openapi.json", include_in_schema=False)
+def api_openapi(user=Depends(authn.current_user)):
+    """The /api/v1 contract — behind auth: servers aren't public even though
+    the code is."""
+    return api_openapi_spec()
+
+
+@router.get("/docs", include_in_schema=False)
+def api_docs(user=Depends(authn.current_user)):
+    """Swagger UI for /api/v1 (behind auth; the page fetches the schema with
+    your web session)."""
+    from fastapi.openapi.docs import get_swagger_ui_html
+    return get_swagger_ui_html(openapi_url="/api/v1/openapi.json", title="Yonder API")
 
 
 # --------------------------------------------------------------------------- read
@@ -395,19 +555,218 @@ def api_trip_timeline_pdf(trip_id: str, download: bool = False,
 @router.get("/review", response_model=ReviewListOut)
 def api_review(bucket: str = "all", user=Depends(authn.current_user),
                session: Session = Depends(get_session)):
-    from app.review.routes import _all_views, _counts
+    from app.review.routes import _all_views, _counts, _to_process
     views = _all_views(session, user)
     counts = _counts(views)
     shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
-    return ReviewListOut(counts=counts, items=[_review_item(v) for v in shown])
+    return ReviewListOut(counts=counts, to_process=_to_process(session, user),
+                         items=[_review_item(v) for v in shown])
 
 
-@router.get("/review/{item_id}", response_model=ReviewItemOut)
+def _review_detail(session: Session, item: TravelItem, user) -> ReviewItemDetail:
+    import rules as rules_module
+    from app.resolving import load_enablement
+    from app.review.routes import (_fields, _is_logged, _passenger_context,
+                                   _rule_shape, _view, _who_context)
+    from resolve.targets import item_date_span
+    v = _view(item)
+    payload = v["payload"]
+    violations = ([str(x) for x in rules_module.check_item(_rule_shape(item),
+                                                          load_enablement(session))]
+                  if item.extraction else [])
+    pax = _passenger_context(session, payload)
+    who_ctx = _who_context(session, item, payload)
+    start, end = (item_date_span(payload) or (None, None))
+    trip_opts = []
+    for t in (session.query(Trip).filter(scope.filing_trip_filter(session, user))
+              .order_by(Trip.start_date.desc()).all()):
+        contains = bool(start and end and t.start_date and t.end_date
+                        and t.start_date <= start and end <= t.end_date)
+        trip_opts.append(TripOptionOut(id=t.id, name=t.name or "(unnamed trip)",
+                                       start_date=t.start_date, end_date=t.end_date,
+                                       contains=contains, selected=t.id == item.trip_id))
+    trip_opts.sort(key=lambda o: 0 if o.contains else 1)
+    review = item.review or {}
+    ignored = review.get("action_taken") == "ignored"
+    logged = _is_logged(item)
+    base = _review_item(v).model_dump()
+    return ReviewItemDetail(
+        **base, action_hint=v.get("action_hint"), stages=v.get("stages"),
+        fields=[ReviewFieldOut(**{k: f.get(k) for k in ReviewFieldOut.model_fields
+                                  if k in f}) for f in _fields(payload)],
+        locked_fields=v.get("locked_fields") or [], violations=violations,
+        writes=v.get("writes"), collection_name=v.get("collection_name"),
+        trip_id=item.trip_id,
+        passengers=([TravelerOptionOut(id=str(i["id"]), name=i["name"], kind=i["kind"],
+                                       selected=i["selected"]) for i in pax["identities"]]
+                    if pax else None),
+        passenger_names_unmatched=(pax or {}).get("unmatched") or [],
+        who=([TravelerOptionOut(id=str(t["id"]), name=t["name"], selected=t["checked"])
+              for t in who_ctx["travelers"]] if who_ctx else None),
+        trip_options=trip_opts,
+        can_approve=(not ignored and not logged and v["bucket"] != "staged"
+                     and not v["blocked"]),
+        can_unapprove=v["bucket"] == "staged" and not logged,
+        can_ignore=not ignored and not logged)
+
+
+@router.get("/review/{item_id}", response_model=ReviewItemDetail)
 def api_review_item(item_id: str, user=Depends(authn.current_user),
                     session: Session = Depends(get_session)):
-    from app.review.routes import _view
+    """One capture with its editable fields, who-flew / who-is-this-for
+    options, the trips it can be filed into, and what it would write."""
     item = scope.require_capture(session, user, item_id)
-    return _review_item(_view(item))
+    return _review_detail(session, item, user)
+
+
+def _action_out(session: Session, item_id: str, user, ok: bool, message: str | None = None,
+                changed: list[str] | None = None) -> ReviewActionOut:
+    item = scope.require_capture(session, user, item_id)       # re-read after re-resolve
+    session.refresh(item)
+    return ReviewActionOut(ok=ok, message=message, changed=changed or [],
+                           item=_review_detail(session, item, user))
+
+
+@router.patch("/review/{item_id}", response_model=ReviewActionOut)
+def api_review_edit(item_id: str, body: ReviewPatch, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """Correct a capture: `fields` {path: value} (paths from GET's `fields`;
+    each change becomes a field lock), `passengers` (flights, identity ids),
+    `traveler_ids` (others, from GET's `who`). Re-resolves on change.
+    `approve: true` then approves it if it now resolves ("Save & approve")."""
+    from app.review import service
+    item = scope.require_capture(session, user, item_id)
+    try:
+        changed = service.apply_edits(session, item, fields=body.fields,
+                                      passenger_ids=body.passengers,
+                                      traveler_ids=body.traveler_ids,
+                                      strict=True, resolved_by="api")
+    except service.ReviewError as e:
+        raise HTTPException(400, str(e))
+    ok, message = True, None
+    if body.approve:
+        session.refresh(item)
+        ok = service.approve(session, item, resolved_by="api")
+        message = None if ok else "saved, but it can't be approved yet — see note and reason_codes"
+    return _action_out(session, item_id, user, ok, message, changed)
+
+
+@router.post("/review/{item_id}/approve", response_model=ReviewActionOut)
+def api_review_approve(item_id: str, user=Depends(authn.current_user),
+                       session: Session = Depends(get_session)):
+    """Stage a capture for logging (nothing is written yet — see /review/commit).
+    `ok: false` when it doesn't resolve yet; the item says why."""
+    from app.review import service
+    item = scope.require_capture(session, user, item_id)
+    ok = service.approve(session, item, resolved_by="api")
+    return _action_out(session, item_id, user, ok,
+                       None if ok else "can't be approved yet — see note and reason_codes")
+
+
+@router.post("/review/{item_id}/unapprove", response_model=ReviewActionOut)
+def api_review_unapprove(item_id: str, user=Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """Take back an approval that hasn't been logged yet."""
+    from app.review import service
+    item = scope.require_capture(session, user, item_id)
+    ok = service.unapprove(session, item)
+    return _action_out(session, item_id, user, ok,
+                       None if ok else "already logged — it can't be un-approved")
+
+
+@router.post("/review/{item_id}/ignore", response_model=ReviewActionOut)
+def api_review_ignore(item_id: str, user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Take a capture off the pipeline; it writes nothing."""
+    from app.review import service
+    from app.review.routes import _is_logged
+    item = scope.require_capture(session, user, item_id)
+    if _is_logged(item):
+        return _action_out(session, item_id, user, False, "already logged")
+    service.ignore(session, item, resolved_by="api")
+    return _action_out(session, item_id, user, True)
+
+
+# --------------------------------------------------------------------------- review: process + commit jobs
+def _job_out(job: dict) -> JobOut:
+    return JobOut(**{k: job.get(k) for k in JobOut.model_fields if job.get(k) is not None})
+
+
+def _start_or_busy(user, kind: str, work):
+    from app.review import jobs
+    running = jobs.current_running()
+    if running:
+        if jobs.visible_to(running, user):
+            return _job_out(running)                  # your own job: report it
+        raise HTTPException(409, "another person's job is running — try again shortly")
+    return _job_out(jobs.get(jobs.start(kind, work, owner=user.id)))
+
+
+@router.post("/review/process", response_model=JobOut, status_code=202)
+def api_review_process(user=Depends(authn.current_user)):
+    """Extract + resolve captures waiting in the pipeline (the web "Process new
+    captures"). Returns a job to poll at GET /api/v1/jobs/{id}."""
+    from app.db import SessionLocal
+    from app.review.routes import _process_toast, _run_extract_resolve
+
+    def work(progress):
+        with SessionLocal() as s:
+            summary, resolved, error = _run_extract_resolve(s, progress)
+            return _process_toast(summary, resolved, error), error
+
+    return _start_or_busy(user, "process", work)
+
+
+@router.post("/review/commit")
+def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Log the caller's approved captures to AirTrail + AdventureLog — only
+    their own (an admin: + users who share), never anyone else's.
+    `dry_run: true` (default) returns the exact plan and writes nothing;
+    `dry_run: false` starts the irreversible write as a job (202 + JobOut)."""
+    from fastapi.responses import JSONResponse
+
+    from app.committing import commit_pending
+    from app.db import SessionLocal
+    from app.resolving import load_identities
+    from app.review.routes import _target_clients
+    mine = scope.capture_filter(user)
+    if body.dry_run:
+        adventurelog, airtrail = _target_clients()
+        summary = commit_pending(session, adventurelog, airtrail,
+                                 identities=load_identities(session), dry_run=True,
+                                 item_filter=mine)
+        return {"dry_run": True, "summary": summary}
+
+    def work(progress):
+        with SessionLocal() as s:
+            adventurelog, airtrail = _target_clients()
+            summary = commit_pending(s, adventurelog, airtrail,
+                                     identities=load_identities(s), dry_run=False,
+                                     progress=progress, item_filter=mine)
+            parts = [f"logged {summary['writes_ok']} write(s) across {summary['items']} item(s)"]
+            if summary["writes_failed"]:
+                parts.append(f"{summary['writes_failed']} failed")
+            if summary["skipped"]:
+                parts.append(f"{summary['skipped']} already present")
+            details = [f"{plan['headline']} · {r['target']}: {r['error']}"
+                       for plan in summary["plans"] for r in plan["results"]
+                       if not r.get("ok") and r.get("error")]
+            return ("Done — " + ", ".join(parts) + ".",
+                    "some writes failed" if summary["writes_failed"] else None, details)
+
+    job = _start_or_busy(user, "commit", work)
+    return JSONResponse(job.model_dump(), status_code=202)
+
+
+@router.get("/jobs/{job_id}", response_model=JobOut)
+def api_job(job_id: str, user=Depends(authn.current_user)):
+    """A process/commit job's progress. Only its starter can see it."""
+    from app.review import jobs
+    job = jobs.get(job_id)
+    if not jobs.visible_to(job, user):
+        raise HTTPException(404, "job not found")
+    return _job_out(job)
 
 
 # --------------------------------------------------------------------------- write
@@ -449,20 +808,35 @@ def api_capture(body: CaptureIn, user=Depends(authn.current_user),
     return CaptureOut(batch_id=bid, status="received")
 
 
-@router.post("/review/{item_id}/assign-trip")
-def api_assign_trip(item_id: str, body: AssignTripIn,
-                    user=Depends(authn.current_user),
-                    session: Session = Depends(get_session)):
-    """Link a capture to one of the user's trips (requires edit access to the
-    trip). Pins the link so the resolver won't override a human choice."""
+def assign_capture_to_trip(session: Session, user, item_id: str, trip_id: str) -> dict:
+    """File a capture into a trip under the FILING rule (4.1,
+    `scope.filing_trip_filter`: own, open, or one you travel on) — the same rule
+    as the web picker. Being an admin, or having a view-only share, is not
+    enough: 404 if the trip isn't visible, 403 if visible but not fileable.
+    Pins the link so the resolver won't override a human choice."""
     from sqlalchemy.orm.attributes import flag_modified
     item = scope.require_capture(session, user, item_id)
-    trip = scope.require_trip(session, user, body.trip_id, edit=True)
+    trip = scope.require_trip(session, user, trip_id)        # 404 if not visible
+    fileable = (session.query(Trip.id)
+                .filter(Trip.id == trip.id, scope.filing_trip_filter(session, user))
+                .first())
+    if fileable is None:
+        raise HTTPException(403, "you can only file captures into your own trips, "
+                                 "open trips, or trips you travel on")
     item.trip_id = trip.id
     item.review = {**(item.review or {}), "trip_pinned": True}
     flag_modified(item, "review")
     session.commit()
     return {"ok": True, "item_id": item.id, "trip_id": trip.id}
+
+
+@router.post("/review/{item_id}/assign-trip")
+def api_assign_trip(item_id: str, body: AssignTripIn,
+                    user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """Link a capture to one of the user's trips (filing rule, see
+    assign_capture_to_trip)."""
+    return assign_capture_to_trip(session, user, item_id, body.trip_id)
 
 
 # --------------------------------------------------------------------------- write: manual trip edits (D-125)
@@ -606,6 +980,101 @@ def api_add_packing_item(trip_id: str, body: PackingItemIn,
     session.commit()
     session.refresh(i)
     return _packing_item_out(i)
+
+
+@router.get("/activity-types", response_model=list[ActivityTypeOut])
+def api_activity_types(user=Depends(authn.current_user)):
+    """The timeline activity types and the `values` fields each one takes."""
+    from app.trips import types as at
+    return [ActivityTypeOut(key=t.key, label=t.label,
+                            fields=[dict(f) for f in t.fields])
+            for t in at.TRIP_ACTIVITY_TYPES.values()]
+
+
+# --------------------------------------------------------------------------- Discover: saved research (YONDER-108)
+RESEARCH_TOPIC = "research"
+
+
+def _finding_out(f: DiscoveryFinding) -> FindingOut:
+    from discover import policy
+    return FindingOut(id=f.id, topic=f.topic, place_key=f.place_key, body_md=f.body_md,
+                      data=f.data, confidence=f.confidence, status=f.status,
+                      sources=f.sources, locked=policy.is_locked(f),
+                      external=policy.is_external(f), agent=policy.agent_label(f))
+
+
+def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
+                          agent: str | None = None) -> FindingOut:
+    """Save an external AI agent's finding onto the CALLER's Discover tab for a
+    trip they can edit, keyed (trip, user, topic, place_key) — the same key the
+    local Discover run uses, so an agent can update e.g. the Food finding for
+    "CA:Banff". Rules (discover/policy.py): only EXTERNAL_TOPICS; a LOCKED
+    finding (plugs/visa/language, approved or edited) is refused with 409 — the
+    lock is absolute; anything else is superseded, the old version kept in
+    `data["history"]`. The result is a draft marked `resolver="agent"` with
+    `data["agent"]` = `agent` (the connecting credential's name, supplied by
+    the caller — never by the agent's own input), which a local whole-trip run
+    then never overwrites. Never touches anyone else's Discover."""
+    from datetime import timezone
+
+    from discover import policy
+
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    topic = (body.topic or RESEARCH_TOPIC).strip()
+    if topic not in policy.EXTERNAL_TOPICS:
+        raise HTTPException(400, f"topic must be one of {', '.join(policy.EXTERNAL_TOPICS)}")
+    title = (body.title or "").strip()[:200]
+    text = (body.body_md or "").strip()
+    if not title or not text:
+        raise HTTPException(400, "title and body_md are required")
+    place_key = (body.place_key or "").strip()[:128]
+    if not place_key:
+        if topic != RESEARCH_TOPIC:
+            raise HTTPException(400, "place_key is required for this topic (a country code "
+                                     "like \"CA\" or a city key like \"CA:Banff\")")
+        place_key = "trip"
+    md = f"**{title}**\n\n{text}"[:100_000]
+    sources = [{"title": (s.title or s.url)[:300], "url": s.url[:2000]}
+               for s in body.sources[:50] if s.url.startswith(("http://", "https://"))]
+    f = (session.query(DiscoveryFinding)
+         .filter(DiscoveryFinding.trip_id == trip.id, DiscoveryFinding.user_id == user.id,
+                 DiscoveryFinding.topic == topic,
+                 DiscoveryFinding.place_key == place_key).first())
+    history: list = []
+    if f is None:
+        f = DiscoveryFinding(trip_id=trip.id, user_id=user.id, topic=topic,
+                             place_key=place_key)
+        session.add(f)
+    else:
+        if policy.is_locked(f):
+            raise HTTPException(409, f"the {topic} finding for {place_key!r} is locked "
+                                     "on the Discover tab; the person must unlock it first")
+        history = policy.history_with(f, md)
+    f.scope = "trip" if place_key == "trip" else ("country" if ":" not in place_key else "city")
+    f.status = "draft"
+    f.body_md = md
+    f.sources = sources
+    f.resolver = policy.EXTERNAL_RESOLVER
+    f.confidence = None
+    f.data = {"title": title, "agent": (agent or policy.DEFAULT_AGENT)[:128],
+              "history": history}
+    f.generated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(f)
+    return _finding_out(f)
+
+
+@router.post("/trips/{trip_id}/findings", response_model=FindingOut, status_code=201)
+def api_save_finding(trip_id: str, body: FindingIn, request: Request,
+                     user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """Save an AI agent's research into the caller's own Discover tab. The
+    agent is named after the bearer credential used (OAuth app / API token)."""
+    from app import oauth
+    authz = request.headers.get("authorization", "")
+    token = authz[7:].strip() if authz[:7].lower() == "bearer " else ""
+    return save_research_finding(session, user, trip_id, body,
+                                 agent=oauth.credential_label(session, token))
 
 
 # --------------------------------------------------------------------------- journal (SPEC-6)

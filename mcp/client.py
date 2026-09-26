@@ -2,10 +2,10 @@
 
 Deliberately dependency-free (urllib), so it is unit-testable and can be verified
 against a live stack without the MCP runtime. Every call is authenticated with a
-per-user Yonder access token, so the client sees exactly what that user may see
-(the API is scoped by app/scope.py). The token is obtained by logging in with a
-username+password, or supplied directly; on a 401 (expiry) the client logs in
-again once and retries.
+per-user Yonder token, so the client sees exactly what that user may see (the
+API is scoped by app/scope.py). Supply a personal API token (Account → Personal
+API tokens, `ypat_…`) or log in with a username+password; with a password, a
+401 (expiry) makes the client log in again once and retry.
 """
 from __future__ import annotations
 
@@ -17,6 +17,15 @@ import urllib.request
 
 class YonderError(Exception):
     pass
+
+
+def _q(part: str) -> str:
+    return urllib.parse.quote(part, safe="")
+
+
+def _some(fields: dict) -> dict:
+    """Drop unset (None) fields so a PATCH only changes what was given."""
+    return {k: v for k, v in fields.items() if v is not None}
 
 
 class YonderClient:
@@ -84,15 +93,67 @@ class YonderClient:
         return self._raw("GET", "/api/v1/review?bucket=" + urllib.parse.quote(bucket))
 
     def capture_url(self, url: str, travel_date: str | None = None,
-                    title: str | None = None, notes: str | None = None):
+                    title: str | None = None, notes: str | None = None,
+                    travel_time: str | None = None, mode: str | None = None):
         return self._raw("POST", "/api/v1/capture",
                          body={"url": url, "travel_date": travel_date,
-                               "title": title, "notes": notes})
+                               "title": title, "notes": notes,
+                               "travel_time": travel_time, "mode": mode})
+
+    def review_item(self, item_id: str):
+        return self._raw("GET", f"/api/v1/review/{_q(item_id)}")
+
+    def assign_trip(self, item_id: str, trip_id: str):
+        return self._raw("POST", f"/api/v1/review/{_q(item_id)}/assign-trip",
+                         body={"trip_id": trip_id})
+
+    def update_trip(self, trip_id: str, **fields):
+        return self._raw("PATCH", f"/api/v1/trips/{_q(trip_id)}", body=_some(fields))
+
+    def activity_types(self):
+        return self._raw("GET", "/api/v1/activity-types")
 
     def add_activity(self, trip_id: str, type: str, values: dict,
-                     starts_at: str | None = None):
-        return self._raw("POST", f"/api/v1/trips/{urllib.parse.quote(trip_id)}/activities",
-                         body={"type": type, "values": values, "starts_at": starts_at})
+                     starts_at: str | None = None, traveler_ids: list | None = None):
+        return self._raw("POST", f"/api/v1/trips/{_q(trip_id)}/activities",
+                         body={"type": type, "values": values, "starts_at": starts_at,
+                               "traveler_ids": traveler_ids})
+
+    def update_activity(self, trip_id: str, activity_id: str, **fields):
+        return self._raw("PATCH", f"/api/v1/trips/{_q(trip_id)}/activities/{_q(activity_id)}",
+                         body=_some(fields))
+
+    def delete_activity(self, trip_id: str, activity_id: str):
+        return self._raw("DELETE", f"/api/v1/trips/{_q(trip_id)}/activities/{_q(activity_id)}")
+
+    def add_packing_item(self, trip_id: str, label: str, category: str = "activity",
+                         quantity: int = 1):
+        return self._raw("POST", f"/api/v1/trips/{_q(trip_id)}/packing-items",
+                         body={"label": label, "category": category, "quantity": quantity})
+
+    def save_research(self, trip_id: str, title: str, body_md: str,
+                      place_key: str | None = None, sources: list | None = None,
+                      topic: str = "research"):
+        return self._raw("POST", f"/api/v1/trips/{_q(trip_id)}/findings",
+                         body={"topic": topic, "title": title, "body_md": body_md,
+                               "place_key": place_key, "sources": sources or []})
+
+    def journal_create(self, **fields):
+        return self._raw("POST", "/api/v1/journal", body=_some(fields))
+
+    def journal_list(self, **filters):
+        qs = urllib.parse.urlencode(_some(filters))
+        return self._raw("GET", "/api/v1/journal" + (f"?{qs}" if qs else ""))
+
+    def journal_get(self, entry_id: str):
+        return self._raw("GET", f"/api/v1/journal/{_q(entry_id)}")
+
+    def journal_update(self, entry_id: str, **fields):
+        return self._raw("PATCH", f"/api/v1/journal/{_q(entry_id)}", body=_some(fields))
+
+    def journal_attach(self, entry_id: str, trip_id: str | None):
+        return self._raw("PATCH", f"/api/v1/journal/{_q(entry_id)}",
+                         body={"trip_id": trip_id, "attach_trip": True})
 
     def generate_packing(self, trip_id: str):
         return self._raw("POST",

@@ -8,10 +8,11 @@ writing the durable run/finding rows. The background-thread + polling harness
 lands with the slow searxng+llm tier, which is where it earns its keep.
 
 Idempotency (D-63/D-71): a finding is keyed by (trip_id, topic, place_key). A
-re-run refreshes DRAFT findings in place but LEAVES a human's approved / edited /
-rejected findings untouched, so re-running never clobbers review work. The
-steerable single-topic re-run (a later slice) is the tool for deliberately
-overriding one of those.
+re-run refreshes findings in place under discover/policy.py: time-sensitive
+topics (weather, currency, food, …) are refreshed even when approved/edited,
+with the old version kept as history; a LOCKED finding (plugs/visa/language,
+approved or edited), a rejected one, or one an AI agent wrote is left untouched.
+The per-finding re-run is the tool for deliberately overriding one of those.
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import DiscoveryFinding, DiscoveryRun, TripActivity
+from discover import policy
 from discover.home_filter import home_country_set, is_home_place
 from discover.places import DerivedLocations, DerivedPlace, derive_locations
 from discover.resolvers import Finding, Resolver, ResolverContext
@@ -86,8 +88,14 @@ def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> No
                 .filter_by(trip_id=trip_id, user_id=run.user_id, topic=f.topic,
                            place_key=f.place_key)
                 .first())
-    if existing is not None and existing.status in ("approved", "edited", "rejected"):
-        return                      # preserve human decisions across a re-run
+    # discover/policy.py: a locked (lockable topic + approved/edited), rejected
+    # or agent-written finding is left alone; anything else is refreshed —
+    # even an approved weather report — with the old version kept as history.
+    history: list = []
+    if existing is not None:
+        if not policy.local_run_may_replace(existing):
+            return
+        history = policy.history_with(existing, f.body_md)
     if existing is None:
         existing = DiscoveryFinding(trip_id=trip_id, user_id=run.user_id,
                                     topic=f.topic, place_key=f.place_key)
@@ -96,7 +104,7 @@ def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> No
     existing.scope = f.scope
     existing.status = "draft"
     existing.body_md = f.body_md
-    existing.data = f.data
+    existing.data = policy.with_history(f.data, history)
     existing.sources = f.sources
     existing.confidence = f.confidence
     existing.resolver = f.resolver
@@ -128,12 +136,15 @@ def _prune_stale_drafts(session: Session, trip_id: str,
     inherently non-deterministic) KEEPS its last-good draft. A finding is only ever
     replaced by a newer result via _upsert, never deleted because one run came back
     empty — otherwise a good result silently vanishes on the next re-run.
-    Human-touched findings (approved/edited/rejected) are always kept."""
+    Human-touched findings (approved/edited/rejected) are always kept, and so is
+    anything an AI agent wrote (topic "research" or resolver "agent", YONDER-108) —
+    no local resolver made it, so no local run can re-make it."""
     for f in (session.query(DiscoveryFinding)
               .filter(DiscoveryFinding.trip_id == trip_id,
                       DiscoveryFinding.user_id == user_id,
+                      DiscoveryFinding.topic != "research",
                       DiscoveryFinding.status == "draft").all()):
-        if f.place_key not in in_scope_keys:
+        if f.place_key not in in_scope_keys and not policy.is_external(f):
             session.delete(f)
 
 
@@ -152,8 +163,8 @@ def rerun_finding(session: Session, finding, *, resolve_airport, geocoder,
                   base_currencies: tuple[str, ...] = ("CAD", "USD"),
                   today: str | None = None):
     """Regenerate ONE finding in place — the per-topic re-run (D-71). Unlike a
-    whole-trip run this deliberately OVERRIDES a human-edited finding (an explicit
-    "give me a fresh one"), re-fetching live topics (weather/currency) and, for
+    whole-trip run this deliberately OVERRIDES a locked, edited or agent-written
+    finding (an explicit "give me a fresh one"; the old version goes to history), re-fetching live topics (weather/currency) and, for
     the LLM tier later, carrying a steer note. Returns the row, or None if the
     place no longer derives or the topic has no resolver."""
     from app.models import Trip
@@ -180,8 +191,9 @@ def rerun_finding(session: Session, finding, *, resolve_airport, geocoder,
     fresh = resolver.resolve(place, ctx)
     if fresh is None:
         return None
+    history = policy.history_with(finding, fresh.body_md)   # an override keeps the old one
     finding.body_md = fresh.body_md
-    finding.data = fresh.data
+    finding.data = policy.with_history(fresh.data, history)
     finding.sources = fresh.sources
     finding.confidence = fresh.confidence
     finding.resolver = fresh.resolver

@@ -8,6 +8,8 @@
 - **/account** your own account: change your password, and set/change the
                email that reset links go to (both need your current password);
                choose whether to share your data with admins (4.1).
+- **/account** also lists Connected apps (OAuth grants, YONDER-107) with
+               revoke, and personal API tokens (create / show once / revoke).
 - **/account/sharing** that choice; self-registered / SSO users are asked it
                at first sign-in.
 - **/users**   Administer → Users: admin creates accounts, sets/【resets】
@@ -68,7 +70,7 @@ def opt_out_blocker(user: User) -> str:
         return ("Email isn't set up on this server yet, so a password reset would "
                 "have to go through an admin. Ask the admin to configure email.")
     if not user.email:
-        return "Add your email above first, so password resets can reach you directly."
+        return "Add your email address first, so password resets can reach you directly."
     return ""
 
 
@@ -214,12 +216,63 @@ def reset_submit(request: Request, token: str, password: str = Form(...),
 
 
 # --------------------------------------------------------------------------- your account
+def _account_ctx(session: Session, user: User, **extra) -> dict:
+    from app import oauth
+    return {"u": user, "smtp": email_configured(), "blocker": opt_out_blocker(user),
+            "apps": oauth.connected_apps(session, user),
+            "pats": oauth.list_pats(session, user), "msg": "", "err": "", **extra}
+
+
 @router.get("/account", response_class=HTMLResponse)
 def account_page(request: Request, msg: str = "", err: str = "",
-                 user: User = Depends(authn.current_user)):
-    return templates.TemplateResponse(request, "account.html", {
-        "u": user, "smtp": email_configured(), "msg": msg, "err": err,
-        "blocker": opt_out_blocker(user)})
+                 user: User = Depends(authn.current_user),
+                 session: Session = Depends(get_session)):
+    return templates.TemplateResponse(request, "account.html",
+                                      _account_ctx(session, user, msg=msg, err=err))
+
+
+# --------------------------------------------------------------------------- connected apps + API tokens (YONDER-107)
+@router.post("/account/connected-apps/{grant_id}/revoke")
+def account_revoke_app(grant_id: str, user: User = Depends(authn.current_user),
+                       session: Session = Depends(get_session)):
+    from app import oauth
+    from app.models import OAuthGrant
+    grant = session.get(OAuthGrant, grant_id)
+    if grant is None or grant.user_id != user.id:
+        return RedirectResponse("/account?err=No+such+connected+app", status_code=303)
+    oauth.revoke_grant(session, grant, actor_id=user.id)
+    return RedirectResponse("/account?msg=Disconnected", status_code=303)
+
+
+@router.post("/account/tokens", response_class=HTMLResponse)
+def account_create_token(request: Request, name: str = Form(""), days: str = Form(""),
+                         user: User = Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """Create a personal API token. The value is rendered once, in this
+    response — never put in a redirect URL, never stored in the clear."""
+    from app import oauth
+    try:
+        n_days = int(days) if days.strip() else None
+    except ValueError:
+        n_days = None
+    if n_days is not None and not (1 <= n_days <= 3650):
+        return RedirectResponse("/account?err=Expiry+must+be+1-3650+days", status_code=303)
+    user = session.get(User, user.id)
+    row, opaque = oauth.create_pat(session, user, name, n_days)
+    resp = templates.TemplateResponse(request, "account.html", _account_ctx(
+        session, user, new_token=opaque, new_token_name=row.name,
+        msg="Token created — copy it now, it won't be shown again."))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@router.post("/account/tokens/{token_id}/revoke")
+def account_revoke_token(token_id: str, user: User = Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    from app import oauth
+    if not oauth.revoke_pat(session, user, token_id):
+        return RedirectResponse("/account?err=No+such+token", status_code=303)
+    return RedirectResponse("/account?msg=Token+revoked", status_code=303)
 
 
 @router.post("/account/email")

@@ -94,3 +94,35 @@ def test_post_capture_shapes_body(monkeypatch):
     assert captured["method"] == "POST" and captured["path"].endswith("/api/v1/capture")
     assert captured["body"]["url"] == "https://maps.example/dir"
     assert captured["body"]["travel_date"] == "2026-09-05"
+
+
+def test_patch_drops_unset_fields_but_keeps_empty_lists(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["method"] = req.get_method()
+        captured["path"] = req.full_url
+        captured["body"] = json.loads(req.data)
+        return _Resp({"id": "a1"})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    c = YonderClient("http://x", token="ypat_x")
+    c.update_activity("t1", "a1", values=None, traveler_ids=[])
+    assert captured["method"] == "PATCH"
+    assert captured["path"].endswith("/api/v1/trips/t1/activities/a1")
+    assert captured["body"] == {"traveler_ids": []}
+
+
+def test_save_research_posts_finding(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["path"] = req.full_url
+        captured["body"] = json.loads(req.data)
+        return _Resp({"id": "f1", "topic": "research"})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    c = YonderClient("http://x", token="ypat_x")
+    assert c.save_research("t1", "Hikes", "- a")["topic"] == "research"
+    assert captured["path"].endswith("/api/v1/trips/t1/findings")
+    assert captured["body"]["title"] == "Hikes" and captured["body"]["sources"] == []
