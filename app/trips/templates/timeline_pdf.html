@@ -48,10 +48,11 @@
   .long { margin-top: 3pt; font-size: 8.8pt; color: #3d3d42; white-space: pre-wrap; }
   .map { margin-top: 3pt; font-size: 8.5pt; }
 
-  .maps { margin: 0 0 14pt; page-break-inside: avoid; }
-  .maps h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.6pt;
+  .maps { margin: 0 0 12pt; page-break-inside: avoid; }
+  .appendix { page-break-before: always; page-break-inside: avoid; }
+  .maps h2, .appendix h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.6pt;
              color: #365f86; margin: 8pt 0 5pt; }
-  .maps img { width: 100%; border: 0.75pt solid #d9d9de; border-radius: 3pt; }
+  .maps img, .appendix img { width: 100%; border: 0.75pt solid #d9d9de; border-radius: 3pt; }
   .legend { margin-top: 4pt; font-size: 8pt; color: #545459; }
   .legend span { margin-right: 10pt; white-space: nowrap; }
   .legend i { display: inline-block; width: 7pt; height: 7pt; border-radius: 50%;
@@ -75,19 +76,12 @@
   {% if trip.notes %}<p class="trip-notes">{{ trip.notes }}</p>{% endif %}
 </header>
 
-{% if trip_map or flight_map %}
+{% if trip_map %}
 <section class="maps">
-  {% if trip_map %}
   <h2>Trip map</h2>
   <img src="{{ trip_map }}" alt="Map of the trip">
-  {% if legend %}<div class="legend">{% for l in legend %}<span><i style="background: {{ l.colour }}"></i>{{ l.label }}</span>{% endfor %}
-    · numbers match the timeline</div>{% endif %}
-  {% endif %}
-  {% if flight_map %}
-  <h2>Getting there</h2>
-  <img src="{{ flight_map }}" alt="Map of the flights">
-  {% endif %}
-  {% if map_attribution %}<div class="attrib">Map data {{ map_attribution }}</div>{% endif %}
+  <div class="legend">{% for l in legend %}<span><i style="background: {{ l.colour }}"></i>{{ l.label }}</span>{% endfor %}
+    · numbers match the timeline{% if map_attribution %}<span class="attrib"> · Map data {{ map_attribution }}</span>{% endif %}</div>
 </section>
 {% endif %}
 
@@ -129,5 +123,14 @@
 {% endfor %}
 
 <footer>Shared from Yonder · generated {{ generated }}</footer>
+
+{% if flight_map %}
+{# An appendix on its own page(s), so a printout can leave it out. #}
+<section class="appendix">
+  <h2>Appendix · Getting there</h2>
+  <img src="{{ flight_map }}" alt="Map of the flights">
+  {% if map_attribution %}<div class="attrib">Map data {{ map_attribution }}</div>{% endif %}
+</section>
+{% endif %}
 </body>
 </html>
