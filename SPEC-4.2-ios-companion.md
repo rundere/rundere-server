@@ -54,6 +54,13 @@ trip snapshot, review list, health, capture, timeline PDF. **No other writes.**
 ## 3. Design decisions for this phase
 
 ### 3.1 API contract as a build input
+> **Status: implemented (YONDER-58).** `/api/v1/openapi.json` + `/api/v1/docs`
+> behind auth (the old public `/openapi.json` is off); login / refresh / me now
+> declare `TokenOut` / `UserOut`. `scripts/dto_drift.py` checks
+> `ios/Yonder/Models/DTOs.swift` against it; `tests/test_api_contract.py` runs
+> it in CI (errors fail the build; "not adopted yet" fields are informational —
+> today: `traveler_ids`, the user sharing fields, finding `locked/external/agent`,
+> review `to_process`, i.e. YONDER-102's work).
 Enable FastAPI's own OpenAPI for `/api/v1` (currently `docs_url=None`):
 serve `/api/v1/openapi.json` **behind auth** (not public, the repo will be
 public but servers aren't). The iOS agent diffs `Models/DTOs.swift` against it;
@@ -224,7 +231,7 @@ with Docker Desktop; each ships with tests like everything in 4.1.
 | 0a | ✅ Yonder OAuth 2.1 authorization server + connected-apps UI (§3.7) | YONDER-107 | server | — |
 | 0b | ✅ Remote MCP at `/mcp`, tools up to date + "save to my Discover" (§3.7) | YONDER-108 | server | 0a |
 | 0c | Traefik machine-endpoint route (no Authentik; geoblock + CrowdSec), stack file synced (§3.7) | YONDER-109 | ops | 0a |
-| 1 | OpenAPI for `/api/v1` behind auth + DTO drift check | YONDER-58 | server + app | — |
+| 1 | ✅ OpenAPI for `/api/v1` behind auth + DTO drift check | YONDER-58 | server + app | — |
 | 2 | ✅ User payload + sharing endpoint (§3.3) | YONDER-101 | server | — |
 | 3 | DTO sync: `traveler_ids`, user fields, lenient decoding; per-person cache keys (§3.4) | YONDER-102 | app | 1, 2 |
 | 4 | Finish the core tabs (define done: pull-to-refresh everywhere, empty/offline states, Settings links §3.6) | YONDER-52 | app | 3 |

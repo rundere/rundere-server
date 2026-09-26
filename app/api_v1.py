@@ -451,6 +451,62 @@ def _review_item(v: dict) -> ReviewItemOut:
         confidence=v.get("confidence"), created_at=v.get("created_at"))
 
 
+# --------------------------------------------------------------------------- API contract (YONDER-58)
+def _collect_refs(node, out: set[str]) -> None:
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+            out.add(ref.rsplit("/", 1)[-1])
+        for v in node.values():
+            _collect_refs(v, out)
+    elif isinstance(node, list):
+        for v in node:
+            _collect_refs(v, out)
+
+
+def api_openapi_spec() -> dict:
+    """The OpenAPI document for /api/v1 only (the app's contract): the app's
+    full schema filtered to /api/v1 paths, pruned to the schemas they use.
+    `scripts/dto_drift.py` checks the iOS DTOs against it."""
+    from app.config import settings
+    from app.main import app
+    full = app.openapi()
+    paths = {p: v for p, v in full.get("paths", {}).items() if p.startswith("/api/v1")}
+    schemas = full.get("components", {}).get("schemas", {})
+    keep: set[str] = set()
+    _collect_refs(paths, keep)
+    pending = list(keep)
+    while pending:
+        found: set[str] = set()
+        _collect_refs(schemas.get(pending.pop(), {}), found)
+        for name in found - keep:
+            keep.add(name)
+            pending.append(name)
+    return {"openapi": full.get("openapi", "3.1.0"),
+            "info": {"title": "Yonder API", "version": settings.app_version,
+                     "description": "Every route needs a bearer token (or a web session); "
+                                    "all data is scoped to the signed-in user."},
+            "paths": paths,
+            "components": {"schemas": {k: schemas[k] for k in sorted(keep)},
+                           "securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}}},
+            "security": [{"bearer": []}]}
+
+
+@router.get("/openapi.json", include_in_schema=False)
+def api_openapi(user=Depends(authn.current_user)):
+    """The /api/v1 contract — behind auth: servers aren't public even though
+    the code is."""
+    return api_openapi_spec()
+
+
+@router.get("/docs", include_in_schema=False)
+def api_docs(user=Depends(authn.current_user)):
+    """Swagger UI for /api/v1 (behind auth; the page fetches the schema with
+    your web session)."""
+    from fastapi.openapi.docs import get_swagger_ui_html
+    return get_swagger_ui_html(openapi_url="/api/v1/openapi.json", title="Yonder API")
+
+
 # --------------------------------------------------------------------------- read
 @router.get("/dashboard", response_model=DashboardOut)
 def api_dashboard(user=Depends(authn.current_user), session: Session = Depends(get_session)):
