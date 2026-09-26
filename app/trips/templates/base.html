@@ -29,5 +29,20 @@ function txToggleTheme(){var r=document.documentElement,c=r.getAttribute('data-t
 {% else %}<main class="bp-wrap">{{ self.content() }}</main>{% endif %}
 {# Modals swap into this slot; /trips/close empties it. #}
 <div id="modal-root"></div>
+<script>
+// Start → end: setting a start fills an empty end with the same date (and time),
+// and pulls an end that is now before the start up to it. Works for timeline
+// activities (when/endWhen) and trips (start/end). Delegated, so it
+// also covers modals HTMX swaps in later.
+document.addEventListener('change', function (e) {
+  var pairs = {when: 'endWhen', start: 'end'};
+  var el = e.target, endName = el && pairs[el.name];
+  if (!endName || !el.form || !el.value) return;
+  var end = el.form.querySelector('[name="' + endName + '"]');
+  if (!end || end.type !== el.type) return;
+  if (!end.value || end.value < el.value) end.value = el.value;
+  end.min = el.value;
+});
+</script>
 </body>
 </html>

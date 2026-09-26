@@ -110,6 +110,14 @@ def _fields(payload: dict) -> list[dict]:
         place_fields("From", "/ground_transport/departure/place")
         dt_field("Arrives", "/ground_transport/arrival/time")
         place_fields("To", "/ground_transport/arrival/place")
+        route = (payload.get("ground_transport") or {}).get("route") or {}
+        if route.get("source_url"):
+            # What the router worked out once both stops were located; blank
+            # until they are (fix a From/To address and it is recomputed).
+            text_field("Distance (km)", "/ground_transport/route/distance_km", editable=False)
+            text_field("Drive time (min)", "/ground_transport/route/duration_minutes",
+                       editable=False)
+            text_field("Directions link", "/ground_transport/route/source_url", editable=False)
 
     rows.append({"label": "Status", "path": "/booking_status", "kind": "select",
                  "value": payload.get("booking_status") or "",
@@ -185,6 +193,17 @@ def _apply_edit(payload: dict, path: str, raw: str, kind: str) -> bool:
     if before == after:
         return False
     node[leaf] = after
+    # A corrected name/address/city means the place we located from the OLD text
+    # may be wrong: drop coordinates the geocoder guessed (never ones the
+    # document or link stated) so the re-resolve locates the new text, and the
+    # drive distance built from them.
+    if leaf in {"name", "address", "city", "region", "country"} \
+            and node.get("geocode_source") == "photon":
+        for k in ("lat", "lon", "geocode_source"):
+            node.pop(k, None)
+        route = (payload.get("ground_transport") or {}).get("route")
+        if isinstance(route, dict):
+            route["distance_km"] = route["duration_minutes"] = None
     return True
 
 

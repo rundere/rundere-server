@@ -72,7 +72,7 @@ class ActivityOut(BaseModel):
     traveler_ids: list[int] = []
     fields: list[ActivityFieldOut] = []  # labelled, non-empty, display order
     map_query: str | None = None        # place text to hand to a maps app
-    map_url: str | None = None          # Google Maps search/directions link
+    map_url: str | None = None          # the saved Google/Apple Maps link, else a Google search
 
 
 class TravelerOut(BaseModel):
@@ -260,6 +260,7 @@ class CaptureIn(BaseModel):
     timezone: str | None = None
     mode: str | None = None          # directions: car / transit / walk (SPEC-4 §3)
     collection_id: str | None = None
+    trip_id: str | None = None       # a Yonder trip to file it under (pinned)
     title: str | None = None
     notes: str | None = None
 
@@ -782,7 +783,8 @@ def api_capture(body: CaptureIn, user=Depends(authn.current_user),
     if body.html:
         bid = _queue_web(session, body.html, source_url=url or None,
                          submitted_by=user.username, travel_date=body.travel_date,
-                         title=body.title, notes=body.notes, owner_user_id=user.id)
+                         title=body.title, notes=body.notes, owner_user_id=user.id,
+                         trip_id=body.trip_id)
     elif url and apple_maps_url.is_apple_short_link(url):
         raise HTTPException(
             422, "Apple Maps short link (maps.apple/p/…) carries no coordinates; "
@@ -795,14 +797,14 @@ def api_capture(body: CaptureIn, user=Depends(authn.current_user),
                           end_date=body.end_date, timezone=body.timezone, mode=body.mode,
                           title=body.title, notes=body.notes,
                           collection_id=body.collection_id, owner_user_id=user.id,
-                          provider="apple" if is_apple else "google")
+                          provider="apple" if is_apple else "google", trip_id=body.trip_id)
     elif _looks_like_url(url):
         html = _fetch_public_html(url)
         if not html:
             raise HTTPException(422, "couldn't fetch that URL — share the page's HTML instead")
         bid = _queue_web(session, html, source_url=url, submitted_by=user.username,
                          travel_date=body.travel_date, title=body.title,
-                         notes=body.notes, owner_user_id=user.id)
+                         notes=body.notes, owner_user_id=user.id, trip_id=body.trip_id)
     else:
         raise HTTPException(400, "provide a url or html")
     return CaptureOut(batch_id=bid, status="received")
@@ -874,7 +876,8 @@ def api_add_activity(trip_id: str, body: ActivityIn,
                      user=Depends(authn.current_user), session: Session = Depends(get_session)):
     trip = scope.require_trip(session, user, trip_id, edit=True)
     t = _activity_type_or_400(body.type)
-    values = dict(body.values or {})
+    from app.trips.enrich import enrich_activity_values
+    values = enrich_activity_values(t.key, dict(body.values or {}))
     a = TripActivity(trip_id=trip.id, type=t.key, values=values,
                      starts_at=body.starts_at or values.get("when") or "")
     session.add(a)
@@ -895,7 +898,8 @@ def api_update_activity(trip_id: str, activity_id: str, body: ActivityPatch,
     if body.type is not None:
         a.type = _activity_type_or_400(body.type).key
     if body.values is not None:
-        a.values = dict(body.values)
+        from app.trips.enrich import enrich_activity_values
+        a.values = enrich_activity_values(a.type, dict(body.values))
     if body.starts_at is not None:
         a.starts_at = body.starts_at or ""
     elif body.values is not None:

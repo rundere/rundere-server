@@ -38,6 +38,10 @@ class Settings(BaseSettings):
 
     # Geocoding (D-22: Photon on travel-net, avoids Google Maps quota)
     photon_url: str = "http://photon:2322"
+    # Road routing for a drive's distance and time (OSRM /route/v1 API). The
+    # public demo server is fine for a personal deployment's handful of drives;
+    # point this at a self-hosted OSRM to stay local. Empty = never computed.
+    osrm_url: str = "https://router.project-osrm.org"
 
     # Discovery (Yonder 3.0, SPEC-3-discovery.md). Deterministic-tier sources —
     # overridable so a deployment can self-host (e.g. its own Frankfurter) and

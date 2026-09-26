@@ -36,6 +36,11 @@ class ActivityType:
         return next((f for f in self.fields if f["key"] == key), None)
 
 
+# Where a booking came from: an email subject, a site, or a link. Free text on
+# purpose — an email has no URL (owner, 2026-09-26). A map link has its own field.
+_SOURCE_HINT = "email subject, booking site, or a link"
+
+
 def _f(key: str, label: str, kind: str = "text", hint: str = "") -> Field:
     f = {"key": key, "label": label, "type": kind}
     if hint:
@@ -55,7 +60,9 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("from", "From"),
             _f("to", "To"),
             _f("confirmation", "Confirmation #"),
-            _f("sourceLink", "Source document", "url"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: _join(v.get("airline", ""), v.get("flightNumber", "")) or "Flight",
@@ -71,7 +78,9 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("from", "From"),
             _f("to", "To"),
             _f("confirmation", "Confirmation #"),
-            _f("sourceLink", "Source document", "url"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: _join(v.get("operator", ""), v.get("trainNumber", "")) or "Train",
@@ -83,8 +92,12 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("when", "Depart", "datetime-local"),
             _f("endWhen", "Arrive", "datetime-local"),
             _f("route", "Route"),
-            _f("distance", "Distance"),
-            _f("sourceLink", "Source document", "url"),
+            _f("from", "From", hint="start address or place"),
+            _f("to", "To", hint="destination address or place"),
+            _f("distance", "Distance", hint="filled from the map link when left blank"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: v.get("route") or "Road trip",
@@ -99,7 +112,9 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("pickupLocation", "Pickup location"),
             _f("dropoffLocation", "Drop-off location"),
             _f("confirmation", "Confirmation #"),
-            _f("sourceLink", "Source document", "url"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: v.get("company") or "Car rental",
@@ -117,7 +132,9 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("type", "Type", hint="hotel, hostel, resort, bnb, campground, cabin, …"),
             _f("address", "Address"),
             _f("confirmation", "Confirmation #"),
-            _f("sourceLink", "Source document", "url"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: v.get("name") or "Lodging",
@@ -132,7 +149,9 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("name", "Activity name"),
             _f("provider", "Operator"),
             _f("location", "Location"),
-            _f("sourceLink", "Source document", "url"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: v.get("name") or "Tour / activity",
@@ -145,7 +164,9 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("name", "Event name"),
             _f("venue", "Venue"),
             _f("seat", "Seat / section"),
-            _f("sourceLink", "Source document", "url"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: v.get("name") or "Event",
@@ -158,7 +179,9 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("name", "Restaurant"),
             _f("address", "Address"),
             _f("partySize", "Party size"),
-            _f("sourceLink", "Source document", "url"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: v.get("name") or "Restaurant",
@@ -174,7 +197,9 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("departurePort", "Departure port"),
             _f("arrivalPort", "Arrival port"),
             _f("cabin", "Cabin #"),
-            _f("sourceLink", "Source document", "url"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: v.get("vessel") or v.get("operator") or "Cruise",
@@ -185,7 +210,7 @@ _TYPES: tuple[ActivityType, ...] = (
         (
             _f("when", "Date (optional)", "datetime-local"),
             _f("title", "Title"),
-            _f("sourceLink", "Source document", "url"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
             _f("text", "Details", "textarea"),
         ),
         title=lambda v: v.get("title") or "Note",
@@ -199,6 +224,7 @@ TRIP_ACTIVITY_TYPES: dict[str, ActivityType] = {t.key: t for t in _TYPES}
 # time chip, and the long free-text fields render last, full width.
 _META_KEYS = {"when"}
 _LONG_KEYS = {"notes", "text"}
+_LINK_KEYS = {"mapLink", "sourceLink"}
 
 DEFAULT_TYPE = "flight"
 
@@ -236,10 +262,18 @@ _MAP_QUERY: dict[str, Callable[[dict], str | None]] = {
 
 
 def _is_maps_url(url: str) -> bool:
-    u = (url or "").lower()
-    return u.startswith("http") and (
-        "google." in u and "/maps" in u or "maps.app.goo.gl" in u
-        or "goo.gl/maps" in u)
+    from resolve.routing import is_maps_link
+    return is_maps_link(url)
+
+
+def _maps_link(values: dict) -> str | None:
+    """The person's own Google/Apple Maps link for this activity: the Map field,
+    or (entries made before it existed) a Maps URL pasted as the Source."""
+    for key in ("mapLink", "sourceLink"):
+        link = (values.get(key) or "").strip()
+        if _is_maps_url(link):
+            return link
+    return None
 
 
 def map_query(activity_type: str, values: dict) -> str | None:
@@ -247,24 +281,23 @@ def map_query(activity_type: str, values: dict) -> str | None:
     so a client can hand it to its own maps app. A road trip uses its route."""
     v = values or {}
     if activity_type == "drive":
-        return v.get("route") or None
+        return (v.get("route") or _join(v.get("from", ""), v.get("to", ""), sep=" → ")
+                or None)
     fn = _MAP_QUERY.get(activity_type)
     return fn(v) if fn else None
 
 
 def map_url(activity_type: str, values: dict) -> str | None:
     """A 'find on map' link for one timeline activity, or None when it has no
-    locatable field. Flight → departure airport; lodging/restaurant → the
-    property; event → the venue; road trip → the shared directions URL if there is
-    one, else a search on the route text."""
+    locatable field. A Google or Apple Maps link the person saved always wins —
+    it points at the exact place or route (owner, 2026-09-26). Otherwise:
+    flight → departure airport; lodging/restaurant → the property; event → the
+    venue; road trip → a search on its route."""
     v = values or {}
-    if activity_type == "drive":
-        link = (v.get("sourceLink") or "").strip()
-        if _is_maps_url(link):
-            return link
-        return _maps_search(v["route"]) if v.get("route") else None
-    fn = _MAP_QUERY.get(activity_type)
-    q = fn(v) if fn else None
+    link = _maps_link(v)
+    if link:
+        return link
+    q = map_query(activity_type, v)
     return _maps_search(q) if q else None
 
 
@@ -279,7 +312,8 @@ def time_labels(activity_type: str) -> tuple[str | None, str | None]:
 def detail_fields(activity_type: str, values: dict) -> list[dict]:
     """Labelled, non-empty fields for the expanded row, in declaration order,
     with the long free-text fields pushed to the end. `when` is excluded (it is
-    the time chip); `sourceLink` is flagged so the template renders a link."""
+    the time chip); a field holding a web link is flagged so the template
+    renders it as one (the Source may also be plain text, e.g. an email)."""
     t = get_type(activity_type)
     short, long = [], []
     for f in t.fields:
@@ -290,6 +324,7 @@ def detail_fields(activity_type: str, values: dict) -> list[dict]:
         if not val:
             continue
         row = {"key": key, "label": f["label"], "value": val, "kind": f["type"],
-               "is_link": key == "sourceLink"}
+               "is_link": (key in _LINK_KEYS
+                           and str(val).strip().lower().startswith(("http://", "https://")))}
         (long if key in _LONG_KEYS else short).append(row)
     return short + long

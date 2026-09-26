@@ -17,7 +17,7 @@ from app.models import Trip
 from app.trips import routes as trip_routes
 
 # Fields that only make sense inside Yonder.
-_OMIT_KEYS = {"sourceLink"}
+_OMIT_KEYS = {"sourceLink", "mapLink"}
 
 
 def _field_rows(fields: list[dict], shown: set[str] = frozenset()) -> list[dict]:

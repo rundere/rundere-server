@@ -2055,6 +2055,13 @@
           ],
           "description": "User-selected AdventureLog collection. When present the resolver SKIPS the match ladder — the human already decided. This is the normal path for road trips: collection created in advance to book time off, drive plan attached later."
         },
+        "trip_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "User-selected Yonder trip. The resolver files the item under it (pinned, like a manual pick in review) when its owner may file into that trip."
+        },
         "timezone": {
           "type": [
             "string",

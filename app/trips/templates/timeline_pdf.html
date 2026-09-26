@@ -87,7 +87,7 @@
       {% for r in a.rows if r.long %}
       <div class="long"><b>{{ r.label }}:</b> {{ r.value }}</div>
       {% endfor %}
-      {% if a.map_url %}<div class="map"><a href="{{ a.map_url }}">Open in Google Maps ↗</a></div>{% endif %}
+      {% if a.map_url %}<div class="map"><a href="{{ a.map_url }}">Open map ↗</a></div>{% endif %}
     </div>
   </div>
   {% endfor %}

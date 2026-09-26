@@ -422,6 +422,37 @@ def _apply_maps_coords(payload: dict) -> dict:
     return payload
 
 
+def _estimate_drive(payload: dict) -> dict:
+    """Fill route.distance_km / duration_minutes for a Maps directions drive
+    whose stops are all located and whose route has no distance yet."""
+    gt = payload.get("ground_transport") or {}
+    route = gt.get("route") or {}
+    if route.get("provider") not in {"google_maps", "apple_maps"} \
+            or route.get("distance_km") is not None:
+        return payload
+    from app.config import settings
+    from resolve.routing import estimate_for_places
+    stops = [gt.get("departure"), *(gt.get("waypoints") or []), gt.get("arrival")]
+    places = [m.get("place") for m in stops if isinstance(m, dict)]
+    est = estimate_for_places(places, base_url=settings.osrm_url)
+    if est is not None:
+        route["distance_km"] = est.distance_km
+        route["duration_minutes"] = est.duration_minutes
+    return payload
+
+
+def _link_chosen_trip(session: Session, item: TravelItem, cc: dict) -> None:
+    """File the capture under the Yonder trip the person picked when capturing
+    (capture_context.trip_id), pinned like a manual pick in review. Ignored when
+    a link is already pinned or the trip isn't one its owner may file into."""
+    tid = (cc or {}).get("trip_id")
+    if not tid or (item.review or {}).get("trip_pinned"):
+        return
+    if any(t.id == tid for t in _linkable_trips(session, item)):
+        item.trip_id = tid
+        item.review = {**(item.review or {}), "trip_pinned": True}
+
+
 def _geocode_places(payload: dict, geocoder: PhotonGeocoder) -> dict:
     """Locate non-airport places. Only fills blanks, and only on a result
     consistent with what the document said (see resolve/geocode.py)."""
@@ -514,6 +545,9 @@ def resolve_item(session: Session, item: TravelItem,
         payload = enrich_places_from_airports(payload, airports)
     if geocoder is not None:
         payload = _geocode_places(payload, geocoder)
+        # A directions link carries no distance or time; with its stops located,
+        # ask the router (runs with the geocoder: both are the networked tier).
+        payload = _estimate_drive(payload)
     payload, places = _annotate_places(payload, profiles, start)
     home_only = within_home_radius(places)
     unsuppressed = sum(1 for p in places if not p.get("suppressed"))
@@ -521,6 +555,7 @@ def resolve_item(session: Session, item: TravelItem,
     # In-house Yonder trip auto-link (independent of the AdventureLog ladder
     # below): a real journey unambiguously inside one Yonder trip gets linked
     # here; home-only movement isn't a trip, so skip it.
+    _link_chosen_trip(session, item, cc)
     if not home_only:
         _auto_link_yonder_trip(session, item, start, end)
 

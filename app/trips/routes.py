@@ -28,6 +28,7 @@ from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
                         TripActivity, TravelerIdentity, TripTraveler)
 from app.trips import types as activity_types
+from app.trips.enrich import enrich_activity_values
 from app.trips import who
 
 log = logging.getLogger("yonder.trips")
@@ -2049,7 +2050,10 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
     subtitle = t.subtitle(v)
     starts = _al_iso(v.get("when"))
     ends = _al_iso(v.get("endWhen")) or starts
-    link = v.get("sourceLink") or None
+    # AdventureLog's link is a URL field: the Source when it is a link (it may be
+    # plain text, e.g. an email subject), else the map link.
+    link = next((u for u in (v.get("sourceLink"), v.get("mapLink"))
+                 if (u or "").strip().lower().startswith(("http://", "https://"))), None)
     detail_lines = [f"Confirmation: {v['confirmation']}"] if v.get("confirmation") else []
     if v.get("notes"):
         detail_lines.append(v["notes"])
@@ -2249,6 +2253,15 @@ def _from_al_iso(value: str | None) -> str:
     return date_p if time_p in ("", "00:00") else f"{date_p}T{time_p}"
 
 
+def _al_link_values(link: str | None) -> dict:
+    """An AdventureLog record's link lands in the Map field when it is a Maps
+    link (so it drives the Map button), else in Source."""
+    link = (link or "").strip()
+    if not link:
+        return {}
+    return {"mapLink": link} if activity_types._is_maps_url(link) else {"sourceLink": link}
+
+
 def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
     """Map an AdventureLog transportation/lodging record onto a Yonder TripActivity
     (a Timeline item). Notes have no Timeline equivalent and are never pulled."""
@@ -2262,7 +2275,7 @@ def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
                   "endWhen": _from_al_iso(rec.get("end_date")),
                   "confirmation": rec.get("reservation_number") or "",
                   "notes": _clean(rec.get("description")),
-                  "sourceLink": rec.get("link") or ""}
+                  **_al_link_values(rec.get("link"))}
         if ytype == "flight" and rec.get("flight_number"):
             values["flightNumber"] = rec["flight_number"]
     else:                                                # lodging
@@ -2273,7 +2286,7 @@ def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
                   "address": rec.get("location") or "",
                   "confirmation": rec.get("reservation_number") or "",
                   "type": rec.get("type") or "", "notes": _clean(rec.get("description")),
-                  "sourceLink": rec.get("link") or ""}
+                  **_al_link_values(rec.get("link"))}
     values = {k: v for k, v in values.items() if v}
     return TripActivity(trip_id=trip_id, type=ytype, values=values,
                         starts_at=values.get("when") or "")
@@ -2559,7 +2572,7 @@ async def create_activity(trip_id: str, request: Request,
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or activity_types.DEFAULT_TYPE)
-    values = _collect_values(t, form)
+    values = enrich_activity_values(t.key, _collect_values(t, form))
     a = TripActivity(trip_id=trip_id, type=t.key, values=values,
                      starts_at=values.get("when") or "")
     session.add(a)
@@ -2579,7 +2592,7 @@ async def update_activity(trip_id: str, activity_id: str, request: Request,
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or a.type)
-    values = _collect_values(t, form)
+    values = enrich_activity_values(t.key, _collect_values(t, form))
     a.type = t.key
     a.values = values
     a.starts_at = values.get("when") or ""

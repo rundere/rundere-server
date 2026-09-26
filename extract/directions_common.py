@@ -82,6 +82,10 @@ def _parse_place(segment: str) -> dict:
     elif len(parts) >= 2 and not _HAS_DIGIT.search(parts[0]):
         place["city"] = parts[0]
         place["region"] = parts[1]
+    elif len(parts) >= 2:
+        # A street line ("2074 Donald Harbour Pkwy, Locust Hill, ON"): it IS the
+        # stop's address, so Review shows it in the From/To address field.
+        place["address"] = seg
     return place
 
 

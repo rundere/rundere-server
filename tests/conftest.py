@@ -12,3 +12,5 @@ import tempfile
 _TMP = tempfile.mkdtemp(prefix="tx-tests-")
 os.environ.setdefault("TX_DATABASE_URL", f"sqlite:///{_TMP}/tests.sqlite3")
 os.environ.setdefault("TX_INGEST_RATE_LIMIT", "5")
+# No live road routing in tests (resolve/routing.py); tests stub it.
+os.environ.setdefault("TX_OSRM_URL", "")
