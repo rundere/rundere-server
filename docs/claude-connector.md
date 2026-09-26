@@ -7,6 +7,12 @@ Claude mobile app. Claude then acts **as you**: it sees and changes exactly what
 you can in Yonder, and nothing more. Per-user scoping and the admin-sharing
 opt-out apply to every tool.
 
+**Not only Claude.** `/mcp` is a standard MCP server with standard OAuth
+(dynamic registration, PKCE), so any MCP-capable agent can connect the same way,
+e.g. Perplexity or Perplexica. Use whichever agent suits the job. Each connected
+app shows under Account → Connected apps by the name it registered with, and
+that name labels whatever it writes to Discover.
+
 ## Server prerequisites (operator)
 
 | Setting | Why |
@@ -71,25 +77,28 @@ end every token: changing or resetting your password, "sign out everywhere"
 | Packing (yours) | `generate_packing`, `set_packing_status`, `add_packing_item` |
 | Journal (yours) | `create_journal_entry`, `list_journal_entries`, `get_journal_entry`, `update_journal_entry`, `attach_journal_entry` |
 | Capture / review | `capture_url`, `list_review`, `get_review_item`, `assign_review_item_to_trip` (own / open / trips you travel on) |
-| Discover | `save_research`: saves to **your** Discover tab as a draft. By default it goes into a "Research (Claude)" section; with `topic` it can instead update the Food, Events, Safety, Visa, Plugs or Packing finding for a place. A later save supersedes the earlier one, which stays under "Earlier versions". A **locked** finding is refused. Also available as `POST /api/v1/trips/{id}/findings`. |
+| Discover | `save_research`: saves to **your** Discover tab as a draft. By default it goes into a "Research (AI agents)" section; with `topic` it can instead update the Food, Events, Safety, Visa, Plugs or Packing finding for a place. A later save supersedes the earlier one, which stays under "Earlier versions". A **locked** finding is refused. Also available as `POST /api/v1/trips/{id}/findings`. |
 
 ## Discover: who can overwrite what
 
 Two kinds of writer produce Discover findings. **Local** is the server's own
-Discover run: deterministic resolvers plus the local LLM. **External** is Claude,
-through the tool above. The rules live in `discover/policy.py`:
+Discover run: deterministic resolvers plus the local LLM. **External** is any AI
+agent you connect over MCP (Claude, Perplexity/Perplexica, …), through the tool
+above. The rules live in `discover/policy.py`:
 
-| Topic | Can be locked? | Local whole-trip run | Claude |
+| Topic | Can be locked? | Local whole-trip run | AI agent |
 |---|---|---|---|
 | Weather, Currency | never | always refreshes | can't write |
 | Food, Events, Safety, Packing | never | refreshes, even if approved or edited | can update |
 | Plugs, Visa | yes: **Lock**, or edit it | skips it when locked | refused when locked; otherwise updates |
 | Languages | yes: pick languages, or **Lock** | skips it when locked | can't write |
-| Research (Claude) | never | never touches it | updates |
+| Research (AI agents) | never | never touches it | updates |
 
-- **Where it was run matters.** The local run never overwrites anything Claude
-  wrote (shown with a "Claude" badge), and never overwrites a finding you
-  rejected.
+- **Where it was run matters.** The local run never overwrites anything an
+  agent wrote, and never overwrites a finding you rejected. An agent's finding
+  shows a "via <name>" badge, where the name is the app it connected as: its
+  OAuth app name (e.g. "Claude") or your personal API token's name. The agent
+  can't choose the label itself.
 - **A lock is absolute.** Nothing overwrites a locked finding until you
   **Unlock** it, or press **Re-run** on that one finding, which is always an
   explicit override.

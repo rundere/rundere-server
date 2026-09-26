@@ -11,7 +11,7 @@ Idempotency (D-63/D-71): a finding is keyed by (trip_id, topic, place_key). A
 re-run refreshes findings in place under discover/policy.py: time-sensitive
 topics (weather, currency, food, …) are refreshed even when approved/edited,
 with the old version kept as history; a LOCKED finding (plugs/visa/language,
-approved or edited), a rejected one, or one Claude wrote is left untouched.
+approved or edited), a rejected one, or one an AI agent wrote is left untouched.
 The per-finding re-run is the tool for deliberately overriding one of those.
 """
 from __future__ import annotations
@@ -89,7 +89,7 @@ def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> No
                            place_key=f.place_key)
                 .first())
     # discover/policy.py: a locked (lockable topic + approved/edited), rejected
-    # or Claude-written finding is left alone; anything else is refreshed —
+    # or agent-written finding is left alone; anything else is refreshed —
     # even an approved weather report — with the old version kept as history.
     history: list = []
     if existing is not None:
@@ -137,7 +137,7 @@ def _prune_stale_drafts(session: Session, trip_id: str,
     replaced by a newer result via _upsert, never deleted because one run came back
     empty — otherwise a good result silently vanishes on the next re-run.
     Human-touched findings (approved/edited/rejected) are always kept, and so is
-    anything Claude wrote (topic "research" or resolver "claude", YONDER-108) —
+    anything an AI agent wrote (topic "research" or resolver "agent", YONDER-108) —
     no local resolver made it, so no local run can re-make it."""
     for f in (session.query(DiscoveryFinding)
               .filter(DiscoveryFinding.trip_id == trip_id,
@@ -163,7 +163,7 @@ def rerun_finding(session: Session, finding, *, resolve_airport, geocoder,
                   base_currencies: tuple[str, ...] = ("CAD", "USD"),
                   today: str | None = None):
     """Regenerate ONE finding in place — the per-topic re-run (D-71). Unlike a
-    whole-trip run this deliberately OVERRIDES a locked, edited or Claude-written
+    whole-trip run this deliberately OVERRIDES a locked, edited or agent-written
     finding (an explicit "give me a fresh one"; the old version goes to history), re-fetching live topics (weather/currency) and, for
     the LLM tier later, carrying a steer note. Returns the row, or None if the
     place no longer derives or the topic has no resolver."""

@@ -684,9 +684,9 @@ TOPIC_LABELS = {
     "events": "Events & activities", "food": "Food & drink", "language": "Language",
     "language_regional": "Regional language", "language_local": "Local phrases & register",
     "packing": "Packing",
-    # YONDER-108: research saved from Claude (the MCP `save_research` tool /
+    # YONDER-108: research saved by an AI agent over MCP/API (`save_research`,
     # POST /api/v1/trips/{id}/findings) — the caller's own, reviewed like any finding.
-    "research": "Research (Claude)",
+    "research": "Research (AI agents)",
 }
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
@@ -761,8 +761,10 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         "lockable": _policy.is_lockable(f.topic),
         "locked": _policy.is_locked(f),
         "external": _policy.is_external(f),
+        "agent": _policy.agent_label(f),
         # Superseded versions of saved research (YONDER-108), newest first.
         "history": [{"when": (h.get("generated_at") or "")[:10], "status": h.get("status"),
+                     "agent": h.get("agent"),
                      "body": _render_md(h.get("body_md")), "sources": h.get("sources") or []}
                     for h in (data.get("history") or []) if isinstance(h, dict)],
     }
@@ -1020,7 +1022,7 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
 def lock_finding(trip_id: str, fid: str, request: Request, lock: str = Form("1"),
                  session: Session = Depends(get_session)):
     """Lock (approve) or unlock a finding on a LOCKABLE topic (plugs, visa,
-    languages). Locked: neither a local Discover run nor Claude overwrites it.
+    languages). Locked: neither a local Discover run nor an AI agent overwrites it.
     Unlocking returns it to draft, so the next run may refresh it."""
     from discover import policy
     f = _finding_or_404(session, request, trip_id, fid)

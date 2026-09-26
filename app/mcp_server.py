@@ -1,7 +1,8 @@
 """Remote MCP server inside Yonder at `/mcp` (YONDER-108, SPEC-4.2 §3.7).
 
-MCP Streamable HTTP (stateless, JSON responses) for the claude.ai connector,
-the Claude apps, and Claude Code. Every request needs a bearer token — an OAuth
+MCP Streamable HTTP (stateless, JSON responses) for any MCP client — the
+claude.ai connector and Claude apps, Claude Code, or other agents
+(Perplexity/Perplexica, …). Every request needs a bearer token — an OAuth
 access token (YONDER-107) or a personal API token — and a missing/invalid one
 gets a 401 with `WWW-Authenticate: Bearer resource_metadata="…"`, which is how
 claude.ai discovers Yonder's OAuth server. Cookies and proxy identity headers
@@ -34,6 +35,10 @@ from app.models import TripActivity, User
 
 _caller_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "yonder_mcp_caller", default=None)
+# Which agent is calling: the name of the credential it connected with (the
+# OAuth app's registered name, or the personal API token's name).
+_caller_agent: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "yonder_mcp_agent", default=None)
 
 INSTRUCTIONS = """Yonder is the user's personal travel planner. Tools act as the
 signed-in Yonder user and see only what they can see in the app.
@@ -51,7 +56,7 @@ mcp = MCPServer("Yonder", instructions=INSTRUCTIONS, version=settings.app_versio
 # --------------------------------------------------------------------------- plumbing
 def _run(fn, /, **kwargs) -> Any:
     """Call an /api/v1 function as the MCP caller in a fresh DB session and
-    return plain JSON. HTTP errors become tool errors Claude can read."""
+    return plain JSON. HTTP errors become tool errors the agent can read."""
     uid = _caller_id.get()
     if not uid:
         raise ToolError("not signed in")
@@ -311,12 +316,15 @@ def save_research(trip_id: TripId,
     they review. Saving again for the same topic + place SUPERSEDES the current
     version (the old one is kept as history), so write the complete, up-to-date
     picture each time — e.g. a refresh days before the trip with newly announced
-    events. Yonder's local Discover run won't overwrite what you save. A finding
-    the user LOCKED (see `locked` in get_trip) is refused — tell them instead."""
+    events. Yonder's local Discover run won't overwrite what you save; it's
+    shown as written by the app you connected as. A finding the user LOCKED
+    (see `locked` in get_trip) is refused — tell them instead."""
     body = api_v1.FindingIn(topic=topic, title=title, body_md=body_md, place_key=place_key,
                             sources=[api_v1.SourceIn(**s) for s in (sources or [])
                                      if isinstance(s, dict) and s.get("url")])
-    return _run(lambda session, user: api_v1.save_research_finding(session, user, trip_id, body))
+    agent = _caller_agent.get()
+    return _run(lambda session, user: api_v1.save_research_finding(
+        session, user, trip_id, body, agent=agent))
 
 
 # --------------------------------------------------------------------------- HTTP endpoint
@@ -358,17 +366,20 @@ class MCPEndpoint:
         request = Request(scope, receive)
         authz = request.headers.get("authorization", "")
         token = authz[7:].strip() if authz[:7].lower() == "bearer " else ""
-        uid = None
+        uid = agent = None
         if token:
             with SessionLocal() as session:
                 user = authn.user_from_bearer(session, token, request)
                 uid = user.id if user is not None else None
+                if uid:
+                    agent = oauth.credential_label(session, token)
         if uid is None:
             status, headers, body = _unauthorized(request, invalid=bool(token))
             await send({"type": "http.response.start", "status": status, "headers": headers})
             await send({"type": "http.response.body", "body": body})
             return
         reset = _caller_id.set(uid)
+        reset_agent = _caller_agent.set(agent)
         try:
             try:
                 manager = mcp.session_manager
@@ -381,6 +392,7 @@ class MCPEndpoint:
                 return
             await manager.handle_request(scope, receive, send)
         finally:
+            _caller_agent.reset(reset_agent)
             _caller_id.reset(reset)
 
 

@@ -348,6 +348,24 @@ def grant_allows(session, claims: dict, user: User) -> bool:
     return True
 
 
+def credential_label(session, token: str) -> str | None:
+    """A human name for the credential behind a bearer token — the OAuth app's
+    registered name or the personal API token's name — used to record WHICH
+    agent wrote something (e.g. "Claude", "Perplexica"). None if unknown."""
+    if not token:
+        return None
+    if token.startswith(PAT_PREFIX):
+        row = session.query(PersonalApiToken).filter_by(token_hash=_hash(token)).one_or_none()
+        return row.name if row is not None else None
+    from app.authn import jwt_decode
+    claims = jwt_decode(token) or {}
+    if claims.get("typ") == "oauth" and claims.get("cid"):
+        return client_name(session, claims["cid"])
+    if claims.get("typ") == "api":
+        return "API token"
+    return None
+
+
 def connected_apps(session, user: User) -> list[dict]:
     rows = (session.query(OAuthGrant)
             .filter(OAuthGrant.user_id == user.id, OAuthGrant.revoked_at.is_(None))

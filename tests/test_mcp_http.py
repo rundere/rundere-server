@@ -187,6 +187,17 @@ if DEPS:
             s.add(g); s.commit()
             at = oauth.issue_access(u, g, "http://testserver/mcp")
         assert {t["name"] for t in ok(client, at, "list_trips")["trips"]} >= {"MX Shared"}
+        f = ok(client, at, "save_research", trip_id=w["shared"], title="t", body_md="b")
+        assert f["external"] and f["agent"] == "Claude"          # the OAuth app's name
+        with SessionLocal() as s:
+            cl2, _ = oauth.register_client(s, name="Perplexica", redirect_uris=[
+                "https://perplexica.example.com/cb"])
+            g2 = OAuthGrant(client_id=cl2.id, user_id=u.id, token_version=u.token_version,
+                            expires_at=oauth._now() + oauth.timedelta(days=1))
+            s.add(g2); s.commit()
+            at2 = oauth.issue_access(s.get(User, w["alice"]), g2, "http://testserver/mcp")
+        f2 = ok(client, at2, "save_research", trip_id=w["shared"], title="t2", body_md="b2")
+        assert f2["agent"] == "Perplexica" and f2["data"]["history"][0]["agent"] == "Claude"
         with SessionLocal() as s:
             oauth.revoke_grant(s, s.get(OAuthGrant, g.id))
         assert _rpc(client, at, "tools/list").status_code == 401
@@ -342,11 +353,13 @@ if DEPS:
         with SessionLocal() as s:
             rows = s.query(DiscoveryFinding).filter_by(trip_id=w["shared"], topic="research").all()
             assert {r.user_id for r in rows} == {w["alice"]}
-            assert {r.resolver for r in rows} == {"claude"}
+            assert {r.resolver for r in rows} == {"agent"}
+            assert {r.data["agent"] for r in rows} == {"mcp test"}   # the PAT's name
             from app.trips.routes import _discovery_context
             groups = _discovery_context(s, w["shared"], w["alice"])["discovery_topics"]
             research = next(g for g in groups if g["topic"] == "research")
-            assert research["label"] == "Research (Claude)"
+            assert research["label"] == "Research (AI agents)"
+            assert research["findings"][0]["agent"] == "mcp test"
             assert all(not v["rerunnable"] for v in research["findings"])
             assert not any(g["topic"] == "research" for g in
                            _discovery_context(s, w["shared"], w["bob"])["discovery_topics"])
@@ -371,6 +384,7 @@ if DEPS:
                         headers={"Authorization": f"Bearer {tok}"},
                         json={"title": "Via API", "body_md": "hello"})
         assert r.status_code == 201 and r.json()["topic"] == "research"
+        assert r.json()["agent"] == "mcp test"
         r = client.post(f"/api/v1/trips/{w['shared']}/findings",
                         headers={"Authorization": f"Bearer {tok}"},
                         json={"title": " ", "body_md": "hello"})
@@ -445,7 +459,7 @@ if DEPS:
             s.commit()
             return f.id
 
-    def test_claude_updates_standard_topic_and_local_run_leaves_it(client, w):
+    def test_agent_updates_standard_topic_and_local_run_leaves_it(client, w):
         tok = _tok(w["alice"])
         fid = _local_finding(w["shared"], w["alice"], "food", "CA", status="approved",
                              body="local food (approved)")
@@ -461,13 +475,13 @@ if DEPS:
         assert not good and "place_key is required" in err
         good, _ = call(client, tok, "save_research", trip_id=w["shared"], topic="weather",
                        place_key="CA", title="x", body_md="y")
-        assert not good                               # schema: weather isn't Claude-writable
+        assert not good                               # schema: weather isn't agent-writable
         r = client.post(f"/api/v1/trips/{w['shared']}/findings",
                         headers={"Authorization": f"Bearer {tok}"},
                         json={"topic": "currency", "place_key": "CA", "title": "x", "body_md": "y"})
         assert r.status_code == 400
 
-    def test_lock_is_absolute_for_claude(client, w):
+    def test_lock_is_absolute_for_agents(client, w):
         tok = _tok(w["alice"])
         fid = _local_finding(w["shared"], w["alice"], "visa", "CA", status="approved",
                              body="eTA required — checked")

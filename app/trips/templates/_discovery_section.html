@@ -54,9 +54,9 @@
           <span class="bp-chevron yn-finding-caret">▸</span>
           <span class="tag tag-outline bp-typetag">{{ f.place_key }}</span>
           <span class="yn-conf yn-conf-{{ f.confidence }}">{{ f.confidence }}</span>
-          {% if f.locked %}<span class="yn-status-badge" title="Locked — Discover runs and Claude won't overwrite it">🔒 locked</span>
+          {% if f.locked %}<span class="yn-status-badge" title="Locked — Discover runs and AI agents won't overwrite it">🔒 locked</span>
           {% elif f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
-          {% if f.external %}<span class="yn-status-badge" title="Written by Claude — local Discover runs won't overwrite it">Claude</span>{% endif %}
+          {% if f.external %}<span class="yn-status-badge" title="Written by {{ f.agent }} over MCP — local Discover runs won't overwrite it">via {{ f.agent }}</span>{% endif %}
         </summary>
         <div class="yn-finding-body">{{ f.body }}</div>
         {% if f.sources %}
@@ -72,7 +72,7 @@
           <summary class="yn-run-meta">Earlier versions ({{ f.history | length }})</summary>
           {% for h in f.history %}
           <div class="yn-finding-body" style="opacity:.75;border-top:1px solid var(--line);margin-top:6px;padding-top:6px">
-            <div class="yn-run-meta">{{ h.when }}{% if h.status and h.status != 'draft' %} · was {{ h.status }}{% endif %}</div>
+            <div class="yn-run-meta">{{ h.when }}{% if h.agent %} · via {{ h.agent }}{% endif %}{% if h.status and h.status != 'draft' %} · was {{ h.status }}{% endif %}</div>
             {{ h.body }}
             {% if h.sources %}<div class="yn-sources">{% for s in h.sources %}{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a>{% endif %}{% endfor %}</div>{% endif %}
           </div>

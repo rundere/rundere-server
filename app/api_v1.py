@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -92,7 +92,8 @@ class FindingOut(BaseModel):
     status: str
     sources: Any = None
     locked: bool = False        # approved/edited on a lockable topic: nobody overwrites it
-    external: bool = False      # written by an external agent (Claude)
+    external: bool = False      # written by an external AI agent over MCP/API
+    agent: str | None = None    # which one (its OAuth app / API token name)
 
 
 class PackingItemOut(BaseModel):
@@ -661,19 +662,21 @@ def _finding_out(f: DiscoveryFinding) -> FindingOut:
     return FindingOut(id=f.id, topic=f.topic, place_key=f.place_key, body_md=f.body_md,
                       data=f.data, confidence=f.confidence, status=f.status,
                       sources=f.sources, locked=policy.is_locked(f),
-                      external=policy.is_external(f))
+                      external=policy.is_external(f), agent=policy.agent_label(f))
 
 
-def save_research_finding(session: Session, user, trip_id: str, body: FindingIn) -> FindingOut:
-    """Save an external agent's (Claude's) finding onto the CALLER's Discover tab
-    for a trip they can edit, keyed (trip, user, topic, place_key) — the same key
-    the local Discover run uses, so Claude can update e.g. the Food finding for
+def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
+                          agent: str | None = None) -> FindingOut:
+    """Save an external AI agent's finding onto the CALLER's Discover tab for a
+    trip they can edit, keyed (trip, user, topic, place_key) — the same key the
+    local Discover run uses, so an agent can update e.g. the Food finding for
     "CA:Banff". Rules (discover/policy.py): only EXTERNAL_TOPICS; a LOCKED
     finding (plugs/visa/language, approved or edited) is refused with 409 — the
     lock is absolute; anything else is superseded, the old version kept in
-    `data["history"]`. The result is a draft marked `resolver="claude"`, which a
-    local whole-trip run then never overwrites. Never touches anyone else's
-    Discover."""
+    `data["history"]`. The result is a draft marked `resolver="agent"` with
+    `data["agent"]` = `agent` (the connecting credential's name, supplied by
+    the caller — never by the agent's own input), which a local whole-trip run
+    then never overwrites. Never touches anyone else's Discover."""
     from datetime import timezone
 
     from discover import policy
@@ -715,7 +718,8 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn)
     f.sources = sources
     f.resolver = policy.EXTERNAL_RESOLVER
     f.confidence = None
-    f.data = {"title": title, "history": history}
+    f.data = {"title": title, "agent": (agent or policy.DEFAULT_AGENT)[:128],
+              "history": history}
     f.generated_at = datetime.now(timezone.utc)
     session.commit()
     session.refresh(f)
@@ -723,10 +727,16 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn)
 
 
 @router.post("/trips/{trip_id}/findings", response_model=FindingOut, status_code=201)
-def api_save_finding(trip_id: str, body: FindingIn, user=Depends(authn.current_user),
+def api_save_finding(trip_id: str, body: FindingIn, request: Request,
+                     user=Depends(authn.current_user),
                      session: Session = Depends(get_session)):
-    """Save research (e.g. from Claude) into the caller's own Discover tab."""
-    return save_research_finding(session, user, trip_id, body)
+    """Save an AI agent's research into the caller's own Discover tab. The
+    agent is named after the bearer credential used (OAuth app / API token)."""
+    from app import oauth
+    authz = request.headers.get("authorization", "")
+    token = authz[7:].strip() if authz[:7].lower() == "bearer " else ""
+    return save_research_finding(session, user, trip_id, body,
+                                 agent=oauth.credential_label(session, token))
 
 
 # --------------------------------------------------------------------------- journal (SPEC-6)

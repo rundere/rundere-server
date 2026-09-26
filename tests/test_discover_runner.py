@@ -272,7 +272,7 @@ def test_rerun_refreshes_approved_time_sensitive_topic_with_history():
         assert len(s.get(DiscoveryFinding, wid).data["history"]) == 1
 
 
-def test_rerun_never_overwrites_claude_or_rejected():
+def test_rerun_never_overwrites_agent_or_rejected():
     if not DEPS:
         return
     tid = _fresh_trip()
@@ -280,8 +280,9 @@ def test_rerun_never_overwrites_claude_or_rejected():
     with SessionLocal() as s:
         w = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="weather",
                                                 place_key="CH:Geneva").one()
-        w.resolver = "claude"
-        w.body_md = "Claude: storm on day 3"
+        w.resolver = "agent"
+        w.data = {"agent": "Perplexica"}
+        w.body_md = "Agent: storm on day 3"
         t = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="weather",
                                                 place_key="CA:Toronto").one()
         t.status = "rejected"
@@ -290,7 +291,7 @@ def test_rerun_never_overwrites_claude_or_rejected():
         wid, tid2 = w.id, t.id
     _run(tid)
     with SessionLocal() as s:
-        assert s.get(DiscoveryFinding, wid).body_md == "Claude: storm on day 3"
+        assert s.get(DiscoveryFinding, wid).body_md == "Agent: storm on day 3"
         assert s.get(DiscoveryFinding, tid2).body_md == "REJECTED"
 
 
@@ -302,8 +303,11 @@ def test_policy_rules():
     assert policy.is_locked(f) and not policy.local_run_may_replace(f)
     f = SimpleNamespace(topic="food", status="approved", resolver="llm")
     assert not policy.is_locked(f) and policy.local_run_may_replace(f)
-    f = SimpleNamespace(topic="food", status="draft", resolver="claude")
+    f = SimpleNamespace(topic="food", status="draft", resolver="agent", data={"agent": "Perplexica"})
     assert policy.is_external(f) and not policy.local_run_may_replace(f)
+    assert policy.agent_label(f) == "Perplexica"
+    assert policy.agent_label(SimpleNamespace(resolver="agent", data=None)) == "AI agent"
+    assert policy.agent_label(SimpleNamespace(resolver="llm", data={})) is None
     for t in ("weather", "currency", "food", "events", "safety", "research"):
         assert not policy.is_lockable(t)
     for t in ("plugs", "visa", "language", "language_regional", "language_local"):
