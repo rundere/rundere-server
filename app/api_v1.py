@@ -148,7 +148,90 @@ class ReviewItemOut(BaseModel):
 
 class ReviewListOut(BaseModel):
     counts: dict[str, int]
+    to_process: int = 0          # captured but not processed yet (the funnel's first stage)
     items: list[ReviewItemOut]
+
+
+class ReviewFieldOut(BaseModel):
+    """One editable field of a capture (same specs as the web detail pane)."""
+    label: str
+    path: str                    # JSON pointer; PATCH `fields` keys
+    kind: str                    # text | datetime | select
+    value: str = ""
+    tz: str | None = None        # datetime: the place's zone (display only)
+    precision: str | None = None  # datetime: date | datetime
+    options: list[str] | None = None
+    missing: bool = False        # required and empty — why it can't log yet
+    editable: bool = True
+
+
+class TravelerOptionOut(BaseModel):
+    id: str                      # passengers: identity id (str); who: traveller id
+    name: str
+    kind: str | None = None
+    selected: bool = False
+
+
+class TripOptionOut(BaseModel):
+    id: str
+    name: str
+    start_date: str | None = None
+    end_date: str | None = None
+    contains: bool = False       # the trip's dates contain the capture's
+    selected: bool = False
+
+
+class ReviewItemDetail(ReviewItemOut):
+    """GET /review/{id}: everything the review screen shows and edits."""
+    note: str | None = None
+    action_hint: str | None = None
+    stages: Any = None
+    fields: list[ReviewFieldOut] = []
+    locked_fields: list[str] = []            # human-corrected pointers (D-13)
+    violations: list[str] = []
+    writes: Any = None                       # what logging would write, per target
+    collection_name: str | None = None
+    trip_id: str | None = None
+    # Flights: "Who flew" — chosen from Travellers, never free text.
+    passengers: list[TravelerOptionOut] | None = None
+    passenger_names_unmatched: list[str] = []
+    # Others filed to a 2+ traveller trip: "Who is this for" (that trip's roster).
+    who: list[TravelerOptionOut] | None = None
+    trip_options: list[TripOptionOut] = []   # trips the caller can FILE into
+    can_approve: bool = False
+    can_unapprove: bool = False
+    can_ignore: bool = False
+
+
+class ReviewPatch(BaseModel):
+    fields: dict[str, str | None] | None = None   # {path: value} — editable fields only
+    passengers: list[str] | None = None           # flights: identity ids ([] clears)
+    traveler_ids: list[int] | None = None         # others: that trip's traveller ids
+    approve: bool = False                         # "Save & approve"
+
+
+class ReviewActionOut(BaseModel):
+    ok: bool
+    message: str | None = None
+    changed: list[str] = []
+    item: ReviewItemDetail
+
+
+class CommitIn(BaseModel):
+    dry_run: bool = True
+
+
+class JobOut(BaseModel):
+    id: str
+    kind: str
+    phase: str | None = None
+    done: int = 0
+    total: int = 0
+    current: str | None = None
+    finished: bool = False
+    error: str | None = None
+    toast: str | None = None
+    details: list[str] = []
 
 
 class NextTripOut(BaseModel):
@@ -416,19 +499,218 @@ def api_trip_timeline_pdf(trip_id: str, download: bool = False,
 @router.get("/review", response_model=ReviewListOut)
 def api_review(bucket: str = "all", user=Depends(authn.current_user),
                session: Session = Depends(get_session)):
-    from app.review.routes import _all_views, _counts
+    from app.review.routes import _all_views, _counts, _to_process
     views = _all_views(session, user)
     counts = _counts(views)
     shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
-    return ReviewListOut(counts=counts, items=[_review_item(v) for v in shown])
+    return ReviewListOut(counts=counts, to_process=_to_process(session, user),
+                         items=[_review_item(v) for v in shown])
 
 
-@router.get("/review/{item_id}", response_model=ReviewItemOut)
+def _review_detail(session: Session, item: TravelItem, user) -> ReviewItemDetail:
+    import rules as rules_module
+    from app.resolving import load_enablement
+    from app.review.routes import (_fields, _is_logged, _passenger_context,
+                                   _rule_shape, _view, _who_context)
+    from resolve.targets import item_date_span
+    v = _view(item)
+    payload = v["payload"]
+    violations = ([str(x) for x in rules_module.check_item(_rule_shape(item),
+                                                          load_enablement(session))]
+                  if item.extraction else [])
+    pax = _passenger_context(session, payload)
+    who_ctx = _who_context(session, item, payload)
+    start, end = (item_date_span(payload) or (None, None))
+    trip_opts = []
+    for t in (session.query(Trip).filter(scope.filing_trip_filter(session, user))
+              .order_by(Trip.start_date.desc()).all()):
+        contains = bool(start and end and t.start_date and t.end_date
+                        and t.start_date <= start and end <= t.end_date)
+        trip_opts.append(TripOptionOut(id=t.id, name=t.name or "(unnamed trip)",
+                                       start_date=t.start_date, end_date=t.end_date,
+                                       contains=contains, selected=t.id == item.trip_id))
+    trip_opts.sort(key=lambda o: 0 if o.contains else 1)
+    review = item.review or {}
+    ignored = review.get("action_taken") == "ignored"
+    logged = _is_logged(item)
+    base = _review_item(v).model_dump()
+    return ReviewItemDetail(
+        **base, action_hint=v.get("action_hint"), stages=v.get("stages"),
+        fields=[ReviewFieldOut(**{k: f.get(k) for k in ReviewFieldOut.model_fields
+                                  if k in f}) for f in _fields(payload)],
+        locked_fields=v.get("locked_fields") or [], violations=violations,
+        writes=v.get("writes"), collection_name=v.get("collection_name"),
+        trip_id=item.trip_id,
+        passengers=([TravelerOptionOut(id=str(i["id"]), name=i["name"], kind=i["kind"],
+                                       selected=i["selected"]) for i in pax["identities"]]
+                    if pax else None),
+        passenger_names_unmatched=(pax or {}).get("unmatched") or [],
+        who=([TravelerOptionOut(id=str(t["id"]), name=t["name"], selected=t["checked"])
+              for t in who_ctx["travelers"]] if who_ctx else None),
+        trip_options=trip_opts,
+        can_approve=(not ignored and not logged and v["bucket"] != "staged"
+                     and not v["blocked"]),
+        can_unapprove=v["bucket"] == "staged" and not logged,
+        can_ignore=not ignored and not logged)
+
+
+@router.get("/review/{item_id}", response_model=ReviewItemDetail)
 def api_review_item(item_id: str, user=Depends(authn.current_user),
                     session: Session = Depends(get_session)):
-    from app.review.routes import _view
+    """One capture with its editable fields, who-flew / who-is-this-for
+    options, the trips it can be filed into, and what it would write."""
     item = scope.require_capture(session, user, item_id)
-    return _review_item(_view(item))
+    return _review_detail(session, item, user)
+
+
+def _action_out(session: Session, item_id: str, user, ok: bool, message: str | None = None,
+                changed: list[str] | None = None) -> ReviewActionOut:
+    item = scope.require_capture(session, user, item_id)       # re-read after re-resolve
+    session.refresh(item)
+    return ReviewActionOut(ok=ok, message=message, changed=changed or [],
+                           item=_review_detail(session, item, user))
+
+
+@router.patch("/review/{item_id}", response_model=ReviewActionOut)
+def api_review_edit(item_id: str, body: ReviewPatch, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """Correct a capture: `fields` {path: value} (paths from GET's `fields`;
+    each change becomes a field lock), `passengers` (flights, identity ids),
+    `traveler_ids` (others, from GET's `who`). Re-resolves on change.
+    `approve: true` then approves it if it now resolves ("Save & approve")."""
+    from app.review import service
+    item = scope.require_capture(session, user, item_id)
+    try:
+        changed = service.apply_edits(session, item, fields=body.fields,
+                                      passenger_ids=body.passengers,
+                                      traveler_ids=body.traveler_ids,
+                                      strict=True, resolved_by="api")
+    except service.ReviewError as e:
+        raise HTTPException(400, str(e))
+    ok, message = True, None
+    if body.approve:
+        session.refresh(item)
+        ok = service.approve(session, item, resolved_by="api")
+        message = None if ok else "saved, but it can't be approved yet — see note and reason_codes"
+    return _action_out(session, item_id, user, ok, message, changed)
+
+
+@router.post("/review/{item_id}/approve", response_model=ReviewActionOut)
+def api_review_approve(item_id: str, user=Depends(authn.current_user),
+                       session: Session = Depends(get_session)):
+    """Stage a capture for logging (nothing is written yet — see /review/commit).
+    `ok: false` when it doesn't resolve yet; the item says why."""
+    from app.review import service
+    item = scope.require_capture(session, user, item_id)
+    ok = service.approve(session, item, resolved_by="api")
+    return _action_out(session, item_id, user, ok,
+                       None if ok else "can't be approved yet — see note and reason_codes")
+
+
+@router.post("/review/{item_id}/unapprove", response_model=ReviewActionOut)
+def api_review_unapprove(item_id: str, user=Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """Take back an approval that hasn't been logged yet."""
+    from app.review import service
+    item = scope.require_capture(session, user, item_id)
+    ok = service.unapprove(session, item)
+    return _action_out(session, item_id, user, ok,
+                       None if ok else "already logged — it can't be un-approved")
+
+
+@router.post("/review/{item_id}/ignore", response_model=ReviewActionOut)
+def api_review_ignore(item_id: str, user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Take a capture off the pipeline; it writes nothing."""
+    from app.review import service
+    from app.review.routes import _is_logged
+    item = scope.require_capture(session, user, item_id)
+    if _is_logged(item):
+        return _action_out(session, item_id, user, False, "already logged")
+    service.ignore(session, item, resolved_by="api")
+    return _action_out(session, item_id, user, True)
+
+
+# --------------------------------------------------------------------------- review: process + commit jobs
+def _job_out(job: dict) -> JobOut:
+    return JobOut(**{k: job.get(k) for k in JobOut.model_fields if job.get(k) is not None})
+
+
+def _start_or_busy(user, kind: str, work):
+    from app.review import jobs
+    running = jobs.current_running()
+    if running:
+        if jobs.visible_to(running, user):
+            return _job_out(running)                  # your own job: report it
+        raise HTTPException(409, "another person's job is running — try again shortly")
+    return _job_out(jobs.get(jobs.start(kind, work, owner=user.id)))
+
+
+@router.post("/review/process", response_model=JobOut, status_code=202)
+def api_review_process(user=Depends(authn.current_user)):
+    """Extract + resolve captures waiting in the pipeline (the web "Process new
+    captures"). Returns a job to poll at GET /api/v1/jobs/{id}."""
+    from app.db import SessionLocal
+    from app.review.routes import _process_toast, _run_extract_resolve
+
+    def work(progress):
+        with SessionLocal() as s:
+            summary, resolved, error = _run_extract_resolve(s, progress)
+            return _process_toast(summary, resolved, error), error
+
+    return _start_or_busy(user, "process", work)
+
+
+@router.post("/review/commit")
+def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Log the caller's approved captures to AirTrail + AdventureLog — only
+    their own (an admin: + users who share), never anyone else's.
+    `dry_run: true` (default) returns the exact plan and writes nothing;
+    `dry_run: false` starts the irreversible write as a job (202 + JobOut)."""
+    from fastapi.responses import JSONResponse
+
+    from app.committing import commit_pending
+    from app.db import SessionLocal
+    from app.resolving import load_identities
+    from app.review.routes import _target_clients
+    mine = scope.capture_filter(user)
+    if body.dry_run:
+        adventurelog, airtrail = _target_clients()
+        summary = commit_pending(session, adventurelog, airtrail,
+                                 identities=load_identities(session), dry_run=True,
+                                 item_filter=mine)
+        return {"dry_run": True, "summary": summary}
+
+    def work(progress):
+        with SessionLocal() as s:
+            adventurelog, airtrail = _target_clients()
+            summary = commit_pending(s, adventurelog, airtrail,
+                                     identities=load_identities(s), dry_run=False,
+                                     progress=progress, item_filter=mine)
+            parts = [f"logged {summary['writes_ok']} write(s) across {summary['items']} item(s)"]
+            if summary["writes_failed"]:
+                parts.append(f"{summary['writes_failed']} failed")
+            if summary["skipped"]:
+                parts.append(f"{summary['skipped']} already present")
+            details = [f"{plan['headline']} · {r['target']}: {r['error']}"
+                       for plan in summary["plans"] for r in plan["results"]
+                       if not r.get("ok") and r.get("error")]
+            return ("Done — " + ", ".join(parts) + ".",
+                    "some writes failed" if summary["writes_failed"] else None, details)
+
+    job = _start_or_busy(user, "commit", work)
+    return JSONResponse(job.model_dump(), status_code=202)
+
+
+@router.get("/jobs/{job_id}", response_model=JobOut)
+def api_job(job_id: str, user=Depends(authn.current_user)):
+    """A process/commit job's progress. Only its starter can see it."""
+    from app.review import jobs
+    job = jobs.get(job_id)
+    if not jobs.visible_to(job, user):
+        raise HTTPException(404, "job not found")
+    return _job_out(job)
 
 
 # --------------------------------------------------------------------------- write

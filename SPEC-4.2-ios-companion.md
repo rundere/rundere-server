@@ -92,6 +92,15 @@ Discover and Packing in a snapshot are the signed-in person's — never reuse a
 snapshot across users.
 
 ### 3.5 Review writes (YONDER-57 server, YONDER-78 app)
+> **Status: server side implemented (YONDER-57).** `GET /api/v1/review` (+
+> `to_process`), `GET/PATCH /api/v1/review/{id}` (fields, `passengers`,
+> `traveler_ids`, `approve`), `POST …/approve|unapprove|ignore`,
+> `POST /api/v1/review/process` and `POST /api/v1/review/commit {dry_run}`
+> (jobs at `GET /api/v1/jobs/{id}`, visible only to their starter). Web and API
+> share `app/review/service.py`. Commit was already scoped to the caller on the
+> web (YONDER-105); the API uses the same filter. assign-trip uses the filing
+> rule (fixed with YONDER-108). Tests: `tests/test_api_review.py`.
+
 Server first. The web review pipeline (`app/review/routes.py`) becomes JSON:
 - `GET /api/v1/review` adds `counts` and `to_process` (reuse `_counts`,
   `_to_process`).
@@ -211,7 +220,7 @@ with Docker Desktop; each ships with tests like everything in 4.1.
 | 5 | **Trip editing**: edit trip, add/edit/delete activity (APIs exist, D-125), packing check-off + custom line (APIs exist) | YONDER-103 | app | 3 |
 | 6 | Who each activity is for: chips on rows/detail; picker in the activity editor only for 2+ traveller trips | YONDER-90 | app | 5 |
 | 7 | Capture + journal compose (APIs exist) | YONDER-79 | app | 3 |
-| 8 | Review over the API incl. commit scoping + assign-trip filing fixes (§3.5) | YONDER-57 | server | — |
+| 8 | ✅ Review over the API incl. commit scoping + assign-trip filing fixes (§3.5) | YONDER-57 | server | — |
 | 9 | Review write actions in the app | YONDER-78 | app | 8 |
 | 10 | Turn on OIDC in prod (Authentik) | YONDER-92 | ops | — |
 | 11 | App SSO via Yonder's OAuth server (§3.7; supersedes the handoff in §3.2) | YONDER-104 | server | 10 |

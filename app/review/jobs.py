@@ -51,7 +51,16 @@ def _update(job_id: str, **fields) -> None:
             j.update(fields)
 
 
-def start(kind: str, work) -> str:
+def visible_to(job: dict | None, user) -> bool:
+    """A job's progress (item headlines, errors) belongs to whoever started it:
+    `owner` None (auth off / CLI) is visible to all; otherwise only its owner."""
+    if job is None:
+        return False
+    owner = job.get("owner")
+    return owner is None or (user is not None and owner == getattr(user, "id", None))
+
+
+def start(kind: str, work, owner: str | None = None) -> str:
     """Register a job and run `work(progress)` on the background thread.
 
     `work` returns (toast_text, error_or_None) or, when it has per-item detail
@@ -70,7 +79,7 @@ def start(kind: str, work) -> str:
             "done": 0, "total": 0, "current": "",
             "started_at": time.monotonic(), "finished": False,
             "error": None, "toast": None, "toast_error": False,
-            "details": [],
+            "details": [], "owner": owner,
         }
 
     def progress(phase, done=None, total=None, current=None):
