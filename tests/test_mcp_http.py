@@ -332,7 +332,7 @@ if DEPS:
             from app.trips.routes import _finding_view
             view = _finding_view(s.get(DiscoveryFinding, f["id"]))
             assert len(view["history"]) == 2 and view["history"][0]["status"] == "approved"
-        from app.api_v1 import RESEARCH_HISTORY_KEPT
+        from discover.policy import HISTORY_KEPT as RESEARCH_HISTORY_KEPT
         for i in range(RESEARCH_HISTORY_KEPT + 2):
             last = ok(client, tok, "save_research", trip_id=w["shared"], title=f"r{i}", body_md="x")
         assert len(last["data"]["history"]) == RESEARCH_HISTORY_KEPT
@@ -434,3 +434,71 @@ if DEPS:
             bob_cap = s.query(TravelItem).filter_by(canonical_key="mx:bobcap").one().id
         assert ok(client, bob, "assign_review_item_to_trip", item_id=bob_cap,
                   trip_id=w["shared"])["trip_id"] == w["shared"]
+
+    # ------------------------------------------------------------------ Discover: lock + external writes
+    def _local_finding(trip_id, uid, topic, place_key, status="draft", body="local body"):
+        with SessionLocal() as s:
+            f = DiscoveryFinding(trip_id=trip_id, user_id=uid, topic=topic, scope="country",
+                                 place_key=place_key, status=status, body_md=body,
+                                 resolver="llm")
+            s.add(f)
+            s.commit()
+            return f.id
+
+    def test_claude_updates_standard_topic_and_local_run_leaves_it(client, w):
+        tok = _tok(w["alice"])
+        fid = _local_finding(w["shared"], w["alice"], "food", "CA", status="approved",
+                             body="local food (approved)")
+        f = ok(client, tok, "save_research", trip_id=w["shared"], topic="food",
+               place_key="CA", title="Where to eat", body_md="- Farm & Fire")
+        assert f["id"] == fid and f["external"] and not f["locked"] and f["status"] == "draft"
+        assert f["data"]["history"][0]["body_md"] == "local food (approved)"
+        with SessionLocal() as s:
+            from discover import policy
+            assert not policy.local_run_may_replace(s.get(DiscoveryFinding, fid))
+        good, err = call(client, tok, "save_research", trip_id=w["shared"], topic="food",
+                         title="x", body_md="y")
+        assert not good and "place_key is required" in err
+        good, _ = call(client, tok, "save_research", trip_id=w["shared"], topic="weather",
+                       place_key="CA", title="x", body_md="y")
+        assert not good                               # schema: weather isn't Claude-writable
+        r = client.post(f"/api/v1/trips/{w['shared']}/findings",
+                        headers={"Authorization": f"Bearer {tok}"},
+                        json={"topic": "currency", "place_key": "CA", "title": "x", "body_md": "y"})
+        assert r.status_code == 400
+
+    def test_lock_is_absolute_for_claude(client, w):
+        tok = _tok(w["alice"])
+        fid = _local_finding(w["shared"], w["alice"], "visa", "CA", status="approved",
+                             body="eTA required — checked")
+        snap = ok(client, tok, "get_trip", trip_id=w["shared"])
+        mine = next(d for d in snap["discovery"] if d["id"] == fid)
+        assert mine["locked"] is True and mine["external"] is False
+        good, err = call(client, tok, "save_research", trip_id=w["shared"], topic="visa",
+                         place_key="CA", title="Visa", body_md="changed")
+        assert not good and "409" in err and "locked" in err
+        with SessionLocal() as s:
+            assert s.get(DiscoveryFinding, fid).body_md == "eTA required — checked"
+
+    def test_web_lock_unlock_and_edit_keeps_history(client, w):
+        fid = _local_finding(w["shared"], None, "visa", "CA")
+        wid = _local_finding(w["shared"], None, "weather", "CA")
+        with SessionLocal() as s:           # a finding with earlier versions
+            f = s.get(DiscoveryFinding, fid)
+            f.data = {"history": [{"body_md": "older", "status": "draft"}]}
+            s.commit()
+        r = client.post(f"/trips/{w['shared']}/finding/{fid}/lock", data={"lock": "1"})
+        assert r.status_code == 200 and r.headers.get("hx-redirect")
+        with SessionLocal() as s:
+            assert s.get(DiscoveryFinding, fid).status == "approved"
+        page = client.get(f"/trips/{w['shared']}").text
+        assert "🔒 locked" in page and "Unlock" in page
+        client.post(f"/trips/{w['shared']}/finding/{fid}/lock", data={"lock": "0"})
+        with SessionLocal() as s:
+            assert s.get(DiscoveryFinding, fid).status == "draft"
+        assert client.post(f"/trips/{w['shared']}/finding/{wid}/lock",
+                           data={"lock": "1"}).status_code == 400   # weather never locks
+        client.post(f"/trips/{w['shared']}/finding/{fid}/edit", data={"body": "my edit"})
+        with SessionLocal() as s:
+            f = s.get(DiscoveryFinding, fid)
+            assert f.status == "edited" and f.data["history"][0]["body_md"] == "older"

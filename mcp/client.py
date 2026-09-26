@@ -132,10 +132,11 @@ class YonderClient:
                          body={"label": label, "category": category, "quantity": quantity})
 
     def save_research(self, trip_id: str, title: str, body_md: str,
-                      place_key: str | None = None, sources: list | None = None):
+                      place_key: str | None = None, sources: list | None = None,
+                      topic: str = "research"):
         return self._raw("POST", f"/api/v1/trips/{_q(trip_id)}/findings",
-                         body={"title": title, "body_md": body_md, "place_key": place_key,
-                               "sources": sources or []})
+                         body={"topic": topic, "title": title, "body_md": body_md,
+                               "place_key": place_key, "sources": sources or []})
 
     def journal_create(self, **fields):
         return self._raw("POST", "/api/v1/journal", body=_some(fields))

@@ -41,7 +41,8 @@ Start with list_trips, then get_trip for the full picture (timeline, travellers,
 places, the user's Discover findings and packing). Timeline items take a `type`
 from list_activity_types and a `values` object with that type's field keys.
 Use save_research to keep your research on the user's Discover tab for a trip —
-it lands as a draft they review. Dates are ISO (YYYY-MM-DD, or
+in your own "research" section or updating a topic such as food or events; it
+lands as a draft they review, and locked findings are theirs to keep. Dates are ISO (YYYY-MM-DD, or
 YYYY-MM-DDTHH:MM local time for timeline items)."""
 
 mcp = MCPServer("Yonder", instructions=INSTRUCTIONS, version=settings.app_version)
@@ -291,20 +292,28 @@ def assign_review_item_to_trip(item_id: Annotated[str, Field(description="Review
 def save_research(trip_id: TripId,
                   title: Annotated[str, Field(description="Short heading, e.g. \"Day hikes near Banff\"")],
                   body_md: Annotated[str, Field(
-                      description="The research in markdown: **bold**, ### headings, - bullets, "
+                      description="The finding in markdown: **bold**, ### headings, - bullets, "
                                   "[text](https://…) links")],
+                  topic: Annotated[Literal["research", "food", "events", "safety", "visa",
+                                           "plugs", "packing"], Field(
+                      description="Which Discover topic. `research` (default) is your own "
+                                  "section; the others update the same finding Yonder's "
+                                  "local Discover run produces for that place")] = "research",
                   place_key: Annotated[str | None, Field(
-                      description="Which place it's about: omit for the whole trip, or a "
-                                  "place key from get_trip's `places` (e.g. \"CA:Banff\")")] = None,
+                      description="Which place: a country code (\"CA\") or city key "
+                                  "(\"CA:Banff\") — reuse the place_key of the matching "
+                                  "finding in get_trip's `discovery`. Required except for "
+                                  "topic=research, where omitting it means the whole trip")] = None,
                   sources: Annotated[list[dict[str, str]] | None, Field(
                       description="Sources as [{\"title\": \"…\", \"url\": \"https://…\"}]")] = None,
                   ) -> dict[str, Any]:
-    """Save research onto the USER'S OWN Discover tab for a trip, as a
-    "Research (Claude)" draft they can review and edit. Saving again for the
-    same trip + place SUPERSEDES the current version (the old one is kept as
-    history), so write the complete, up-to-date picture each time — e.g. a
-    refresh a few days before the trip with newly announced events."""
-    body = api_v1.FindingIn(title=title, body_md=body_md, place_key=place_key,
+    """Save research onto the USER'S OWN Discover tab for a trip, as a draft
+    they review. Saving again for the same topic + place SUPERSEDES the current
+    version (the old one is kept as history), so write the complete, up-to-date
+    picture each time — e.g. a refresh days before the trip with newly announced
+    events. Yonder's local Discover run won't overwrite what you save. A finding
+    the user LOCKED (see `locked` in get_trip) is refused — tell them instead."""
+    body = api_v1.FindingIn(topic=topic, title=title, body_md=body_md, place_key=place_key,
                             sources=[api_v1.SourceIn(**s) for s in (sources or [])
                                      if isinstance(s, dict) and s.get("url")])
     return _run(lambda session, user: api_v1.save_research_finding(session, user, trip_id, body))

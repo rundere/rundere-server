@@ -54,7 +54,9 @@
           <span class="bp-chevron yn-finding-caret">▸</span>
           <span class="tag tag-outline bp-typetag">{{ f.place_key }}</span>
           <span class="yn-conf yn-conf-{{ f.confidence }}">{{ f.confidence }}</span>
-          {% if f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
+          {% if f.locked %}<span class="yn-status-badge" title="Locked — Discover runs and Claude won't overwrite it">🔒 locked</span>
+          {% elif f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
+          {% if f.external %}<span class="yn-status-badge" title="Written by Claude — local Discover runs won't overwrite it">Claude</span>{% endif %}
         </summary>
         <div class="yn-finding-body">{{ f.body }}</div>
         {% if f.sources %}
@@ -88,6 +90,12 @@
           {% endif %}
           <button class="btn btn-secondary bp-sm"
                   hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">{{ 'Languages' if f.is_language else 'Edit' }}</button>
+          {% if f.lockable %}
+          <button class="btn btn-secondary bp-sm"
+                  hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/lock"
+                  hx-vals='{"lock": "{{ '0' if f.locked else '1' }}"}'
+                  hx-disabled-elt="this">{{ 'Unlock' if f.locked else 'Lock' }}</button>
+          {% endif %}
         </div>
       </details>
       {% endfor %}

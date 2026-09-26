@@ -91,6 +91,8 @@ class FindingOut(BaseModel):
     confidence: str | None = None
     status: str
     sources: Any = None
+    locked: bool = False        # approved/edited on a lockable topic: nobody overwrites it
+    external: bool = False      # written by an external agent (Claude)
 
 
 class PackingItemOut(BaseModel):
@@ -227,10 +229,11 @@ class SourceIn(BaseModel):
 
 
 class FindingIn(BaseModel):
-    """Research to keep on the caller's Discover tab (YONDER-108)."""
+    """A finding from an external agent for the caller's Discover tab (YONDER-108)."""
+    topic: str | None = None               # research (default) | food | events | safety | visa | plugs | packing
     title: str                             # short heading, e.g. "Hikes near Banff"
     body_md: str                           # markdown: **bold**, ### headings, - bullets, [text](url)
-    place_key: str | None = None           # "trip" (default) or a place, e.g. "CA:Banff"
+    place_key: str | None = None           # "CA" / "CA:Banff"; research may omit it (= whole trip)
     sources: list[SourceIn] = []
 
 
@@ -651,54 +654,66 @@ def api_activity_types(user=Depends(authn.current_user)):
 
 # --------------------------------------------------------------------------- Discover: saved research (YONDER-108)
 RESEARCH_TOPIC = "research"
-RESEARCH_HISTORY_KEPT = 10
 
 
 def _finding_out(f: DiscoveryFinding) -> FindingOut:
+    from discover import policy
     return FindingOut(id=f.id, topic=f.topic, place_key=f.place_key, body_md=f.body_md,
                       data=f.data, confidence=f.confidence, status=f.status,
-                      sources=f.sources)
+                      sources=f.sources, locked=policy.is_locked(f),
+                      external=policy.is_external(f))
 
 
 def save_research_finding(session: Session, user, trip_id: str, body: FindingIn) -> FindingOut:
-    """Upsert a research finding on the CALLER's Discover tab for a trip they can
-    edit — keyed (trip, user, topic="research", place_key). Newer research
-    always supersedes (trips change: a concert gets announced, the forecast
-    moves), even over a version the person approved or edited — that version
-    isn't lost, it moves into `data["history"]` (newest first, last
-    RESEARCH_HISTORY_KEPT). The new one lands as a draft for review. Never
-    touches anyone else's Discover."""
+    """Save an external agent's (Claude's) finding onto the CALLER's Discover tab
+    for a trip they can edit, keyed (trip, user, topic, place_key) — the same key
+    the local Discover run uses, so Claude can update e.g. the Food finding for
+    "CA:Banff". Rules (discover/policy.py): only EXTERNAL_TOPICS; a LOCKED
+    finding (plugs/visa/language, approved or edited) is refused with 409 — the
+    lock is absolute; anything else is superseded, the old version kept in
+    `data["history"]`. The result is a draft marked `resolver="claude"`, which a
+    local whole-trip run then never overwrites. Never touches anyone else's
+    Discover."""
     from datetime import timezone
 
+    from discover import policy
+
     trip = scope.require_trip(session, user, trip_id, edit=True)
+    topic = (body.topic or RESEARCH_TOPIC).strip()
+    if topic not in policy.EXTERNAL_TOPICS:
+        raise HTTPException(400, f"topic must be one of {', '.join(policy.EXTERNAL_TOPICS)}")
     title = (body.title or "").strip()[:200]
     text = (body.body_md or "").strip()
     if not title or not text:
         raise HTTPException(400, "title and body_md are required")
-    place_key = (body.place_key or "trip").strip()[:128] or "trip"
+    place_key = (body.place_key or "").strip()[:128]
+    if not place_key:
+        if topic != RESEARCH_TOPIC:
+            raise HTTPException(400, "place_key is required for this topic (a country code "
+                                     "like \"CA\" or a city key like \"CA:Banff\")")
+        place_key = "trip"
     md = f"**{title}**\n\n{text}"[:100_000]
     sources = [{"title": (s.title or s.url)[:300], "url": s.url[:2000]}
                for s in body.sources[:50] if s.url.startswith(("http://", "https://"))]
     f = (session.query(DiscoveryFinding)
          .filter(DiscoveryFinding.trip_id == trip.id, DiscoveryFinding.user_id == user.id,
-                 DiscoveryFinding.topic == RESEARCH_TOPIC,
+                 DiscoveryFinding.topic == topic,
                  DiscoveryFinding.place_key == place_key).first())
     history: list = []
     if f is None:
-        f = DiscoveryFinding(trip_id=trip.id, user_id=user.id, topic=RESEARCH_TOPIC,
+        f = DiscoveryFinding(trip_id=trip.id, user_id=user.id, topic=topic,
                              place_key=place_key)
         session.add(f)
     else:
-        prev = f.data or {}
-        history = [{"title": prev.get("title"), "body_md": f.body_md,
-                    "sources": f.sources or [], "status": f.status,
-                    "generated_at": f.generated_at.isoformat() if f.generated_at else None},
-                   *(prev.get("history") or [])][:RESEARCH_HISTORY_KEPT]
+        if policy.is_locked(f):
+            raise HTTPException(409, f"the {topic} finding for {place_key!r} is locked "
+                                     "on the Discover tab; the person must unlock it first")
+        history = policy.history_with(f, md)
     f.scope = "trip" if place_key == "trip" else ("country" if ":" not in place_key else "city")
     f.status = "draft"
     f.body_md = md
     f.sources = sources
-    f.resolver = "claude"
+    f.resolver = policy.EXTERNAL_RESOLVER
     f.confidence = None
     f.data = {"title": title, "history": history}
     f.generated_at = datetime.now(timezone.utc)

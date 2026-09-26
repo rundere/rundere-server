@@ -743,6 +743,7 @@ def _render_md(text: str | None) -> Markup:
 
 
 def _finding_view(f: DiscoveryFinding) -> dict:
+    from discover import policy as _policy
     data = f.data or {}
     return {
         "id": f.id, "topic": f.topic, "place_key": f.place_key,
@@ -757,6 +758,9 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         # Saved research (YONDER-108) has no resolver to re-run either.
         "rerunnable": not f.topic.startswith("language") and f.topic != "research",
         "has_rates": bool(data.get("rates")),
+        "lockable": _policy.is_lockable(f.topic),
+        "locked": _policy.is_locked(f),
+        "external": _policy.is_external(f),
         # Superseded versions of saved research (YONDER-108), newest first.
         "history": [{"when": (h.get("generated_at") or "")[:10], "status": h.get("status"),
                      "body": _render_md(h.get("body_md")), "sources": h.get("sources") or []}
@@ -963,6 +967,7 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
     f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
+    kept_history = (f.data or {}).get("history") if isinstance(f.data, dict) else None
     if f.topic == "language":
         # Rebuild the phrasebook from the picked languages (a manual override,
         # not "official"); marking edited protects it from a whole-trip re-run.
@@ -1004,7 +1009,27 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
         f.confidence = "high" if per_base else "flagged"
     else:
         f.body_md = body
-    f.status = "edited"
+    if kept_history and not (f.data or {}).get("history"):
+        f.data = {**(f.data or {}), "history": kept_history}   # an edit keeps earlier versions
+    f.status = "edited"          # on a lockable topic this also LOCKS it (discover/policy.py)
+    session.commit()
+    return _redirect(f"/trips/{trip_id}")
+
+
+@router.post("/{trip_id}/finding/{fid}/lock", response_class=HTMLResponse)
+def lock_finding(trip_id: str, fid: str, request: Request, lock: str = Form("1"),
+                 session: Session = Depends(get_session)):
+    """Lock (approve) or unlock a finding on a LOCKABLE topic (plugs, visa,
+    languages). Locked: neither a local Discover run nor Claude overwrites it.
+    Unlocking returns it to draft, so the next run may refresh it."""
+    from discover import policy
+    f = _finding_or_404(session, request, trip_id, fid)
+    if f is None or scope.trip_or_none(session, request, trip_id) is None:
+        return HTMLResponse("", status_code=404)
+    if not policy.is_lockable(f.topic):
+        return HTMLResponse("This topic can't be locked — it's refreshed on every run.",
+                            status_code=400)
+    f.status = "approved" if lock == "1" else "draft"
     session.commit()
     return _redirect(f"/trips/{trip_id}")
 

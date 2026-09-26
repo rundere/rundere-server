@@ -71,7 +71,30 @@ end every token: changing or resetting your password, "sign out everywhere"
 | Packing (yours) | `generate_packing`, `set_packing_status`, `add_packing_item` |
 | Journal (yours) | `create_journal_entry`, `list_journal_entries`, `get_journal_entry`, `update_journal_entry`, `attach_journal_entry` |
 | Capture / review | `capture_url`, `list_review`, `get_review_item`, `assign_review_item_to_trip` (own / open / trips you travel on) |
-| Discover | `save_research`: saves to **your** Discover tab as a "Research (Claude)" draft. A later save for the same trip + place supersedes it (even if you approved it); earlier versions stay under "Earlier versions". Also `POST /api/v1/trips/{id}/findings`. |
+| Discover | `save_research`: saves to **your** Discover tab as a draft. By default it goes into a "Research (Claude)" section; with `topic` it can instead update the Food, Events, Safety, Visa, Plugs or Packing finding for a place. A later save supersedes the earlier one, which stays under "Earlier versions". A **locked** finding is refused. Also available as `POST /api/v1/trips/{id}/findings`. |
+
+## Discover: who can overwrite what
+
+Two kinds of writer produce Discover findings. **Local** is the server's own
+Discover run: deterministic resolvers plus the local LLM. **External** is Claude,
+through the tool above. The rules live in `discover/policy.py`:
+
+| Topic | Can be locked? | Local whole-trip run | Claude |
+|---|---|---|---|
+| Weather, Currency | never | always refreshes | can't write |
+| Food, Events, Safety, Packing | never | refreshes, even if approved or edited | can update |
+| Plugs, Visa | yes: **Lock**, or edit it | skips it when locked | refused when locked; otherwise updates |
+| Languages | yes: pick languages, or **Lock** | skips it when locked | can't write |
+| Research (Claude) | never | never touches it | updates |
+
+- **Where it was run matters.** The local run never overwrites anything Claude
+  wrote (shown with a "Claude" badge), and never overwrites a finding you
+  rejected.
+- **A lock is absolute.** Nothing overwrites a locked finding until you
+  **Unlock** it, or press **Re-run** on that one finding, which is always an
+  explicit override.
+- **Nothing is lost.** Every superseded version is kept, the last 10, under
+  "Earlier versions" on the card.
 
 ## How it works (for the curious)
 
