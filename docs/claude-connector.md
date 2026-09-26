@@ -71,7 +71,7 @@ end every token: changing or resetting your password, "sign out everywhere"
 | Packing (yours) | `generate_packing`, `set_packing_status`, `add_packing_item` |
 | Journal (yours) | `create_journal_entry`, `list_journal_entries`, `get_journal_entry`, `update_journal_entry`, `attach_journal_entry` |
 | Capture / review | `capture_url`, `list_review`, `get_review_item`, `assign_review_item_to_trip` (own / open / trips you travel on) |
-| Discover | `save_research`: saves to **your** Discover tab as a "Research (Claude)" draft; same trip + place replaces it. Also `POST /api/v1/trips/{id}/findings`. |
+| Discover | `save_research`: saves to **your** Discover tab as a "Research (Claude)" draft. A later save for the same trip + place supersedes it (even if you approved it); earlier versions stay under "Earlier versions". Also `POST /api/v1/trips/{id}/findings`. |
 
 ## How it works (for the curious)
 

@@ -65,6 +65,18 @@
           {% endfor %}
         </div>
         {% endif %}
+        {% if f.history %}
+        <details class="yn-finding-history">
+          <summary class="yn-run-meta">Earlier versions ({{ f.history | length }})</summary>
+          {% for h in f.history %}
+          <div class="yn-finding-body" style="opacity:.75;border-top:1px solid var(--line);margin-top:6px;padding-top:6px">
+            <div class="yn-run-meta">{{ h.when }}{% if h.status and h.status != 'draft' %} · was {{ h.status }}{% endif %}</div>
+            {{ h.body }}
+            {% if h.sources %}<div class="yn-sources">{% for s in h.sources %}{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a>{% endif %}{% endfor %}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </details>
+        {% endif %}
         <div class="yn-finding-btns">
           {% if f.is_currency and f.has_rates %}
           <button class="btn btn-secondary bp-sm"

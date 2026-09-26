@@ -301,8 +301,9 @@ def save_research(trip_id: TripId,
                   ) -> dict[str, Any]:
     """Save research onto the USER'S OWN Discover tab for a trip, as a
     "Research (Claude)" draft they can review and edit. Saving again for the
-    same trip + place replaces that draft — include everything worth keeping.
-    Once they've reviewed it (approved/edited), use a different place_key."""
+    same trip + place SUPERSEDES the current version (the old one is kept as
+    history), so write the complete, up-to-date picture each time — e.g. a
+    refresh a few days before the trip with newly announced events."""
     body = api_v1.FindingIn(title=title, body_md=body_md, place_key=place_key,
                             sources=[api_v1.SourceIn(**s) for s in (sources or [])
                                      if isinstance(s, dict) and s.get("url")])

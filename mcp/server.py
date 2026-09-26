@@ -194,8 +194,8 @@ def assign_review_item_to_trip(item_id: str, trip_id: str) -> dict[str, Any]:
 def save_research(trip_id: str, title: str, body_md: str, place_key: str | None = None,
                   sources: list[dict[str, str]] | None = None) -> dict[str, Any]:
     """Save research onto the user's own Discover tab for a trip, as a
-    "Research (Claude)" draft. Same trip + place replaces the draft. `sources`:
-    [{"title": "…", "url": "https://…"}]."""
+    "Research (Claude)" draft. Same trip + place supersedes the current version
+    (the old one is kept as history). `sources`: [{"title": "…", "url": "https://…"}]."""
     return _client.save_research(trip_id, title, body_md, place_key=place_key,
                                  sources=sources)
 

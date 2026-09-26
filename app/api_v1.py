@@ -651,6 +651,7 @@ def api_activity_types(user=Depends(authn.current_user)):
 
 # --------------------------------------------------------------------------- Discover: saved research (YONDER-108)
 RESEARCH_TOPIC = "research"
+RESEARCH_HISTORY_KEPT = 10
 
 
 def _finding_out(f: DiscoveryFinding) -> FindingOut:
@@ -661,10 +662,12 @@ def _finding_out(f: DiscoveryFinding) -> FindingOut:
 
 def save_research_finding(session: Session, user, trip_id: str, body: FindingIn) -> FindingOut:
     """Upsert a research finding on the CALLER's Discover tab for a trip they can
-    edit — keyed (trip, user, topic="research", place_key), so saving again for
-    the same place replaces the draft (but never one the person already
-    reviewed — 409). Lands as a draft for the person to review/edit like any
-    finding; never touches anyone else's Discover."""
+    edit — keyed (trip, user, topic="research", place_key). Newer research
+    always supersedes (trips change: a concert gets announced, the forecast
+    moves), even over a version the person approved or edited — that version
+    isn't lost, it moves into `data["history"]` (newest first, last
+    RESEARCH_HISTORY_KEPT). The new one lands as a draft for review. Never
+    touches anyone else's Discover."""
     from datetime import timezone
 
     trip = scope.require_trip(session, user, trip_id, edit=True)
@@ -680,23 +683,24 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn)
          .filter(DiscoveryFinding.trip_id == trip.id, DiscoveryFinding.user_id == user.id,
                  DiscoveryFinding.topic == RESEARCH_TOPIC,
                  DiscoveryFinding.place_key == place_key).first())
+    history: list = []
     if f is None:
         f = DiscoveryFinding(trip_id=trip.id, user_id=user.id, topic=RESEARCH_TOPIC,
                              place_key=place_key)
         session.add(f)
-    elif f.status != "draft":
-        # The person already reviewed this one (approved/edited/rejected): never
-        # clobber their work with a fresh draft.
-        raise HTTPException(409, f"the research for {place_key!r} was already reviewed "
-                                 f"({f.status}) on the Discover tab; save under a "
-                                 "different place_key")
+    else:
+        prev = f.data or {}
+        history = [{"title": prev.get("title"), "body_md": f.body_md,
+                    "sources": f.sources or [], "status": f.status,
+                    "generated_at": f.generated_at.isoformat() if f.generated_at else None},
+                   *(prev.get("history") or [])][:RESEARCH_HISTORY_KEPT]
     f.scope = "trip" if place_key == "trip" else ("country" if ":" not in place_key else "city")
     f.status = "draft"
     f.body_md = md
     f.sources = sources
     f.resolver = "claude"
     f.confidence = None
-    f.data = {"title": title}
+    f.data = {"title": title, "history": history}
     f.generated_at = datetime.now(timezone.utc)
     session.commit()
     session.refresh(f)

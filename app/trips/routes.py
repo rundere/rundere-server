@@ -757,6 +757,10 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         # Saved research (YONDER-108) has no resolver to re-run either.
         "rerunnable": not f.topic.startswith("language") and f.topic != "research",
         "has_rates": bool(data.get("rates")),
+        # Superseded versions of saved research (YONDER-108), newest first.
+        "history": [{"when": (h.get("generated_at") or "")[:10], "status": h.get("status"),
+                     "body": _render_md(h.get("body_md")), "sources": h.get("sources") or []}
+                    for h in (data.get("history") or []) if isinstance(h, dict)],
     }
 
 

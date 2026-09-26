@@ -316,14 +316,26 @@ if DEPS:
         f2 = ok(client, tok, "save_research", trip_id=w["shared"], title="Day hikes v2",
                 body_md="- Plain of Six Glaciers")
         assert f2["id"] == f["id"] and "v2" in f2["body_md"]
+        assert f2["data"]["history"][0]["title"] == "Day hikes"
         with SessionLocal() as s:              # the person approves it on Discover…
             s.get(DiscoveryFinding, f["id"]).status = "approved"
             s.commit()
-        good, err = call(client, tok, "save_research", trip_id=w["shared"], title="clobber",
-                         body_md="x")
-        assert not good and "409" in err       # …so Claude can't overwrite it
+        # …and a later refresh (a concert got announced) still supersedes it —
+        # research is never locked in place; the approved version becomes history.
+        f3 = ok(client, tok, "save_research", trip_id=w["shared"], title="Day hikes v3",
+                body_md="- new concert announced")
+        assert f3["id"] == f["id"] and f3["status"] == "draft" and "v3" in f3["body_md"]
+        hist = f3["data"]["history"]
+        assert [h["status"] for h in hist] == ["approved", "draft"]
+        assert "v2" in hist[0]["body_md"] and "Johnston" in hist[1]["body_md"]
         with SessionLocal() as s:
-            assert "v2" in s.get(DiscoveryFinding, f["id"]).body_md
+            from app.trips.routes import _finding_view
+            view = _finding_view(s.get(DiscoveryFinding, f["id"]))
+            assert len(view["history"]) == 2 and view["history"][0]["status"] == "approved"
+        from app.api_v1 import RESEARCH_HISTORY_KEPT
+        for i in range(RESEARCH_HISTORY_KEPT + 2):
+            last = ok(client, tok, "save_research", trip_id=w["shared"], title=f"r{i}", body_md="x")
+        assert len(last["data"]["history"]) == RESEARCH_HISTORY_KEPT
         city = ok(client, tok, "save_research", trip_id=w["shared"], title="Banff food",
                   body_md="x", place_key="CA:Banff")
         assert city["id"] != f["id"]
