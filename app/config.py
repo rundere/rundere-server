@@ -162,7 +162,7 @@ class Settings(BaseSettings):
     oauth_token_rate_limit: int = 60                        # /oauth/token calls per IP…
     oauth_token_rate_window_seconds: int = 60               # …per minute
 
-    app_version: str = "4.3.1"
+    app_version: str = "4.3.2"
 
     @property
     def base_currency_list(self) -> tuple[str, ...]:
