@@ -676,13 +676,17 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
 # --------------------------------------------------------------- discovery (3.0)
 
 TOPIC_ORDER = ["weather", "currency", "plugs", "visa", "safety", "events",
-               "food", "language", "language_regional", "language_local", "packing"]
+               "food", "language", "language_regional", "language_local", "packing",
+               "research"]
 TOPIC_LABELS = {
     "weather": "Weather", "currency": "Currency", "plugs": "Plugs & voltage",
     "visa": "Visa & vaccination", "safety": "Safety & transport",
     "events": "Events & activities", "food": "Food & drink", "language": "Language",
     "language_regional": "Regional language", "language_local": "Local phrases & register",
     "packing": "Packing",
+    # YONDER-108: research saved from Claude (the MCP `save_research` tool /
+    # POST /api/v1/trips/{id}/findings) — the caller's own, reviewed like any finding.
+    "research": "Research (Claude)",
 }
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
@@ -750,7 +754,8 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         # a pure function of country (re-run can only clobber a manual Languages
         # pick), and the regional/local overlays key on the trip's places. The
         # Languages picker is the tool for those; other topics keep Re-run.
-        "rerunnable": not f.topic.startswith("language"),
+        # Saved research (YONDER-108) has no resolver to re-run either.
+        "rerunnable": not f.topic.startswith("language") and f.topic != "research",
         "has_rates": bool(data.get("rates")),
     }
 
@@ -901,7 +906,7 @@ def rerun_finding_route(trip_id: str, fid: str, request: Request,
         return HTMLResponse("", status_code=404)
     # Language findings aren't re-runnable (see _finding_view) — never let a
     # stale/forged POST overwrite a manual Languages pick.
-    if f.topic.startswith("language"):
+    if f.topic.startswith("language") or f.topic == "research":
         return _redirect(f"/trips/{trip_id}")
     rerun_finding(session, f, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),

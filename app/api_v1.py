@@ -215,6 +215,25 @@ class PackingItemPatch(BaseModel):
     label: str | None = None
 
 
+class ActivityTypeOut(BaseModel):
+    key: str
+    label: str
+    fields: list[dict[str, Any]] = []     # {key, label, type, hint?} — the `values` keys
+
+
+class SourceIn(BaseModel):
+    title: str | None = None
+    url: str
+
+
+class FindingIn(BaseModel):
+    """Research to keep on the caller's Discover tab (YONDER-108)."""
+    title: str                             # short heading, e.g. "Hikes near Banff"
+    body_md: str                           # markdown: **bold**, ### headings, - bullets, [text](url)
+    place_key: str | None = None           # "trip" (default) or a place, e.g. "CA:Banff"
+    sources: list[SourceIn] = []
+
+
 class PackingItemIn(BaseModel):
     label: str
     category: str = "activity"
@@ -315,9 +334,7 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
         places = []
 
     # discovery findings — PER-USER (4.1): the caller's own Discover tab
-    discovery = [FindingOut(id=f.id, topic=f.topic, place_key=f.place_key,
-                            body_md=f.body_md, data=f.data, confidence=f.confidence,
-                            status=f.status, sources=f.sources)
+    discovery = [_finding_out(f)
                  for f in session.query(DiscoveryFinding)
                  .filter(DiscoveryFinding.trip_id == trip.id,
                          DiscoveryFinding.user_id == user.id).all()]
@@ -449,20 +466,35 @@ def api_capture(body: CaptureIn, user=Depends(authn.current_user),
     return CaptureOut(batch_id=bid, status="received")
 
 
-@router.post("/review/{item_id}/assign-trip")
-def api_assign_trip(item_id: str, body: AssignTripIn,
-                    user=Depends(authn.current_user),
-                    session: Session = Depends(get_session)):
-    """Link a capture to one of the user's trips (requires edit access to the
-    trip). Pins the link so the resolver won't override a human choice."""
+def assign_capture_to_trip(session: Session, user, item_id: str, trip_id: str) -> dict:
+    """File a capture into a trip under the FILING rule (4.1,
+    `scope.filing_trip_filter`: own, open, or one you travel on) — the same rule
+    as the web picker. Being an admin, or having a view-only share, is not
+    enough: 404 if the trip isn't visible, 403 if visible but not fileable.
+    Pins the link so the resolver won't override a human choice."""
     from sqlalchemy.orm.attributes import flag_modified
     item = scope.require_capture(session, user, item_id)
-    trip = scope.require_trip(session, user, body.trip_id, edit=True)
+    trip = scope.require_trip(session, user, trip_id)        # 404 if not visible
+    fileable = (session.query(Trip.id)
+                .filter(Trip.id == trip.id, scope.filing_trip_filter(session, user))
+                .first())
+    if fileable is None:
+        raise HTTPException(403, "you can only file captures into your own trips, "
+                                 "open trips, or trips you travel on")
     item.trip_id = trip.id
     item.review = {**(item.review or {}), "trip_pinned": True}
     flag_modified(item, "review")
     session.commit()
     return {"ok": True, "item_id": item.id, "trip_id": trip.id}
+
+
+@router.post("/review/{item_id}/assign-trip")
+def api_assign_trip(item_id: str, body: AssignTripIn,
+                    user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """Link a capture to one of the user's trips (filing rule, see
+    assign_capture_to_trip)."""
+    return assign_capture_to_trip(session, user, item_id, body.trip_id)
 
 
 # --------------------------------------------------------------------------- write: manual trip edits (D-125)
@@ -606,6 +638,76 @@ def api_add_packing_item(trip_id: str, body: PackingItemIn,
     session.commit()
     session.refresh(i)
     return _packing_item_out(i)
+
+
+@router.get("/activity-types", response_model=list[ActivityTypeOut])
+def api_activity_types(user=Depends(authn.current_user)):
+    """The timeline activity types and the `values` fields each one takes."""
+    from app.trips import types as at
+    return [ActivityTypeOut(key=t.key, label=t.label,
+                            fields=[dict(f) for f in t.fields])
+            for t in at.TRIP_ACTIVITY_TYPES.values()]
+
+
+# --------------------------------------------------------------------------- Discover: saved research (YONDER-108)
+RESEARCH_TOPIC = "research"
+
+
+def _finding_out(f: DiscoveryFinding) -> FindingOut:
+    return FindingOut(id=f.id, topic=f.topic, place_key=f.place_key, body_md=f.body_md,
+                      data=f.data, confidence=f.confidence, status=f.status,
+                      sources=f.sources)
+
+
+def save_research_finding(session: Session, user, trip_id: str, body: FindingIn) -> FindingOut:
+    """Upsert a research finding on the CALLER's Discover tab for a trip they can
+    edit — keyed (trip, user, topic="research", place_key), so saving again for
+    the same place replaces the draft (but never one the person already
+    reviewed — 409). Lands as a draft for the person to review/edit like any
+    finding; never touches anyone else's Discover."""
+    from datetime import timezone
+
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    title = (body.title or "").strip()[:200]
+    text = (body.body_md or "").strip()
+    if not title or not text:
+        raise HTTPException(400, "title and body_md are required")
+    place_key = (body.place_key or "trip").strip()[:128] or "trip"
+    md = f"**{title}**\n\n{text}"[:100_000]
+    sources = [{"title": (s.title or s.url)[:300], "url": s.url[:2000]}
+               for s in body.sources[:50] if s.url.startswith(("http://", "https://"))]
+    f = (session.query(DiscoveryFinding)
+         .filter(DiscoveryFinding.trip_id == trip.id, DiscoveryFinding.user_id == user.id,
+                 DiscoveryFinding.topic == RESEARCH_TOPIC,
+                 DiscoveryFinding.place_key == place_key).first())
+    if f is None:
+        f = DiscoveryFinding(trip_id=trip.id, user_id=user.id, topic=RESEARCH_TOPIC,
+                             place_key=place_key)
+        session.add(f)
+    elif f.status != "draft":
+        # The person already reviewed this one (approved/edited/rejected): never
+        # clobber their work with a fresh draft.
+        raise HTTPException(409, f"the research for {place_key!r} was already reviewed "
+                                 f"({f.status}) on the Discover tab; save under a "
+                                 "different place_key")
+    f.scope = "trip" if place_key == "trip" else ("country" if ":" not in place_key else "city")
+    f.status = "draft"
+    f.body_md = md
+    f.sources = sources
+    f.resolver = "claude"
+    f.confidence = None
+    f.data = {"title": title}
+    f.generated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(f)
+    return _finding_out(f)
+
+
+@router.post("/trips/{trip_id}/findings", response_model=FindingOut, status_code=201)
+def api_save_finding(trip_id: str, body: FindingIn, user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """Save research (e.g. from Claude) into the caller's own Discover tab."""
+    return save_research_finding(session, user, trip_id, body)
 
 
 # --------------------------------------------------------------------------- journal (SPEC-6)

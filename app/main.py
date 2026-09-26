@@ -4,6 +4,7 @@ Traefik routing). Pipeline stages arrive in later phases.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 from pathlib import Path
 
@@ -17,8 +18,22 @@ from app.models import RuleSetting
 
 log = logging.getLogger("yonder")
 
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app):
+    """Startup seeding, then the remote MCP server's session manager (YONDER-108)
+    for the app's lifetime. (A lifespan replaces @app.on_event: FastAPI ignores
+    on_event handlers once one is set.)"""
+    startup()
+    from app import mcp_server
+    async with mcp_server.lifespan():
+        yield
+
+
 app = FastAPI(title="Yonder", version=settings.app_version,
-              docs_url=None, redoc_url=None)   # no public API docs surface
+              docs_url=None, redoc_url=None,   # no public API docs surface
+              lifespan=lifespan)
 app.include_router(ingest_router)
 
 # Auth (Yonder 4.0 Phase 1a): login/logout + the /api/v1/auth token flow, plus
@@ -53,8 +68,9 @@ app.include_router(api_router)
 # YONDER-107: the OAuth metadata/token/register/revoke endpoints are public
 # (they authenticate clients themselves); /oauth/authorize resolves the signed-in
 # user itself so it can send them to /login with the WHOLE request as `next`.
+# YONDER-108: /mcp answers its own 401 (with the OAuth resource-metadata pointer).
 _PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
-                 "/setup", "/register", "/forgot"}
+                 "/setup", "/register", "/forgot", "/mcp"}
 _PUBLIC_PREFIX = ("/ingest", "/capture", "/review/static", "/trips/static",
                   "/api/v1/auth/", "/reset/", "/oidc/", "/oauth/", "/.well-known/")
 _ADMIN_PREFIX = ("/admin", "/users")
@@ -122,6 +138,14 @@ app.include_router(journal_router)
 # above that also owns "/" behaviour; there is none today, but this keeps the
 # one true landing route obvious to find.
 app.include_router(dashboard_router)
+# Remote MCP (YONDER-108): MCP Streamable HTTP at exactly /mcp (a Mount would
+# 307 /mcp → /mcp/, which connectors don't follow for POST). Bearer-only.
+from starlette.routing import Route  # noqa: E402
+
+from app import mcp_server  # noqa: E402
+
+app.router.routes.append(Route("/mcp", endpoint=mcp_server.endpoint,
+                               methods=["GET", "POST", "DELETE"]))
 app.mount("/review/static",
           StaticFiles(directory=str(Path(__file__).parent / "review" / "static")),
           name="review-static")
@@ -155,7 +179,6 @@ def load_enablement(session) -> dict[str, str]:
             if r.rule_id in rules_module.RULES}
 
 
-@app.on_event("startup")
 def startup() -> None:
     with SessionLocal() as session:
         seed_rule_settings(session)

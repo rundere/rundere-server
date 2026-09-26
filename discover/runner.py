@@ -128,10 +128,13 @@ def _prune_stale_drafts(session: Session, trip_id: str,
     inherently non-deterministic) KEEPS its last-good draft. A finding is only ever
     replaced by a newer result via _upsert, never deleted because one run came back
     empty — otherwise a good result silently vanishes on the next re-run.
-    Human-touched findings (approved/edited/rejected) are always kept."""
+    Human-touched findings (approved/edited/rejected) are always kept, and so is
+    research saved from Claude (topic "research", YONDER-108) — no resolver made
+    it, so no run can re-make it."""
     for f in (session.query(DiscoveryFinding)
               .filter(DiscoveryFinding.trip_id == trip_id,
                       DiscoveryFinding.user_id == user_id,
+                      DiscoveryFinding.topic != "research",
                       DiscoveryFinding.status == "draft").all()):
         if f.place_key not in in_scope_keys:
             session.delete(f)

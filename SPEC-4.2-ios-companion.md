@@ -119,6 +119,13 @@ editing is out of scope for 4.2.
 
 ### 3.7 Claude connector: remote MCP inside Yonder (owner, 2026-09-25)
 
+> **Status: implemented** (server side). YONDER-107 (OAuth 2.1 authorization
+> server, Connected apps, personal API tokens; migration 0028) and YONDER-108
+> (`/mcp`, 21 tools incl. `save_research`; assign-trip filing fix). Setup and
+> the tool list: [`docs/claude-connector.md`](docs/claude-connector.md).
+> Still open: YONDER-109 (Traefik machine-endpoint route) and the owner's
+> post-deploy verification.
+
 > **Implementation brief for YONDER-107/108:**
 > [`docs/handoff/YONDER-107-108-claude-connector.md`](docs/handoff/YONDER-107-108-claude-connector.md)
 > (self-contained, for a cloud session without Plane/homelab access).
@@ -194,8 +201,8 @@ with Docker Desktop; each ships with tests like everything in 4.1.
 
 | # | Work | Plane | Side | Depends on |
 |---|---|---|---|---|
-| 0a | Yonder OAuth 2.1 authorization server + connected-apps UI (§3.7) | YONDER-107 | server | — |
-| 0b | Remote MCP at `/mcp`, tools up to date + "save to my Discover" (§3.7) | YONDER-108 | server | 0a |
+| 0a | ✅ Yonder OAuth 2.1 authorization server + connected-apps UI (§3.7) | YONDER-107 | server | — |
+| 0b | ✅ Remote MCP at `/mcp`, tools up to date + "save to my Discover" (§3.7) | YONDER-108 | server | 0a |
 | 0c | Traefik machine-endpoint route (no Authentik; geoblock + CrowdSec), stack file synced (§3.7) | YONDER-109 | ops | 0a |
 | 1 | OpenAPI for `/api/v1` behind auth + DTO drift check | YONDER-58 | server + app | — |
 | 2 | User payload + sharing endpoint (§3.3) | YONDER-101 | server | — |
