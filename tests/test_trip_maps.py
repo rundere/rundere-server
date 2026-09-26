@@ -143,6 +143,8 @@ def test_pdf_has_trip_flight_and_road_trip_maps(monkeypatch):
             assert {"Lodging", "Road trip"} <= {l["label"] for l in ctx["legend"]}
             html = render_timeline_html(s, t)
             assert "Trip map" in html and "Getting there" in html
+            # the trip map leads; the flight map is an appendix after the timeline
+            assert html.index("Trip map") < html.index("No place") < html.index("Getting there")
             assert 'class="route-map"' in html
         finally:
             s.query(TripActivity).filter(TripActivity.trip_id == t.id).delete()
