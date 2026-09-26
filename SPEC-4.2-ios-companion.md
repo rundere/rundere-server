@@ -247,6 +247,12 @@ with Docker Desktop; each ships with tests like everything in 4.1.
 | 14 | Map (snapshot `places` lat/lon) + in-app review notifications | YONDER-55 | app | 4 |
 | 15 | App icon | YONDER-80 | app | — |
 | 16 | Distribution: AltStore sideload vs TestFlight | YONDER-56 | owner decision | before sharing builds with others |
+| 17 | Universal iPhone + iPad: sidebar-adaptable tabs, split views for Trips / Review, all iPad orientations | YONDER-118 | app | 3 |
+
+> **Owner decisions (2026-09-25):** the app keeps **its own version numbers**
+> (not the server's); iPad (#17) and review write actions (#9 — the server side
+> shipped in 4.2) are **in the 4.2 app build**. So the 4.2 app build = 3–7, 9,
+> 17; SSO (10–12) stays 4.3.
 
 A sensible slicing: **4.2** = 0a–0c then 1–7 (the app becomes useful day to day: edit
 trips, check off packing, see who's on what, capture, journal); **4.3** = 8–12
@@ -254,7 +260,7 @@ trips, check off packing, see who's on what, capture, journal); **4.3** = 8–12
 
 ## 5. Not in this phase
 Native profile editors, running Discover from the app (web button for now),
-APNs push, a general offline write queue, iPad-specific layouts, the 5.0
+APNs push, a general offline write queue, the 5.0
 inventory pillar (YONDER-62–65; the app keeps packing a self-contained module
 so inventory can arrive beside it).
 

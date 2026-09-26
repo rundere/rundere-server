@@ -42,7 +42,9 @@ SCHEMA_FOR = {
     "Dashboard": "DashboardOut",
     "ReviewList": "ReviewListOut",
 }
-SKIP = {"APIErrorBody"}          # FastAPI's error envelope, not a declared model
+SKIP = {"APIErrorBody",          # FastAPI's error envelope, not a declared model
+        "ActivityTypeField",     # ActivityTypeOut.fields is list[dict] on the server
+        "CommitPreview", "Summary", "Plan", "Result"}  # commit dry-run: an undeclared dict
 REQUEST_SUFFIXES = ("In", "Patch", "Body", "Create")
 # Swift types that decode JSON null themselves (JSONValue has a `.null` case).
 NULL_TOLERANT = {"JSONValue"}
