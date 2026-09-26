@@ -64,7 +64,8 @@ class Settings(BaseSettings):
     # schematic background (lines + pins only).
     map_tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
     map_tile_attribution: str = "© OpenStreetMap contributors"
-    # Where fetched tiles are kept; empty = beside artifacts_dir (tile-cache/).
+    # Where fetched tiles are kept; empty = artifacts_dir/tile-cache (on the
+    # artifacts volume, so it survives redeploys).
     map_tile_cache_dir: str = ""
 
     # Discovery (Yonder 3.0, SPEC-3-discovery.md). Deterministic-tier sources —
