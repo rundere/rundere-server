@@ -1,0 +1,137 @@
+# Cut a release from the Actions tab: Actions → "Cut release" → Run workflow.
+#
+#  1. plan     — works out the next version from pyproject.toml (patch / minor
+#                / major, or an explicit X.Y.Z), checks the tag is free, and
+#                writes the version + the commits since the last tag to the run
+#                summary. With "publish" unticked (the default) it stops here:
+#                a dry run to look before you leap.
+#  2. release  — only when "publish" is ticked. Runs in the `release`
+#                environment: add yourself as a required reviewer there
+#                (Settings → Environments → release) and GitHub pauses for your
+#                "Approve and deploy" click. (Required reviewers on a private
+#                repo need GitHub Pro/Team; without them the ticked box + write
+#                access to run this is the approval.) Bumps app/config.py and
+#                pyproject.toml, commits "chore: release X.Y.Z" to main, and
+#                pushes the annotated tag vX.Y.Z.
+#  3. publish  — calls release.yml for that tag: tests, GHCR image, GitHub
+#                Release with generated notes, README/docs version sync. (Called
+#                directly because a tag pushed with GITHUB_TOKEN doesn't trigger
+#                other workflows.)
+#
+# Plane sync stays manual (LAN-only): scripts/plane_release_sync.py vX.Y.Z.
+name: cut release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Which part to bump (ignored when version is set)"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: "Or an explicit version, e.g. 4.2.0 (optional)"
+        type: string
+        required: false
+      publish:
+        description: "Publish it (unticked = dry run: just show the plan)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: cut-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Work out the next version
+        id: next
+        env:
+          BUMP: ${{ inputs.bump }}
+          WANT: ${{ inputs.version }}
+        run: |
+          CURRENT=$(sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/p' pyproject.toml)
+          APP=$(sed -nE 's/^    app_version: str = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/p' app/config.py)
+          if [ -z "$CURRENT" ] || [ "$CURRENT" != "$APP" ]; then
+            echo "::error::pyproject.toml ($CURRENT) and app/config.py ($APP) disagree"; exit 1
+          fi
+          IFS=. read -r MA MI PA <<< "$CURRENT"
+          if [ -n "$WANT" ]; then
+            NEXT="${WANT#v}"
+            echo "$NEXT" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::version must be X.Y.Z"; exit 1; }
+          else
+            case "$BUMP" in
+              major) NEXT="$((MA + 1)).0.0" ;;
+              minor) NEXT="$MA.$((MI + 1)).0" ;;
+              *)     NEXT="$MA.$MI.$((PA + 1))" ;;
+            esac
+          fi
+          if [ "$(printf '%s\n%s\n' "$CURRENT" "$NEXT" | sort -V | tail -1)" != "$NEXT" ] || [ "$NEXT" = "$CURRENT" ]; then
+            echo "::error::$NEXT is not newer than $CURRENT"; exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null; then
+            echo "::error::tag v$NEXT already exists"; exit 1
+          fi
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          LAST=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
+          {
+            echo "## Release plan: $CURRENT → **$NEXT**"
+            echo
+            if [ "${{ inputs.publish }}" = "true" ]; then
+              echo "Publishing: the \`release\` job tags \`v$NEXT\` on main after approval."
+            else
+              echo "**Dry run** — nothing will be tagged. Re-run with *publish* ticked to release."
+            fi
+            echo
+            echo "### Merged since ${LAST:-the beginning}"
+            git log --merges --first-parent --format='- %s' ${LAST:+$LAST..}origin/main | head -50
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: plan
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    environment: release            # add required reviewers here for an approval click
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Bump, commit and tag
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          sed -i -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"${VERSION}\"/" pyproject.toml
+          sed -i -E "s/^    app_version: str = \"[0-9]+\.[0-9]+\.[0-9]+\"/    app_version: str = \"${VERSION}\"/" app/config.py
+          grep -q "^version = \"${VERSION}\"" pyproject.toml
+          grep -q "app_version: str = \"${VERSION}\"" app/config.py
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml app/config.py
+          git commit -m "chore: release ${VERSION}"
+          git tag -a "v${VERSION}" -m "Yonder ${VERSION}"
+          git push origin HEAD:main
+          git push origin "v${VERSION}"
+
+  publish:
+    needs: [plan, release]
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: v${{ needs.plan.outputs.version }}
+    permissions:
+      contents: write
+      packages: write
+    secrets: inherit
