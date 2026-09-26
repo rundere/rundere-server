@@ -4,7 +4,27 @@ Issues and the roadmap are tracked in Plane (self-hosted, internal). GitHub
 stays the source of truth for code, tags, and published releases; Plane
 stays the source of truth for what's planned/in-progress/done.
 
-## Cutting a release
+## Cutting a release (the one-click way)
+
+**Actions → "cut release" → Run workflow** (`.github/workflows/cut-release.yml`):
+
+1. Pick **patch / minor / major** (or type an explicit `X.Y.Z`) and leave
+   **publish** unticked for a dry run: the run summary shows the next version
+   and every PR merged since the last tag. Nothing is changed.
+2. Happy? Run it again with **publish** ticked. The `release` job runs in the
+   `release` environment. If you've added yourself as a required reviewer
+   (Settings → Environments → `release` → Required reviewers — needs GitHub
+   Pro/Team on a private repo), GitHub pauses for your **Approve and deploy**;
+   otherwise the ticked box is the approval (only people with write access can
+   run the workflow).
+3. It bumps `app/config.py` + `pyproject.toml`, commits `chore: release X.Y.Z`
+   to `main`, pushes the annotated tag `vX.Y.Z`, and then runs `release.yml`
+   for that tag (tests → GHCR image → GitHub Release with generated notes →
+   README/docs version sync), exactly as a hand-pushed tag would.
+
+Then run the Plane sync below.
+
+## Cutting a release (by hand)
 
 1. Feature branch off `main`; as part of that PR, bump **both**
    `app/config.py` `app_version` and `pyproject.toml` `version` to the same
@@ -27,7 +47,11 @@ the GitHub side end-to-end:
   drift from `pyproject.toml` again the way `README.md` had (it sat at 3.8.1
   while the app was at 3.9.2).
 
-`workflow_dispatch` (manual run from the Actions tab) still only builds and
+`release.yml` is also *called* by "cut release" with the new tag (a tag
+pushed with the workflow's own token doesn't trigger other workflows); that
+path does everything a tag push does.
+
+`workflow_dispatch` on `release.yml` itself (manual run from the Actions tab) still only builds and
 publishes the image for a given version — it's for rebuilding/backfilling a
 tag that predates the workflow, and deliberately does **not** touch the
 GitHub Release or README/docs.
