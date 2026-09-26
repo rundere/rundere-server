@@ -258,7 +258,7 @@ def test_resolver_estimates_a_located_maps_drive(monkeypatch):
     from app import resolving
     from resolve import routing
     monkeypatch.setattr(routing, "estimate_for_places",
-                        lambda places, base_url: routing.RouteEstimate(21.3, 19))
+                        lambda places, base_url=None: routing.RouteEstimate(21.3, 19))
     p = _drive_payload()
     p["ground_transport"]["route"].update(distance_km=None, duration_minutes=None)
     out = resolving._estimate_drive(p)["ground_transport"]["route"]

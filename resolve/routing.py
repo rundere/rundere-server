@@ -12,11 +12,16 @@ person to fill. Nothing here ever raises into a request or a resolve run.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from typing import Callable
 from urllib.parse import parse_qs, urlsplit
+
+log = logging.getLogger("yonder.routing")
 
 _MAPS_LATLON = re.compile(r"!1d(-?\d+\.\d+)!2d(-?\d+\.\d+)")
 _COORD = re.compile(r"^\s*(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)\s*$")
@@ -29,6 +34,7 @@ class RouteEstimate:
     # The road line itself, Google "polyline6" encoded (precision 1e-6),
     # simplified for display — what a map draws A → B along the roads.
     polyline: str | None = None
+    provider: str = "osrm"
 
 
 def is_maps_link(url: str | None) -> bool:
@@ -90,21 +96,41 @@ def locate(place: dict, geocoder) -> dict:
         return place
 
 
-def route(stops: list[tuple[float, float]], *, base_url: str,
-          timeout: int = 8) -> RouteEstimate | None:
-    """Driving distance/time through (lat, lon) stops, in order, from an OSRM
-    server. None on any failure or when routing is switched off."""
+# ---------------------------------------------------------------- routers
+#
+# Three interchangeable road routers, tried in the configured order
+# (TX_ROUTING_PROVIDERS, default "valhalla,ors,osrm"); an unconfigured one is
+# skipped and a failure — including "no road data here", which is how a
+# self-hosted home-region Valhalla answers for Europe or India — falls through
+# to the next. So: self-host for home, a hosted API for everywhere else.
+#   valhalla  TX_VALHALLA_URL — the full /route endpoint: self-hosted
+#             (http://valhalla:8002/route) or Stadia Maps
+#             (https://api.stadiamaps.com/route/v1 + TX_VALHALLA_API_KEY)
+#   ors       TX_ORS_API_KEY — openrouteservice.org (worldwide, free key tier)
+#   osrm      TX_OSRM_URL — self-hosted OSRM or the public demo server
+
+_UA = {"User-Agent": "yonder (+https://github.com/jeeves5454/yonder)"}
+
+
+def _http_json(url: str, *, body: dict | None = None, headers: dict | None = None,
+               timeout: int = 8):
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    h = {**_UA, **(headers or {})}
+    if data is not None:
+        h.setdefault("Content-Type", "application/json")
+    req = urllib.request.Request(url, data=data, headers=h,
+                                 method="POST" if data is not None else "GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def _route_osrm(stops, *, base_url: str, timeout: int = 8) -> RouteEstimate | None:
     base = (base_url or "").rstrip("/")
-    if not base or len(stops) < 2:
+    if not base:
         return None
     coords = ";".join(f"{lon:.6f},{lat:.6f}" for lat, lon in stops)
-    url = f"{base}/route/v1/driving/{coords}?overview=simplified&geometries=polyline6"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "yonder"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read())
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
-        return None
+    data = _http_json(f"{base}/route/v1/driving/{coords}"
+                      "?overview=simplified&geometries=polyline6", timeout=timeout)
     routes = data.get("routes") or []
     if data.get("code") != "Ok" or not routes:
         return None
@@ -112,10 +138,96 @@ def route(stops: list[tuple[float, float]], *, base_url: str,
     geometry = r.get("geometry")
     return RouteEstimate(distance_km=round(float(r["distance"]) / 1000, 1),
                          duration_minutes=int(round(float(r["duration"]) / 60)),
-                         polyline=geometry if isinstance(geometry, str) else None)
+                         polyline=geometry if isinstance(geometry, str) else None,
+                         provider="osrm")
 
 
-def estimate_for_places(places: list[dict], *, base_url: str) -> RouteEstimate | None:
+def _route_valhalla(stops, *, url: str, api_key: str = "",
+                    timeout: int = 8) -> RouteEstimate | None:
+    if not url:
+        return None
+    if api_key:
+        url += ("&" if "?" in url else "?") + "api_key=" + urllib.parse.quote(api_key)
+    data = _http_json(url, timeout=timeout, body={
+        "locations": [{"lat": lat, "lon": lon} for lat, lon in stops],
+        "costing": "auto", "directions_options": {"units": "kilometers"}})
+    trip = data.get("trip") or {}
+    summary = trip.get("summary") or {}
+    if trip.get("status") not in (0, None) or "length" not in summary:
+        return None
+    # One shape per leg (polyline6); join them into a single line.
+    pts: list[tuple[float, float]] = []
+    for leg in trip.get("legs") or []:
+        leg_pts = decode_polyline(leg.get("shape") or "", 6)
+        pts.extend(leg_pts[1:] if pts and leg_pts else leg_pts)
+    return RouteEstimate(distance_km=round(float(summary["length"]), 1),
+                         duration_minutes=int(round(float(summary.get("time", 0)) / 60)),
+                         polyline=encode_polyline(_simplify(pts)) if pts else None,
+                         provider="valhalla")
+
+
+def _route_ors(stops, *, base_url: str, api_key: str,
+               timeout: int = 8) -> RouteEstimate | None:
+    if not api_key:
+        return None
+    base = (base_url or "https://api.openrouteservice.org").rstrip("/")
+    data = _http_json(f"{base}/v2/directions/driving-car", timeout=timeout,
+                      headers={"Authorization": api_key, "Accept": "application/json"},
+                      body={"coordinates": [[lon, lat] for lat, lon in stops]})
+    routes = data.get("routes") or []
+    if not routes:
+        return None
+    r = routes[0]
+    summary = r.get("summary") or {}
+    if "distance" not in summary:
+        return None
+    geometry = r.get("geometry")          # Google polyline, precision 5
+    pts = decode_polyline(geometry, 5) if isinstance(geometry, str) else []
+    return RouteEstimate(distance_km=round(float(summary["distance"]) / 1000, 1),
+                         duration_minutes=int(round(float(summary.get("duration", 0)) / 60)),
+                         polyline=encode_polyline(_simplify(pts)) if pts else None,
+                         provider="ors")
+
+
+def configured_routers() -> list[tuple[str, Callable]]:
+    """[(name, fn(stops) -> RouteEstimate | None)] in the configured order,
+    leaving out any router that isn't set up."""
+    from app.config import settings
+    table = {
+        "valhalla": (settings.valhalla_url, lambda st: _route_valhalla(
+            st, url=settings.valhalla_url, api_key=settings.valhalla_api_key)),
+        "ors": (settings.ors_api_key, lambda st: _route_ors(
+            st, base_url=settings.ors_url, api_key=settings.ors_api_key)),
+        "osrm": (settings.osrm_url, lambda st: _route_osrm(st, base_url=settings.osrm_url)),
+    }
+    order = [n.strip().lower() for n in (settings.routing_providers or "").split(",")]
+    return [(n, table[n][1]) for n in order if n in table and table[n][0]]
+
+
+def route(stops: list[tuple[float, float]], *, base_url: str | None = None,
+          timeout: int = 8) -> RouteEstimate | None:
+    """Driving distance/time (and the road line) through (lat, lon) stops, in
+    order: the first configured router that answers wins. `base_url` pins a
+    single OSRM server instead ("" = off). None when every router fails or
+    none is set up — callers then simply leave distance blank."""
+    if len(stops) < 2:
+        return None
+    routers = ([("osrm", lambda st: _route_osrm(st, base_url=base_url, timeout=timeout))]
+               if base_url is not None else configured_routers())
+    for name, fn in routers:
+        try:
+            est = fn(stops)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError,
+                KeyError, TypeError):
+            est = None
+        if est is not None:
+            return est
+        log.info("router %s had no route; trying the next", name)
+    return None
+
+
+def estimate_for_places(places: list[dict], *, base_url: str | None = None
+                        ) -> RouteEstimate | None:
     """Route through already-located places; None if any stop lacks coords."""
     pts = [(p.get("lat"), p.get("lon")) for p in places if isinstance(p, dict)]
     if len(pts) < 2 or any(la is None or lo is None for la, lo in pts):
@@ -123,7 +235,7 @@ def estimate_for_places(places: list[dict], *, base_url: str) -> RouteEstimate |
     return route([(float(la), float(lo)) for la, lo in pts], base_url=base_url)
 
 
-def estimate_for_link(url: str, *, geocoder, base_url: str
+def estimate_for_link(url: str, *, geocoder, base_url: str | None = None
                       ) -> tuple[list[dict], RouteEstimate | None]:
     """(located stops, estimate) for a directions link. The stops come back even
     when routing fails, so a caller can still name the route."""
@@ -191,6 +303,31 @@ def decode_polyline(encoded: str, precision: int = 6) -> list[tuple[float, float
                 lon += delta
         points.append((lat / factor, lon / factor))
     return points
+
+
+def encode_polyline(points: list[tuple[float, float]], precision: int = 6) -> str:
+    """Encode (lat, lon) points as a Google polyline (polyline6 by default)."""
+    factor, out, plat, plon = 10 ** precision, [], 0, 0
+    for lat, lon in points:
+        ilat, ilon = int(round(lat * factor)), int(round(lon * factor))
+        for delta in (ilat - plat, ilon - plon):
+            v = ~(delta << 1) if delta < 0 else delta << 1
+            while v >= 0x20:
+                out.append(chr((0x20 | (v & 0x1F)) + 63))
+                v >>= 5
+            out.append(chr(v + 63))
+        plat, plon = ilat, ilon
+    return "".join(out)
+
+
+def _simplify(points: list[tuple[float, float]], max_points: int = 400
+              ) -> list[tuple[float, float]]:
+    """Thin a long road line for display (keeps both ends): a PDF thumbnail or
+    an app map needs a few hundred points, not every road vertex."""
+    if len(points) <= max_points:
+        return points
+    step = (len(points) - 1) / (max_points - 1)
+    return [points[round(i * step)] for i in range(max_points)]
 
 
 _PIN = re.compile(r"!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)")        # Google place pin

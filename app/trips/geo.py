@@ -12,7 +12,8 @@ Shape (JSON):
                  "lat": float, "lon": float,
                  "source": "link"|"capture"|"airport"|"photon"}],
      "route":  {"polyline": str (polyline6), "distance_km": float,
-                "duration_minutes": int, "provider": "osrm"},   # road trips only
+                "duration_minutes": int,
+                "provider": "valhalla"|"ors"|"osrm"|"capture"},   # road trips only
      "key": str,          # fingerprint of the values it was derived from
      "complete": bool,    # every expected point was found
      "at": ISO timestamp}
@@ -83,18 +84,19 @@ class Locator:
     airport or hotel is geocoded once."""
 
     def __init__(self, *, geocoder=None, airport: Callable[[str], object] | None = None,
-                 osrm_url: str | None = None):
+                 route_url: str | None = None):
         self._geocoder = geocoder
         self._airport = airport
-        self._osrm_url = osrm_url
+        # None = the configured router chain; a string pins one OSRM ("" = off)
+        self.route_url = route_url
         self._cache: dict[str, tuple[float, float, str] | None] = {}
         self.links: dict[str, tuple[list[dict], object]] = {}
 
     @classmethod
     def default(cls) -> "Locator":
-        """Photon + AirTrail airports + OSRM from settings, built on first use."""
-        from app.config import settings
-        loc = cls(osrm_url=settings.osrm_url)
+        """Photon + AirTrail airports + the router chain from settings, built
+        on first use."""
+        loc = cls()
         loc._lazy = True
         return loc
 
@@ -117,17 +119,13 @@ class Locator:
                 self._airport = False
         return self._airport(code) if self._airport else None
 
-    @property
-    def osrm_url(self) -> str:
-        return self._osrm_url or ""
-
     def directions(self, link: str):
         """(located stops, estimate) for a directions link, looked up once."""
         if link not in self.links:
             from resolve import routing
             try:
                 self.links[link] = routing.estimate_for_link(
-                    link, geocoder=self.geocoder, base_url=self.osrm_url)
+                    link, geocoder=self.geocoder, base_url=self.route_url)
             except Exception:
                 log.warning("directions lookup failed for %s", link, exc_info=True)
                 self.links[link] = ([], None)
@@ -219,11 +217,11 @@ def _locate(atype, values, spec, key, loc: Locator) -> dict:
         est = None
         if atype == "drive" and {p["role"] for p in points} >= {"from", "to"}:
             est = routing.route([(p["lat"], p["lon"]) for p in points],
-                                base_url=loc.osrm_url)
+                                base_url=loc.route_url)
 
     if atype == "drive" and est is not None:
         route = {"polyline": est.polyline, "distance_km": est.distance_km,
-                 "duration_minutes": est.duration_minutes, "provider": "osrm"}
+                 "duration_minutes": est.duration_minutes, "provider": est.provider}
     geo = {"points": points, "key": key,
            "complete": bool(points) and len(points) >= expected, "at": _now()}
     if route:
@@ -259,7 +257,7 @@ def geo_from_payload(atype: str, values: dict, payload: dict) -> dict | None:
         r = g.get("route") or {}
         if r.get("polyline") or r.get("distance_km") is not None:
             route = {"polyline": r.get("polyline"), "distance_km": r.get("distance_km"),
-                     "duration_minutes": r.get("duration_minutes"), "provider": "osrm"}
+                     "duration_minutes": r.get("duration_minutes"), "provider": "capture"}
     elif t == "lodging":
         add("place", (payload.get("lodging") or {}).get("place"))
     elif t == "event":

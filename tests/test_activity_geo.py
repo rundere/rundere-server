@@ -51,10 +51,10 @@ class _Airport:
         self.lat, self.lon = lat, lon
 
 
-def _loc(table=None, airports=None, osrm="http://osrm"):
+def _loc(table=None, airports=None, route_url="http://osrm"):
     airports = airports or {}
     return geo.Locator(geocoder=_Geocoder(table or {}),
-                       airport=lambda code: airports.get(code), osrm_url=osrm)
+                       airport=lambda code: airports.get(code), route_url=route_url)
 
 
 def test_fingerprint_tracks_only_location_values():

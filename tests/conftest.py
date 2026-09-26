@@ -14,3 +14,5 @@ os.environ.setdefault("TX_DATABASE_URL", f"sqlite:///{_TMP}/tests.sqlite3")
 os.environ.setdefault("TX_INGEST_RATE_LIMIT", "5")
 # No live road routing in tests (resolve/routing.py); tests stub it.
 os.environ.setdefault("TX_OSRM_URL", "")
+# …nor live map tiles (app/trips/maps.py draws a schematic background instead).
+os.environ.setdefault("TX_MAP_TILE_URL", "")

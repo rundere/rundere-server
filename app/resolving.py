@@ -430,11 +430,10 @@ def _estimate_drive(payload: dict) -> dict:
     if route.get("provider") not in {"google_maps", "apple_maps"} \
             or route.get("distance_km") is not None:
         return payload
-    from app.config import settings
     from resolve.routing import estimate_for_places
     stops = [gt.get("departure"), *(gt.get("waypoints") or []), gt.get("arrival")]
     places = [m.get("place") for m in stops if isinstance(m, dict)]
-    est = estimate_for_places(places, base_url=settings.osrm_url)
+    est = estimate_for_places(places)
     if est is not None:
         route["distance_km"] = est.distance_km
         route["duration_minutes"] = est.duration_minutes

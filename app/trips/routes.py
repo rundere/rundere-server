@@ -201,6 +201,7 @@ def _activity_display(a: TripActivity, tagged: list[int] | None = None,
         "has_end": bool(end_when),
         "traveler_ids": who_ids,
         "traveler_names": [names[tid] for tid in who_ids],
+        "geo": a.geo,                    # located points / route line (geo.py)
     }
 
 

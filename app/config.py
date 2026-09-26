@@ -38,10 +38,34 @@ class Settings(BaseSettings):
 
     # Geocoding (D-22: Photon on travel-net, avoids Google Maps quota)
     photon_url: str = "http://photon:2322"
-    # Road routing for a drive's distance and time (OSRM /route/v1 API). The
-    # public demo server is fine for a personal deployment's handful of drives;
-    # point this at a self-hosted OSRM to stay local. Empty = never computed.
+    # Road routing for a drive's distance, time and route line
+    # (resolve/routing.py). Routers are tried in this order; one that isn't
+    # configured is skipped, and one with no road data for the area (e.g. a
+    # home-region Valhalla asked about India) falls through to the next — so
+    # self-host for home and let a hosted API cover the rest of the world.
+    routing_providers: str = "valhalla,ors,osrm"
+    # Valhalla: the full /route endpoint — self-hosted
+    # (http://valhalla:8002/route) or Stadia Maps
+    # (https://api.stadiamaps.com/route/v1, with valhalla_api_key). Empty = off.
+    valhalla_url: str = ""
+    valhalla_api_key: str = ""
+    # openrouteservice.org — worldwide, free key tier. Empty key = off.
+    ors_api_key: str = ""
+    ors_url: str = "https://api.openrouteservice.org"
+    # OSRM: self-hosted, or the public demo server (fair use, driving only) as
+    # the last resort. Empty = off.
     osrm_url: str = "https://router.project-osrm.org"
+    # Map background for the PDF's trip maps (app/trips/maps.py): an XYZ raster
+    # tile template. Default is OpenStreetMap's own tile server — fine for a
+    # personal deployment's occasional PDF (cached 30 days, attributed, never
+    # bulk); a public or busy instance must point this at its own TileServer GL
+    # (e.g. http://tileserver:8080/styles/osm-bright/{z}/{x}/{y}{r}.png — {r}
+    # asks for @2x tiles, crisper in print) or a hosted style. Empty = a plain
+    # schematic background (lines + pins only).
+    map_tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    map_tile_attribution: str = "© OpenStreetMap contributors"
+    # Where fetched tiles are kept; empty = beside artifacts_dir (tile-cache/).
+    map_tile_cache_dir: str = ""
 
     # Discovery (Yonder 3.0, SPEC-3-discovery.md). Deterministic-tier sources —
     # overridable so a deployment can self-host (e.g. its own Frankfurter) and

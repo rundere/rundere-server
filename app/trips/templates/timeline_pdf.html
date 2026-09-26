@@ -48,6 +48,21 @@
   .long { margin-top: 3pt; font-size: 8.8pt; color: #3d3d42; white-space: pre-wrap; }
   .map { margin-top: 3pt; font-size: 8.5pt; }
 
+  .maps { margin: 0 0 14pt; page-break-inside: avoid; }
+  .maps h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.6pt;
+             color: #365f86; margin: 8pt 0 5pt; }
+  .maps img { width: 100%; border: 0.75pt solid #d9d9de; border-radius: 3pt; }
+  .legend { margin-top: 4pt; font-size: 8pt; color: #545459; }
+  .legend span { margin-right: 10pt; white-space: nowrap; }
+  .legend i { display: inline-block; width: 7pt; height: 7pt; border-radius: 50%;
+              margin-right: 3pt; vertical-align: -0.5pt; }
+  .attrib { font-size: 7pt; color: #9a9aa0; margin-top: 2pt; }
+  .no { display: inline-block; min-width: 13pt; height: 13pt; line-height: 13pt;
+        border-radius: 7pt; background: #365f86; color: #fff; font-size: 7.5pt;
+        font-weight: bold; text-align: center; margin-right: 4pt; vertical-align: 1pt; }
+  .route-map { margin-top: 5pt; width: 100%; border: 0.75pt solid #d9d9de;
+               border-radius: 3pt; }
+
   .empty { color: #6a6a6f; font-style: italic; }
   footer { margin-top: 16pt; font-size: 7.5pt; color: #9a9aa0; }
 </style>
@@ -60,6 +75,22 @@
   {% if trip.notes %}<p class="trip-notes">{{ trip.notes }}</p>{% endif %}
 </header>
 
+{% if trip_map or flight_map %}
+<section class="maps">
+  {% if trip_map %}
+  <h2>Trip map</h2>
+  <img src="{{ trip_map }}" alt="Map of the trip">
+  {% if legend %}<div class="legend">{% for l in legend %}<span><i style="background: {{ l.colour }}"></i>{{ l.label }}</span>{% endfor %}
+    · numbers match the timeline</div>{% endif %}
+  {% endif %}
+  {% if flight_map %}
+  <h2>Getting there</h2>
+  <img src="{{ flight_map }}" alt="Map of the flights">
+  {% endif %}
+  {% if map_attribution %}<div class="attrib">Map data {{ map_attribution }}</div>{% endif %}
+</section>
+{% endif %}
+
 {% for day in days %}
 <section class="day">
   <h2>{{ day.heading }}</h2>
@@ -71,7 +102,7 @@
     </div>
     <div class="body">
       <div class="type">{{ a.type_label }}</div>
-      <div class="title">{{ a.title }}</div>
+      <div class="title">{% if a.map_no %}<span class="no" style="background: {{ legend_colour(a) }}">{{ a.map_no }}</span>{% endif %}{{ a.title }}</div>
       {% if a.subtitle %}<div class="subtitle">{{ a.subtitle }}</div>{% endif %}
       {% if a.traveler_names %}<div class="subtitle">For: {{ a.traveler_names | join(", ") }}</div>{% endif %}
       {% set short = a.rows | rejectattr("long") | list %}
@@ -87,6 +118,7 @@
       {% for r in a.rows if r.long %}
       <div class="long"><b>{{ r.label }}:</b> {{ r.value }}</div>
       {% endfor %}
+      {% if a.route_map %}<img class="route-map" src="{{ a.route_map }}" alt="Route map">{% endif %}
       {% if a.map_url %}<div class="map"><a href="{{ a.map_url }}">Open map ↗</a></div>{% endif %}
     </div>
   </div>
