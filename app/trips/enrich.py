@@ -11,17 +11,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
-from app.config import settings
 from app.trips import types as activity_types
 
 log = logging.getLogger("yonder.trips.enrich")
 
 _DRIVE_FILLS = ("from", "to", "route", "distance", "endWhen")
-
-
-def _geocoder():
-    from resolve.geocode import PhotonGeocoder
-    return PhotonGeocoder(settings.photon_url) if settings.photon_url else None
 
 
 def _arrival(when: str | None, minutes: int) -> str | None:
@@ -34,7 +28,18 @@ def _arrival(when: str | None, minutes: int) -> str | None:
     return (dep + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M")
 
 
-def enrich_activity_values(atype: str, values: dict) -> dict:
+def prepare_activity(atype: str, values: dict, *, old_geo: dict | None = None
+                     ) -> tuple[dict, dict | None]:
+    """Everything a save does before storing an activity: fill a road trip's
+    blanks from its map link, then locate it (app/trips/geo.py). One Locator is
+    shared, so a directions link is looked up once for both."""
+    from app.trips.geo import Locator, locate_activity
+    loc = Locator.default()
+    values = enrich_activity_values(atype, values, locator=loc)
+    return values, locate_activity(atype, values, old_geo=old_geo, locator=loc)
+
+
+def enrich_activity_values(atype: str, values: dict, *, locator=None) -> dict:
     """Return `values` with a road trip's blanks filled from its map link.
     Any other type, no map link, or nothing blank → returned unchanged. Never
     raises: a lookup failure just leaves the blanks for the person."""
@@ -43,13 +48,9 @@ def enrich_activity_values(atype: str, values: dict) -> dict:
     link = activity_types._maps_link(values or {})
     if not link or all(values.get(k) for k in _DRIVE_FILLS):
         return values
+    from app.trips.geo import Locator
     from resolve import routing
-    try:
-        stops, est = routing.estimate_for_link(link, geocoder=_geocoder(),
-                                               base_url=settings.osrm_url)
-    except Exception:
-        log.warning("road trip lookup failed for %s", link, exc_info=True)
-        return values
+    stops, est = (locator or Locator.default()).directions(link)
     if not stops:
         return values
     out = dict(values)

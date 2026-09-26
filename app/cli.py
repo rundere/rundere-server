@@ -25,6 +25,11 @@
                                                       # collections, rules.
                                                       # --redo re-resolves items
                                                       # a human hasn't acted on
+    python -m app.cli locate-activities [--trip ID] [--redo]
+                                                      # store coordinates (and road
+                                                      # trip route lines) for timeline
+                                                      # activities saved before 4.2.x;
+                                                      # --redo re-locates every one
     python -m app.cli commit [--limit N] [--execute]   # write APPROVED items to
                                                       # AirTrail + AdventureLog.
                                                       # DRY-RUN by default; shows
@@ -336,6 +341,11 @@ def main(argv: list[str]) -> int:
                                       redo="--redo" in args)
             print("resolve: " + (", ".join(f"{k}={v}" for k, v in sorted(summary.items()))
                                  or "nothing pending"))
+        elif cmd == "locate-activities":
+            from app.trips.geo import backfill
+            counts = backfill(session, trip_id=_opt(args, "--trip"),
+                              redo="--redo" in args, progress=print)
+            print("locate-activities: " + ", ".join(f"{k}={v}" for k, v in counts.items()))
         elif cmd == "commit":
             from app.committing import commit_pending
             from app.config import settings

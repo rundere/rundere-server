@@ -26,6 +26,9 @@ _COORD = re.compile(r"^\s*(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)\s*$")
 class RouteEstimate:
     distance_km: float
     duration_minutes: int
+    # The road line itself, Google "polyline6" encoded (precision 1e-6),
+    # simplified for display — what a map draws A → B along the roads.
+    polyline: str | None = None
 
 
 def is_maps_link(url: str | None) -> bool:
@@ -95,7 +98,7 @@ def route(stops: list[tuple[float, float]], *, base_url: str,
     if not base or len(stops) < 2:
         return None
     coords = ";".join(f"{lon:.6f},{lat:.6f}" for lat, lon in stops)
-    url = f"{base}/route/v1/driving/{coords}?overview=false"
+    url = f"{base}/route/v1/driving/{coords}?overview=simplified&geometries=polyline6"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "yonder"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -106,8 +109,10 @@ def route(stops: list[tuple[float, float]], *, base_url: str,
     if data.get("code") != "Ok" or not routes:
         return None
     r = routes[0]
+    geometry = r.get("geometry")
     return RouteEstimate(distance_km=round(float(r["distance"]) / 1000, 1),
-                         duration_minutes=int(round(float(r["duration"]) / 60)))
+                         duration_minutes=int(round(float(r["duration"]) / 60)),
+                         polyline=geometry if isinstance(geometry, str) else None)
 
 
 def estimate_for_places(places: list[dict], *, base_url: str) -> RouteEstimate | None:
@@ -164,3 +169,54 @@ def stop_address(place: dict | None) -> str | None:
             return f"{name}, {addr}"
         return addr
     return raw or None
+
+
+def decode_polyline(encoded: str, precision: int = 6) -> list[tuple[float, float]]:
+    """(lat, lon) points from an encoded polyline (polyline6 by default)."""
+    points, lat, lon, i, factor = [], 0, 0, 0, 10 ** precision
+    while i < len(encoded or ""):
+        for axis in (0, 1):
+            shift = result = 0
+            while True:
+                b = ord(encoded[i]) - 63
+                i += 1
+                result |= (b & 0x1F) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            delta = ~(result >> 1) if result & 1 else result >> 1
+            if axis == 0:
+                lat += delta
+            else:
+                lon += delta
+        points.append((lat / factor, lon / factor))
+    return points
+
+
+_PIN = re.compile(r"!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)")        # Google place pin
+_AT = re.compile(r"/@(-?\d+\.\d+),(-?\d+\.\d+)")             # Google viewport
+_QUERY_COORD_KEYS = ("q", "query", "ll", "sll", "coordinate", "destination")
+
+
+def link_point(url: str | None) -> tuple[float, float] | None:
+    """The (lat, lon) a Google/Apple Maps PLACE link points at, or None. The
+    place pin (!3d…!4d…) beats the viewport centre (/@lat,lon); Apple and
+    query-style links carry it as ll= / q= / coordinate=. A Google short link is
+    expanded first (Google hosts only). Directions links are not places."""
+    url = (url or "").strip()
+    if not is_maps_link(url):
+        return None
+    from extract.maps_url import _expand_short
+    url = _expand_short(url)
+    if "/maps/dir/" in url or ("saddr=" in url and "daddr=" in url):
+        return None
+    for rx in (_PIN, _AT):
+        m = rx.search(url)
+        if m:
+            return float(m.group(1)), float(m.group(2))
+    q = parse_qs(urlsplit(url).query)
+    for key in _QUERY_COORD_KEYS:
+        m = _COORD.match((q.get(key) or [""])[0])
+        if m:
+            return float(m.group(1)), float(m.group(2))
+    return None

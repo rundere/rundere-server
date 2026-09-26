@@ -808,13 +808,19 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 _record(target, op, {"trip_id": tid, "type": atype, "values": values},
                         None, extra={"yonder_type": atype})
                 continue
+            # Where it is: the capture's own located places (already verified at
+            # resolve), else located from the activity's text like a manual one.
+            from app.trips.geo import geo_from_payload, locate_activity
+            geo = geo_from_payload(atype, values, payload) or locate_activity(
+                atype, values, old_geo=existing.geo if existing else None)
             if existing:
                 existing.type, existing.values = atype, values
+                existing.geo = geo
                 existing.starts_at = values.get("when") or ""
                 flag_modified(existing, "values")
                 act_id = existing.id
             else:
-                act = TripActivity(trip_id=tid, type=atype, values=values,
+                act = TripActivity(trip_id=tid, type=atype, values=values, geo=geo,
                                    starts_at=values.get("when") or "",
                                    source_item_key=key)
                 session.add(act)

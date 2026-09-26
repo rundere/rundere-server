@@ -73,6 +73,9 @@ class ActivityOut(BaseModel):
     fields: list[ActivityFieldOut] = []  # labelled, non-empty, display order
     map_query: str | None = None        # place text to hand to a maps app
     map_url: str | None = None          # the saved Google/Apple Maps link, else a Google search
+    # Where it is: {"points": [{role, label, lat, lon}], "route": {polyline
+    # (polyline6), distance_km, duration_minutes}} — null until located.
+    geo: dict | None = None
 
 
 class TravelerOut(BaseModel):
@@ -343,6 +346,7 @@ def _trip_summary(session: Session, t: Trip) -> TripSummary:
 
 def _activity_out(a: TripActivity, traveler_ids: list[int] | None = None) -> ActivityOut:
     from app.trips import types as activity_types
+    from app.trips.geo import public_geo
 
     v = a.values or {}
     t = activity_types.get_type(a.type)
@@ -357,6 +361,7 @@ def _activity_out(a: TripActivity, traveler_ids: list[int] | None = None) -> Act
                 for f in activity_types.detail_fields(a.type, v)],
         map_query=activity_types.map_query(a.type, v),
         map_url=activity_types.map_url(a.type, v),
+        geo=public_geo(a.geo),
         traveler_ids=traveler_ids or [])
 
 
@@ -876,9 +881,9 @@ def api_add_activity(trip_id: str, body: ActivityIn,
                      user=Depends(authn.current_user), session: Session = Depends(get_session)):
     trip = scope.require_trip(session, user, trip_id, edit=True)
     t = _activity_type_or_400(body.type)
-    from app.trips.enrich import enrich_activity_values
-    values = enrich_activity_values(t.key, dict(body.values or {}))
-    a = TripActivity(trip_id=trip.id, type=t.key, values=values,
+    from app.trips.enrich import prepare_activity
+    values, geo = prepare_activity(t.key, dict(body.values or {}))
+    a = TripActivity(trip_id=trip.id, type=t.key, values=values, geo=geo,
                      starts_at=body.starts_at or values.get("when") or "")
     session.add(a)
     session.flush()
@@ -895,11 +900,14 @@ def api_update_activity(trip_id: str, activity_id: str, body: ActivityPatch,
     a = session.get(TripActivity, activity_id)
     if a is None or a.trip_id != trip_id:
         raise HTTPException(404, "activity not found")
+    old_type = a.type
     if body.type is not None:
         a.type = _activity_type_or_400(body.type).key
-    if body.values is not None:
-        from app.trips.enrich import enrich_activity_values
-        a.values = enrich_activity_values(a.type, dict(body.values))
+    if body.values is not None or a.type != old_type:
+        from app.trips.enrich import prepare_activity
+        a.values, a.geo = prepare_activity(
+            a.type, dict(body.values if body.values is not None else (a.values or {})),
+            old_geo=a.geo if a.type == old_type else None)
     if body.starts_at is not None:
         a.starts_at = body.starts_at or ""
     elif body.values is not None:

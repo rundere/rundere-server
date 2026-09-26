@@ -203,7 +203,7 @@ def _apply_edit(payload: dict, path: str, raw: str, kind: str) -> bool:
             node.pop(k, None)
         route = (payload.get("ground_transport") or {}).get("route")
         if isinstance(route, dict):
-            route["distance_km"] = route["duration_minutes"] = None
+            route["distance_km"] = route["duration_minutes"] = route["polyline"] = None
     return True
 
 

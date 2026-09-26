@@ -438,6 +438,7 @@ def _estimate_drive(payload: dict) -> dict:
     if est is not None:
         route["distance_km"] = est.distance_km
         route["duration_minutes"] = est.duration_minutes
+        route["polyline"] = est.polyline         # the road line, for maps
     return payload
 
 

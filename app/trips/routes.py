@@ -28,7 +28,7 @@ from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
                         TripActivity, TravelerIdentity, TripTraveler)
 from app.trips import types as activity_types
-from app.trips.enrich import enrich_activity_values
+from app.trips.enrich import prepare_activity
 from app.trips import who
 
 log = logging.getLogger("yonder.trips")
@@ -2063,8 +2063,13 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
         name = f"{title} – {subtitle}" if subtitle else title
         origin = v.get("from") or v.get("pickupLocation") or v.get("departurePort")
         dest = v.get("to") or v.get("dropoffLocation") or v.get("arrivalPort")
-        origin_lat, origin_lon = _resolve_coords(origin, airports, photon, coord_cache)
-        dest_lat, dest_lon = _resolve_coords(dest, airports, photon, coord_cache)
+        # Stored coordinates first (app/trips/geo.py); look up only what's missing.
+        stored = {p["role"]: (p["lat"], p["lon"])
+                  for p in ((activity.geo or {}).get("points") or [])}
+        origin_lat, origin_lon = stored.get("from") or _resolve_coords(
+            origin, airports, photon, coord_cache)
+        dest_lat, dest_lon = stored.get("to") or _resolve_coords(
+            dest, airports, photon, coord_cache)
         body = {
             "type": _AL_TRANSPORT_TYPE[activity.type], "name": name,
             "date": starts, "end_date": ends,
@@ -2080,8 +2085,11 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
         return "transportation", {k: v for k, v in body.items() if v is not None}
 
     if activity.type == "lodging":
+        place = next((p for p in ((activity.geo or {}).get("points") or [])
+                      if p.get("role") == "place"), {})
         body = {
             "name": v.get("name") or title, "check_in": starts, "check_out": ends,
+            "latitude": place.get("lat"), "longitude": place.get("lon"),
             "location": v.get("address"), "reservation_number": v.get("confirmation"),
             "link": link, "description": v.get("notes") or None,
             "type": _al_lodging_type(v.get("type")),
@@ -2572,8 +2580,8 @@ async def create_activity(trip_id: str, request: Request,
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or activity_types.DEFAULT_TYPE)
-    values = enrich_activity_values(t.key, _collect_values(t, form))
-    a = TripActivity(trip_id=trip_id, type=t.key, values=values,
+    values, geo = prepare_activity(t.key, _collect_values(t, form))
+    a = TripActivity(trip_id=trip_id, type=t.key, values=values, geo=geo,
                      starts_at=values.get("when") or "")
     session.add(a)
     session.flush()
@@ -2592,9 +2600,11 @@ async def update_activity(trip_id: str, activity_id: str, request: Request,
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or a.type)
-    values = enrich_activity_values(t.key, _collect_values(t, form))
+    values, geo = prepare_activity(t.key, _collect_values(t, form),
+                                   old_geo=a.geo if a.type == t.key else None)
     a.type = t.key
     a.values = values
+    a.geo = geo
     a.starts_at = values.get("when") or ""
     # Only touch the tags when the form showed the picker (a multi-traveller
     # trip); a solo trip's form never posts them, so nothing is cleared.
