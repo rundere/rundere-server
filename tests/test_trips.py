@@ -294,8 +294,12 @@ def test_detail_fields_excludes_when_flags_link():
     assert "Departure" not in labels                  # `when` becomes the time chip
     assert "Airline" in labels
     assert fields[-1]["label"] == "Notes"             # long text pushed to the end
-    link = next(f for f in fields if f["label"] == "Source document")
+    link = next(f for f in fields if f["label"] == "Source")
     assert link["is_link"] is True
+    # The Source may be plain text — an email has no URL (owner, 2026-09-26)
+    text = next(f for f in activity_types.detail_fields(
+        "flight", {"sourceLink": "Email: Your Delta booking"}) if f["key"] == "sourceLink")
+    assert text["is_link"] is False
 
 
 def test_activity_map_url_per_type():

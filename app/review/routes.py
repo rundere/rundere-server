@@ -110,6 +110,14 @@ def _fields(payload: dict) -> list[dict]:
         place_fields("From", "/ground_transport/departure/place")
         dt_field("Arrives", "/ground_transport/arrival/time")
         place_fields("To", "/ground_transport/arrival/place")
+        route = (payload.get("ground_transport") or {}).get("route") or {}
+        if route.get("source_url"):
+            # What the router worked out once both stops were located; blank
+            # until they are (fix a From/To address and it is recomputed).
+            text_field("Distance (km)", "/ground_transport/route/distance_km", editable=False)
+            text_field("Drive time (min)", "/ground_transport/route/duration_minutes",
+                       editable=False)
+            text_field("Directions link", "/ground_transport/route/source_url", editable=False)
 
     rows.append({"label": "Status", "path": "/booking_status", "kind": "select",
                  "value": payload.get("booking_status") or "",
@@ -185,6 +193,17 @@ def _apply_edit(payload: dict, path: str, raw: str, kind: str) -> bool:
     if before == after:
         return False
     node[leaf] = after
+    # A corrected name/address/city means the place we located from the OLD text
+    # may be wrong: drop coordinates the geocoder guessed (never ones the
+    # document or link stated) so the re-resolve locates the new text, and the
+    # drive distance built from them.
+    if leaf in {"name", "address", "city", "region", "country"} \
+            and node.get("geocode_source") == "photon":
+        for k in ("lat", "lon", "geocode_source"):
+            node.pop(k, None)
+        route = (payload.get("ground_transport") or {}).get("route")
+        if isinstance(route, dict):
+            route["distance_km"] = route["duration_minutes"] = route["polyline"] = None
     return True
 
 
@@ -815,10 +834,18 @@ def _process_toast(summary: dict, resolved: dict, error: str | None) -> str:
     return "Done — " + "; ".join(parts) + "."
 
 
-def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, str | None]:
+def _run_extract_resolve(session: Session, progress=None, user=None
+                         ) -> tuple[dict, dict, str | None]:
     """Run process_pending (extract) then resolve_pending — the SAME code the
     CLI runs, so the button and the batch path cannot diverge. `progress` is
-    threaded through both stages so the job panel shows a live count."""
+    threaded through both stages so the job panel shows a live count.
+
+    `user` scopes the run to the captures that person may see — their own and
+    open ones (an admin: + users who share), the same rule as the queue and
+    commit (YONDER-105/113). Nobody's button processes someone else's email."""
+    batch_filter = item_filter = None
+    if not scope.unrestricted(user):
+        batch_filter, item_filter = scope.batch_filter(user), scope.capture_filter(user)
     from app.config import settings
     summary: dict = {"extracted": 0, "needs_review": 0}
     resolved: dict = {}
@@ -827,7 +854,8 @@ def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, s
         from extract.llm import OllamaExtractor
         llm = OllamaExtractor(settings.ollama_url, settings.ollama_model,
                               settings.llm_timeout_seconds)
-        summary = process_pending(session, llm, progress=progress)
+        summary = process_pending(session, llm, progress=progress,
+                                  batch_filter=batch_filter)
 
         from app.resolving import resolve_pending
         adventurelog, airtrail = _target_clients()
@@ -838,7 +866,8 @@ def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, s
         except Exception:                       # geocoding is optional
             geocoder = None
         resolved = resolve_pending(session, adventurelog, airtrail=airtrail,
-                                   geocoder=geocoder, progress=progress)
+                                   geocoder=geocoder, progress=progress,
+                                   item_filter=item_filter)
     except Exception as ex:
         log.exception("extract/resolve run failed")
         return summary, resolved, str(ex)
@@ -884,9 +913,11 @@ def process_captures(request: Request, bucket: str = "attention",
     if jobs.current_running():
         return _job_panel(request, jobs.current_running(), bucket)
 
+    user = scope.snapshot(scope.user_of(request))      # the job outlives the request
+
     def work(progress):
         with SessionLocal() as s:
-            summary, resolved, error = _run_extract_resolve(s, progress)
+            summary, resolved, error = _run_extract_resolve(s, progress, user=user)
             return _process_toast(summary, resolved, error), error
 
     return _job_panel(request, jobs.get(jobs.start("process", work, owner=_owner_id(request))), bucket)
@@ -906,15 +937,24 @@ def reprocess(request: Request, bucket: str = "attention",
     batch with ANY logged item is left entirely alone — re-extracting it would
     duplicate a record already written to a target. Runs as a background job so
     the reset + full LLM pass reports live progress instead of dead air.
+
+    Only the caller's captures (own + open; an admin also users who share —
+    the same rule as Process and Commit) are reset and rebuilt: one person's
+    button never discards another's edits or approvals (YONDER-139).
     """
     if jobs.current_running():
         return _job_panel(request, jobs.current_running(), bucket)
+    user = scope.snapshot(scope.user_of(request))      # the job outlives the request
 
     def work(progress):
         from app.models import CommitAttempt, IngestBatch, ItemKey
         with SessionLocal() as s:
             progress("resetting", 0, 0, "clearing processed items")
-            items = s.query(TravelItem).all()
+            item_q, batch_q = s.query(TravelItem), s.query(IngestBatch)
+            if not scope.unrestricted(user):
+                item_q = item_q.filter(scope.capture_filter(user))
+                batch_q = batch_q.filter(scope.batch_filter(user))
+            items = item_q.all()
             protected = {i.batch_id for i in items if _is_logged(i)}
             # Also protect batches whose items already exist in AirTrail/
             # AdventureLog even without a DB commit record (D-60): re-extracting
@@ -942,12 +982,12 @@ def reprocess(request: Request, bucket: str = "attention",
                 s.query(TravelItem).filter(
                     TravelItem.id.in_(doomed)).delete(synchronize_session=False)
             reset = 0
-            for b in s.query(IngestBatch).all():
+            for b in batch_q.all():
                 if b.id not in protected and b.status != "received":
                     b.status = "received"
                     reset += 1
             s.commit()
-            summary, resolved, error = _run_extract_resolve(s, progress)
+            summary, resolved, error = _run_extract_resolve(s, progress, user=user)
             toast = (f"Reprocessing failed — {error}" if error else
                      f"Reprocessed {reset} batch(es): "
                      + _process_toast(summary, resolved, None).removeprefix("Done — "))

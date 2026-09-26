@@ -426,12 +426,37 @@ def _label(place: dict | None) -> str | None:
             or place.get("raw") or None)
 
 
-def build_yonder_activity(payload: dict) -> tuple[str, dict]:
+def _capture_source(session: Session, item: TravelItem) -> str | None:
+    """What the timeline's Source field says for a capture: the email's subject
+    or the captured page's address. Maps captures carry their link in the Map
+    field instead, so they get none here."""
+    from app.models import IngestBatch
+    batch = session.get(IngestBatch, item.batch_id) if item.batch_id else None
+    p = (batch.payload or {}) if batch is not None else {}
+    kind = (item.source or {}).get("type")
+    if kind == "gmail" and p.get("subject"):
+        return f"Email: {p['subject']}"
+    if kind == "web":
+        return p.get("source_url") or "Captured web page"
+    if kind == "gcal":
+        return "Google Calendar"
+    return None
+
+
+def build_yonder_activity(payload: dict, *, source: str | None = None) -> tuple[str, dict]:
     """Map a capture payload to a Yonder (type, values) for a TripActivity.
 
     Yonder is a first-party trip system, so this mirrors the manual add-activity
     form's value keys (app/trips/types.py) rather than an external API shape. The
-    activity is filed under the item's linked Yonder trip by the commit stage."""
+    activity is filed under the item's linked Yonder trip by the commit stage.
+    `source` is the capture's origin for the Source field (see _capture_source)."""
+    atype, values = _yonder_activity(payload)
+    if source and not values.get("sourceLink"):
+        values["sourceLink"] = source
+    return atype, values
+
+
+def _yonder_activity(payload: dict) -> tuple[str, dict]:
     t = payload.get("item_type")
     ref = payload.get("booking_reference") or None
 
@@ -455,10 +480,23 @@ def build_yonder_activity(payload: dict) -> tuple[str, dict]:
         a, b = _label(dep.get("place")), _label(arr.get("place"))
         atype = _YONDER_GROUND_TYPE.get(g.get("mode"), "drive")
         provider = (prov.get("name") if isinstance(prov, dict) else None)
+        route = g.get("route") or {}
         base = {"when": _local(dep.get("time")), "endWhen": _local(arr.get("time")),
-                "confirmation": ref}
+                "confirmation": ref,
+                # the directions link the drive was captured from (owner,
+                # 2026-09-26: the activity must keep it — it's the Map button)
+                "mapLink": route.get("source_url") or None}
         if atype == "drive":
-            base["route"] = " → ".join(x for x in (a, b) if x) or None
+            from resolve.routing import (RouteEstimate, format_distance,
+                                         stop_address, stop_label)
+            dp, ap = dep.get("place"), arr.get("place")
+            base["route"] = " → ".join(
+                x for x in (stop_label(dp), stop_label(ap)) if x) or None
+            # The full From/To (a reviewer's edited address wins over the name)
+            base["from"], base["to"] = stop_address(dp), stop_address(ap)
+            if route.get("distance_km") is not None:
+                base["distance"] = format_distance(RouteEstimate(
+                    float(route["distance_km"]), int(route.get("duration_minutes") or 0)))
         elif atype == "carRental":
             base.update({"company": provider, "pickupLocation": a, "dropoffLocation": b})
         elif atype == "cruise":
@@ -763,19 +801,26 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                                 "dry_run": dry_run,
                                 "error": "no Yonder trip is linked to this item"})
                 continue
-            atype, values = build_yonder_activity(payload)
+            atype, values = build_yonder_activity(
+                payload, source=_capture_source(session, item))
             op = "update" if existing else "create"
             if dry_run:
                 _record(target, op, {"trip_id": tid, "type": atype, "values": values},
                         None, extra={"yonder_type": atype})
                 continue
+            # Where it is: the capture's own located places (already verified at
+            # resolve), else located from the activity's text like a manual one.
+            from app.trips.geo import geo_from_payload, locate_activity
+            geo = geo_from_payload(atype, values, payload) or locate_activity(
+                atype, values, old_geo=existing.geo if existing else None)
             if existing:
                 existing.type, existing.values = atype, values
+                existing.geo = geo
                 existing.starts_at = values.get("when") or ""
                 flag_modified(existing, "values")
                 act_id = existing.id
             else:
-                act = TripActivity(trip_id=tid, type=atype, values=values,
+                act = TripActivity(trip_id=tid, type=atype, values=values, geo=geo,
                                    starts_at=values.get("when") or "",
                                    source_item_key=key)
                 session.add(act)

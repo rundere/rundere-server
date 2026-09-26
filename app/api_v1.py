@@ -72,7 +72,10 @@ class ActivityOut(BaseModel):
     traveler_ids: list[int] = []
     fields: list[ActivityFieldOut] = []  # labelled, non-empty, display order
     map_query: str | None = None        # place text to hand to a maps app
-    map_url: str | None = None          # Google Maps search/directions link
+    map_url: str | None = None          # the saved Google/Apple Maps link, else a Google search
+    # Where it is: {"points": [{role, label, lat, lon}], "route": {polyline
+    # (polyline6), distance_km, duration_minutes}} — null until located.
+    geo: dict | None = None
 
 
 class TravelerOut(BaseModel):
@@ -260,6 +263,7 @@ class CaptureIn(BaseModel):
     timezone: str | None = None
     mode: str | None = None          # directions: car / transit / walk (SPEC-4 §3)
     collection_id: str | None = None
+    trip_id: str | None = None       # a Yonder trip to file it under (pinned)
     title: str | None = None
     notes: str | None = None
 
@@ -342,6 +346,7 @@ def _trip_summary(session: Session, t: Trip) -> TripSummary:
 
 def _activity_out(a: TripActivity, traveler_ids: list[int] | None = None) -> ActivityOut:
     from app.trips import types as activity_types
+    from app.trips.geo import public_geo
 
     v = a.values or {}
     t = activity_types.get_type(a.type)
@@ -356,6 +361,7 @@ def _activity_out(a: TripActivity, traveler_ids: list[int] | None = None) -> Act
                 for f in activity_types.detail_fields(a.type, v)],
         map_query=activity_types.map_query(a.type, v),
         map_url=activity_types.map_url(a.type, v),
+        geo=public_geo(a.geo),
         traveler_ids=traveler_ids or [])
 
 
@@ -704,14 +710,18 @@ def _start_or_busy(user, kind: str, work):
 
 @router.post("/review/process", response_model=JobOut, status_code=202)
 def api_review_process(user=Depends(authn.current_user)):
-    """Extract + resolve captures waiting in the pipeline (the web "Process new
-    captures"). Returns a job to poll at GET /api/v1/jobs/{id}."""
+    """Extract + resolve the caller's captures waiting in the pipeline (the web
+    "Process new captures"): their own and open ones — an admin's run also
+    covers users who share. Returns a job to poll at GET /api/v1/jobs/{id}."""
     from app.db import SessionLocal
     from app.review.routes import _process_toast, _run_extract_resolve
 
+    mine = scope.snapshot(user)                         # the job outlives the request
+
     def work(progress):
         with SessionLocal() as s:
-            summary, resolved, error = _run_extract_resolve(s, progress)
+            # only the caller's own (and open) captures — YONDER-113
+            summary, resolved, error = _run_extract_resolve(s, progress, user=mine)
             return _process_toast(summary, resolved, error), error
 
     return _start_or_busy(user, "process", work)
@@ -782,7 +792,8 @@ def api_capture(body: CaptureIn, user=Depends(authn.current_user),
     if body.html:
         bid = _queue_web(session, body.html, source_url=url or None,
                          submitted_by=user.username, travel_date=body.travel_date,
-                         title=body.title, notes=body.notes, owner_user_id=user.id)
+                         title=body.title, notes=body.notes, owner_user_id=user.id,
+                         trip_id=body.trip_id)
     elif url and apple_maps_url.is_apple_short_link(url):
         raise HTTPException(
             422, "Apple Maps short link (maps.apple/p/…) carries no coordinates; "
@@ -795,14 +806,14 @@ def api_capture(body: CaptureIn, user=Depends(authn.current_user),
                           end_date=body.end_date, timezone=body.timezone, mode=body.mode,
                           title=body.title, notes=body.notes,
                           collection_id=body.collection_id, owner_user_id=user.id,
-                          provider="apple" if is_apple else "google")
+                          provider="apple" if is_apple else "google", trip_id=body.trip_id)
     elif _looks_like_url(url):
         html = _fetch_public_html(url)
         if not html:
             raise HTTPException(422, "couldn't fetch that URL — share the page's HTML instead")
         bid = _queue_web(session, html, source_url=url, submitted_by=user.username,
                          travel_date=body.travel_date, title=body.title,
-                         notes=body.notes, owner_user_id=user.id)
+                         notes=body.notes, owner_user_id=user.id, trip_id=body.trip_id)
     else:
         raise HTTPException(400, "provide a url or html")
     return CaptureOut(batch_id=bid, status="received")
@@ -874,8 +885,9 @@ def api_add_activity(trip_id: str, body: ActivityIn,
                      user=Depends(authn.current_user), session: Session = Depends(get_session)):
     trip = scope.require_trip(session, user, trip_id, edit=True)
     t = _activity_type_or_400(body.type)
-    values = dict(body.values or {})
-    a = TripActivity(trip_id=trip.id, type=t.key, values=values,
+    from app.trips.enrich import prepare_activity
+    values, geo = prepare_activity(t.key, dict(body.values or {}))
+    a = TripActivity(trip_id=trip.id, type=t.key, values=values, geo=geo,
                      starts_at=body.starts_at or values.get("when") or "")
     session.add(a)
     session.flush()
@@ -892,10 +904,14 @@ def api_update_activity(trip_id: str, activity_id: str, body: ActivityPatch,
     a = session.get(TripActivity, activity_id)
     if a is None or a.trip_id != trip_id:
         raise HTTPException(404, "activity not found")
+    old_type = a.type
     if body.type is not None:
         a.type = _activity_type_or_400(body.type).key
-    if body.values is not None:
-        a.values = dict(body.values)
+    if body.values is not None or a.type != old_type:
+        from app.trips.enrich import prepare_activity
+        a.values, a.geo = prepare_activity(
+            a.type, dict(body.values if body.values is not None else (a.values or {})),
+            old_geo=a.geo if a.type == old_type else None)
     if body.starts_at is not None:
         a.starts_at = body.starts_at or ""
     elif body.values is not None:

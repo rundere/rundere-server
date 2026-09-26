@@ -60,20 +60,22 @@
             <input id="title" name="title" type="text" placeholder="override the page title">
           </div>
           <div class="field">
-            <label for="travel_date">Travel date (optional)</label>
-            <input id="travel_date" name="travel_date" type="text" placeholder="YYYY-MM-DD">
+            <label for="travel_date">Travel date</label>
+            <input id="travel_date" name="travel_date" type="date">
           </div>
           <div class="field">
             <label for="travel_time">Travel time (optional)</label>
-            <input id="travel_time" name="travel_time" type="text" placeholder="HH:MM">
+            <input id="travel_time" name="travel_time" type="time">
           </div>
           <div class="field dir-only" hidden>
             <label for="end_date">End date (optional, multi-day trip)</label>
-            <input id="end_date" name="end_date" type="text" placeholder="YYYY-MM-DD">
+            <input id="end_date" name="end_date" type="date">
           </div>
           <div class="field dir-only" hidden>
             <label for="timezone">Timezone (optional)</label>
-            <input id="timezone" name="timezone" type="text" placeholder="America/Toronto">
+            <input id="timezone" name="timezone" type="text" placeholder="America/Toronto"
+                   list="tz-list" autocomplete="off">
+            <datalist id="tz-list"></datalist>
           </div>
           <div class="field dir-only" hidden>
             <label for="mode">Travel mode</label>
@@ -85,15 +87,27 @@
             </select>
           </div>
           <div class="field">
-            <label for="collection_id">Trip / collection id (optional)</label>
-            <input id="collection_id" name="collection_id" type="text"
-                   placeholder="force a specific AdventureLog collection">
+            <label for="trip_id">Trip (optional)</label>
+            <select id="trip_id" name="trip_id">
+              <option value="">Match by date</option>
+              {% for t in trips %}
+              <option value="{{ t.id }}">{{ t.name }}{% if t.start_date %} · {{ t.start_date }}{% if t.end_date and t.end_date != t.start_date %} → {{ t.end_date }}{% endif %}{% endif %}</option>
+              {% endfor %}
+            </select>
           </div>
           <div class="field">
             <label for="notes">Notes (optional)</label>
             <input id="notes" name="notes" type="text" placeholder="anything to remember">
           </div>
         </div>
+        <details class="cap-advanced">
+          <summary>AdventureLog (advanced)</summary>
+          <div class="field">
+            <label for="collection_id">AdventureLog collection id</label>
+            <input id="collection_id" name="collection_id" type="text"
+                   placeholder="only to force a specific AdventureLog collection">
+          </div>
+        </details>
         <p class="why cap-hint">
           Date/time are only used to fill gaps the page itself doesn’t state
           (e.g. an event with no listed time) — a date or time on the page always
@@ -115,9 +129,41 @@
     var path = (form.querySelector('input[name=path]:checked') || {}).value || 'page';
     var isDir = path === 'google' || path === 'apple';
     form.querySelectorAll('.dir-only').forEach(function (el) { el.hidden = !isDir; });
+    var date = form.querySelector('#travel_date');
+    if (date) { date.required = isDir; }
     var area = form.querySelector('textarea[name=content]');
     if (area) { area.placeholder = area.getAttribute('data-ph-' + path) || area.placeholder; }
   }
   document.querySelectorAll('form .cap-paths').forEach(function (fs) { yonderPath(fs.form); });
+
+  // Timezone: default to this browser's own zone and offer the full list.
+  (function () {
+    var tz = document.getElementById('timezone');
+    if (!tz) return;
+    try {
+      tz.value = tz.value || Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      var list = document.getElementById('tz-list');
+      (Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : []).forEach(function (z) {
+        var o = document.createElement('option'); o.value = z; list.appendChild(o);
+      });
+    } catch (e) { /* older browser: a plain text box still works */ }
+  })();
+
+  // Picking a trip pre-fills an empty travel date with the trip's start.
+  (function () {
+    var trip = document.getElementById('trip_id'), date = document.getElementById('travel_date');
+    if (!trip || !date) return;
+    var starts = {{ trips | map(attribute='start_date') | list | tojson }};
+    trip.addEventListener('change', function () {
+      var s = starts[trip.selectedIndex - 1];
+      if (s && !date.value) date.value = s;
+      if (date.value) date.dispatchEvent(new Event('change'));
+    });
+    // An end date never starts before the travel date.
+    date.addEventListener('change', function () {
+      var end = document.getElementById('end_date');
+      if (end) { end.min = date.value; if (end.value && end.value < date.value) end.value = date.value; }
+    });
+  })();
 </script>
 {% endblock %}

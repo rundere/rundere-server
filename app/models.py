@@ -508,6 +508,10 @@ class TripActivity(Base):
     # (trip_id, source_item_key) so a re-committed / re-captured booking updates
     # in place instead of duplicating (migration 0009).
     source_item_key: Mapped[str | None] = mapped_column(String(512), index=True)
+    # 4.2.x: where it is — located points (+ a road trip's route line), derived
+    # from `values` on save or from a capture's payload (app/trips/geo.py,
+    # migration 0029). NULL = not located yet.
+    geo: Mapped[dict | None] = mapped_column(JsonCol, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)

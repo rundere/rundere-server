@@ -28,6 +28,7 @@ from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
                         TripActivity, TravelerIdentity, TripTraveler)
 from app.trips import types as activity_types
+from app.trips.enrich import prepare_activity
 from app.trips import who
 
 log = logging.getLogger("yonder.trips")
@@ -200,6 +201,7 @@ def _activity_display(a: TripActivity, tagged: list[int] | None = None,
         "has_end": bool(end_when),
         "traveler_ids": who_ids,
         "traveler_names": [names[tid] for tid in who_ids],
+        "geo": a.geo,                    # located points / route line (geo.py)
     }
 
 
@@ -2049,7 +2051,10 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
     subtitle = t.subtitle(v)
     starts = _al_iso(v.get("when"))
     ends = _al_iso(v.get("endWhen")) or starts
-    link = v.get("sourceLink") or None
+    # AdventureLog's link is a URL field: the Source when it is a link (it may be
+    # plain text, e.g. an email subject), else the map link.
+    link = next((u for u in (v.get("sourceLink"), v.get("mapLink"))
+                 if (u or "").strip().lower().startswith(("http://", "https://"))), None)
     detail_lines = [f"Confirmation: {v['confirmation']}"] if v.get("confirmation") else []
     if v.get("notes"):
         detail_lines.append(v["notes"])
@@ -2059,8 +2064,13 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
         name = f"{title} – {subtitle}" if subtitle else title
         origin = v.get("from") or v.get("pickupLocation") or v.get("departurePort")
         dest = v.get("to") or v.get("dropoffLocation") or v.get("arrivalPort")
-        origin_lat, origin_lon = _resolve_coords(origin, airports, photon, coord_cache)
-        dest_lat, dest_lon = _resolve_coords(dest, airports, photon, coord_cache)
+        # Stored coordinates first (app/trips/geo.py); look up only what's missing.
+        stored = {p["role"]: (p["lat"], p["lon"])
+                  for p in ((activity.geo or {}).get("points") or [])}
+        origin_lat, origin_lon = stored.get("from") or _resolve_coords(
+            origin, airports, photon, coord_cache)
+        dest_lat, dest_lon = stored.get("to") or _resolve_coords(
+            dest, airports, photon, coord_cache)
         body = {
             "type": _AL_TRANSPORT_TYPE[activity.type], "name": name,
             "date": starts, "end_date": ends,
@@ -2076,8 +2086,11 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
         return "transportation", {k: v for k, v in body.items() if v is not None}
 
     if activity.type == "lodging":
+        place = next((p for p in ((activity.geo or {}).get("points") or [])
+                      if p.get("role") == "place"), {})
         body = {
             "name": v.get("name") or title, "check_in": starts, "check_out": ends,
+            "latitude": place.get("lat"), "longitude": place.get("lon"),
             "location": v.get("address"), "reservation_number": v.get("confirmation"),
             "link": link, "description": v.get("notes") or None,
             "type": _al_lodging_type(v.get("type")),
@@ -2249,6 +2262,15 @@ def _from_al_iso(value: str | None) -> str:
     return date_p if time_p in ("", "00:00") else f"{date_p}T{time_p}"
 
 
+def _al_link_values(link: str | None) -> dict:
+    """An AdventureLog record's link lands in the Map field when it is a Maps
+    link (so it drives the Map button), else in Source."""
+    link = (link or "").strip()
+    if not link:
+        return {}
+    return {"mapLink": link} if activity_types._is_maps_url(link) else {"sourceLink": link}
+
+
 def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
     """Map an AdventureLog transportation/lodging record onto a Yonder TripActivity
     (a Timeline item). Notes have no Timeline equivalent and are never pulled."""
@@ -2262,7 +2284,7 @@ def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
                   "endWhen": _from_al_iso(rec.get("end_date")),
                   "confirmation": rec.get("reservation_number") or "",
                   "notes": _clean(rec.get("description")),
-                  "sourceLink": rec.get("link") or ""}
+                  **_al_link_values(rec.get("link"))}
         if ytype == "flight" and rec.get("flight_number"):
             values["flightNumber"] = rec["flight_number"]
     else:                                                # lodging
@@ -2273,7 +2295,7 @@ def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
                   "address": rec.get("location") or "",
                   "confirmation": rec.get("reservation_number") or "",
                   "type": rec.get("type") or "", "notes": _clean(rec.get("description")),
-                  "sourceLink": rec.get("link") or ""}
+                  **_al_link_values(rec.get("link"))}
     values = {k: v for k, v in values.items() if v}
     return TripActivity(trip_id=trip_id, type=ytype, values=values,
                         starts_at=values.get("when") or "")
@@ -2559,8 +2581,8 @@ async def create_activity(trip_id: str, request: Request,
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or activity_types.DEFAULT_TYPE)
-    values = _collect_values(t, form)
-    a = TripActivity(trip_id=trip_id, type=t.key, values=values,
+    values, geo = prepare_activity(t.key, _collect_values(t, form))
+    a = TripActivity(trip_id=trip_id, type=t.key, values=values, geo=geo,
                      starts_at=values.get("when") or "")
     session.add(a)
     session.flush()
@@ -2579,9 +2601,11 @@ async def update_activity(trip_id: str, activity_id: str, request: Request,
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or a.type)
-    values = _collect_values(t, form)
+    values, geo = prepare_activity(t.key, _collect_values(t, form),
+                                   old_geo=a.geo if a.type == t.key else None)
     a.type = t.key
     a.values = values
+    a.geo = geo
     a.starts_at = values.get("when") or ""
     # Only touch the tags when the form showed the picker (a multi-traveller
     # trip); a solo trip's form never posts them, so nothing is cleared.
