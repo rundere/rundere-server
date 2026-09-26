@@ -2581,7 +2581,8 @@ async def create_activity(trip_id: str, request: Request,
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or activity_types.DEFAULT_TYPE)
-    values, geo = prepare_activity(t.key, _collect_values(t, form))
+    values, geo = prepare_activity(t.key, _collect_values(t, form),
+                                   session=session, trip_id=trip_id)
     a = TripActivity(trip_id=trip_id, type=t.key, values=values, geo=geo,
                      starts_at=values.get("when") or "")
     session.add(a)
@@ -2602,7 +2603,8 @@ async def update_activity(trip_id: str, activity_id: str, request: Request,
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or a.type)
     values, geo = prepare_activity(t.key, _collect_values(t, form),
-                                   old_geo=a.geo if a.type == t.key else None)
+                                   old_geo=a.geo if a.type == t.key else None,
+                                   session=session, trip_id=trip_id, activity_id=a.id)
     a.type = t.key
     a.values = values
     a.geo = geo

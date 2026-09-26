@@ -138,7 +138,9 @@ _TILE_TTL = 30 * 24 * 3600          # OSM asks for >= 7 days of caching
 
 def _cache_dir() -> Path | None:
     from app.config import settings
-    raw = settings.map_tile_cache_dir or str(Path(settings.artifacts_dir).parent / "tile-cache")
+    # Default: inside the artifacts volume, so the cache survives a redeploy
+    # (OSM asks for >= 7 days of caching) with no extra mount or variable.
+    raw = settings.map_tile_cache_dir or str(Path(settings.artifacts_dir) / "tile-cache")
     try:
         p = Path(raw)
         p.mkdir(parents=True, exist_ok=True)

@@ -886,7 +886,8 @@ def api_add_activity(trip_id: str, body: ActivityIn,
     trip = scope.require_trip(session, user, trip_id, edit=True)
     t = _activity_type_or_400(body.type)
     from app.trips.enrich import prepare_activity
-    values, geo = prepare_activity(t.key, dict(body.values or {}))
+    values, geo = prepare_activity(t.key, dict(body.values or {}),
+                                   session=session, trip_id=trip.id)
     a = TripActivity(trip_id=trip.id, type=t.key, values=values, geo=geo,
                      starts_at=body.starts_at or values.get("when") or "")
     session.add(a)
@@ -911,7 +912,8 @@ def api_update_activity(trip_id: str, activity_id: str, body: ActivityPatch,
         from app.trips.enrich import prepare_activity
         a.values, a.geo = prepare_activity(
             a.type, dict(body.values if body.values is not None else (a.values or {})),
-            old_geo=a.geo if a.type == old_type else None)
+            old_geo=a.geo if a.type == old_type else None,
+            session=session, trip_id=trip_id, activity_id=a.id)
     if body.starts_at is not None:
         a.starts_at = body.starts_at or ""
     elif body.values is not None:

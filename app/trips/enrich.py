@@ -28,13 +28,17 @@ def _arrival(when: str | None, minutes: int) -> str | None:
     return (dep + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M")
 
 
-def prepare_activity(atype: str, values: dict, *, old_geo: dict | None = None
-                     ) -> tuple[dict, dict | None]:
+def prepare_activity(atype: str, values: dict, *, old_geo: dict | None = None,
+                     session=None, trip_id: str | None = None,
+                     activity_id: str | None = None) -> tuple[dict, dict | None]:
     """Everything a save does before storing an activity: fill a road trip's
     blanks from its map link, then locate it (app/trips/geo.py). One Locator is
-    shared, so a directions link is looked up once for both."""
-    from app.trips.geo import Locator, locate_activity
-    loc = Locator.default()
+    shared, so a directions link is looked up once for both. With a session
+    and trip, places the trip already has located are matched first."""
+    from app.trips.geo import Locator, locate_activity, trip_places
+    known = (trip_places(session, trip_id, exclude_id=activity_id)
+             if session is not None and trip_id else None)
+    loc = Locator.default(known=known)
     values = enrich_activity_values(atype, values, locator=loc)
     return values, locate_activity(atype, values, old_geo=old_geo, locator=loc)
 
