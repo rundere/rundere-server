@@ -937,15 +937,24 @@ def reprocess(request: Request, bucket: str = "attention",
     batch with ANY logged item is left entirely alone — re-extracting it would
     duplicate a record already written to a target. Runs as a background job so
     the reset + full LLM pass reports live progress instead of dead air.
+
+    Only the caller's captures (own + open; an admin also users who share —
+    the same rule as Process and Commit) are reset and rebuilt: one person's
+    button never discards another's edits or approvals (YONDER-139).
     """
     if jobs.current_running():
         return _job_panel(request, jobs.current_running(), bucket)
+    user = scope.snapshot(scope.user_of(request))      # the job outlives the request
 
     def work(progress):
         from app.models import CommitAttempt, IngestBatch, ItemKey
         with SessionLocal() as s:
             progress("resetting", 0, 0, "clearing processed items")
-            items = s.query(TravelItem).all()
+            item_q, batch_q = s.query(TravelItem), s.query(IngestBatch)
+            if not scope.unrestricted(user):
+                item_q = item_q.filter(scope.capture_filter(user))
+                batch_q = batch_q.filter(scope.batch_filter(user))
+            items = item_q.all()
             protected = {i.batch_id for i in items if _is_logged(i)}
             # Also protect batches whose items already exist in AirTrail/
             # AdventureLog even without a DB commit record (D-60): re-extracting
@@ -973,12 +982,12 @@ def reprocess(request: Request, bucket: str = "attention",
                 s.query(TravelItem).filter(
                     TravelItem.id.in_(doomed)).delete(synchronize_session=False)
             reset = 0
-            for b in s.query(IngestBatch).all():
+            for b in batch_q.all():
                 if b.id not in protected and b.status != "received":
                     b.status = "received"
                     reset += 1
             s.commit()
-            summary, resolved, error = _run_extract_resolve(s, progress)
+            summary, resolved, error = _run_extract_resolve(s, progress, user=user)
             toast = (f"Reprocessing failed — {error}" if error else
                      f"Reprocessed {reset} batch(es): "
                      + _process_toast(summary, resolved, None).removeprefix("Done — "))
