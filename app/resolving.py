@@ -839,8 +839,10 @@ def _sync_keys(session: Session, item: TravelItem, key_result) -> None:
 def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
                     limit: int = 0, airtrail=None,
                     geocoder: PhotonGeocoder | None = None,
-                    redo: bool = False, progress=None) -> dict:
-    """Resolve every pending item. Per-item commit so one failure never blocks
+                    redo: bool = False, progress=None, item_filter=None) -> dict:
+    """Resolve every pending item (only those matching `item_filter`, a
+    TravelItem predicate such as scope.capture_filter(user), when given —
+    YONDER-113). Per-item commit so one failure never blocks
     the rest and a crash mid-run loses nothing.
 
     redo=True re-resolves items that already resolved — for when the resolver
@@ -888,8 +890,10 @@ def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
     # a dialect-specific query that only one of the two environments exercises.
     # Oldest first: a predecessor must resolve before the duplicates that
     # chain onto it.
-    candidates = (session.query(TravelItem)
-                  .order_by(TravelItem.created_at).all())
+    q = session.query(TravelItem)
+    if item_filter is not None:
+        q = q.filter(item_filter)
+    candidates = q.order_by(TravelItem.created_at).all()
     def _eligible(i):
         state = (i.status or {}).get("resolve")
         if state == "pending":

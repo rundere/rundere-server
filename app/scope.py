@@ -30,6 +30,16 @@ def user_of(request):
     return getattr(getattr(request, "state", None), "user", None)
 
 
+def snapshot(user):
+    """A detached stand-in carrying just what the filters here read (id,
+    is_admin) — for a background job that outlives the request's DB session,
+    where touching the real User row would fail."""
+    if user is None:
+        return None
+    from types import SimpleNamespace
+    return SimpleNamespace(id=user.id, is_admin=bool(getattr(user, "is_admin", False)))
+
+
 def unrestricted(user) -> bool:
     """True when scoping is a no-op: auth is off (no user). Admins are NOT
     unrestricted since 4.1 — they see sharing users' data; see is_admin/sharing."""

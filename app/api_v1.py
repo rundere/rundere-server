@@ -710,14 +710,18 @@ def _start_or_busy(user, kind: str, work):
 
 @router.post("/review/process", response_model=JobOut, status_code=202)
 def api_review_process(user=Depends(authn.current_user)):
-    """Extract + resolve captures waiting in the pipeline (the web "Process new
-    captures"). Returns a job to poll at GET /api/v1/jobs/{id}."""
+    """Extract + resolve the caller's captures waiting in the pipeline (the web
+    "Process new captures"): their own and open ones — an admin's run also
+    covers users who share. Returns a job to poll at GET /api/v1/jobs/{id}."""
     from app.db import SessionLocal
     from app.review.routes import _process_toast, _run_extract_resolve
 
+    mine = scope.snapshot(user)                         # the job outlives the request
+
     def work(progress):
         with SessionLocal() as s:
-            summary, resolved, error = _run_extract_resolve(s, progress)
+            # only the caller's own (and open) captures — YONDER-113
+            summary, resolved, error = _run_extract_resolve(s, progress, user=mine)
             return _process_toast(summary, resolved, error), error
 
     return _start_or_busy(user, "process", work)

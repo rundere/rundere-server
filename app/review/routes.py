@@ -834,10 +834,18 @@ def _process_toast(summary: dict, resolved: dict, error: str | None) -> str:
     return "Done — " + "; ".join(parts) + "."
 
 
-def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, str | None]:
+def _run_extract_resolve(session: Session, progress=None, user=None
+                         ) -> tuple[dict, dict, str | None]:
     """Run process_pending (extract) then resolve_pending — the SAME code the
     CLI runs, so the button and the batch path cannot diverge. `progress` is
-    threaded through both stages so the job panel shows a live count."""
+    threaded through both stages so the job panel shows a live count.
+
+    `user` scopes the run to the captures that person may see — their own and
+    open ones (an admin: + users who share), the same rule as the queue and
+    commit (YONDER-105/113). Nobody's button processes someone else's email."""
+    batch_filter = item_filter = None
+    if not scope.unrestricted(user):
+        batch_filter, item_filter = scope.batch_filter(user), scope.capture_filter(user)
     from app.config import settings
     summary: dict = {"extracted": 0, "needs_review": 0}
     resolved: dict = {}
@@ -846,7 +854,8 @@ def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, s
         from extract.llm import OllamaExtractor
         llm = OllamaExtractor(settings.ollama_url, settings.ollama_model,
                               settings.llm_timeout_seconds)
-        summary = process_pending(session, llm, progress=progress)
+        summary = process_pending(session, llm, progress=progress,
+                                  batch_filter=batch_filter)
 
         from app.resolving import resolve_pending
         adventurelog, airtrail = _target_clients()
@@ -857,7 +866,8 @@ def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, s
         except Exception:                       # geocoding is optional
             geocoder = None
         resolved = resolve_pending(session, adventurelog, airtrail=airtrail,
-                                   geocoder=geocoder, progress=progress)
+                                   geocoder=geocoder, progress=progress,
+                                   item_filter=item_filter)
     except Exception as ex:
         log.exception("extract/resolve run failed")
         return summary, resolved, str(ex)
@@ -903,9 +913,11 @@ def process_captures(request: Request, bucket: str = "attention",
     if jobs.current_running():
         return _job_panel(request, jobs.current_running(), bucket)
 
+    user = scope.snapshot(scope.user_of(request))      # the job outlives the request
+
     def work(progress):
         with SessionLocal() as s:
-            summary, resolved, error = _run_extract_resolve(s, progress)
+            summary, resolved, error = _run_extract_resolve(s, progress, user=user)
             return _process_toast(summary, resolved, error), error
 
     return _job_panel(request, jobs.get(jobs.start("process", work, owner=_owner_id(request))), bucket)

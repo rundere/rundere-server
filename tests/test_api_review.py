@@ -269,12 +269,17 @@ if DEPS:
 
     def test_process_job_and_busy_rules(w, monkeypatch):
         from app.review import routes
-        monkeypatch.setattr(routes, "_run_extract_resolve",
-                            lambda s, progress=None: ({"extracted": 0, "needs_review": 0}, {}, None))
+        ran_as = []
+
+        def fake_run(s, progress=None, user=None):
+            ran_as.append(user.id if user else None)
+            return {"extracted": 0, "needs_review": 0}, {}, None
+        monkeypatch.setattr(routes, "_run_extract_resolve", fake_run)
         h = H(w["alice"])
         r = client.post("/api/v1/review/process", headers=h)
         assert r.status_code == 202 and r.json()["kind"] == "process"
         assert _wait(r.json()["id"], h)["toast"] == "No new captures were waiting."
+        assert ran_as == [w["alice"]]                   # scoped to the caller (YONDER-113)
         # someone else's job running → 409 (and none of its details)
         fake = {"id": "abc", "kind": "commit", "finished": False, "owner": w["bob"],
                 "current": "Bob's secret flight"}
@@ -285,6 +290,36 @@ if DEPS:
         fake["owner"] = w["alice"]
         r = client.post("/api/v1/review/process", headers=h)
         assert r.status_code == 202 and r.json()["id"] == "abc"
+
+    def test_process_only_touches_the_callers_captures(w, monkeypatch):
+        """YONDER-113: Alice's run extracts only her own (and open) batches and
+        resolves only her own (and open) items — never Bob's."""
+        from app import processing, resolving, scope
+        from app.models import IngestBatch
+        from app.review.routes import _run_extract_resolve
+        with SessionLocal() as s:
+            for uid in (w["alice"], w["bob"]):
+                s.add(IngestBatch(user_id=uid, status="received", payload={"subject": "RV57"},
+                                  artifact_sha256=f"rv57-{uid}", api_key_id="k"))
+            s.get(TravelItem, w["bob_item"]).status = {"extract": "ok", "resolve": "pending"}
+            s.get(TravelItem, w["flight"]).status = {"extract": "ok", "resolve": "pending"}
+            s.commit()
+        batches, items = [], []
+        monkeypatch.setattr(processing, "process_batch",
+                            lambda s, b, llm: batches.append(b.user_id) or "extracted")
+        monkeypatch.setattr(resolving, "resolve_item",
+                            lambda s, item, *a, **k: items.append(item.owner_id) or "ok")
+        try:
+            with SessionLocal() as s:
+                alice = scope.snapshot(s.get(User, w["alice"]))
+                _, _, error = _run_extract_resolve(s, user=alice)
+            assert error is None
+            assert batches == [w["alice"]] and items == [w["alice"]]
+        finally:
+            with SessionLocal() as s:
+                s.query(IngestBatch).filter(IngestBatch.artifact_sha256.like("rv57-%")).delete(
+                    synchronize_session=False)
+                s.commit()
 
     def test_web_never_shows_someone_elses_job(w, monkeypatch):
         fake = {"id": "abc", "kind": "commit", "finished": False, "owner": w["bob"],

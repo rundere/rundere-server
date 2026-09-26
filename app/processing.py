@@ -90,15 +90,20 @@ def process_batch(session: Session, batch: IngestBatch,
 
 
 def process_pending(session: Session, llm: OllamaExtractor | None,
-                    limit: int = 0, progress=None) -> dict:
+                    limit: int = 0, progress=None, batch_filter=None) -> dict:
     """Process every received batch (oldest first). Per-batch commit: one bad
     batch never blocks the rest, and a crash mid-run loses nothing.
 
     progress(phase, done, total, current) is called before each batch (the LLM
     step is the slow one, so naming the email being read is the useful signal)
-    and once at the end, so the operator sees a live count."""
-    q = (session.query(IngestBatch).filter_by(status="received")
-         .order_by(IngestBatch.received_at))
+    and once at the end, so the operator sees a live count.
+
+    `batch_filter` (an IngestBatch predicate, e.g. scope.batch_filter(user))
+    limits the run to one person's captures (YONDER-113); None = all (CLI)."""
+    q = session.query(IngestBatch).filter_by(status="received")
+    if batch_filter is not None:
+        q = q.filter(batch_filter)
+    q = q.order_by(IngestBatch.received_at)
     if limit:
         q = q.limit(limit)
     batches = q.all()
