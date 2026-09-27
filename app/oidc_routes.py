@@ -89,9 +89,12 @@ def oidc_callback(request: Request, code: str = "", state: str = "", error: str 
     if not fields.get("sub") or not fields.get("username"):
         return _fail("missing subject")
     with SessionLocal() as session:
-        user = authn.provision_oidc_user(
-            session, sub=fields["sub"], username=fields["username"],
-            email=fields.get("email"), is_admin=fields["is_admin"])
+        try:
+            user = authn.provision_oidc_user(
+                session, sub=fields["sub"], username=fields["username"],
+                email=fields.get("email"), is_admin=fields["is_admin"])
+        except authn.SSOLinkConflict:
+            return _fail("username linked to another SSO account")
         if user is None:
             return _fail("account not provisioned")
         from datetime import datetime, timezone
