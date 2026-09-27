@@ -607,23 +607,31 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-icon-link, .yn-on-tl { color: var(--color-accent); text-underline-offset: 2px; }
 .yn-icon-link:hover, .yn-on-tl:hover { color: var(--color-neutral-900); }
 .yn-city-head .yn-status-badge { margin-left: 0; }
-/* Same columns in every table of a city, so the groups line up. */
+/* Same columns in every table of a city, so the groups line up. Name and the
+   two detail columns get fixed shares, actions a fixed width, and "Why go"
+   takes whatever is left, so it gets most of a wide screen. The When cell
+   wraps (a date range can't fit 13% on one line; nowrap made it overflow
+   into Where). */
 .yn-items { table-layout: fixed; }
-.yn-items th:nth-child(1) { width: 22%; }
-.yn-items th:nth-child(2) { width: 17%; }
-.yn-items-food th:nth-child(3) { width: 8%; }
+.yn-items th:nth-child(1) { width: 18%; }
+.yn-items th:nth-child(2) { width: 13%; }
 .yn-items th:nth-child(3) { width: 16%; }
-.yn-items th:last-child { width: 31%; }
+.yn-items-food th:nth-child(3) { width: 8%; }
+.yn-items th:last-child { width: 9.5rem; }
 .yn-items td { overflow-wrap: anywhere; }
-@media (max-width: 760px) {
-  .yn-items { table-layout: auto; }
-  .yn-items td:empty { display: none; }
-}
+.yn-items td.yn-mono { white-space: normal; overflow-wrap: normal; }
+.yn-items td[data-label="Why go"] { line-height: 1.5; }
 .yn-item-actions { white-space: normal; }
 .yn-item-actions > * { margin: 0 0 4px 6px; }
-.yn-items th:nth-child(1) { width: 21%; }
-.yn-items th:last-child { width: 30%; }
 .yn-on-tl { white-space: nowrap; }
+@media (max-width: 760px) {
+  .yn-items { table-layout: auto; }
+  .yn-items th:last-child { width: auto; }
+  .yn-items td:empty { display: none; }
+}
+/* Discovery tables need the room: while the Discovery tab is open the page
+   uses up to 1440px instead of the 1000px reading width. */
+.bp-wrap:has(.yn-tabpanel.active[data-tab="discovery"]) { max-width: 1440px; }
 
 /* ---- Weather summary + Safety subsections (4.5, YONDER-167/168) ---- */
 .yn-weather-sum { margin: 0 0 14px; padding: 12px 14px; border-radius: 8px;
