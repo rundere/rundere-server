@@ -662,3 +662,48 @@ if DEPS:
             with SessionLocal() as s:
                 s.query(DiscoveryProfile).filter_by(traveler_id=tid).delete()
                 s.commit()
+
+    # ------------------------------------------------------------------ research kits (4.5, YONDER-170)
+    def test_heads_up_event_flag(client, w):
+        tok = _tok(w["alice"])
+        ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="events",
+           place_key="MA:Mekele", summary_md="x",
+           items=[{"kind": "event", "name": "Rail strike", "starts_on": "2026-10-15",
+                   "heads_up": True},
+                  {"kind": "activity", "name": "Kasbah walk", "heads_up": True}])
+        snap = ok(client, tok, "get_trip", trip_id=w["shared"])
+        by = {i["name"]: i for i in snap["discovery_items"] if i["place_key"] == "MA:Mekele"}
+        assert by["Rail strike"]["extra"] == {"heads_up": True}
+        assert not by["Kasbah walk"]["extra"]          # only events can be heads-ups
+
+    def test_research_kits_as_prompts(client, w):
+        tok = _tok(w["alice"])
+        r = _rpc(client, tok, "prompts/list")
+        assert r.status_code == 200, r.text
+        names = {p["name"]: p for p in r.json()["result"]["prompts"]}
+        assert {"research_food_and_drink", "research_events_and_activities",
+                "research_local_phrases"} <= set(names)
+        args = {a["name"]: a.get("required") for a in names["research_food_and_drink"]["arguments"]}
+        assert args["trip_id"] is True and not args.get("place_key")
+        r = _rpc(client, tok, "prompts/get", {"name": "research_food_and_drink",
+                                               "arguments": {"trip_id": "T1", "place_key": "MA:Gondar"}})
+        text = r.json()["result"]["messages"][0]["content"]["text"]
+        assert "`T1`" in text and "`MA:Gondar`" in text and "save_city_guide" in text
+        assert "name: rundere-" not in text            # skill header stripped
+
+    def test_research_kits_api(client, w):
+        import io, zipfile
+        h = {"authorization": f"Bearer {_tok(w['alice'])}"}
+        assert client.get("/api/v1/research-kits").status_code == 401
+        kits = client.get("/api/v1/research-kits", headers=h).json()
+        by = {k["slug"]: k for k in kits}
+        assert set(by) >= {"food-and-drink", "events-and-activities", "local-phrases"}
+        assert by["local-phrases"]["mcp_prompt"] == "research_local_phrases"
+        assert by["food-and-drink"]["name"] == "rundere-food-and-drink"
+        one = client.get("/api/v1/research-kits/events-and-activities", headers=h).json()
+        assert one["skill_md"].startswith("---\nname: rundere-events-and-activities")
+        z = client.get("/api/v1/research-kits/food-and-drink.zip", headers=h)
+        assert z.status_code == 200 and z.headers["content-type"] == "application/zip"
+        assert zipfile.ZipFile(io.BytesIO(z.content)).namelist() == ["rundere-food-and-drink/SKILL.md"]
+        assert client.get("/api/v1/research-kits/nope", headers=h).status_code == 404
+        assert client.get("/api/v1/research-kits/..%2Fapp.zip", headers=h).status_code == 404

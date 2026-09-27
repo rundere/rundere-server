@@ -53,7 +53,8 @@ Use save_research to keep research on the user's Discover tab — in your own
 review, and locked findings are theirs to keep. For Food & Drink or Events &
 Activities use save_city_guide (a city summary plus rows — for food, say what to
 get); for a city's local phrases use save_phrases. Items in get_trip's
-`discovery_items` can go on the timeline with add_item_to_timeline. Dates are
+`discovery_items` can go on the timeline with add_item_to_timeline. The
+research_* prompts are step-by-step research kits for these. Dates are
 ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items)."""
 
 mcp = MCPServer("Run·dere", instructions=INSTRUCTIONS, version=settings.app_version)
@@ -454,6 +455,27 @@ def add_item_to_timeline(trip_id: TripId,
     body = api_v1.ItemToTimelineIn(starts_at=starts_at, traveler_ids=traveler_ids)
     return _run(lambda session, user: api_v1.add_item_to_timeline(
         session, user, trip_id, item_id, body))
+
+
+# --------------------------------------------------------------------------- research kits (prompts)
+def _register_kit_prompts() -> None:
+    """Each research kit (research_kits/<slug>/SKILL.md) becomes a prompt,
+    `research_<slug>`, taking the trip id and optionally one city."""
+    from app import research_kits
+
+    for kit in research_kits.all_kits():
+        def make(k):
+            def prompt(trip_id: TripId,
+                       place_key: Annotated[str | None, Field(
+                           description="One city key (e.g. \"MA:Harar\"); omit for "
+                                       "every city in the trip")] = None) -> str:
+                return research_kits.prompt_text(k, trip_id, place_key)
+            return prompt
+        mcp.prompt(name="research_" + kit.slug.replace("-", "_"),
+                   title=f"Research {kit.title}", description=kit.description)(make(kit))
+
+
+_register_kit_prompts()
 
 
 # --------------------------------------------------------------------------- HTTP endpoint

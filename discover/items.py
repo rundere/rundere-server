@@ -215,7 +215,9 @@ def row_from_input(topic: str, raw: dict) -> dict:
         "venue": _clean(raw.get("venue"), 300), "details": _clean(raw.get("details")),
         "duration": _clean(raw.get("duration"), 100),
         "booking": booking if isinstance(booking, bool) else None,
-        "sources": sources, "extra": None,
+        "sources": sources,
+        # A heads-up (strike, holiday closures) shows in its own table, not as a plan.
+        "extra": {"heads_up": True} if raw.get("heads_up") and kind == "event" else None,
     }
 
 

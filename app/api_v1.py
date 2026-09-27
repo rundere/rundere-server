@@ -369,6 +369,7 @@ class ItemIn(BaseModel):
     details: str | None = None             # what it is / why go
     duration: str | None = None            # activity, e.g. "3 h"
     booking: bool | None = None            # needs booking ahead
+    heads_up: bool = False                 # event that affects travel (strike, holiday closures)
     source_url: str | None = None
     sources: list[SourceIn] = []
 
@@ -1274,6 +1275,46 @@ def api_my_discovery_profile(user=Depends(authn.current_user),
                              session: Session = Depends(get_session)):
     """Your discovery profile — what Discover (and your agents) research with."""
     return my_discovery_profile(session, user)
+
+
+# --------------------------------------------------------------------------- research kits (4.5)
+def _kit_out(kit, full: bool = False) -> dict:
+    out = {"slug": kit.slug, "name": kit.name, "title": kit.title,
+           "description": kit.description,
+           "mcp_prompt": "research_" + kit.slug.replace("-", "_"),
+           "download": f"/api/v1/research-kits/{kit.slug}.zip"}
+    if full:
+        out["skill_md"] = kit.text
+    return out
+
+
+@router.get("/research-kits")
+def api_research_kits(user=Depends(authn.current_user)):
+    """Reusable agent instructions that research part of a trip and save it
+    to Discover over MCP (also served as MCP prompts)."""
+    from app import research_kits
+    return [_kit_out(k) for k in research_kits.all_kits()]
+
+
+@router.get("/research-kits/{slug}.zip")
+def api_research_kit_zip(slug: str, user=Depends(authn.current_user)):
+    """The kit as a skill zip, to add to an agent that takes skills."""
+    from fastapi import Response
+    from app import research_kits
+    kit = research_kits.get(slug)
+    if not kit:
+        raise HTTPException(404, "No such research kit")
+    return Response(research_kits.zip_bytes(kit), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{kit.name}.zip"'})
+
+
+@router.get("/research-kits/{slug}")
+def api_research_kit(slug: str, user=Depends(authn.current_user)):
+    from app import research_kits
+    kit = research_kits.get(slug)
+    if not kit:
+        raise HTTPException(404, "No such research kit")
+    return _kit_out(kit, full=True)
 
 
 @router.post("/trips/{trip_id}/findings", response_model=FindingOut, status_code=201)

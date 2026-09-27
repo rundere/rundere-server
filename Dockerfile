@@ -17,6 +17,7 @@ COPY resolve/ resolve/
 COPY extract/ extract/
 COPY adapters/ adapters/
 COPY discover/ discover/
+COPY research_kits/ research_kits/
 COPY planning/ planning/
 COPY rules.py validation.py ./
 COPY schemas/ schemas/
