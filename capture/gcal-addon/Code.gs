@@ -1,8 +1,8 @@
 /**
- * Yonder — Google Calendar capture add-on.
+ * Run.Dere — Google Calendar capture add-on.
  *
  * The Calendar sibling of the Gmail add-on (capture/gmail-addon/). Opens a
- * contextual card on any calendar event with a "Capture to Yonder"
+ * contextual card on any calendar event with a "Capture to Run.Dere"
  * button; the button sends the Google Calendar API *Event resource* as JSON to
  * the same signed /ingest endpoint (capture_channel: 'gcal'). The server maps it
  * to an event Payload in extract/gcal.py — the SAME shape a Gmail-captured .ics
@@ -26,7 +26,7 @@ function buildHomepageCard(e) {
   const ingestUrl = props.getProperty(PROP_INGEST_URL) || DEFAULT_INGEST_URL;
 
   const section = CardService.newCardSection()
-    .setHeader('Yonder capture')
+    .setHeader('Run.Dere capture')
     .addWidget(CardService.newTextParagraph().setText(configured
       ? 'Configured. Open a calendar event and use the side panel to capture it.'
       : 'Not configured yet. Paste the API key created via '
@@ -82,7 +82,7 @@ function buildEventCard(e) {
       .setFieldName('collectionId')
       .setTitle('Force collection ID (optional, advanced — D-05)'))
     .addWidget(CardService.newTextButton()
-      .setText('Capture to Yonder')
+      .setText('Capture to Run.Dere')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('captureEvent')));
 

@@ -68,7 +68,7 @@ def protected_resource_metadata(request: Request) -> dict:
             "authorization_servers": [oauth.issuer(request)],
             "scopes_supported": [oauth.DEFAULT_SCOPE],
             "bearer_methods_supported": ["header"],
-            "resource_name": "Yonder"}
+            "resource_name": "Run.Dere"}
 
 
 @router.get("/.well-known/oauth-protected-resource")
@@ -116,7 +116,7 @@ def _validate_request(session, request: Request, p: dict):
         return None, _error_page(request, "Unknown application (client_id).")
     if not oauth.redirect_matches(client, p.get("redirect_uri") or ""):
         return None, _error_page(request, "This application's redirect address isn't "
-                                          "registered, so Yonder won't send you there.")
+                                          "registered, so Run.Dere won't send you there.")
     ru, st = p["redirect_uri"], p.get("state")
     if p.get("response_type") != "code":
         return None, _redirect_with(ru, {"error": "unsupported_response_type", "state": st})

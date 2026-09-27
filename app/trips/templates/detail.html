@@ -23,7 +23,7 @@
                 hx-target="#push-msg" hx-swap="innerHTML" hx-disabled-elt="this">Push to AdventureLog</button>
       {% endif %}
       <button class="btn btn-secondary"
-              hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Yonder found</button>
+              hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Run.Dere found</button>
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
       <button class="btn btn-ghost"
@@ -184,7 +184,7 @@
 <section class="yn-sec" id="sec-sharing">
   <h2 class="bp-h2">Sharing</h2>
   <p class="bp-muted">
-    {% if sharing.is_open %}Open — visible to every Yonder user.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
+    {% if sharing.is_open %}Open — visible to every Run.Dere user.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
   </p>
 
   <h3 class="bp-h3" style="margin-top:10px">Travellers with access</h3>

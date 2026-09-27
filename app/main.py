@@ -33,7 +33,7 @@ async def lifespan(_app):
 
 # No PUBLIC schema or docs: the /api/v1 contract is served behind auth at
 # /api/v1/openapi.json and /api/v1/docs (YONDER-58, app/api_v1.py).
-app = FastAPI(title="Yonder", version=settings.app_version,
+app = FastAPI(title="Run.Dere", version=settings.app_version,
               docs_url=None, redoc_url=None, openapi_url=None,
               lifespan=lifespan)
 app.include_router(ingest_router)

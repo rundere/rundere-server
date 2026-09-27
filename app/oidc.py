@@ -72,7 +72,7 @@ def discovery() -> dict | None:
     base = settings.oidc_issuer.rstrip("/")
     url = base + "/.well-known/openid-configuration"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Yonder-OIDC"})
+        req = urllib.request.Request(url, headers={"User-Agent": "RunDere-OIDC"})
         with urllib.request.urlopen(req, timeout=12) as resp:
             doc = json.loads(resp.read())
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
@@ -123,7 +123,7 @@ def exchange_code(code: str, redirect_uri: str, verifier: str) -> dict | None:
         req = urllib.request.Request(
             doc["token_endpoint"], data=body,
             headers={"Content-Type": "application/x-www-form-urlencoded",
-                     "Accept": "application/json", "User-Agent": "Yonder-OIDC"})
+                     "Accept": "application/json", "User-Agent": "RunDere-OIDC"})
         with urllib.request.urlopen(req, timeout=12) as resp:
             return json.loads(resp.read())
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):

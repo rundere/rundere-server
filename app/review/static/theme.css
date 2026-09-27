@@ -107,3 +107,27 @@
   .yn-set-grp{display:none}
   .yn-set-nav .yn-set-about{margin-top:0}
 }
+
+/* ---- Run.Dere brand (4.4) ---- */
+.rd-mark{display:inline-block;width:.8em;height:1em;vertical-align:-.12em;background:currentColor;
+  -webkit-mask:url(/review/static/rundere-mark.svg) center/contain no-repeat;
+          mask:url(/review/static/rundere-mark.svg) center/contain no-repeat}
+.appbar .wordmark{align-items:center}
+.appbar .wordmark .rd-mark{width:18px;height:22px;color:var(--ink)}
+.rd-word{font-weight:600;letter-spacing:.01em}
+.rd-word i,.rd-dot{font-style:normal;color:var(--accent)}
+.brand .rd-mark{width:17px;height:21px;vertical-align:-3px;color:var(--ink)}
+/* About: dictionary-style name card (say it, hear it) */
+.rd-dict{display:flex;gap:16px;align-items:flex-start;padding:16px 18px;margin:0 0 18px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--surface-sunk)}
+.rd-dict-mark{width:40px;height:50px;flex:none;color:var(--ink)}
+.rd-dict-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.rd-dict-word{font-size:28px;font-weight:600;letter-spacing:.01em;line-height:1.1}
+.rd-dict-say{font-family:var(--mono);font-size:15px;color:var(--ink-2)}
+.rd-dict-play{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;
+  border-radius:50%;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);cursor:pointer}
+.rd-dict-play:hover{border-color:var(--accent);color:var(--accent)}
+.rd-dict-play:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.rd-dict-pos{font-style:italic;color:var(--ink-3);font-size:13px;margin-top:2px}
+.rd-dict-def{margin:8px 0 0;color:var(--ink-2)}
+.rd-dict-note{color:var(--ink-3)}

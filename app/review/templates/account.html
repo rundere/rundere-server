@@ -20,7 +20,7 @@
         admin hands you a reset link instead.{% endif %}</p>
     {% else %}
       <p class="why">You sign in with {{ u.auth_source }}, so your password is managed
-        there, not by Yonder.</p>
+        there, not by Run.Dere.</p>
     {% endif %}
     <form method="post" action="/account/email">
       <div class="field"><label>Email</label>
@@ -51,11 +51,11 @@
         <button class="act" type="submit">Share with admins</button>
       </form>
     {% endif %}
-    <p class="why" style="margin-top:8px">This controls what admins see in Yonder; it isn't
+    <p class="why" style="margin-top:8px">This controls what admins see in Run.Dere; it isn't
       encryption — whoever runs the server can reach the database directly.</p>
 
     <h3 style="margin-top:28px" id="connected-apps">Connected apps</h3>
-    <p class="why">Apps you've allowed to use Yonder as you — e.g. Claude, via the
+    <p class="why">Apps you've allowed to use Run.Dere as you — e.g. Claude, via the
       connector. Disconnecting one ends its access straight away.</p>
     {% if apps %}
       {% for a in apps %}
@@ -74,7 +74,7 @@
 
     <h3 style="margin-top:28px" id="api-tokens">Personal API tokens</h3>
     <p class="why">For tools that can't sign in with a browser — Claude Code or the
-      Yonder MCP script (<code>YONDER_TOKEN</code>). A token acts as you; keep it secret.</p>
+      Run.Dere MCP script (<code>YONDER_TOKEN</code>). A token acts as you; keep it secret.</p>
     {% if new_token %}
       <div class="saved-note">
         <b>{{ new_token_name }}</b> — copy this now; it won't be shown again:<br>

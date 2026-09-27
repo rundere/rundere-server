@@ -11,7 +11,7 @@
   ],
   "addOns": {
     "common": {
-      "name": "Yonder Capture",
+      "name": "Run.Dere Capture",
       "logoUrl": "https://www.gstatic.com/images/icons/material/system/1x/flight_takeoff_googblue_48dp.png",
       "homepageTrigger": {
         "runFunction": "buildHomepageCard"

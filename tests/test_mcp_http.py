@@ -209,7 +209,7 @@ if DEPS:
                                              "clientInfo": {"name": "test", "version": "1"}})
         assert r.status_code == 200
         info = r.json()["result"]
-        assert info["serverInfo"]["name"] == "Yonder" and "save_research" in info["instructions"]
+        assert info["serverInfo"]["name"] == "Run.Dere" and "save_research" in info["instructions"]
         tools = _rpc(client, tok, "tools/list").json()["result"]["tools"]
         assert {t["name"] for t in tools} == ALL_TOOLS
         for t in tools:
