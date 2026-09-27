@@ -5,7 +5,8 @@
     python scripts/dto_drift.py --openapi spec.json  # or a saved schema
     python scripts/dto_drift.py --url https://yonder.example.net --token ypat_…
 
-Parses `struct X: Codable` blocks in ios/Yonder/Models/DTOs.swift and compares
+Parses `struct X: Codable` blocks in contracts/ios/DTOs.swift (a copy of the
+iOS app's Rundere/Models/DTOs.swift, rundere/rundere-ios) and compares
 each property with the matching OpenAPI schema:
 
 ERROR — the app would fail to decode, or its writes would be ignored:
@@ -31,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SWIFT = ROOT / "ios" / "Yonder" / "Models" / "DTOs.swift"
+DEFAULT_SWIFT = ROOT / "contracts" / "ios" / "DTOs.swift"
 
 # Swift struct → OpenAPI schema, where the names differ. Everything else is
 # matched by the same name; structs listed in SKIP have no schema.

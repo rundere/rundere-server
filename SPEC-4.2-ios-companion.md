@@ -1,5 +1,8 @@
 # SPEC-4.2 — iOS Companion: from read-only to a working travel app
 
+> **2026-09-27:** the app moved to its own repository, `rundere/rundere-ios` (renamed
+> Run·dere, bundle ID `app.rundere.ios`). Paths below under `ios/` now live there.
+
 Status: **plan, not started** (2026-09-25). Written after 4.1.1 shipped, for
 the agent that picks up the iOS work. Read with [`ios/README.md`](ios/README.md),
 [`SPEC-4-mobile.md`](SPEC-4-mobile.md) (the original 4.0 Companion spec,

@@ -1,7 +1,7 @@
 """YONDER-58 — the /api/v1 contract (OpenAPI behind auth) and the iOS DTO
-drift check (SPEC-4.2 §3.1). The drift test runs the real
-ios/Yonder/Models/DTOs.swift against the live schema, so a server change that
-would break the app's decoding fails CI.
+drift check (SPEC-4.2 §3.1). The drift test runs contracts/ios/DTOs.swift — a
+copy of the iOS app's DTOs (rundere/rundere-ios) — against the live schema, so a
+server change that would break the app's decoding fails CI.
 """
 import sys
 from pathlib import Path
