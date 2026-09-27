@@ -1,4 +1,4 @@
-# Releasing Yonder
+# Releasing Run·dere
 
 Issues and the roadmap are tracked in Plane (self-hosted, internal). GitHub
 stays the source of truth for code, tags, and published releases; Plane
@@ -37,7 +37,7 @@ Pushing the tag triggers `.github/workflows/release.yml`, which now handles
 the GitHub side end-to-end:
 
 - Runs the test suite.
-- Builds + pushes `ghcr.io/jeeves5454/yonder:{X.Y.Z, X.Y, latest}`.
+- Builds + pushes `ghcr.io/jeeves5454/rundere-server:{X.Y.Z, X.Y, latest}` (up to 4.3.x the image was `ghcr.io/jeeves5454/yonder`).
 - Creates the GitHub Release for the tag with auto-generated notes
   (`gh release create --generate-notes`) — skipped if a release for that tag
   already exists, so re-running via `workflow_dispatch` to rebuild a

@@ -370,7 +370,7 @@ def first_party_user(request: "Request") -> "User":
     from fastapi import HTTPException
     user = current_user(request)
     if not is_first_party(request):
-        raise HTTPException(status_code=403, detail="change this in the Yonder app or on "
+        raise HTTPException(status_code=403, detail="change this in the Run·dere app or on "
                             "the web — connected apps and API tokens can't")
     return user
 

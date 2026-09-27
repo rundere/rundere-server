@@ -1,6 +1,6 @@
 # Email (password-reset links)
 
-Yonder sends one kind of email: a one-time password-reset link. It talks to
+Run·dere sends one kind of email: a one-time password-reset link. It talks to
 **any SMTP server**; nothing is tied to a provider. Without SMTP, reset still
 works — an admin copies a link from **Settings → Users → Reset link**.
 
@@ -14,7 +14,7 @@ works — an admin copies a link from **Settings → Users → Reset link**.
 | `TX_SMTP_STARTTLS` | Upgrade with STARTTLS when not using SSL. Default `true`. |
 | `TX_SMTP_USER` / `TX_SMTP_PASSWORD` | Login, if the server needs one. |
 | `TX_SMTP_FROM` | Sender address. Defaults to `TX_SMTP_USER`. |
-| `TX_PUBLIC_BASE_URL` | How users reach Yonder, e.g. `https://yonder.example.net`. Reset links are built from it; without it they use whatever URL the request came in on. |
+| `TX_PUBLIC_BASE_URL` | How users reach Run·dere, e.g. `https://yonder.example.net`. Reset links are built from it; without it they use whatever URL the request came in on. |
 
 ## Example: Gmail with an app password
 

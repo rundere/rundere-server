@@ -1,8 +1,8 @@
-# Yonder — Setup & Usage Guide
+# Run·dere (formerly Yonder) — Setup & Usage Guide
 
 > Current for **v4.3.3**. Screenshots are being recaptured against the current
 > UI; `_[screenshot: …]_` marks where each one belongs. The older
-> `docs/howto.html` predates the trip pickers and Yonder's first-party writes —
+> `docs/howto.html` predates the trip pickers and Run·dere's first-party writes —
 > treat it as historical, not current.
 
 ## 1 What you need
@@ -10,24 +10,24 @@
 - Docker Engine + Compose
 - PostgreSQL 16 (bundled as `yonder-db` in the stack)
 - A reverse proxy that exposes **only** `POST /ingest` over public HTTPS
-  (e.g., Traefik). The Yonder container must reach the proxy and any tools it
+  (e.g., Traefik). The Run·dere container must reach the proxy and any tools it
   calls; put it on whatever existing Docker network(s) those use — one or several.
 - Google account for the Gmail/Calendar add-ons
 - Optional external targets: AirTrail (flights), AdventureLog (trips/places).
-  Without them Yonder still records everything to its own built-in trips.
+  Without them Run·dere still records everything to its own built-in trips.
 - Optional services: Ollama + an LLM model (extractor for free-form text, and
   Discovery's LLM tier), Photon (geocoder), SearXNG (Discovery's LLM-tier web
   search), AirTrail's read-only Postgres (flights to never-flown airports),
   CrowdSec (hardens `/ingest`)
 
-> _[screenshot: Yonder stack overview]_
+> _[screenshot: Run·dere stack overview]_
 
-## 2 Deploy Yonder
+## 2 Deploy Run·dere
 
 1. Pull the image (built by CI on each version tag), or build locally:
 
    ```bash
-   docker pull ghcr.io/jeeves5454/yonder:latest
+   docker pull ghcr.io/jeeves5454/rundere-server:latest
    ```
 
 2. Deploy the reference Portainer/Compose stack.
@@ -72,7 +72,7 @@ The built-in Capture page requires no external client.
 
 ## 7 The dashboard — your starting point
 
-Open Yonder's root URL (e.g. `https://yonder.home.example/`) and you land on the
+Open Run·dere's root URL (e.g. `https://yonder.home.example/`) and you land on the
 **dashboard**, not a 404. It's the front door for daily use:
 
 - **What's next** — the trip currently under way, or the soonest upcoming one,
@@ -118,8 +118,8 @@ directions link into the Capture form.
 3. Use the two independent trip pickers:
    - **AdventureLog** — file the item into a specific collection; candidates
      whose dates contain the item are marked.
-   - **Yonder** — link it to one of your in-house Yonder trips (independent of
-     AdventureLog). If exactly one Yonder trip's dates contain the item, it is
+   - **Run·dere** — link it to one of your in-house Run·dere trips (independent of
+     AdventureLog). If exactly one Run·dere trip's dates contain the item, it is
      linked automatically.
 4. Approving only **stages** the item; nothing is written until you log the batch.
 5. Editing or re-assigning re-checks the item.
@@ -133,7 +133,7 @@ Two-step and irreversible:
 1. A **dry-run preview** shows exactly what each approved item will write:
    - **AirTrail** — the flight
    - **AdventureLog** — transportation/lodging/note + locations, filed under the trip
-   - **Yonder** — a trip activity on the linked trip
+   - **Run·dere** — a trip activity on the linked trip
 
    with a "cannot be undone" warning.
 2. Confirm to execute.
@@ -144,7 +144,7 @@ Two-step and irreversible:
 
 ## 12 Your trips — timeline, Discovery, Planning
 
-Open **Trips** to work with Yonder's own trip system directly — it exists
+Open **Trips** to work with Run·dere's own trip system directly — it exists
 alongside AirTrail/AdventureLog, not only as a mirror of them.
 
 ### Timeline
@@ -196,10 +196,10 @@ create a linked collection. From then on, `/trips/{id}/adventurelog` is a
 two-way sync page:
 
 - **Push** selected timeline activities and approved Discovery findings into
-  the collection. Re-pushing is safe — Yonder marks what it wrote and updates
+  the collection. Re-pushing is safe — Run·dere marks what it wrote and updates
   those records in place instead of duplicating them; a note that would
   overwrite something already in AdventureLog asks you to confirm first.
-- **Pull** AdventureLog's own transportation/lodging records into the Yonder
+- **Pull** AdventureLog's own transportation/lodging records into the Run·dere
   timeline, in case someone edited the trip directly in AdventureLog.
 
 > _[screenshot: the AdventureLog sync page — push/pull selections]_

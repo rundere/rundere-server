@@ -489,7 +489,7 @@ def api_openapi_spec() -> dict:
             keep.add(name)
             pending.append(name)
     return {"openapi": full.get("openapi", "3.1.0"),
-            "info": {"title": "Yonder API", "version": settings.app_version,
+            "info": {"title": "Run·dere API", "version": settings.app_version,
                      "description": "Every route needs a bearer token (or a web session); "
                                     "all data is scoped to the signed-in user."},
             "paths": paths,
@@ -510,7 +510,7 @@ def api_docs(user=Depends(authn.current_user)):
     """Swagger UI for /api/v1 (behind auth; the page fetches the schema with
     your web session)."""
     from fastapi.openapi.docs import get_swagger_ui_html
-    return get_swagger_ui_html(openapi_url="/api/v1/openapi.json", title="Yonder API")
+    return get_swagger_ui_html(openapi_url="/api/v1/openapi.json", title="Run·dere API")
 
 
 # --------------------------------------------------------------------------- read

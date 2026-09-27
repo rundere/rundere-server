@@ -64,7 +64,7 @@ def _registry_field(row, field: str):
 
 
 def mount_admin(app, engine) -> None:
-    admin = Admin(app, engine, title="Yonder")
+    admin = Admin(app, engine, title="Run·dere")
     _theme(admin)
 
     # 4.0 Phase 2 (D-124): the admin UI surfaces ONLY platform administration and

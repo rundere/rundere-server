@@ -2,7 +2,7 @@
 {% block title %}Set a new password{% endblock %}
 {% block body %}
 <form class="card" method="post" action="/reset/{{ token }}">
-  <div class="brand"><h1>Yonder</h1><span>new password</span></div>
+  <div class="brand"><h1><span class="rd-mark" aria-hidden="true"></span> <span class="rd-wordmark" role="img" aria-label="Run·dere"></span></h1><span>new password</span></div>
   {% if not valid %}
     <div class="err">This reset link is invalid or has expired.</div>
     <div class="links"><a href="/forgot">Request a new link</a></div>

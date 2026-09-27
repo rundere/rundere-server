@@ -33,7 +33,7 @@ async def lifespan(_app):
 
 # No PUBLIC schema or docs: the /api/v1 contract is served behind auth at
 # /api/v1/openapi.json and /api/v1/docs (YONDER-58, app/api_v1.py).
-app = FastAPI(title="Yonder", version=settings.app_version,
+app = FastAPI(title="Run·dere", version=settings.app_version,
               docs_url=None, redoc_url=None, openapi_url=None,
               lifespan=lifespan)
 app.include_router(ingest_router)
@@ -73,7 +73,7 @@ app.include_router(api_router)
 # YONDER-108: /mcp answers its own 401 (with the OAuth resource-metadata pointer).
 _PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
                  "/setup", "/register", "/forgot", "/mcp"}
-_PUBLIC_PREFIX = ("/ingest", "/capture", "/review/static", "/trips/static",
+_PUBLIC_PREFIX = ("/ingest", "/capture", "/review/static", "/trips/static", "/brand/",
                   "/api/v1/auth/", "/reset/", "/oidc/", "/oauth/", "/.well-known/")
 _ADMIN_PREFIX = ("/admin", "/users")
 
@@ -154,6 +154,20 @@ app.mount("/review/static",
 app.mount("/trips/static",
           StaticFiles(directory=str(Path(__file__).parent / "trips" / "static")),
           name="trips-static")
+
+# Brand assets straight from the design system (design/, PR #77): logos and
+# icons are served as-is so the app never carries its own copies.
+_DESIGN = Path(__file__).parent.parent / "design"
+if (_DESIGN / "logo").is_dir():
+    app.mount("/brand/logo", StaticFiles(directory=str(_DESIGN / "logo")), name="brand-logo")
+    app.mount("/brand/icons", StaticFiles(directory=str(_DESIGN / "icons")), name="brand-icons")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    from fastapi.responses import FileResponse, Response
+    ico = _DESIGN / "icons" / "favicon.ico"
+    return FileResponse(ico, media_type="image/x-icon") if ico.is_file() else Response(status_code=404)
 
 
 def seed_rule_settings(session) -> None:
