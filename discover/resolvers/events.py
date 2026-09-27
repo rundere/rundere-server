@@ -253,8 +253,8 @@ class EventsResolver:
                               _SCHEMA, base_url=self.ollama_url, system=_SYSTEM,
                               model=self.model, timeout=self.timeout)
         if not out:
-            log.warning("events: Ollama returned nothing for %s — is Ollama reachable "
-                        "at %s and is %s pulled?", place.label, self.ollama_url, self.model)
+            log.warning("events: no usable LLM output for %s (see the synth: line above "
+                        "for the cause)", place.label)
             return [], [], results, ""
         allowed = [r.url for r in results]
         impacts = _dedupe(ground_items(out.get("impacts") or [], allowed).kept)

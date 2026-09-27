@@ -179,8 +179,8 @@ class FoodResolver:
                               base_url=self.ollama_url, system=_SYSTEM,
                               model=self.model, timeout=self.timeout)
         if not out:
-            log.warning("food: Ollama returned nothing for %s — is Ollama reachable "
-                        "at %s and is %s pulled?", place.label, self.ollama_url, self.model)
+            log.warning("food: no usable LLM output for %s (see the synth: line above "
+                        "for the cause)", place.label)
             return None
         allowed = [r.url for r in results]
         grounded = ground_items(out.get("places") or [], allowed).kept

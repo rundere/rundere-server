@@ -63,6 +63,27 @@ def test_currency_builds_rate_snapshot(monkeypatch):
     assert f.ttl_seconds == 86400
 
 
+def test_currency_parses_frankfurter_v2_list_body(monkeypatch):
+    # Live v2 shape: a list of {date, base, quote, rate} rows (was a crash:
+    # AttributeError: 'list' object has no attribute 'get').
+    def fake_get_json(url, timeout=12):
+        base = "CAD" if "base=CAD" in url else "USD"
+        rate = 0.58 if base == "CAD" else 0.72
+        return [{"date": "2026-09-27", "base": base, "quote": "CHF", "rate": rate}]
+    monkeypatch.setattr(currency_mod, "get_json", fake_get_json)
+
+    f = CurrencyResolver().resolve(DerivedPlace("CH", "Geneva", 46, 6), _ctx())
+    assert f.confidence == "high"
+    assert f.data["rates"]["CHF"] == {"per_CAD": 0.58, "per_USD": 0.72}
+    assert f.data["date"] == "2026-09-27"
+
+
+def test_currency_v2_empty_list_is_flagged(monkeypatch):
+    monkeypatch.setattr(currency_mod, "get_json", lambda url, timeout=12: [])
+    f = CurrencyResolver().resolve(DerivedPlace("MA", "Harar", 31, -8), _ctx())
+    assert f.confidence == "flagged" and not f.data["rates"]
+
+
 def test_currency_unquoted_currency_is_flagged(monkeypatch):
     # Frankfurter returns no rate for this currency → no rates, flagged, still names it.
     monkeypatch.setattr(currency_mod, "get_json",
