@@ -164,6 +164,7 @@ class TripSnapshot(BaseModel):
     places: list[PlaceOut] = []
     discovery: list[FindingOut] = []
     discovery_items: list[DiscoveryItemOut] = []
+    discovery_profile: Any = None          # the caller's own preferences (4.5)
     packing: PackingOut | None = None
     captures: list[CaptureLite] = []
 
@@ -516,6 +517,9 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
                        .order_by(DiscoveryItem.place_key, DiscoveryItem.topic,
                                  DiscoveryItem.kind, DiscoveryItem.name).all()]
 
+    # the caller's own discovery profile, so an agent researches with it (4.5)
+    discovery_profile = my_discovery_profile(session, user)
+
     # packing — PER-USER (D-123)
     packing = _packing_out(session, trip.id, user.id)
 
@@ -530,7 +534,8 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
 
     return TripSnapshot(trip=_trip_summary(session, trip), activities=activities,
                         travelers=travelers, places=places, discovery=discovery,
-                        discovery_items=discovery_items, packing=packing,
+                        discovery_items=discovery_items,
+                        discovery_profile=discovery_profile, packing=packing,
                         captures=captures)
 
 
@@ -1254,6 +1259,21 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
     session.commit()
     session.refresh(f)
     return _finding_out(f)
+
+
+def my_discovery_profile(session: Session, user) -> dict:
+    """The caller's own discovery profile (dietary, cuisines to avoid, budget,
+    drink/activity interests, mobility), labelled, with how to apply it."""
+    from app.trips.routes import discovery_profile_public
+    trav = session.get(TravelerIdentity, user.traveler_id) if user.traveler_id else None
+    return discovery_profile_public(session, trav)
+
+
+@router.get("/me/discovery-profile")
+def api_my_discovery_profile(user=Depends(authn.current_user),
+                             session: Session = Depends(get_session)):
+    """Your discovery profile — what Discover (and your agents) research with."""
+    return my_discovery_profile(session, user)
 
 
 @router.post("/trips/{trip_id}/findings", response_model=FindingOut, status_code=201)

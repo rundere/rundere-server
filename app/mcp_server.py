@@ -43,15 +43,18 @@ _caller_agent: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 INSTRUCTIONS = """Run·dere (formerly Yonder) is the user's personal travel planner.
 Tools act as the signed-in Run·dere user and see only what they can see in the app.
 Start with list_trips, then get_trip for the full picture (timeline, travellers,
-places, the user's Discover findings and packing). Timeline items take a `type`
-from list_activity_types and a `values` object with that type's field keys.
-Use save_research to keep your research on the user's Discover tab for a trip —
-in your own "research" section or updating a topic such as safety; it lands as
-a draft they review, and locked findings are theirs to keep. For Food & Drink
-or Events & Activities use save_city_guide (a city summary plus rows — for
-food, say what to get); for a city's local phrases use save_phrases. Items in
-get_trip's `discovery_items` can go on the timeline with add_item_to_timeline.
-Dates are ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items)."""
+places, the user's Discover findings, their discovery profile and packing).
+Timeline items take a `type` from list_activity_types and a `values` object with
+that type's field keys. Research with the user's preferences: get_trip's
+`discovery_profile` (also get_discovery_profile) gives dietary restrictions,
+cuisines to avoid, allergies, budget and interests, and how to apply them.
+Use save_research to keep research on the user's Discover tab — in your own
+"research" section or updating a topic such as safety; it lands as a draft they
+review, and locked findings are theirs to keep. For Food & Drink or Events &
+Activities use save_city_guide (a city summary plus rows — for food, say what to
+get); for a city's local phrases use save_phrases. Items in get_trip's
+`discovery_items` can go on the timeline with add_item_to_timeline. Dates are
+ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items)."""
 
 mcp = MCPServer("Run·dere", instructions=INSTRUCTIONS, version=settings.app_version)
 
@@ -336,6 +339,16 @@ def save_research(trip_id: TripId,
 
 _PLACE_KEY = Field(description="The city key, e.g. \"MA:Harar\" — reuse the place_key "
                                "of the city's findings in get_trip's `discovery`")
+
+
+@mcp.tool()
+def get_discovery_profile() -> dict[str, Any]:
+    """The user's discovery profile: dietary restrictions, cuisines to avoid,
+    allergies, budget ceiling, drink and activity interests, mobility,
+    nationality and base currency — each with a label, plus `how_to_use`.
+    Read it before researching food, drink or things to do, and follow it the
+    way Run·dere's own Discover does. (get_trip includes it too.)"""
+    return _run(lambda session, user: api_v1.my_discovery_profile(session, user))
 
 
 @mcp.tool()

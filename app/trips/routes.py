@@ -1868,6 +1868,55 @@ def _discovery_profile_row(session: Session, traveler: TravelerIdentity | None,
             .order_by(DiscoveryProfile.created_at).first())
 
 
+def discovery_profile_public(session: Session, traveler: TravelerIdentity | None,
+                             owner: bool = False) -> dict:
+    """ONE person's discovery profile for an AI agent (4.5, MCP/API): the same
+    preferences the local Discover run shapes its research with, each value
+    with its label, plus how to apply them. Only ever the caller's own."""
+    row = _discovery_profile_row(session, traveler, owner)
+    d = _discovery_default()
+    v = {**d, **((row.values if row else None) or {})}
+    food = {**d["food"], **(v.get("food") or {})}
+    drink = {**d["drink"], **(v.get("drink") or {})}
+    activity = {**d["activity"], **(v.get("activity") or {})}
+    practical = {**d["practical"], **(v.get("practical") or {})}
+    diet_l, drink_l, act_l = (dict(DISCOVERY_DIETARY), dict(DISCOVERY_DRINKS),
+                              dict(DISCOVERY_ACTIVITIES))
+    budget = food.get("budget_ceiling") or 0
+    mob = practical.get("mobility") or "no_limits"
+
+    def tagged(keys, labels):
+        return [{"key": k, "label": labels.get(k, k)} for k in keys or []]
+
+    out = {
+        "food": {
+            "dietary_restrictions": tagged(food.get("dietary_restrictions"), diet_l),
+            "avoid_cuisines": list(food.get("cuisine_dislikes") or []),
+            "allergies": food.get("allergies") or "",
+            "budget_ceiling": {"tier": budget,
+                               "label": dict(DISCOVERY_BUDGET).get(budget, "No limit")},
+        },
+        "drink": {"interests": tagged(drink.get("interests"), drink_l)},
+        "activity": {"interests": tagged(activity.get("interests"), act_l)},
+        "practical": {"mobility": {"key": mob,
+                                   "label": dict(DISCOVERY_MOBILITY).get(mob, mob)}},
+        "travel": {"nationality": traveler.nationality if traveler else None,
+                   "base_currency": traveler.base_currency if traveler else None},
+    }
+    out["blank"] = row is None or not any([
+        food.get("dietary_restrictions"), food.get("cuisine_dislikes"),
+        food.get("allergies"), budget, drink.get("interests"),
+        activity.get("interests"), mob != "no_limits"])
+    out["how_to_use"] = (
+        "Constraint-first: every recommendation must fit the dietary restrictions; "
+        "never recommend the avoided cuisines; stay at or under the budget ceiling "
+        "(1–4, $–$$$$; 0 = no limit); flag — don't exclude — anything that may "
+        "involve a listed allergen. Interests ADD places (breweries, museums, …) on "
+        "top of the usual mix; they never narrow it. Respect mobility for activities. "
+        "A blank profile means show everything. Never infer tastes from nationality.")
+    return out
+
+
 def _discovery_form_ctx(request: Request, session: Session,
                         saved: bool = False) -> dict:
     from app.acting import acting_for

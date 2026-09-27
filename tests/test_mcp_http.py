@@ -40,7 +40,7 @@ if DEPS:
                  "get_journal_entry", "update_journal_entry", "attach_journal_entry",
                  "capture_url", "list_review", "get_review_item",
                  "assign_review_item_to_trip", "save_research", "save_city_guide",
-                 "save_phrases", "add_item_to_timeline"}
+                 "save_phrases", "add_item_to_timeline", "get_discovery_profile"}
 
     @pytest.fixture(scope="module")
     def client():
@@ -630,3 +630,35 @@ if DEPS:
         good, _ = call(client, tok, "save_research", trip_id=w["shared"], topic="language",
                        place_key="MA", title="x", body_md="y")
         assert not good                     # the national language stays local
+
+    def test_discovery_profile_is_the_callers_own(client, w):
+        from app.models import DiscoveryProfile
+        with SessionLocal() as s:
+            alice = s.get(User, w["alice"])
+            s.query(DiscoveryProfile).filter_by(traveler_id=alice.traveler_id).delete()
+            s.add(DiscoveryProfile(traveler_id=alice.traveler_id, values={
+                "food": {"dietary_restrictions": ["vegetarian"], "cuisine_dislikes": ["sushi"],
+                         "allergies": "peanuts", "budget_ceiling": 2},
+                "drink": {"interests": ["craft_beer"]},
+                "activity": {"interests": ["museums"]},
+                "practical": {"mobility": "moderate"}}))
+            s.commit()
+            tid = alice.traveler_id
+        try:
+            p = ok(client, _tok(w["alice"]), "get_discovery_profile")
+            assert p["food"]["dietary_restrictions"] == [{"key": "vegetarian", "label": "Vegetarian"}]
+            assert p["food"]["avoid_cuisines"] == ["sushi"] and p["food"]["allergies"] == "peanuts"
+            assert p["food"]["budget_ceiling"] == {"tier": 2, "label": "$$"}
+            assert p["drink"]["interests"][0]["label"] == "Craft beer"
+            assert p["practical"]["mobility"]["key"] == "moderate"
+            assert p["blank"] is False and "Constraint-first" in p["how_to_use"]
+            snap = ok(client, _tok(w["alice"]), "get_trip", trip_id=w["shared"])
+            assert snap["discovery_profile"]["food"]["avoid_cuisines"] == ["sushi"]
+            # bob travels on the same trip but sees only his own (blank) profile
+            bob = ok(client, _tok(w["bob"]), "get_trip", trip_id=w["shared"])
+            assert bob["discovery_profile"]["blank"] is True
+            assert bob["discovery_profile"]["food"]["avoid_cuisines"] == []
+        finally:
+            with SessionLocal() as s:
+                s.query(DiscoveryProfile).filter_by(traveler_id=tid).delete()
+                s.commit()
