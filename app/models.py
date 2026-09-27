@@ -205,8 +205,34 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)  # -> traveler_identities.id
+    # 4.1 admin sharing (migration 0027). ON (default): admins can view and edit
+    # this user's data. OFF (opted out): admins see only what the user invites
+    # them into, like any other user. A UI policy, not encryption — the server
+    # operator can always read the database. Opting out needs SMTP + an email so
+    # a password reset never has to pass through an admin.
+    share_with_admins: Mapped[bool] = mapped_column(Boolean, default=True,
+                                                    server_default="1")
+    # Self-registered / SSO-provisioned accounts are asked to choose at their
+    # first sign-in; accounts an admin creates share by default, unasked.
+    sharing_prompt: Mapped[bool] = mapped_column(Boolean, default=False,
+                                                 server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AccountEvent(Base):
+    """4.1 audit trail of account actions taken by someone OTHER than the account
+    holder (an admin resetting a password, changing a role...) plus sharing
+    changes. The account holder is emailed about admin actions when they've
+    opted out of sharing. Append-only; soft links (house convention)."""
+    __tablename__ = "account_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)      # the account
+    actor_id: Mapped[str | None] = mapped_column(String(36))          # who did it (None = CLI)
+    action: Mapped[str] = mapped_column(String(32))
+    detail: Mapped[str | None] = mapped_column(String(255))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 
 
 class RefreshToken(Base):
@@ -224,6 +250,82 @@ class RefreshToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     user_agent: Mapped[str | None] = mapped_column(String(256))
+
+
+class OAuthClient(Base):
+    """YONDER-107: an OAuth 2.1 client (claude.ai, Claude Code, the iOS app).
+    Registered dynamically (RFC 7591, `source="dcr"`) or pre-registered with
+    `app.cli oauth-client create` (`source="cli"`). Registering grants nothing by
+    itself — every user still signs in and consents. `secret_hash` (sha256) is
+    set only for confidential clients; public clients rely on PKCE."""
+    __tablename__ = "oauth_clients"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    redirect_uris: Mapped[list] = mapped_column(JsonCol)
+    secret_hash: Mapped[str | None] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(8), default="dcr")      # dcr | cli
+    created_by: Mapped[str | None] = mapped_column(String(36))         # user id (None = DCR/CLI)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class OAuthCode(Base):
+    """A single-use authorization code (≤60 s), bound to client + redirect_uri +
+    PKCE challenge + user. Only its sha256 is stored. `grant_id` is filled when
+    it's exchanged, so a replayed code can revoke the grant it produced."""
+    __tablename__ = "oauth_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    redirect_uri: Mapped[str] = mapped_column(Text)
+    code_challenge: Mapped[str] = mapped_column(String(128))
+    scope: Mapped[str | None] = mapped_column(String(255))
+    resource: Mapped[str | None] = mapped_column(String(512))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    grant_id: Mapped[str | None] = mapped_column(String(36))
+
+
+class OAuthGrant(Base):
+    """One user's consent to one client — what Account → Connected apps lists.
+    Holds the CURRENT rotating refresh token's sha256; `prev_refresh_hashes`
+    keeps recently retired ones so a replayed (stolen) refresh token is
+    recognised and revokes the whole grant. Sliding expiry: every refresh
+    pushes `expires_at` out. `token_version` snapshots User.token_version so
+    "sign out everywhere" also ends the grant."""
+    __tablename__ = "oauth_grants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    scope: Mapped[str | None] = mapped_column(String(255))
+    resource: Mapped[str | None] = mapped_column(String(512))
+    refresh_hash: Mapped[str | None] = mapped_column(String(64))
+    prev_refresh_hashes: Mapped[list | None] = mapped_column(JsonCol)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PersonalApiToken(Base):
+    """A personal API token (`ypat_…`) for non-OAuth clients (Claude Code, the
+    stdio MCP script). Created and revoked on the Account page, shown once,
+    stored as sha256. Optional expiry; `token_version` snapshot as for grants."""
+    __tablename__ = "personal_api_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PasswordResetToken(Base):
@@ -406,9 +508,25 @@ class TripActivity(Base):
     # (trip_id, source_item_key) so a re-committed / re-captured booking updates
     # in place instead of duplicating (migration 0009).
     source_item_key: Mapped[str | None] = mapped_column(String(512), index=True)
+    # 4.2.x: where it is — located points (+ a road trip's route line), derived
+    # from `values` on save or from a capture's payload (app/trips/geo.py,
+    # migration 0029). NULL = not located yet.
+    geo: Mapped[dict | None] = mapped_column(JsonCol, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripActivityTraveler(Base):
+    """4.1 — which of the trip's travellers an activity is for (migration 0025).
+    NO rows for an activity = everyone on the trip, the default, so a solo trip
+    or a shared dinner never needs tagging. Only ids on the trip's roster are
+    ever stored (app/trips/who.py); removing someone from the roster or deleting
+    the activity removes their rows. Soft links, no DB FK."""
+    __tablename__ = "trip_activity_travelers"
+
+    activity_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    traveler_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
 
 class RuleSetting(Base):
@@ -441,6 +559,9 @@ class DiscoveryRun(Base):
     # Soft link, plain indexed column (same convention as travel_items.trip_id —
     # no DB FK; the trips delete route is responsible for cleanup).
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.1: Discover is per person (migration 0026) — whose run/finding/exclusion
+    # this is. NULL = auth-off single-user mode (same rule as packing, D-123).
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     status: Mapped[str] = mapped_column(String(12), default="running", index=True)  # running|done|failed|cancelled
     phase: Mapped[str | None] = mapped_column(String(128))
     done: Mapped[int] = mapped_column(Integer, default=0)
@@ -468,6 +589,9 @@ class DiscoveryFinding(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     run_id: Mapped[str | None] = mapped_column(String(36), index=True)
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.1: Discover is per person (migration 0026) — whose run/finding/exclusion
+    # this is. NULL = auth-off single-user mode (same rule as packing, D-123).
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     topic: Mapped[str] = mapped_column(String(24), index=True)  # weather|currency|visa|...
     scope: Mapped[str] = mapped_column(String(8))               # country|city
     place_key: Mapped[str] = mapped_column(String(128))          # "US" | "US:Glendale"
@@ -482,6 +606,56 @@ class DiscoveryFinding(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     adventurelog_note_id: Mapped[str | None] = mapped_column(String(64))
+
+
+class DiscoveryItem(Base):
+    """Run·dere 4.5 — one place, event or activity inside a Food & Drink or
+    Events & Activities finding (Discovery 2.0, YONDER-147).
+
+    A finding is the city's write-up; its items are the rows people sort, hide
+    and add to the timeline, so each needs its own identity. Items belong to a
+    finding and are re-synced whenever that finding is regenerated
+    (discover/items.py): matched by name, a row keeps what the person did with
+    it (hidden, edited, added to the timeline); rows the new result no longer
+    has are dropped unless the person touched them.
+
+    `kind` is the fine type — restaurant/cafe/bar/pub/brewery/… for food,
+    `event` or `activity` for events. Dates are ISO strings like the rest of
+    the schema; `when_text` keeps the source's own wording ("12–14 Oct")."""
+    __tablename__ = "discovery_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    finding_id: Mapped[str] = mapped_column(String(36), index=True)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    topic: Mapped[str] = mapped_column(String(24))               # food | events
+    place_key: Mapped[str] = mapped_column(String(128))          # the finding's city key
+    kind: Mapped[str] = mapped_column(String(24))
+    name: Mapped[str] = mapped_column(String(300))
+    neighbourhood: Mapped[str | None] = mapped_column(String(200))
+    address: Mapped[str | None] = mapped_column(String(500))
+    lat: Mapped[float | None] = mapped_column(Float)
+    lon: Mapped[float | None] = mapped_column(Float)
+    website: Mapped[str | None] = mapped_column(String(2000))
+    what_to_get: Mapped[str | None] = mapped_column(Text)       # food: the dish/drink to order
+    price_tier: Mapped[int | None] = mapped_column(Integer)      # food: 1–4
+    starts_on: Mapped[str | None] = mapped_column(String(16))    # event: YYYY-MM-DD[THH:MM]
+    ends_on: Mapped[str | None] = mapped_column(String(16))
+    when_text: Mapped[str | None] = mapped_column(String(200))
+    venue: Mapped[str | None] = mapped_column(String(300))
+    details: Mapped[str | None] = mapped_column(Text)            # why go / what it is
+    duration: Mapped[str | None] = mapped_column(String(100))    # activity
+    booking: Mapped[bool | None] = mapped_column(Boolean)        # activity/food: book ahead
+    sources: Mapped[list | None] = mapped_column(JsonCol)
+    extra: Mapped[dict | None] = mapped_column(JsonCol)          # anything else the source had
+    origin: Mapped[str] = mapped_column(String(12), default="local")   # local | agent
+    agent: Mapped[str | None] = mapped_column(String(128))
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    hidden_reason: Mapped[str | None] = mapped_column(String(16))  # not_my_thing | closed | been_there
+    edited: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    activity_id: Mapped[str | None] = mapped_column(String(36))  # added to the timeline as
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class PackingProfile(Base):
@@ -723,6 +897,9 @@ class DiscoveryExclusion(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    # 4.1: Discover is per person (migration 0026) — whose run/finding/exclusion
+    # this is. NULL = auth-off single-user mode (same rule as packing, D-123).
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     place_key: Mapped[str] = mapped_column(String(128), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

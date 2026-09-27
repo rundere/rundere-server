@@ -1,47 +1,51 @@
-# Yonder MCP server
+# Yonder and MCP
 
-A first-party [MCP](https://modelcontextprotocol.io) server that lets an agent
-(Claude Desktop / Claude Code) drive Yonder — read your trips, check what's next,
-add an event, check off a packing item, or share a link into your review queue.
+## Primary path: the claude.ai connector (built in)
 
-It talks to Yonder's `/api/v1` over HTTP as **one Yonder user**, so it can only
-see and change what that user is allowed to (the API is per-user scoped). It adds
-nothing to the Yonder app itself — it's a standalone client.
+Yonder has a remote MCP server at **`https://<yonder-host>/mcp`**, built into the
+app, with OAuth sign-in. Add it to claude.ai as a custom connector and it works
+in claude.ai, Claude Desktop and the Claude mobile app. Claude Code can use it
+too, through a browser sign-in or a personal API token.
 
-## Configure
+→ **[docs/claude-connector.md](../docs/claude-connector.md)**: setup, tools, and
+how to disconnect.
 
-**Recommended — a long-lived, revocable API token** (no password in the config).
-Mint one for your account (once), then set it as `YONDER_TOKEN`:
+## This folder: the stdio script (LAN / Claude Code / Claude Desktop)
 
-```bash
-docker exec yonder-yonder-1 python -m app.cli mint-api-token me --days 365
-```
+`mcp/server.py` is a standalone **stdio** MCP server with the **same tools** as
+`/mcp`. It's a thin client of Yonder's `/api/v1` (`client.py`, stdlib only).
+Use it where the host can reach `/api/v1` but not `/mcp`, or when you'd rather
+run a local process. It acts as **one Yonder user**, so it sees and changes only
+what that user may (the API is per-user scoped).
 
-Environment variables:
+### Token
+
+Create a **personal API token**: Yonder → Account → **Personal API tokens**. It's
+shown once, is individually revocable, and has an optional expiry. Use it as
+`YONDER_TOKEN`.
+
+(`python -m app.cli mint-api-token <user>` still works, but those tokens can
+only be revoked all at once, by resetting the user's password.)
 
 | var | meaning |
 |---|---|
 | `YONDER_URL` | base URL of the Yonder app (e.g. `https://yonder.home.example`) |
-| `YONDER_TOKEN` | **preferred** — the long-lived API token minted above |
-| `YONDER_USER` / `YONDER_PASSWORD` | alternative — the MCP logs in and auto-refreshes |
+| `YONDER_TOKEN` | **preferred**: a personal API token (`ypat_…`) |
+| `YONDER_USER` / `YONDER_PASSWORD` | alternative: the script logs in and re-logs in on expiry |
 
-Either way the MCP acts **as that one user** and sees only what they may see (the
-API is per-user scoped). Revoke the token by resetting that user's password
-(bumps their token version, invalidating all their tokens).
-
-Install the runtime once (the client itself is stdlib-only):
+Install the runtime once (MCP SDK 2.x):
 
 ```bash
 pip install -r mcp/requirements.txt
 ```
 
-## Run / wire up
+### Wire it up
 
 Claude Code:
 
 ```bash
 claude mcp add yonder -- env YONDER_URL=https://yonder.home.example \
-  YONDER_USER=me YONDER_PASSWORD=… python /path/to/yonder/mcp/server.py
+  YONDER_TOKEN=ypat_… python /path/to/yonder/mcp/server.py
 ```
 
 Claude Desktop (`claude_desktop_config.json`):
@@ -54,25 +58,20 @@ Claude Desktop (`claude_desktop_config.json`):
       "args": ["/path/to/yonder/mcp/server.py"],
       "env": {
         "YONDER_URL": "https://yonder.home.example",
-        "YONDER_USER": "me",
-        "YONDER_PASSWORD": "…"
+        "YONDER_TOKEN": "ypat_…"
       }
     }
   }
 }
 ```
 
-## Tools
+### Tools
 
-- `list_trips`, `get_trip(trip_id)` — trips + full snapshot (activities, places
-  with coordinates, discovery findings, your packing).
-- `dashboard`, `review(bucket)` — the home overview and your capture queue.
-- `capture_url(url, travel_date?, title?, notes?)` — share a booking page or a
-  Google Maps directions link into the review queue.
-- `add_activity(trip_id, type, values, starts_at?)` — add a location/event/… to
-  a trip you can edit.
-- `generate_packing(trip_id)`, `set_packing_status(trip_id, item_id, status)` —
-  your own per-user packing.
+The same set as the remote endpoint (see the table in
+[docs/claude-connector.md](../docs/claude-connector.md#tools)): trips, timeline
+(incl. `traveler_ids`), packing, journal, capture, review + filing, and
+`save_research` into your Discover tab. One difference: over stdio,
+`update_activity`'s `values` **replaces** all of an activity's fields (the API's
+semantics), while the remote tool merges them.
 
-The capture **review/commit** pipeline is intentionally not exposed over MCP yet
-(a later version).
+Tests: `pytest mcp/test_client.py` (no network, no MCP runtime).

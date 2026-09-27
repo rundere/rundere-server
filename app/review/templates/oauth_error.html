@@ -1,0 +1,9 @@
+{% extends "authcard.html" %}
+{% block title %}Can't connect{% endblock %}
+{% block body %}
+<div class="card">
+  <div class="brand"><h1><span class="rd-mark" aria-hidden="true"></span> <span class="rd-wordmark" role="img" aria-label="Run·dere"></span></h1><span>connect an app</span></div>
+  <div class="err">{{ message }}</div>
+  <div class="links"><a href="/">Back to Run·dere</a></div>
+</div>
+{% endblock %}

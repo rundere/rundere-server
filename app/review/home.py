@@ -10,6 +10,11 @@ Field rules follow the kind:
                           Photon fallback), never typed by hand.
   residence/home_region-> latitude+longitude required; filled from a Photon
                           address lookup, editable afterwards.
+
+Per person (4.1): everyone sees and edits only their OWN homes — the ones on
+their linked traveller — admins included (D-124: an admin administers the
+platform, not other people's personal data). With auth off it's the deployment
+owner's (`self`) homes, as before.
 """
 from __future__ import annotations
 
@@ -21,9 +26,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app import scope
 from app.config import settings
 from app.db import get_session
 from app.models import HomeProfile
+from app.resolving import OWNER_HOMES, home_rows_query, self_traveler_id
 
 log = logging.getLogger("yonder.home")
 router = APIRouter(prefix="/review/home")
@@ -48,16 +55,39 @@ def _photon():
     return PhotonGeocoder(settings.photon_url)
 
 
-def _profiles(session: Session) -> list[HomeProfile]:
-    return (session.query(HomeProfile)
+def _my_traveler(session: Session, request: Request):
+    """Whose homes this page shows: the viewer's traveller id — or, for an admin
+    acting for someone (?for=, app/acting.py), theirs — or OWNER_HOMES with auth
+    off. None = a user with no traveller linked yet."""
+    from app.acting import acting_for
+    acting = acting_for(session, request)
+    request.state.acting = acting
+    if acting.owner_mode:
+        return OWNER_HOMES
+    return acting.traveler.id if acting.traveler else None
+
+
+def _profiles(session: Session, tid) -> list[HomeProfile]:
+    return (home_rows_query(session, tid)
             .order_by(HomeProfile.effective_from.is_(None).desc(),
                       HomeProfile.effective_from, HomeProfile.kind).all())
 
 
-def _page_ctx(session: Session, *, edit: HomeProfile | None = None,
-              error: str = "", form: dict | None = None) -> dict:
+def _mine(session: Session, tid, profile_id) -> HomeProfile | None:
+    """A home by id, only if it's this person's — anyone else's reads as missing."""
+    try:
+        pid = int(profile_id)
+    except (TypeError, ValueError):
+        return None
+    return home_rows_query(session, tid).filter(HomeProfile.id == pid).one_or_none()
+
+
+def _page_ctx(session: Session, tid, *, edit: HomeProfile | None = None,
+              error: str = "", form: dict | None = None, acting=None) -> dict:
     return {
-        "profiles": _profiles(session),
+        "acting": acting,               # admin "whose profile" picker (app/acting.py)
+        "no_traveller": tid is None,
+        "profiles": _profiles(session, tid),
         "kinds": KINDS,
         "edit_id": edit.id if edit else None,
         "form": form if form is not None else _profile_to_form(edit),
@@ -82,9 +112,10 @@ def _profile_to_form(p: HomeProfile | None) -> dict:
 @router.get("/", response_class=HTMLResponse)
 def home_page(request: Request, edit: str | None = None,
               session: Session = Depends(get_session)):
-    editing = session.get(HomeProfile, int(edit)) if edit and edit.isdigit() else None
+    tid = _my_traveler(session, request)
+    editing = _mine(session, tid, edit) if edit else None
     return templates.TemplateResponse(request, "home.html",
-                                      _page_ctx(session, edit=editing))
+                                      _page_ctx(session, tid, edit=editing, acting=request.state.acting))
 
 
 @router.get("/kind-fields", response_class=HTMLResponse)
@@ -154,6 +185,7 @@ def _num(v: str) -> float | None:
 @router.post("", response_class=HTMLResponse)
 @router.post("/", response_class=HTMLResponse)
 async def save(request: Request, session: Session = Depends(get_session)):
+    tid = _my_traveler(session, request)
     form = dict((await request.form()))
     edit_id = form.get("edit_id")
     kind = form.get("kind") or "home_airport"
@@ -163,7 +195,10 @@ async def save(request: Request, session: Session = Depends(get_session)):
     country = (form.get("country") or "").strip().upper() or None
 
     error = ""
-    if not label:
+    if tid is None:
+        error = ("Your account isn't linked to a traveller yet — link it under "
+                 "/account/traveller, or ask an admin.")
+    elif not label:
         error = "Give this a name."
     elif kind == "home_airport" and not (len(iata) == 3 and iata.isalpha()):
         error = "A home airport needs a 3-letter airport code (e.g. YYZ)."
@@ -176,10 +211,13 @@ async def save(request: Request, session: Session = Depends(get_session)):
         # base.html and so carries the global app header — injected a second
         # header into the body on every save/error (D-39 regression).
         return templates.TemplateResponse(request, "_home_app.html",
-                                          _page_ctx(session, error=error, form=form))
+                                          _page_ctx(session, tid, error=error, form=form,
+                                                    acting=request.state.acting))
 
-    target = (session.get(HomeProfile, int(edit_id))
-              if edit_id and edit_id.isdigit() else None) or HomeProfile()
+    target = (_mine(session, tid, edit_id) if edit_id else None) or HomeProfile()
+    # Stamp the owner; with auth off that's the self traveller (or unassigned
+    # when there's none yet, the pre-4.1 shape).
+    target.traveler_id = self_traveler_id(session) if tid is OWNER_HOMES else tid
     target.label = label
     target.kind = kind
     target.iata = iata if kind == "home_airport" else None
@@ -191,20 +229,27 @@ async def save(request: Request, session: Session = Depends(get_session)):
     target.notes = (form.get("notes") or "").strip() or None
     if target.id is None:
         session.add(target)
+    from app.acting import audit_if_other
+    audit_if_other(session, request, request.state.acting, "home profiles")
     session.commit()
     # Fragment (#home-app): list refreshed, form reset. NOT the full page — the
     # form targets #home-app with hx-swap="outerHTML", so a full-page response
     # would graft a duplicate app header into the DOM each time.
-    return templates.TemplateResponse(request, "_home_app.html", _page_ctx(session))
+    return templates.TemplateResponse(request, "_home_app.html",
+                                      _page_ctx(session, tid, acting=request.state.acting))
 
 
 @router.post("/delete/{profile_id}", response_class=HTMLResponse)
 def delete(profile_id: int, request: Request,
            session: Session = Depends(get_session)):
-    p = session.get(HomeProfile, profile_id)
+    tid = _my_traveler(session, request)
+    p = _mine(session, tid, profile_id)
     if p is not None:
+        from app.acting import audit_if_other
+        audit_if_other(session, request, request.state.acting, "home profiles")
         session.delete(p)
         session.commit()
     # Fragment (#home-app), same reason as save(): the delete button swaps this
     # into #home-app, so it must not carry the page header.
-    return templates.TemplateResponse(request, "_home_app.html", _page_ctx(session))
+    return templates.TemplateResponse(request, "_home_app.html",
+                                      _page_ctx(session, tid, acting=request.state.acting))

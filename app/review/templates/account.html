@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Account{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <span class="pagetitle">My account</span>
+  </div></div>
+
+  {% if msg %}<div class="saved-note">{{ msg }}</div>{% endif %}
+  {% if err %}<div class="violations">{{ err }}</div>{% endif %}
+
+  <div style="padding:16px;max-width:640px">
+    <div class="field"><label>Username</label><span class="v ro">{{ u.username }}</span></div>
+    <div class="field"><label>Sign-in</label><span class="v ro">{{ u.auth_source }}</span></div>
+
+    <h3 style="margin-top:20px">Email</h3>
+    {% if u.auth_source == "local" %}
+      <p class="why">Password-reset links are sent here.
+        {% if not smtp %}Email sending isn't set up on this server yet, so for now an
+        admin hands you a reset link instead.{% endif %}</p>
+    {% else %}
+      <p class="why">You sign in with {{ u.auth_source }}, so your password is managed
+        there, not by Run·dere.</p>
+    {% endif %}
+    <form method="post" action="/account/email">
+      <div class="field"><label>Email</label>
+        <input name="email" type="email" autocomplete="email" value="{{ u.email or '' }}"
+               placeholder="you@example.com"></div>
+      {% if u.auth_source == "local" %}
+      <div class="field"><label>Current password</label>
+        <input name="current_password" type="password" autocomplete="current-password" required></div>
+      {% endif %}
+      <button class="act primary" type="submit" style="margin-top:12px">Save email</button>
+    </form>
+
+    <h3 style="margin-top:28px">Sharing with admins</h3>
+    {% if u.share_with_admins %}
+      <p class="why"><b>On.</b> Admins can view and edit your trips, captures and journal.</p>
+      <form method="post" action="/account/sharing">
+        <input type="hidden" name="choice" value="private">
+        <input type="hidden" name="next" value="/account?msg=You+no+longer+share+with+admins">
+        <button class="act" type="submit" {% if blocker %}disabled{% endif %}>Stop sharing</button>
+      </form>
+      {% if blocker %}<p class="why">{{ blocker }}</p>{% endif %}
+    {% else %}
+      <p class="why"><b>Off.</b> Admins only see trips you invite them into, and your
+        password-reset links are emailed to you, never shown to an admin.</p>
+      <form method="post" action="/account/sharing">
+        <input type="hidden" name="choice" value="share">
+        <input type="hidden" name="next" value="/account?msg=You+now+share+with+admins">
+        <button class="act" type="submit">Share with admins</button>
+      </form>
+    {% endif %}
+    <p class="why" style="margin-top:8px">This controls what admins see in Run·dere; it isn't
+      encryption — whoever runs the server can reach the database directly.</p>
+
+    <h3 style="margin-top:28px" id="connected-apps">Connected apps</h3>
+    <p class="why">Apps you've allowed to use Run·dere as you — e.g. Claude, via the
+      connector. Disconnecting one ends its access straight away.</p>
+    {% if apps %}
+      {% for a in apps %}
+      <div class="field" style="align-items:center">
+        <label>{{ a.client }}</label>
+        <span class="v ro">connected {{ a.created_at.strftime('%Y-%m-%d') }}{% if a.last_used_at %}
+          · last used {{ a.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span>
+        <form method="post" action="/account/connected-apps/{{ a.id }}/revoke" style="margin-left:8px">
+          <button class="act" type="submit">Disconnect</button>
+        </form>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="why"><i>No connected apps.</i></p>
+    {% endif %}
+
+    <h3 style="margin-top:28px" id="api-tokens">Personal API tokens</h3>
+    <p class="why">For tools that can't sign in with a browser — Claude Code or the
+      Run·dere MCP script (<code>YONDER_TOKEN</code>). A token acts as you; keep it secret.</p>
+    {% if new_token %}
+      <div class="saved-note">
+        <b>{{ new_token_name }}</b> — copy this now; it won't be shown again:<br>
+        <code style="user-select:all;word-break:break-all">{{ new_token }}</code>
+      </div>
+    {% endif %}
+    {% for t in pats %}
+      <div class="field" style="align-items:center">
+        <label>{{ t.name }}</label>
+        <span class="v ro">created {{ t.created_at.strftime('%Y-%m-%d') }}
+          · {% if t.expires_at %}expires {{ t.expires_at.strftime('%Y-%m-%d') }}{% else %}no expiry{% endif %}
+          {% if t.last_used_at %}· last used {{ t.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span>
+        <form method="post" action="/account/tokens/{{ t.id }}/revoke" style="margin-left:8px">
+          <button class="act" type="submit">Revoke</button>
+        </form>
+      </div>
+    {% endfor %}
+    <form method="post" action="/account/tokens">
+      <div class="field"><label>Name</label>
+        <input name="name" maxlength="128" placeholder="e.g. Claude Code on my laptop" required></div>
+      <div class="field"><label>Expires after</label>
+        <select name="days">
+          <option value="30">30 days</option>
+          <option value="90" selected>90 days</option>
+          <option value="365">1 year</option>
+          <option value="">Never</option>
+        </select></div>
+      <button class="act primary" type="submit" style="margin-top:12px">Create token</button>
+    </form>
+
+    {% if u.auth_source == "local" %}
+    <h3 style="margin-top:28px">Password</h3>
+    <p class="why">Changing it signs you out everywhere else.</p>
+    <form method="post" action="/account/password">
+      <div class="field"><label>Current password</label>
+        <input name="current_password" type="password" autocomplete="current-password" required></div>
+      <div class="field"><label>New password</label>
+        <input name="password" type="password" autocomplete="new-password" required></div>
+      <div class="field"><label>Confirm new</label>
+        <input name="confirm" type="password" autocomplete="new-password" required></div>
+      <button class="act primary" type="submit" style="margin-top:12px">Change password</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

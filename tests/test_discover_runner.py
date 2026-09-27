@@ -95,7 +95,9 @@ def test_runner_persists_findings_and_marks_done():
         assert all(f.status == "draft" for f in findings)
 
 
-def test_rerun_preserves_edited_but_refreshes_drafts():
+def test_rerun_keeps_locked_but_refreshes_drafts():
+    """Plugs is a LOCKABLE topic (discover/policy.py): editing locks it, so a
+    whole-trip re-run leaves it alone."""
     if not DEPS:
         return
     tid = _fresh_trip()
@@ -112,7 +114,7 @@ def test_rerun_preserves_edited_but_refreshes_drafts():
 
     with SessionLocal() as s:
         ch = s.get(DiscoveryFinding, edited_id)
-        assert ch.status == "edited"              # human edit preserved
+        assert ch.status == "edited"              # locked: human edit preserved
         assert ch.body_md == "HUMAN EDIT — keep me"
         # a draft finding was regenerated in place (still exactly one row)
         ca = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="plugs",
@@ -241,3 +243,73 @@ def test_rerun_single_finding_overrides_edit():
         # Explicit single re-run OVERRIDES the edit and regenerates fresh content.
         assert f.status == "draft"
         assert "Type" in f.body_md and f.body_md != "STALE MANUAL TEXT"
+        assert f.data["history"][0]["body_md"] == "STALE MANUAL TEXT"   # kept, not lost
+
+
+def test_rerun_refreshes_approved_time_sensitive_topic_with_history():
+    """Weather is never lockable: even approved/edited, a re-run supersedes it,
+    and the superseded version is kept as history (owner, 2026-09-26)."""
+    if not DEPS:
+        return
+    tid = _fresh_trip()
+    _run(tid)
+    with SessionLocal() as s:
+        w = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="weather",
+                                                place_key="CH:Geneva").one()
+        w.status = "approved"
+        w.body_md = "OLD FORECAST (approved 60 days ago)"
+        s.commit()
+        wid = w.id
+    _run(tid)
+    with SessionLocal() as s:
+        w = s.get(DiscoveryFinding, wid)
+        assert w.status == "draft" and w.body_md.startswith("weather for Geneva")
+        hist = w.data["history"]
+        assert hist[0]["body_md"] == "OLD FORECAST (approved 60 days ago)"
+        assert hist[0]["status"] == "approved"
+    _run(tid)                        # an identical refresh adds no duplicate history
+    with SessionLocal() as s:
+        assert len(s.get(DiscoveryFinding, wid).data["history"]) == 1
+
+
+def test_rerun_never_overwrites_agent_or_rejected():
+    if not DEPS:
+        return
+    tid = _fresh_trip()
+    _run(tid)
+    with SessionLocal() as s:
+        w = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="weather",
+                                                place_key="CH:Geneva").one()
+        w.resolver = "agent"
+        w.data = {"agent": "Perplexica"}
+        w.body_md = "Agent: storm on day 3"
+        t = s.query(DiscoveryFinding).filter_by(trip_id=tid, topic="weather",
+                                                place_key="CA:Toronto").one()
+        t.status = "rejected"
+        t.body_md = "REJECTED"
+        s.commit()
+        wid, tid2 = w.id, t.id
+    _run(tid)
+    with SessionLocal() as s:
+        assert s.get(DiscoveryFinding, wid).body_md == "Agent: storm on day 3"
+        assert s.get(DiscoveryFinding, tid2).body_md == "REJECTED"
+
+
+def test_policy_rules():
+    if not DEPS:
+        return
+    from discover import policy
+    f = SimpleNamespace(topic="visa", status="approved", resolver="llm")
+    assert policy.is_locked(f) and not policy.local_run_may_replace(f)
+    f = SimpleNamespace(topic="food", status="approved", resolver="llm")
+    assert not policy.is_locked(f) and policy.local_run_may_replace(f)
+    f = SimpleNamespace(topic="food", status="draft", resolver="agent", data={"agent": "Perplexica"})
+    assert policy.is_external(f) and not policy.local_run_may_replace(f)
+    assert policy.agent_label(f) == "Perplexica"
+    assert policy.agent_label(SimpleNamespace(resolver="agent", data=None)) == "AI agent"
+    assert policy.agent_label(SimpleNamespace(resolver="llm", data={})) is None
+    for t in ("weather", "currency", "food", "events", "safety", "research"):
+        assert not policy.is_lockable(t)
+    for t in ("plugs", "visa", "language", "language_regional", "language_local"):
+        assert policy.is_lockable(t)
+    assert not {"weather", "currency", "language"} & set(policy.EXTERNAL_TOPICS)

@@ -1,0 +1,10 @@
+{# Pick-or-create your own traveller (YONDER-145). `travelers` = unclaimed only. #}
+<label for="traveler_id" style="display:block;margin:8px 0 4px">Pick yourself from the list</label>
+<select id="traveler_id" name="traveler_id">
+  <option value="none">— not listed —</option>
+  {% for t in travelers %}
+  <option value="{{ t.id }}">{{ t.display_name }}</option>
+  {% endfor %}
+</select>
+<label for="new_traveler" style="display:block;margin:10px 0 4px">…or add yourself by name</label>
+<input id="new_traveler" name="new_traveler" placeholder="e.g. Alex Rivera" autocomplete="name">

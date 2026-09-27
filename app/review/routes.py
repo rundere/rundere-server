@@ -8,7 +8,6 @@ Nothing here talks to AirTrail or AdventureLog.
 """
 from __future__ import annotations
 
-import copy
 import logging
 import re
 from datetime import datetime, timezone
@@ -111,6 +110,14 @@ def _fields(payload: dict) -> list[dict]:
         place_fields("From", "/ground_transport/departure/place")
         dt_field("Arrives", "/ground_transport/arrival/time")
         place_fields("To", "/ground_transport/arrival/place")
+        route = (payload.get("ground_transport") or {}).get("route") or {}
+        if route.get("source_url"):
+            # What the router worked out once both stops were located; blank
+            # until they are (fix a From/To address and it is recomputed).
+            text_field("Distance (km)", "/ground_transport/route/distance_km", editable=False)
+            text_field("Drive time (min)", "/ground_transport/route/duration_minutes",
+                       editable=False)
+            text_field("Directions link", "/ground_transport/route/source_url", editable=False)
 
     rows.append({"label": "Status", "path": "/booking_status", "kind": "select",
                  "value": payload.get("booking_status") or "",
@@ -186,6 +193,17 @@ def _apply_edit(payload: dict, path: str, raw: str, kind: str) -> bool:
     if before == after:
         return False
     node[leaf] = after
+    # A corrected name/address/city means the place we located from the OLD text
+    # may be wrong: drop coordinates the geocoder guessed (never ones the
+    # document or link stated) so the re-resolve locates the new text, and the
+    # drive distance built from them.
+    if leaf in {"name", "address", "city", "region", "country"} \
+            and node.get("geocode_source") == "photon":
+        for k in ("lat", "lon", "geocode_source"):
+            node.pop(k, None)
+        route = (payload.get("ground_transport") or {}).get("route")
+        if isinstance(route, dict):
+            route["distance_km"] = route["duration_minutes"] = route["polyline"] = None
     return True
 
 
@@ -395,6 +413,33 @@ def queue(request: Request, bucket: str = "attention",
     })
 
 
+def _to_process(session: Session, user=None) -> int:
+    """How much the "Process new captures" button has to do for this user:
+    captured emails not extracted yet (batches still `received`) plus extracted
+    items not resolved yet (resolve `pending`, which sit in no funnel stage).
+    Scoped like the queue: own + open captures (everything for admin/auth-off)."""
+    from app.models import IngestBatch
+    q = session.query(IngestBatch).filter(IngestBatch.status == "received")
+    if not scope.unrestricted(user):
+        q = q.filter(scope.batch_filter(user))              # own + open (+ sharing, admin)
+    pending = sum(1 for i in session.query(TravelItem)
+                  .filter(scope.capture_filter(user)).all()
+                  if (i.status or {}).get("resolve") == "pending")
+    return q.count() + pending
+
+
+@router.get("/to-process", response_class=HTMLResponse)
+def to_process_stage(request: Request, session: Session = Depends(get_session)):
+    """The funnel's first stage, fetched on its own (hx-trigger=load) so every
+    re-render of the funnel — after an action or a processing run — refreshes
+    it without threading a count through every response."""
+    n = _to_process(session, scope.user_of(request))
+    return HTMLResponse(
+        f'<div class="stage{"" if n else " muted"}" id="to-process" '
+        f'title="Captured but not processed yet — use Process new captures">'
+        f'<b>{n}</b><span>to process</span></div>')
+
+
 @router.get("/item/{item_id}", response_class=HTMLResponse)
 def detail(item_id: str, request: Request, bucket: str = "attention",
            session: Session = Depends(get_session)):
@@ -434,63 +479,20 @@ async def save(item_id: str, request: Request, bucket: str = "attention",
         return HTMLResponse("", status_code=404)
 
     form = await request.form()
-    extraction = dict(item.extraction or {})
-    # DEEP copy: a shallow one shares the nested dicts with item.extraction, so
-    # _apply_edit would mutate the loaded value in place. SQLAlchemy then
-    # compares the reassigned attribute against an already-identical object,
-    # decides nothing changed, and silently skips the UPDATE — the edit is
-    # applied in memory, passes the rules, and never reaches the database.
-    payload = copy.deepcopy(extraction.get("payload") or {})
-    specs = {f["path"]: f for f in _fields(payload) if f.get("editable")}
-
-    changed: list[str] = []
-    for key, value in form.multi_items():
-        if not key.startswith("f:"):
-            continue
-        path = key[2:]
-        spec = specs.get(path)
-        if spec is None:                     # not an editable field on this item
-            continue
-        if _apply_edit(payload, path, str(value), spec["kind"]):
-            changed.append(path)
-
-    # Passengers come from checkboxes (pax:<identity_id>), never free text: the
-    # chosen Travellers become the payload's [{raw_name}] list, and the resolver
-    # re-derives self/guest on the re-resolve below. `pax_present` marks that the
-    # control was on the form, so "everything unchecked" clears the list rather
-    # than being mistaken for "no control submitted".
-    if "pax_present" in form:
-        from app.resolving import load_identities
-        idents = {i.id: i for i in load_identities(session)}
-        chosen = [idents[k[4:]] for k, _ in form.multi_items()
-                  if k.startswith("pax:") and k[4:] in idents]
-        new_travelers = [{"raw_name": i.display_name} for i in chosen]
-        if new_travelers != (payload.get("travelers") or []):
-            payload["travelers"] = new_travelers
-            changed.append("/travelers")
-
-    if changed:
-        extraction["payload"] = payload
-        item.extraction = extraction
-        revision = dict(item.revision or {})
-        locks = set(revision.get("field_locks") or []) | set(changed)
-        revision["field_locks"] = sorted(locks)
-        item.revision = revision
-        review = dict(item.review or {})
-        review.update({"action_taken": "edited",
-                       "resolved_at": datetime.now(timezone.utc).isoformat(),
-                       "resolved_by": "review-ui"})
-        item.review = review
-        # Re-run resolution so the rule gate sees the corrected payload.
-        status = dict(item.status or {})
-        status["resolve"] = "pending"
-        item.status = status
-        # JSON columns are not mutation-tracked; be explicit rather than rely
-        # on reassignment being detected.
-        for attr in ("extraction", "revision", "review", "status"):
-            flag_modified(item, attr)
-        session.commit()
-        _reresolve(session, item)
+    from app.review import service
+    fields = {k[2:]: str(v) for k, v in form.multi_items() if k.startswith("f:")}
+    # Passengers come from checkboxes (pax:<identity_id>), never free text; the
+    # resolver re-derives self/guest on the re-resolve. `pax_present` marks that
+    # the control was on the form, so "everything unchecked" clears the list.
+    pax = ([k[4:] for k, _ in form.multi_items() if k.startswith("pax:")]
+           if "pax_present" in form else None)
+    # "Who is this for" (non-flight, 4.1): kept on the review so a re-resolve
+    # never drops it; the commit stage tags the timeline activity with it.
+    who_ids = ([int(k[4:]) for k, _ in form.multi_items()
+                if k.startswith("who:") and k[4:].isdigit()]
+               if "who_present" in form else None)
+    changed = service.apply_edits(session, item, fields=fields, passenger_ids=pax,
+                                  traveler_ids=who_ids)
 
     # "Save & approve": correcting the data and approving it in one click, while
     # keeping the two conceptually distinct (D-31). We only approve if the item
@@ -500,18 +502,7 @@ async def save(item_id: str, request: Request, bucket: str = "attention",
     final = scope.capture_or_none(session, request, item_id)
     approved_now = False
     if "and_approve" in form:
-        if not (final.resolution or {}).get("outcome"):
-            _reresolve(session, final)
-            final = scope.capture_or_none(session, request, item_id)
-        if (final.status or {}).get("resolve") == "ok":
-            review = dict(final.review or {})
-            review.update({"required": False, "action_taken": "approved",
-                           "resolved_at": datetime.now(timezone.utc).isoformat(),
-                           "resolved_by": "review-ui"})
-            final.review = review
-            flag_modified(final, "review")
-            session.commit()
-            approved_now = True
+        approved_now = service.approve(session, final)
 
     if approved_now:
         # Approving moves the item out of its current bucket, so re-render the
@@ -665,13 +656,13 @@ def _yonder_trip_context(session: Session, item: TravelItem,
     show (item already staged/logged/ignored). Always available even with no
     trips yet — it then invites creating one. Trips whose dates contain the item
     sort first, then newest-first; the current link is preselected. Only offers
-    trips the user may see (Phase 2)."""
+    trips the user can file into — own, open, or travelling on (4.1)."""
     from app.models import Trip
     if view["bucket"] not in ("attention", "waiting", "ready"):
         return None
     from resolve.targets import item_date_span
     start, end = (item_date_span(view["payload"]) or (None, None))
-    trips = (session.query(Trip).filter(scope.trip_filter(session, user))
+    trips = (session.query(Trip).filter(scope.filing_trip_filter(session, user))
              .order_by(Trip.start_date.desc()).all())
     selected = item.trip_id
     selected_name = None
@@ -697,7 +688,7 @@ def _reresolve(session: Session, item: TravelItem) -> None:
     """Resolve this one item in place, reusing the full resolver so the review
     path and the batch path can never diverge."""
     from app.config import settings
-    from app.resolving import (load_enablement, load_home_profiles, resolve_item)
+    from app.resolving import (load_enablement, load_homes_for_user, resolve_item)
     from resolve.collections import CollectionRef
 
     collections: list[CollectionRef] = []
@@ -721,11 +712,16 @@ def _reresolve(session: Session, item: TravelItem) -> None:
     except Exception:
         log.warning("re-resolve ran without target lookups", exc_info=True)
 
+    # Photon too, as the batch path uses it: an edited From/To address or city
+    # is only useful if the re-resolve can locate it (YONDER-121).
+    from resolve.geocode import PhotonGeocoder
+    geocoder = PhotonGeocoder(settings.photon_url)
+
     try:
         from app.resolving import load_identities
-        resolve_item(session, item, load_home_profiles(session), collections,
+        resolve_item(session, item, load_homes_for_user(session, item.owner_id), collections,
                      load_enablement(session), airports=airports,
-                     country_names=country_names,
+                     geocoder=geocoder, country_names=country_names,
                      identities=load_identities(session))  # self/guest needs these
         session.commit()
     except Exception:
@@ -759,6 +755,38 @@ def _passenger_context(session: Session, payload: dict) -> dict | None:
     }
 
 
+def _who_context(session: Session, item: TravelItem, payload: dict) -> dict | None:
+    """4.1 "Who is this for" on a non-flight capture (a flight has "Who flew"
+    above, which does the same job and also drives AirTrail). Only once the
+    item is filed to a Yonder trip with 2+ travellers, listing only that trip's
+    travellers. Pre-ticked: the reviewer's earlier choice, else the traveller of
+    whoever captured it, else everyone."""
+    if payload.get("item_type") == "flight" or not item.trip_id:
+        return None
+    from app.models import TravelerIdentity
+    from app.trips import who
+    roster = who.roster_ids(session, item.trip_id)
+    if len(roster) < 2:
+        return None
+    names = {t.id: t.display_name for t in session.query(TravelerIdentity)
+             .filter(TravelerIdentity.id.in_(roster)).all()}
+    chosen = set((item.review or {}).get("traveler_ids") or [])
+    if not chosen:
+        chosen = {default_traveler(session, item)} & set(names)
+    chosen = (chosen & set(names)) or set(names)
+    return {"travelers": [{"id": tid, "name": n, "checked": tid in chosen}
+                          for tid, n in sorted(names.items(), key=lambda kv: kv[1].lower())]}
+
+
+def default_traveler(session: Session, item: TravelItem) -> int | None:
+    """The traveller of the user who captured the item (None if open/unlinked)."""
+    if not item.owner_id:
+        return None
+    from app.models import User
+    user = session.get(User, item.owner_id)
+    return user.traveler_id if user else None
+
+
 def _detail_response(request: Request, session: Session, item: TravelItem,
                      *, bucket: str = "attention", saved: bool = False,
                      oob_counts: bool = False):
@@ -771,6 +799,7 @@ def _detail_response(request: Request, session: Session, item: TravelItem,
                                               load_enablement(session))]
     ctx = {"i": view, "violations": violations, "saved": saved, "bucket": bucket,
            "pax": _passenger_context(session, view["payload"]),
+           "who": _who_context(session, item, view["payload"]),
            # Two independent trip pickers (2.1.2): the AdventureLog collection the
            # item files into (drives the commit; only when AL is configured), and
            # the in-house Yonder trip it belongs to (association only). Either can
@@ -805,10 +834,18 @@ def _process_toast(summary: dict, resolved: dict, error: str | None) -> str:
     return "Done — " + "; ".join(parts) + "."
 
 
-def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, str | None]:
+def _run_extract_resolve(session: Session, progress=None, user=None
+                         ) -> tuple[dict, dict, str | None]:
     """Run process_pending (extract) then resolve_pending — the SAME code the
     CLI runs, so the button and the batch path cannot diverge. `progress` is
-    threaded through both stages so the job panel shows a live count."""
+    threaded through both stages so the job panel shows a live count.
+
+    `user` scopes the run to the captures that person may see — their own and
+    open ones (an admin: + users who share), the same rule as the queue and
+    commit (YONDER-105/113). Nobody's button processes someone else's email."""
+    batch_filter = item_filter = None
+    if not scope.unrestricted(user):
+        batch_filter, item_filter = scope.batch_filter(user), scope.capture_filter(user)
     from app.config import settings
     summary: dict = {"extracted": 0, "needs_review": 0}
     resolved: dict = {}
@@ -817,7 +854,8 @@ def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, s
         from extract.llm import OllamaExtractor
         llm = OllamaExtractor(settings.ollama_url, settings.ollama_model,
                               settings.llm_timeout_seconds)
-        summary = process_pending(session, llm, progress=progress)
+        summary = process_pending(session, llm, progress=progress,
+                                  batch_filter=batch_filter)
 
         from app.resolving import resolve_pending
         adventurelog, airtrail = _target_clients()
@@ -828,7 +866,8 @@ def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, s
         except Exception:                       # geocoding is optional
             geocoder = None
         resolved = resolve_pending(session, adventurelog, airtrail=airtrail,
-                                   geocoder=geocoder, progress=progress)
+                                   geocoder=geocoder, progress=progress,
+                                   item_filter=item_filter)
     except Exception as ex:
         log.exception("extract/resolve run failed")
         return summary, resolved, str(ex)
@@ -837,8 +876,12 @@ def _run_extract_resolve(session: Session, progress=None) -> tuple[dict, dict, s
 
 def _job_panel(request: Request, job: dict, bucket: str):
     """The live, self-polling job card (or, when finished, the done card + an
-    out-of-band refresh of the queue, counts and rail)."""
+    out-of-band refresh of the queue, counts and rail). Someone else's job is
+    never shown — only that one is running (its progress names their items)."""
     b = bucket if bucket in BUCKETS else "attention"
+    if not jobs.visible_to(job, scope.user_of(request)):
+        return HTMLResponse('<div class="toast">Another person\'s job is running — '
+                            'try again in a moment.</div>')
     if not job["finished"]:
         return templates.TemplateResponse(request, "_job_panel.html", {
             "job": job, "eta": jobs.eta_text(job), "bucket": b})
@@ -870,12 +913,14 @@ def process_captures(request: Request, bucket: str = "attention",
     if jobs.current_running():
         return _job_panel(request, jobs.current_running(), bucket)
 
+    user = scope.snapshot(scope.user_of(request))      # the job outlives the request
+
     def work(progress):
         with SessionLocal() as s:
-            summary, resolved, error = _run_extract_resolve(s, progress)
+            summary, resolved, error = _run_extract_resolve(s, progress, user=user)
             return _process_toast(summary, resolved, error), error
 
-    return _job_panel(request, jobs.get(jobs.start("process", work)), bucket)
+    return _job_panel(request, jobs.get(jobs.start("process", work, owner=_owner_id(request))), bucket)
 
 
 @router.post("/reprocess", response_class=HTMLResponse)
@@ -892,15 +937,24 @@ def reprocess(request: Request, bucket: str = "attention",
     batch with ANY logged item is left entirely alone — re-extracting it would
     duplicate a record already written to a target. Runs as a background job so
     the reset + full LLM pass reports live progress instead of dead air.
+
+    Only the caller's captures (own + open; an admin also users who share —
+    the same rule as Process and Commit) are reset and rebuilt: one person's
+    button never discards another's edits or approvals (YONDER-139).
     """
     if jobs.current_running():
         return _job_panel(request, jobs.current_running(), bucket)
+    user = scope.snapshot(scope.user_of(request))      # the job outlives the request
 
     def work(progress):
         from app.models import CommitAttempt, IngestBatch, ItemKey
         with SessionLocal() as s:
             progress("resetting", 0, 0, "clearing processed items")
-            items = s.query(TravelItem).all()
+            item_q, batch_q = s.query(TravelItem), s.query(IngestBatch)
+            if not scope.unrestricted(user):
+                item_q = item_q.filter(scope.capture_filter(user))
+                batch_q = batch_q.filter(scope.batch_filter(user))
+            items = item_q.all()
             protected = {i.batch_id for i in items if _is_logged(i)}
             # Also protect batches whose items already exist in AirTrail/
             # AdventureLog even without a DB commit record (D-60): re-extracting
@@ -928,18 +982,23 @@ def reprocess(request: Request, bucket: str = "attention",
                 s.query(TravelItem).filter(
                     TravelItem.id.in_(doomed)).delete(synchronize_session=False)
             reset = 0
-            for b in s.query(IngestBatch).all():
+            for b in batch_q.all():
                 if b.id not in protected and b.status != "received":
                     b.status = "received"
                     reset += 1
             s.commit()
-            summary, resolved, error = _run_extract_resolve(s, progress)
+            summary, resolved, error = _run_extract_resolve(s, progress, user=user)
             toast = (f"Reprocessing failed — {error}" if error else
                      f"Reprocessed {reset} batch(es): "
                      + _process_toast(summary, resolved, None).removeprefix("Done — "))
             return toast, error
 
-    return _job_panel(request, jobs.get(jobs.start("reprocess", work)), bucket)
+    return _job_panel(request, jobs.get(jobs.start("reprocess", work, owner=_owner_id(request))), bucket)
+
+
+def _owner_id(request) -> str | None:
+    user = scope.user_of(request)
+    return user.id if user is not None else None
 
 
 def _target_clients():
@@ -971,6 +1030,9 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
 
     execute = confirm == "1"
     b = bucket if bucket in BUCKETS else "staged"
+    # Only the captures this person may log — their own and open ones (an admin
+    # also those of users who share). Never someone else's approvals (YONDER-105).
+    mine = scope.capture_filter(scope.user_of(request))
 
     if not execute:
         # PREVIEW stays synchronous — it only reads (target refs + dedup) and is
@@ -981,7 +1043,8 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
                    "skipped": 0, "plans": []}
         try:
             summary = commit_pending(session, adventurelog, airtrail,
-                                     identities=load_identities(session), dry_run=True)
+                                     identities=load_identities(session), dry_run=True,
+                                     item_filter=mine)
         except Exception as ex:
             log.exception("commit preview failed")
             error = str(ex)
@@ -997,7 +1060,8 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
             adventurelog, airtrail = _target_clients()
             summary = commit_pending(s, adventurelog, airtrail,
                                      identities=load_identities(s),
-                                     dry_run=False, progress=progress)
+                                     dry_run=False, progress=progress,
+                                     item_filter=mine)
             n = summary["items"]
             parts = [f"logged {summary['writes_ok']} write(s) across {n} item(s)"]
             if summary["writes_failed"]:
@@ -1014,7 +1078,7 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
             err = None if not summary["writes_failed"] else "some writes failed"
             return toast, err, details
 
-    return _job_panel(request, jobs.get(jobs.start("commit", work)), b)
+    return _job_panel(request, jobs.get(jobs.start("commit", work, owner=_owner_id(request))), b)
 
 
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
@@ -1048,31 +1112,15 @@ def act(item_id: str, action: str, request: Request, bucket: str = "attention",
     item = scope.capture_or_none(session, request, item_id)
     if item is None:
         return HTMLResponse("", status_code=404)
-    now = datetime.now(timezone.utc).isoformat()
 
+    from app.review import service
     if action == "approve":
-        # An item that was never RESOLVED (empty {} resolution — e.g. approved
-        # before resolve ran) would stage while claiming to be done and then log
-        # nothing (the exact "Approved but writes nothing" the operator hit). If
-        # it has no resolution outcome, re-resolve first; then only stage if it
-        # actually resolved. A properly-resolved item that legitimately writes
-        # nothing (a no_change duplicate) is left untouched and stays approvable.
-        if not (item.resolution or {}).get("outcome"):
-            _reresolve(session, item)
-            item = scope.capture_or_none(session, request, item_id)
-        if (item.status or {}).get("resolve") != "ok":
-            # Not resolved (deferred / needs_review) — do not stage; show the
-            # refreshed detail so the operator sees why (needs a trip, a fix…).
+        # Only a resolved item stages (an unresolved one is re-resolved first).
+        # Not resolved (deferred / needs_review) — show the refreshed detail so
+        # the operator sees why (needs a trip, a fix…).
+        if not service.approve(session, item):
             return _detail_response(request, session, item, bucket=bucket,
                                     saved=False, oob_counts=True)
-        review = dict(item.review or {})
-        review.update({"required": False, "action_taken": "approved",
-                       "resolved_at": now, "resolved_by": "review-ui"})
-        status = dict(item.status or {})
-        status["resolve"] = "ok"
-        item.status = status
-        item.review = review
-        session.commit()
         bucket = bucket if bucket in BUCKETS else "attention"
         views = _all_views(session, scope.user_of(request))
         shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
@@ -1081,19 +1129,11 @@ def act(item_id: str, action: str, request: Request, bucket: str = "attention",
         })
 
     if action == "unapprove":
-        # A way back once approved-but-not-committed (owner, 2026-08-05): clear
-        # the approval and re-resolve so the item returns to its natural bucket
-        # and can be corrected. A LOGGED item cannot be un-approved — the write
-        # already happened; un-approving would only hide that it was logged.
-        if _is_logged(item):
+        # A way back once approved-but-not-committed (owner, 2026-08-05). A
+        # LOGGED item cannot be un-approved — the write already happened.
+        if not service.unapprove(session, item):
             return _detail_response(request, session, item, bucket=bucket,
                                     saved=False, oob_counts=True)
-        review = dict(item.review or {})
-        for k in ("action_taken", "resolved_at", "resolved_by"):
-            review.pop(k, None)
-        item.review = review
-        session.commit()
-        _reresolve(session, item)          # recompute; returns it to its real bucket
         bucket = bucket if bucket in BUCKETS else "staged"
         views = _all_views(session, scope.user_of(request))
         shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
@@ -1101,22 +1141,10 @@ def act(item_id: str, action: str, request: Request, bucket: str = "attention",
             "items": shown, "counts": _counts(views), "bucket": bucket, "oob": True,
         })
 
-    review = dict(item.review or {})
     if action == "ignore":
-        review.update({"required": False, "action_taken": "ignored",
-                       "resolved_at": now, "resolved_by": "review-ui"})
-        resolution = dict(item.resolution or {})
-        resolution["outcome"] = "ignored"
-        resolution["targets"] = []
-        item.resolution = resolution
-        status = dict(item.status or {})
-        status["resolve"] = "skipped"
-        item.status = status
+        service.ignore(session, item)
     else:
         return HTMLResponse("", status_code=400)
-
-    item.review = review
-    session.commit()
 
     # Stay on the bucket the operator was viewing; the acted item has left it,
     # and the counts refresh out-of-band.

@@ -54,6 +54,18 @@ def _collection_reason(coll) -> str:
     return "no_collection_match"
 
 
+def _linkable_trips(session: Session, item: TravelItem) -> list:
+    """Trips a capture may be auto-filed into: the ones its owner could file it
+    into by hand (scope.filing_trip_filter: own, open, or travelling on) —
+    never someone else's just because the dates fit, admins included. An open
+    capture (no owner) keeps the pre-4.1 behaviour and considers every trip."""
+    from app import scope
+    from app.models import Trip, User
+    user = session.get(User, item.owner_id) if item.owner_id else None
+    q = session.query(Trip)
+    return (q.filter(scope.filing_trip_filter(session, user)) if user else q).all()
+
+
 def _auto_link_yonder_trip(session: Session, item: TravelItem,
                            start: str | None, end: str | None) -> None:
     """Link the item to a Yonder trip when EXACTLY ONE trip's dates contain it
@@ -69,7 +81,7 @@ def _auto_link_yonder_trip(session: Session, item: TravelItem,
     if not (start and end):
         return
     from app.models import Trip
-    matches = [t for t in session.query(Trip).all()
+    matches = [t for t in _linkable_trips(session, item)
                if t.start_date and t.end_date
                and t.start_date <= start and end <= t.end_date]
     if len(matches) == 1:
@@ -77,14 +89,77 @@ def _auto_link_yonder_trip(session: Session, item: TravelItem,
         log.info("auto-linked item %s to Yonder trip %s", item.id, matches[0].id)
 
 
-def load_home_profiles(session: Session) -> list[HomeProfileRef]:
+# Home profiles are per person (4.1): each belongs to a traveller, and a user's
+# homes are their linked traveller's. Rows with no traveller predate this and
+# belong to the deployment owner — the `self` traveller (D-94).
+OWNER_HOMES = object()          # "the deployment owner", not a traveller id
+
+
+def self_traveler_id(session: Session) -> int | None:
+    from app.models import TravelerIdentity
+    row = (session.query(TravelerIdentity.id)
+           .filter(TravelerIdentity.kind == "self")
+           .order_by(TravelerIdentity.id).first())
+    return row[0] if row else None
+
+
+def home_rows_query(session: Session, who):
+    """HomeProfile rows for `who`: a traveller id, OWNER_HOMES (the self
+    traveller's rows plus the unassigned legacy rows), or None (nobody: a user
+    with no traveller linked has no homes)."""
+    from sqlalchemy import false, or_
     from app.models import HomeProfile
+    q = session.query(HomeProfile)
+    if who is None:
+        return q.filter(false())
+    self_id = self_traveler_id(session)
+    if who is OWNER_HOMES or who == self_id:
+        cond = HomeProfile.traveler_id.is_(None)
+        if self_id is not None:
+            cond = or_(cond, HomeProfile.traveler_id == self_id)
+        return q.filter(cond)
+    return q.filter(HomeProfile.traveler_id == who)
+
+
+def home_traveler_for_user(session: Session, user_id: str | None):
+    """Whose homes apply for a user id: their linked traveller; a user with no
+    traveller has none (None). No user at all (an open capture, auth off) means
+    the deployment owner's, which is what everything used before 4.1."""
+    if not user_id:
+        return OWNER_HOMES
+    from app.models import User
+    user = session.get(User, user_id)
+    if user is None:
+        return OWNER_HOMES
+    return user.traveler_id
+
+
+def load_home_profiles(session: Session, who=OWNER_HOMES) -> list[HomeProfileRef]:
+    """One person's home profiles (default: the deployment owner's)."""
     return [HomeProfileRef(
         id=str(p.id), kind=p.kind, label=p.label, iata=p.iata,
         lat=p.lat, lon=p.lon, radius_km=p.radius_km or 50.0,
         country=p.country, effective_from=p.effective_from,
         effective_to=p.effective_to)
-        for p in session.query(HomeProfile).all()]
+        for p in home_rows_query(session, who).all()]
+
+
+def load_homes_for_user(session: Session, user_id: str | None) -> list[HomeProfileRef]:
+    return load_home_profiles(session, home_traveler_for_user(session, user_id))
+
+
+def _capturer_identity(session: Session, item: TravelItem,
+                       identities: list[Identity]) -> Identity | None:
+    """The traveller of the user who captured this item (4.1) — who a booking
+    is assumed to be for when it names no one. None for an open capture or a
+    user with no traveller linked (the caller then falls back to `self`)."""
+    if not item.owner_id:
+        return None
+    from app.models import User
+    user = session.get(User, item.owner_id)
+    if user is None or user.traveler_id is None:
+        return None
+    return next((i for i in identities if i.id == str(user.traveler_id)), None)
 
 
 def load_identities(session: Session) -> list[Identity]:
@@ -347,6 +422,37 @@ def _apply_maps_coords(payload: dict) -> dict:
     return payload
 
 
+def _estimate_drive(payload: dict) -> dict:
+    """Fill route.distance_km / duration_minutes for a Maps directions drive
+    whose stops are all located and whose route has no distance yet."""
+    gt = payload.get("ground_transport") or {}
+    route = gt.get("route") or {}
+    if route.get("provider") not in {"google_maps", "apple_maps"} \
+            or route.get("distance_km") is not None:
+        return payload
+    from resolve.routing import estimate_for_places
+    stops = [gt.get("departure"), *(gt.get("waypoints") or []), gt.get("arrival")]
+    places = [m.get("place") for m in stops if isinstance(m, dict)]
+    est = estimate_for_places(places)
+    if est is not None:
+        route["distance_km"] = est.distance_km
+        route["duration_minutes"] = est.duration_minutes
+        route["polyline"] = est.polyline         # the road line, for maps
+    return payload
+
+
+def _link_chosen_trip(session: Session, item: TravelItem, cc: dict) -> None:
+    """File the capture under the Yonder trip the person picked when capturing
+    (capture_context.trip_id), pinned like a manual pick in review. Ignored when
+    a link is already pinned or the trip isn't one its owner may file into."""
+    tid = (cc or {}).get("trip_id")
+    if not tid or (item.review or {}).get("trip_pinned"):
+        return
+    if any(t.id == tid for t in _linkable_trips(session, item)):
+        item.trip_id = tid
+        item.review = {**(item.review or {}), "trip_pinned": True}
+
+
 def _geocode_places(payload: dict, geocoder: PhotonGeocoder) -> dict:
     """Locate non-airport places. Only fills blanks, and only on a result
     consistent with what the document said (see resolve/geocode.py)."""
@@ -396,6 +502,14 @@ def resolve_item(session: Session, item: TravelItem,
 
     # ---- 1. keys
     key_result = keys_mod.keys_for(payload, cc)
+    if key_result is None and geocoder is not None \
+            and payload.get("item_type") == "ground_transport":
+        # A drive keys on its endpoint coordinates, but a Maps link that only
+        # names its stops carries none — locate them now rather than after
+        # keying, or the drive can never key (YONDER-121). Step 3 only fills
+        # blanks, so this is not repeated there.
+        payload = _geocode_places(payload, geocoder)
+        key_result = keys_mod.keys_for(payload, cc)
     if key_result is None:
         item.review = {**(item.review or {}), "required": True,
                        "reasons": [keys_mod.unkeyable_reason(payload, cc)]}
@@ -431,6 +545,9 @@ def resolve_item(session: Session, item: TravelItem,
         payload = enrich_places_from_airports(payload, airports)
     if geocoder is not None:
         payload = _geocode_places(payload, geocoder)
+        # A directions link carries no distance or time; with its stops located,
+        # ask the router (runs with the geocoder: both are the networked tier).
+        payload = _estimate_drive(payload)
     payload, places = _annotate_places(payload, profiles, start)
     home_only = within_home_radius(places)
     unsuppressed = sum(1 for p in places if not p.get("suppressed"))
@@ -438,6 +555,7 @@ def resolve_item(session: Session, item: TravelItem,
     # In-house Yonder trip auto-link (independent of the AdventureLog ladder
     # below): a real journey unambiguously inside one Yonder trip gets linked
     # here; home-only movement isn't a trip, so skip it.
+    _link_chosen_trip(session, item, cc)
     if not home_only:
         _auto_link_yonder_trip(session, item, start, end)
 
@@ -517,7 +635,8 @@ def resolve_item(session: Session, item: TravelItem,
     self_on_booking = True
     if payload.get("item_type") == "flight":
         if identities:
-            tr = resolve_travelers(payload, identities)
+            tr = resolve_travelers(payload, identities,
+                                   default=_capturer_identity(session, item, identities))
             payload["travelers"] = tr.travelers
             self_on_booking = tr.self_on_booking
             needs_traveler_review = tr.inferred
@@ -720,8 +839,10 @@ def _sync_keys(session: Session, item: TravelItem, key_result) -> None:
 def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
                     limit: int = 0, airtrail=None,
                     geocoder: PhotonGeocoder | None = None,
-                    redo: bool = False, progress=None) -> dict:
-    """Resolve every pending item. Per-item commit so one failure never blocks
+                    redo: bool = False, progress=None, item_filter=None) -> dict:
+    """Resolve every pending item (only those matching `item_filter`, a
+    TravelItem predicate such as scope.capture_filter(user), when given —
+    YONDER-113). Per-item commit so one failure never blocks
     the rest and a crash mid-run loses nothing.
 
     redo=True re-resolves items that already resolved — for when the resolver
@@ -769,8 +890,10 @@ def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
     # a dialect-specific query that only one of the two environments exercises.
     # Oldest first: a predecessor must resolve before the duplicates that
     # chain onto it.
-    candidates = (session.query(TravelItem)
-                  .order_by(TravelItem.created_at).all())
+    q = session.query(TravelItem)
+    if item_filter is not None:
+        q = q.filter(item_filter)
+    candidates = q.order_by(TravelItem.created_at).all()
     def _eligible(i):
         state = (i.status or {}).get("resolve")
         if state == "pending":
@@ -792,12 +915,17 @@ def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
 
     total = len(pending)
     summary: dict[str, int] = {}
+    homes_by_owner: dict[str | None, list] = {None: profiles}
     for idx, item in enumerate(pending):
         if progress:
             progress("resolving", idx, total,
                      str(item.canonical_key or item.id)[:70])
         try:
-            state = resolve_item(session, item, profiles, collections, enablement,
+            # A capture is judged against the homes of whoever captured it.
+            if item.owner_id not in homes_by_owner:
+                homes_by_owner[item.owner_id] = load_homes_for_user(session, item.owner_id)
+            state = resolve_item(session, item, homes_by_owner[item.owner_id],
+                                 collections, enablement,
                                  airports=airports, geocoder=geocoder,
                                  country_names=country_names,
                                  identities=identities)

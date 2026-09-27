@@ -1,6 +1,6 @@
 [project]
 name = "yonder"
-version = "4.0.0"
+version = "4.5.0"
 description = "Yonder — travel documents -> AirTrail + AdventureLog."
 requires-python = ">=3.12"
 dependencies = [
@@ -23,6 +23,9 @@ dependencies = [
     "babel>=2.12",
     # Timeline PDF export (HTML/CSS -> PDF). Needs pango + fonts in the image.
     "weasyprint>=62",
+    # Remote MCP server at /mcp (YONDER-108): MCP Streamable HTTP via the
+    # official SDK's MCPServer (the 2.x name for FastMCP).
+    "mcp>=2.2,<3",
 ]
 
 [project.optional-dependencies]

@@ -22,8 +22,24 @@
                 hx-post="/trips/{{ trip.id }}/push-adventurelog"
                 hx-target="#push-msg" hx-swap="innerHTML" hx-disabled-elt="this">Push to AdventureLog</button>
       {% endif %}
+      {% if trip_currencies | length == 1 %}
+      <button class="btn btn-secondary" title="Convert {{ trip_currencies[0].code }}"
+              hx-get="/trips/{{ trip.id }}/finding/{{ trip_currencies[0].id }}/calculator"
+              hx-target="#modal-root">Currency · {{ trip_currencies[0].code }}</button>
+      {% elif trip_currencies %}
+      <details class="yn-menu">
+        <summary class="btn btn-secondary">Currency</summary>
+        <div class="yn-menu-list" role="menu">
+          {% for c in trip_currencies %}
+          <button class="btn btn-ghost bp-sm" role="menuitem"
+                  hx-get="/trips/{{ trip.id }}/finding/{{ c.id }}/calculator"
+                  hx-target="#modal-root">{{ c.code }} · {{ c.place_key }}</button>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
       <button class="btn btn-secondary"
-              hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Yonder found</button>
+              hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Run·dere found</button>
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
       <button class="btn btn-ghost"
@@ -91,6 +107,7 @@
             <div class="bp-act-title">{{ act.title }}</div>
             {% if act.subtitle %}<div class="bp-act-sub">{{ act.subtitle }}</div>{% endif %}
           </div>
+          {% if act.traveler_names %}<span class="bp-who" title="Who this is for">{% for n in act.traveler_names %}<span class="tag tag-neutral bp-who-tag">{{ n }}</span>{% endfor %}</span>{% endif %}
           {% if act.multi_day %}<span class="tag tag-neutral bp-span">{{ act.span_label }}</span>{% endif %}
           {% if act.time_label %}<div class="bp-act-time">{{ act.time_label }}</div>{% endif %}
           <span class="bp-chevron">▸</span>
@@ -183,7 +200,7 @@
 <section class="yn-sec" id="sec-sharing">
   <h2 class="bp-h2">Sharing</h2>
   <p class="bp-muted">
-    {% if sharing.is_open %}Open — visible to every Yonder user.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
+    {% if sharing.is_open %}Open — visible to every Run·dere user.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
   </p>
 
   <h3 class="bp-h3" style="margin-top:10px">Travellers with access</h3>
@@ -249,6 +266,9 @@ function ynAll(open) {
 // HTMX-driven redirects and shared links land on the same tab; the old
 // #sec-* jump anchors map onto their tab.
 function ynTab(name) {
+  // "discovery/food" = the Discovery tab, open on its Food & Drink section.
+  var parts = (name || '').split('/'), sub = parts[1] || '';
+  name = parts[0];
   var tabs = document.querySelectorAll('.yn-tab');
   var known = Array.prototype.some.call(tabs, function (t) { return t.dataset.tab === name; });
   if (!known) name = 'timeline';
@@ -260,11 +280,89 @@ function ynTab(name) {
   document.querySelectorAll('.yn-tabpanel').forEach(function (p) {
     p.classList.toggle('active', p.dataset.tab === name);
   });
+  if (name === 'discovery') { ynDisc(sub || ynDiscCurrent()); return; }
   if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
 }
+// Discovery sections (4.5): one visible at a time; the rail marks the open one.
+function ynDiscCurrent() {
+  var on = document.querySelector('.yn-disc-link.active');
+  if (on) return on.dataset.sec;
+  var h = location.hash.split('/');
+  if (h[0] === '#discovery' && h[1]) return h[1];
+  var first = document.querySelector('.yn-disc-link:not(.is-empty)');
+  return first ? first.dataset.sec : 'weather';
+}
+function ynDisc(sec) {
+  var links = document.querySelectorAll('.yn-disc-link');
+  if (!links.length) return;
+  var known = Array.prototype.some.call(links, function (l) { return l.dataset.sec === sec; });
+  if (!known) sec = links[0].dataset.sec;
+  links.forEach(function (l) {
+    var on = l.dataset.sec === sec;
+    l.classList.toggle('active', on);
+    l.setAttribute('aria-selected', on ? 'true' : 'false');
+    l.tabIndex = on ? 0 : -1;
+  });
+  document.querySelectorAll('.yn-dsec').forEach(function (s) {
+    s.classList.toggle('active', s.dataset.sec === sec);
+  });
+  var tab = document.querySelector('.yn-tabpanel[data-tab="discovery"]');
+  // Keep a deeper path (#discovery/food/MA:Gondar) when the section is already right.
+  if (tab && tab.classList.contains('active')
+      && location.hash.split('/').slice(0, 2).join('/') !== '#discovery/' + sec)
+    history.replaceState(null, '', '#discovery/' + sec);
+}
+// After an HTMX refresh of the Discovery tab, reopen the same section + city.
+function ynDiscInit() {
+  var h = location.hash.split('/');
+  ynDisc(h[0] === '#discovery' && h[1] ? h[1] : ynDiscCurrent());
+  if (h[0] === '#discovery' && h[1] && h[2]) ynCity(h[1], decodeURIComponent(h[2]));
+  else document.querySelectorAll('.yn-dsec').forEach(function (s) {
+    var c = s.querySelector('.yn-city'); if (c) ynCity(s.dataset.sec, c.dataset.city, true);
+  });
+}
+// City chips inside Food / Events: one city at a time, kept in the URL.
+function ynCity(sec, city, quiet) {
+  var panel = document.querySelector('.yn-dsec[data-sec="' + sec + '"]');
+  if (!panel) return;
+  var found = false;
+  panel.querySelectorAll('.yn-city').forEach(function (c) {
+    var on = c.dataset.city === city; c.classList.toggle('active', on); found = found || on;
+  });
+  if (!found) { var first = panel.querySelector('.yn-city'); if (first) first.classList.add('active'); }
+  panel.querySelectorAll('.yn-city-chip').forEach(function (b) {
+    var on = b.dataset.city === city || (!found && b === panel.querySelector('.yn-city-chip'));
+    b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  if (!quiet && found) history.replaceState(null, '', '#discovery/' + sec + '/' + city);
+}
+// Flip a city between its tables and its sources.
+function ynSources(btn) {
+  var city = btn.closest('.yn-city'), on = btn.getAttribute('aria-pressed') !== 'true';
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  city.querySelector('.yn-city-main').hidden = on;
+  city.querySelector('.yn-city-sources').hidden = !on;
+  btn.textContent = on ? 'Back to the list' : btn.dataset.label;
+}
+function ynShowHidden(btn) {
+  var main = btn.closest('.yn-city-main'), on = !main.classList.contains('show-hidden');
+  main.classList.toggle('show-hidden', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+// Arrow keys move along the rail (tab pattern).
+document.addEventListener('keydown', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('yn-disc-link')) return;
+  var dir = {ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1}[e.key];
+  if (!dir) return;
+  var links = Array.prototype.slice.call(document.querySelectorAll('.yn-disc-link'));
+  var i = links.indexOf(e.target) + dir;
+  var next = links[(i + links.length) % links.length];
+  e.preventDefault(); ynDisc(next.dataset.sec); next.focus();
+});
 (function () {
   var h = location.hash.replace(/^#(sec-)?/, '');
   ynTab(h === 'travelers' ? 'travellers' : h);
+  ynDiscInit();          // open section + city (the partial's own call ran before these existed)
 })();
 // Live filter: hide anything (a city finding, a day, a packing row, a traveller)
 // that doesn't contain the query; reveal + open matches; hide now-empty groups.

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Your traveller{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <h1 class="pagetitle">Which traveller are you?</h1>
+  </div></div>
+
+  {% if request.query_params.get('err') %}<div class="violations">{{ request.query_params.get('err') }}</div>{% endif %}
+
+  <div style="padding:16px;max-width:680px">
+    <p class="why">Your account isn't linked to a traveller yet. Linking one lets you set up
+      your travel and packing profiles and homes, and shows your trips as yours.</p>
+    <form method="post" action="/account/traveller">
+      <input type="hidden" name="next" value="{{ next }}">
+      {% include "_traveller_claim.html" %}
+      <div><button class="act primary" type="submit" style="margin-top:14px">Link my account</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -233,6 +233,14 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .bp-act-sub { font-size: 13px; color: var(--color-neutral-600);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bp-span { flex-shrink: 0; }
+/* 4.1: who an activity is for, on a multi-traveller trip */
+.bp-who { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 1; min-width: 0;
+  justify-content: flex-end; }
+.bp-who-tag { font-size: 11.5px; white-space: nowrap; }
+.bp-who-picks { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 4px 0; }
+.bp-who-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 14px;
+  font-weight: 400; cursor: pointer; }
+.bp-who-hint { font-size: 12.5px; color: var(--color-neutral-600); margin-top: 2px; }
 .bp-act-time { font-size: 13px; color: var(--color-neutral-600); flex-shrink: 0; }
 .bp-chevron { font-size: 12px; color: var(--color-neutral-500); flex-shrink: 0;
   transition: transform .15s; }
@@ -365,6 +373,9 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
     flex: 1 1 100%; justify-content: flex-end; }
   .yn-pack-add { flex-wrap: wrap; row-gap: 6px; }
   .yn-pack-add-label { flex: 1 1 100%; }
+  /* traveller chips drop to their own line instead of squeezing the title */
+  .yn-actrow:has(.bp-who) { flex-wrap: wrap; row-gap: 6px; }
+  .bp-who { order: 10; flex: 1 1 100%; justify-content: flex-start; }
 }
 
 /* ---- discovery: currency calculator ---- */
@@ -489,3 +500,144 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-table td:first-child, .yn-table th:first-child { width: 1.5rem; }
 .yn-warn-list { margin: 0.5rem 0 0.75rem; padding-left: 1.2rem; }
 .yn-warn-list li { margin: 0.2rem 0; }
+
+/* ---- Discovery sections (4.5, YONDER-166) --------------------------------
+   One section visible at a time. Desktop: a rail on the left, the open item
+   filled with a 2px accent bar (design/README "active item" pattern). Narrow:
+   the rail becomes a row of scrollable chips. Touch targets ≥ 44px, a visible
+   focus ring, and counts/"new from agent" in text — never colour alone. */
+.yn-disc { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px;
+  align-items: start; }
+.yn-disc-rail { position: sticky; top: 64px; display: flex; flex-direction: column;
+  gap: 2px; }
+.yn-disc-link { display: flex; flex-direction: column; align-items: flex-start;
+  gap: 1px; min-height: 44px; padding: 7px 12px; border: none; border-radius: 8px;
+  background: none; cursor: pointer; text-align: left; font: inherit;
+  color: var(--color-neutral-700); box-shadow: inset 0 0 0 0 var(--color-accent); }
+.yn-disc-link:hover { background: var(--yn-tab-track); color: var(--color-neutral-900); }
+.yn-disc-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.yn-disc-link.active { background: var(--yn-tab-track); color: var(--color-neutral-900);
+  box-shadow: inset 2px 0 0 0 var(--color-accent); font-weight: 600; }
+.yn-disc-label { font-size: 14px; }
+.yn-disc-meta { font-size: 12px; font-weight: 500; color: var(--color-neutral-500);
+  font-variant-numeric: tabular-nums; }
+.yn-disc-link.is-empty .yn-disc-label { color: var(--color-neutral-500); }
+.yn-disc-flag { color: var(--color-accent); }
+.yn-dsec { display: none; }
+.yn-dsec.active, .yn-filtering .yn-dsec { display: block; }
+.yn-dsec-head { margin: 2px 0 10px; }
+.yn-dsec-title { margin: 0; font-size: 18px; font-weight: 600; }
+.yn-dsec-about { margin: 2px 0 0; font-size: 13px; color: var(--color-neutral-500); }
+.yn-dsec-sub { margin: 16px 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--color-neutral-500); }
+.yn-finding-compact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  padding: 8px 0; }
+.yn-finding-compact .yn-finding-btns { margin-left: auto; margin-top: 0; }
+.yn-finding-compact .yn-finding-more { flex-basis: 100%; }
+.yn-finding-sources { margin-top: 6px; }
+.yn-menu { position: relative; display: inline-block; }
+.yn-menu > summary { list-style: none; }
+.yn-menu > summary::-webkit-details-marker { display: none; }
+.yn-menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
+  display: flex; flex-direction: column; min-width: 160px; padding: 4px;
+  background: var(--color-bg); border: 1px solid var(--color-divider); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+@media (max-width: 760px) {
+  .yn-disc { grid-template-columns: 1fr; gap: 10px; }
+  .yn-disc-rail { position: static; flex-direction: row; overflow-x: auto; gap: 6px;
+    padding-bottom: 4px; scrollbar-width: thin; }
+  .yn-disc-link { flex: none; min-height: 44px; border: 1px solid var(--color-divider);
+    border-radius: 999px; padding: 6px 14px; }
+  .yn-disc-link.active { box-shadow: inset 0 -2px 0 0 var(--color-accent); }
+}
+
+/* ---- Food & Drink / Events & Activities (4.5, YONDER-150/151/152) ---- */
+.yn-city-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.yn-city-chip { min-height: 44px; padding: 6px 14px; border: 1px solid var(--color-divider);
+  border-radius: 999px; background: none; font: inherit; font-size: 14px; cursor: pointer;
+  color: var(--color-neutral-700); }
+.yn-city-chip:hover { color: var(--color-neutral-900); }
+.yn-city-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.yn-city-chip.active { background: var(--yn-tab-track); color: var(--color-neutral-900);
+  font-weight: 600; box-shadow: inset 0 -2px 0 0 var(--color-accent); }
+.yn-city { display: none; }
+.yn-city.active, .yn-filtering .yn-city { display: block; }
+.yn-city-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  margin: 0 0 8px; }
+.yn-city-title { margin: 0; font-size: 16px; font-weight: 600; }
+.yn-city-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 4px; }
+.yn-city-summary { font-size: 15px; line-height: 1.55; margin: 0 0 10px; max-width: 72ch; }
+.yn-city-dishes { margin: 0 0 8px; font-size: 14px; }
+.yn-city-warn { margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--color-accent);
+  background: var(--yn-tab-track); font-size: 13px; border-radius: 4px; }
+.yn-items-group { margin: 0 0 14px; }
+.yn-items { width: 100%; border-collapse: collapse; font-size: 14px; }
+.yn-items th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--color-neutral-500); padding: 6px 8px;
+  border-bottom: 1px solid var(--color-divider); }
+.yn-items td { padding: 8px; vertical-align: top; border-bottom: 1px solid var(--color-divider); }
+.yn-items tr:last-child td { border-bottom: none; }
+.yn-item-sub { font-size: 12px; color: var(--color-neutral-500); margin-top: 2px; }
+.yn-mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.yn-item-actions { white-space: nowrap; text-align: right; }
+.yn-item-actions > * { margin-left: 4px; vertical-align: middle; }
+.yn-icon-link { display: inline-flex; align-items: center; min-height: 32px; padding: 0 6px;
+  font-size: 13px; }
+.yn-on-tl { font-size: 13px; font-weight: 600; }
+.yn-item.is-hidden { display: none; }
+.show-hidden .yn-item.is-hidden { display: table-row; opacity: .6; }
+.yn-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.yn-city-sources .yn-src-group { margin: 0 0 10px; }
+.yn-city-sources ul { margin: 4px 0 0; padding-left: 18px; font-size: 14px; }
+@media (max-width: 760px) {
+  /* Tables become cards: one row per block, each cell labelled. */
+  .yn-items thead { display: none; }
+  .yn-items, .yn-items tbody, .yn-items tr, .yn-items td { display: block; width: 100%; }
+  .yn-items tr { padding: 8px 0; border-bottom: 1px solid var(--color-divider); }
+  .yn-items td { border: none; padding: 2px 0; }
+  .yn-items td[data-label]:not(.yn-item-name)::before { content: attr(data-label) ": ";
+    font-size: 12px; color: var(--color-neutral-500); }
+  .yn-item-actions { text-align: left; white-space: normal; padding-top: 6px !important; }
+  .yn-item-actions > * { margin: 0 6px 4px 0; }
+  .show-hidden .yn-item.is-hidden { display: block; }
+  .yn-city-actions { margin-left: 0; }
+}
+.yn-items-group.all-hidden { display: none; }
+.show-hidden .yn-items-group.all-hidden { display: block; }
+.yn-icon-link, .yn-on-tl { color: var(--color-accent); text-underline-offset: 2px; }
+.yn-icon-link:hover, .yn-on-tl:hover { color: var(--color-neutral-900); }
+.yn-city-head .yn-status-badge { margin-left: 0; }
+/* Same columns in every table of a city, so the groups line up. */
+.yn-items { table-layout: fixed; }
+.yn-items th:nth-child(1) { width: 22%; }
+.yn-items th:nth-child(2) { width: 17%; }
+.yn-items-food th:nth-child(3) { width: 8%; }
+.yn-items th:nth-child(3) { width: 16%; }
+.yn-items th:last-child { width: 31%; }
+.yn-items td { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .yn-items { table-layout: auto; }
+  .yn-items td:empty { display: none; }
+}
+.yn-item-actions { white-space: normal; }
+.yn-item-actions > * { margin: 0 0 4px 6px; }
+.yn-items th:nth-child(1) { width: 21%; }
+.yn-items th:last-child { width: 30%; }
+.yn-on-tl { white-space: nowrap; }
+
+/* ---- Weather summary + Safety subsections (4.5, YONDER-167/168) ---- */
+.yn-weather-sum { margin: 0 0 14px; padding: 12px 14px; border-radius: 8px;
+  background: var(--yn-tab-track); border-left: 3px solid var(--color-accent);
+  font-size: 15px; line-height: 1.5; }
+.yn-weather-hints { margin-top: 4px; font-size: 14px; }
+.yn-parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 4px 24px; margin: 6px 0; }
+.yn-part { margin: 0 0 10px; font-size: 14px; line-height: 1.5; }
+.yn-part-h { display: block; margin-bottom: 2px; }
+.yn-part p { margin: 0; }
+.yn-part ul { margin: 2px 0 0; padding-left: 18px; }
+.yn-part-note { margin: 4px 0; font-size: 13px; color: var(--color-neutral-700); }
+.yn-part a, .yn-city-sources a, .yn-sources a { color: var(--color-accent); text-underline-offset: 2px; }
+
+/* Why a row is hidden (4.5) — sits beside Show on a hidden row. */
+.yn-hide-reason { width: auto; padding: 2px 6px; font-size: .8rem; min-height: 0; }

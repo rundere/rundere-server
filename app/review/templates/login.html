@@ -2,11 +2,12 @@
 {% block title %}Sign in{% endblock %}
 {% block body %}
 <form class="card" method="post" action="/login">
-  <div class="brand"><h1>Yonder</h1><span>sign in</span></div>
-  <p class="sub">Sign in to your Yonder companion.</p>
+  <div class="brand"><h1><span class="rd-mark" aria-hidden="true"></span> <span class="rd-wordmark" role="img" aria-label="Run·dere"></span></h1><span>sign in</span></div>
+  <p class="sub">Sign in to your Run·dere companion.</p>
   {% if msg == "reset" %}<div class="ok">Password updated — sign in with your new password.</div>{% endif %}
   {% if error %}<div class="err">{{ error }}</div>{% endif %}
   <input type="hidden" name="next" value="{{ next }}">
+  {% if password_allowed %}
   <label for="username">Username</label>
   <input id="username" name="username" autocomplete="username" autofocus
          value="{{ username or '' }}" required>
@@ -14,6 +15,9 @@
   <input id="password" name="password" type="password"
          autocomplete="current-password" required>
   <button type="submit">Sign in</button>
+  {% else %}
+  <p class="sub">This address signs in with {{ oidc_name }} only.</p>
+  {% endif %}
   {% if oidc_enabled %}
   <a href="/oidc/login?next={{ next|urlencode }}"
      style="display:block;text-align:center;margin-top:10px;padding:10px 12px;
@@ -21,9 +25,11 @@
             color:var(--ink);text-decoration:none;font-weight:600">
     Sign in with {{ oidc_name }}</a>
   {% endif %}
+  {% if password_allowed %}
   <div class="links">
     <a href="/forgot">Forgot password?</a>
     {% if registration_open %}<a href="/register">Create account</a>{% endif %}
   </div>
+  {% endif %}
 </form>
 {% endblock %}

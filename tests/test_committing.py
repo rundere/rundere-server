@@ -847,7 +847,7 @@ def test_yonder_write_refused_without_a_linked_trip():
                         dry_run=False)
     s.commit()
     ya = [r for r in env["results"] if r["target"] == "yonder.activity"][0]
-    assert not ya["ok"] and "no Yonder trip" in ya["error"]
+    assert not ya["ok"] and "no Run·dere trip" in ya["error"]
     s.close()
 
 
@@ -872,6 +872,7 @@ def test_yonder_trip_minted_alongside_new_adventurelog_collection():
     minter.resolution = {**minter.resolution,
                          "mint_group": "MINTTEST1:2026-11-20..2026-11-29",
                          "is_minter": True, "mint_yonder_trip": True}
+    minter.owner_id = "user-minter"          # captured via a user-scoped key
     s.commit()
 
     attach_payload = _flight_payload()
@@ -895,12 +896,42 @@ def test_yonder_trip_minted_alongside_new_adventurelog_collection():
     assert trip.name == "United States — November 2026"
     assert trip.start_date == "2026-11-20" and trip.end_date == "2026-11-29"
     assert trip.adventurelog_collection_id == "coll-1"   # linked to the mint
+    assert trip.owner_id == "user-minter"                # owned like the capture
     assert minter.trip_id == trip.id and attach.trip_id == trip.id
     acts = s.query(TripActivity).filter_by(trip_id=trip.id).all()
     assert len(acts) == 2                                # both legs filed
 
     s.query(TripActivity).delete(); s.query(Trip).delete()
     s.query(TravelItem).filter(TravelItem.id.in_([minter.id, attach.id])).delete(
+        synchronize_session=False)
+    s.commit()
+    s.close()
+
+
+def test_resolver_minted_trip_stays_open_for_open_capture():
+    """A capture from an unscoped key (owner_id NULL) mints an open trip --
+    no owner is invented for it."""
+    _skip()
+    from app.models import Trip, TripActivity
+    s = SessionLocal()
+    s.query(TripActivity).delete(); s.query(Trip).delete(); s.commit()
+
+    minter = _add(s, _flight_payload(),
+                 targets=["adventurelog.collection", "yonder.activity"])
+    minter.canonical_key = "flight:pnr:MINT3:AC:8783:YYZ"
+    minter.resolution = {**minter.resolution,
+                         "mint_group": "MINTTEST3:2026-11-20..2026-11-29",
+                         "is_minter": True, "mint_yonder_trip": True}
+    s.commit()
+
+    C.commit_item(s, minter, FakeAL(), FakeAT(),
+                  identities=[Ident("self", "vu75")], dry_run=False)
+    s.commit()
+    trip = s.query(Trip).one()
+    assert trip.source == "resolver" and trip.owner_id is None
+
+    s.query(TripActivity).delete(); s.query(Trip).delete()
+    s.query(TravelItem).filter(TravelItem.id == minter.id).delete(
         synchronize_session=False)
     s.commit()
     s.close()
@@ -927,7 +958,7 @@ def test_yonder_trip_mint_deferred_until_minter_commits():
                         identities=[Ident("self", "vu75")], dry_run=False)
     s.commit()
     ya = [r for r in env["results"] if r["target"] == "yonder.activity"][0]
-    assert not ya["ok"] and "no Yonder trip" in ya["error"]
+    assert not ya["ok"] and "no Run·dere trip" in ya["error"]
     assert s.query(Trip).count() == 0                    # never guessed one into being
 
     s.query(TravelItem).filter(TravelItem.id == attach.id).delete(
@@ -966,3 +997,76 @@ def test_ground_modes_map_to_adventurelog_enum():
     for mode, expected in cases.items():
         body, _ = C.build_transportation(_ground(mode), collection_id="c1")
         assert body["type"] == expected, f"{mode} -> {body['type']}, want {expected}"
+
+
+def test_committed_flight_tagged_with_its_passengers_on_a_shared_trip():
+    """4.1: on a multi-traveller trip, a committed flight is tagged with the
+    passengers the booking names (Amara's flight isn't everyone's), matched
+    against the trip's own roster; an inferred passenger never tags."""
+    _skip()
+    from app.models import TravelerIdentity, TripActivity, TripTraveler
+    from app.trips import who
+    from resolve.identity import Identity
+    s = SessionLocal()
+    it, tr = _add_linked(s, ["yonder.activity"])
+    me = TravelerIdentity(display_name="Tag Self", kind="self", aliases=["SELF/TAG MR"])
+    her = TravelerIdentity(display_name="Tag Companion", kind="guest")
+    s.add_all([me, her]); s.flush()
+    s.add_all([TripTraveler(trip_id=tr.id, traveler_id=me.id, role="self"),
+               TripTraveler(trip_id=tr.id, traveler_id=her.id, role="companion")])
+    payload = _flight_payload()
+    payload["travelers"] = [{"raw_name": "COMPANION/TAG MS", "role": "guest",
+                             "match_source": "alias", "match_confidence": 1.0}]
+    it.extraction = {**it.extraction, "payload": payload}
+    s.commit()
+    idents = [Identity(id=str(me.id), display_name="Tag Self", kind="self",
+                       aliases=("SELF/TAG MR",), airtrail_user_id="vu75"),
+              Identity(id=str(her.id), display_name="Tag Companion", kind="guest")]
+    C.commit_item(s, it, FakeAL(), FakeAT(), identities=idents, dry_run=False)
+    s.commit()
+    act = s.query(TripActivity).filter_by(trip_id=tr.id).one()
+    assert who.activity_map(s, [act.id]).get(act.id) == [her.id]
+
+    who.clear_activity(s, act.id)
+    s.query(TripTraveler).filter_by(trip_id=tr.id).delete()
+    s.query(TravelerIdentity).filter(TravelerIdentity.id.in_([me.id, her.id])).delete(
+        synchronize_session=False)
+    s.query(TravelItem).filter(TravelItem.id == it.id).delete(synchronize_session=False)
+    _cleanup_trips(s); s.close()
+
+
+def test_commit_only_logs_the_committers_own_approvals():
+    """YONDER-105: "Log approved" must not write someone else's approved
+    captures. The web passes scope.capture_filter(user): own + open (+ sharing
+    users' for an admin); the operator CLI passes nothing and logs everything."""
+    _skip()
+    from app import scope
+    from app.models import User
+    s = SessionLocal()
+    s.query(User).filter(User.username.in_(["c105-me", "c105-sis"])).delete(
+        synchronize_session=False)
+    s.query(TravelItem).delete(); s.commit()
+    me = User(username="c105-me", auth_source="local", is_admin=True)
+    sis = User(username="c105-sis", auth_source="local")
+    s.add_all([me, sis]); s.commit()
+    mine = _add(s, _flight_payload(), targets=["airtrail.flight"])
+    hers = _add(s, _flight_payload(), targets=["airtrail.flight"])
+    hers.canonical_key = "flight:pnr:HERS:AC:1:YYZ"
+    mine.owner_id, hers.owner_id = me.id, sis.id
+    s.commit()
+
+    def committed(user):
+        env = C.commit_pending(s, FakeAL(), FakeAT(), identities=[Ident("self", "vu75")],
+                               dry_run=True,
+                               item_filter=None if user is None else scope.capture_filter(user))
+        return {p["item_id"] for p in env["plans"]}
+
+    assert committed(sis) == {hers.id}                  # hers only, never mine
+    assert committed(me) == {mine.id, hers.id}          # admin: she shares by default
+    sis.share_with_admins = False; s.commit()
+    assert committed(me) == {mine.id}                   # opted out: not the admin's to log
+    assert committed(None) == {mine.id, hers.id}        # operator CLI: everything
+
+    s.query(TravelItem).delete()
+    s.query(User).filter(User.id.in_([me.id, sis.id])).delete(synchronize_session=False)
+    s.commit(); s.close()

@@ -4,7 +4,8 @@
 <div class="app">
   <div class="ops"><div class="ops-row">
     <span class="pagetitle">Users &amp; access</span>
-    <span class="lockhint">Registration: {{ "open" if registration_open else "closed (admin-invite)" }}</span>
+    <span class="lockhint">Registration: {{ "open" if registration_open else "closed (admin-invite)" }}
+      · Email: {{ smtp_summary }}</span>
   </div></div>
 
   {% if msg %}<div class="saved-note">{{ msg }}</div>{% endif %}
@@ -16,7 +17,7 @@
     <div class="home-list">
       <h3>Accounts</h3>
       <table class="htab">
-        <thead><tr><th>User</th><th>Source</th><th>Traveller</th><th>Role</th><th>Status</th></tr></thead>
+        <thead><tr><th>User</th><th>Source</th><th>Traveller</th><th>Role</th><th>Status</th><th>Shares</th></tr></thead>
         <tbody>
         {% for u in users %}
           <tr>
@@ -25,22 +26,32 @@
             <td>{{ tmap[u.traveler_id].display_name if u.traveler_id in tmap else "—" }}</td>
             <td>{{ "admin" if u.is_admin else "user" }}{% if u.id == me.id %} (you){% endif %}</td>
             <td>{{ "active" if u.is_active else "inactive" }}</td>
+            <td>{% if u.share_with_admins %}yes{% else %}<span title="Opted out: admins see only what they're invited into">no</span>{% endif %}</td>
           </tr>
-          <tr><td colspan="5" style="padding-top:0">
+          <tr><td colspan="6" style="padding-top:0">
             <div class="rowacts" style="flex-wrap:wrap;gap:8px">
               <form method="post" action="/users/{{ u.id }}/admin" style="display:inline">
                 <button class="act tiny" type="submit">{{ "Revoke admin" if u.is_admin else "Make admin" }}</button></form>
               <form method="post" action="/users/{{ u.id }}/active" style="display:inline">
                 <button class="act tiny" type="submit">{{ "Deactivate" if u.is_active else "Activate" }}</button></form>
               <form method="post" action="/users/{{ u.id }}/reset-link" style="display:inline">
-                <button class="act tiny" type="submit">Reset link</button></form>
+                <button class="act tiny" type="submit">{{ "Email reset link" if (not u.share_with_admins and u.id != me.id) else "Reset link" }}</button></form>
             </div>
             <details style="margin-top:8px">
-              <summary style="cursor:pointer;color:var(--ink-2);font-size:12.5px">Set password / traveller…</summary>
+              <summary style="cursor:pointer;color:var(--ink-2);font-size:12.5px">Set password / email / traveller…</summary>
+              {% if u.share_with_admins or u.id == me.id %}
               <form method="post" action="/users/{{ u.id }}/password" class="lookup-row" style="margin-top:8px">
                 <input name="password" type="password" placeholder="new password" required>
                 <button class="act tiny" type="submit">Set password</button>
               </form>
+              <form method="post" action="/users/{{ u.id }}/email" class="lookup-row" style="margin-top:8px">
+                <input name="email" type="email" placeholder="email (blank clears)" value="{{ u.email or '' }}">
+                <button class="act tiny" type="submit">Set email</button>
+              </form>
+              {% else %}
+              <p class="why" style="margin-top:8px">{{ u.username }} doesn't share with admins, so only
+                they can change their password or email.</p>
+              {% endif %}
               <form method="post" action="/users/{{ u.id }}/traveler" class="lookup-row" style="margin-top:8px">
                 <select name="traveler_id" style="flex:1">
                   <option value="none">— none —</option>
@@ -74,6 +85,20 @@
       </form>
       <p class="why" style="margin-top:12px">Each account maps to one traveller — pick who
         they are, or add a new person to the roster.</p>
+
+      <h3 style="margin-top:24px">Email delivery</h3>
+      {% if smtp %}
+      <form method="post" action="/users/test-email" class="lookup-row">
+        <input name="to" type="email" placeholder="{{ me.email or 'send a test to…' }}">
+        <button class="act tiny" type="submit">Send test</button>
+      </form>
+      <p class="why" style="margin-top:8px">Password-reset links are emailed through {{ smtp_summary }}.</p>
+      {% else %}
+      <p class="why">Not configured. Reset links must be handed over from the “Reset link”
+        button. Set <code>TX_SMTP_HOST</code>, <code>TX_SMTP_PORT</code>, <code>TX_SMTP_USER</code>,
+        <code>TX_SMTP_PASSWORD</code>, <code>TX_SMTP_FROM</code> (and <code>TX_SMTP_SSL=true</code>
+        for port 465) plus <code>TX_PUBLIC_BASE_URL</code> to email them.</p>
+      {% endif %}
     </div>
   </div>
 </div>

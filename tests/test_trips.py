@@ -294,8 +294,12 @@ def test_detail_fields_excludes_when_flags_link():
     assert "Departure" not in labels                  # `when` becomes the time chip
     assert "Airline" in labels
     assert fields[-1]["label"] == "Notes"             # long text pushed to the end
-    link = next(f for f in fields if f["label"] == "Source document")
+    link = next(f for f in fields if f["label"] == "Source")
     assert link["is_link"] is True
+    # The Source may be plain text — an email has no URL (owner, 2026-09-26)
+    text = next(f for f in activity_types.detail_fields(
+        "flight", {"sourceLink": "Email: Your Delta booking"}) if f["key"] == "sourceLink")
+    assert text["is_link"] is False
 
 
 def test_activity_map_url_per_type():
@@ -642,52 +646,40 @@ def _mk_traveller_on_trip(trip_id, name, base_currency=None):
         return t.id
 
 
-def test_trip_base_currencies_profile_first_then_env():
-    """The traveller's EXPLICIT pick leads, and the deployment's always-on
+def test_base_currencies_profile_first_then_env():
+    """The viewer's EXPLICIT pick leads, and the deployment's always-on
     currencies (TX_DISCOVERY_BASE_CURRENCIES) are unioned in for extra
     visibility — the Cuba case: profile stays put, USD still shown."""
     if not DEPS:
         return
-    from app.db import SessionLocal
+    from types import SimpleNamespace
     from app.config import settings
-    from app.trips.routes import _trip_base_currencies
-    tid = _mk("UK trip")
-    _mk_traveller_on_trip(tid, "UK Traveller", base_currency="GBP")
-    with SessionLocal() as s:
-        bases = _trip_base_currencies(s, tid)
+    from app.trips.routes import _base_currencies
+    bases = _base_currencies(SimpleNamespace(base_currency="GBP"))
     assert bases[0] == "GBP"                                    # pick leads
     assert set(bases) == {"GBP"} | set(settings.base_currency_list)  # + env extras
 
 
-def test_trip_base_currencies_union_across_travellers():
-    """Multiple travellers' picks, plus the deployment currencies, all present."""
+def test_base_currencies_are_the_viewers_not_the_whole_roster():
+    """4.1: Discover is per person — a companion's currency doesn't leak into
+    mine. Only my own pick (plus the deployment extras) is used."""
     if not DEPS:
         return
-    from app.db import SessionLocal
+    from types import SimpleNamespace
     from app.config import settings
-    from app.trips.routes import _trip_base_currencies
-    tid = _mk("Mixed trip")
-    _mk_traveller_on_trip(tid, "UK One", base_currency="GBP")
-    _mk_traveller_on_trip(tid, "JP Two", base_currency="JPY")
-    _mk_traveller_on_trip(tid, "No pick", base_currency=None)   # ignored
-    with SessionLocal() as s:
-        bases = _trip_base_currencies(s, tid)
-    assert {"GBP", "JPY"} <= set(bases)
-    assert set(settings.base_currency_list) <= set(bases)       # env extras kept
+    from app.trips.routes import _base_currencies
+    mine = _base_currencies(SimpleNamespace(base_currency="JPY"))
+    assert "JPY" in mine and ("GBP" not in mine or "GBP" in settings.base_currency_list)
 
 
-def test_trip_base_currencies_env_only_when_no_pick():
-    """No traveller has picked → just the deployment's configured currencies."""
+def test_base_currencies_env_only_when_no_pick():
     if not DEPS:
         return
-    from app.db import SessionLocal
+    from types import SimpleNamespace
     from app.config import settings
-    from app.trips.routes import _trip_base_currencies
-    tid = _mk("No-pick trip")
-    _mk_traveller_on_trip(tid, "Blank Traveller", base_currency=None)
-    with SessionLocal() as s:
-        bases = _trip_base_currencies(s, tid)
-    assert bases == settings.base_currency_list
+    from app.trips.routes import _base_currencies
+    assert _base_currencies(SimpleNamespace(base_currency=None)) == tuple(settings.base_currency_list)
+    assert _base_currencies(None) == tuple(settings.base_currency_list)
 
 
 def test_calculator_pivots_without_cad_home():

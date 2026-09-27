@@ -97,7 +97,7 @@ def _fetch_public_html(url: str) -> str | None:
                 or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
             return None
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Yonder-web-capture"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Rundere-web-capture"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             ctype = resp.headers.get("Content-Type", "")
             if "html" not in ctype and "xml" not in ctype:
@@ -113,7 +113,7 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
                submitted_by: str | None, travel_date: str | None = None,
                travel_time: str | None = None, title: str | None = None,
                notes: str | None = None, collection_id: str | None = None,
-               owner_user_id: str | None = None) -> str:
+               owner_user_id: str | None = None, trip_id: str | None = None) -> str:
     """Wrap a captured page into a `web`-channel batch and store it. Returns the
     batch id."""
     payload = {
@@ -127,6 +127,7 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
             "title": title or None,
             "notes": notes or None,
             "collection_id": collection_id or None,
+            "trip_id": trip_id or None,
         },
     }
     body = json.dumps(payload).encode("utf-8")
@@ -143,7 +144,7 @@ def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
                 title: str | None = None, notes: str | None = None,
                 collection_id: str | None = None,
                 owner_user_id: str | None = None,
-                provider: str = "google") -> str:
+                provider: str = "google", trip_id: str | None = None) -> str:
     """Store a maps directions link (Google or Apple) as a directions-channel
     batch — the native replacement for the old n8n form. The extractor needs a
     travel date (a route carries none, RULE-31); the caller validates it.
@@ -163,6 +164,7 @@ def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
             "title": title or None,
             "notes": notes or None,
             "collection_id": collection_id or None,
+            "trip_id": trip_id or None,
         },
     }
     body = json.dumps(payload).encode("utf-8")
@@ -172,8 +174,24 @@ def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
     return batch.id
 
 
+def _filing_trips(session: Session, user) -> list:
+    """Trips this person can file a capture into, for the capture form's picker:
+    upcoming and current first (soonest first), then past ones (latest first)."""
+    from datetime import date
+
+    from app import scope
+    from app.models import Trip
+    trips = session.query(Trip).filter(scope.filing_trip_filter(session, user)).all()
+    today = date.today().isoformat()
+    ahead = sorted((t for t in trips if (t.end_date or "") >= today),
+                   key=lambda t: t.start_date or "")
+    past = sorted((t for t in trips if (t.end_date or "") < today),
+                  key=lambda t: t.start_date or "", reverse=True)
+    return ahead + past
+
+
 @router.get("/capture", response_class=HTMLResponse)
-def capture_page(request: Request):
+def capture_page(request: Request, session: Session = Depends(get_session)):
     # The bookmarklet POSTs the current tab's rendered HTML back to THIS host —
     # request.base_url is the private host the operator loaded /capture on, which
     # is exactly where /capture/web lives.
@@ -191,9 +209,9 @@ def capture_page(request: Request):
         "t.focus();t.select();var k=false;try{k=document.execCommand('copy')}catch(e){}"
         "document.body.removeChild(t);return k};"
         "var fb=function(){var say=function(k){alert(k?"
-        "'Yonder could not post to the server (this page may block it). The page "
-        "HTML is now on your clipboard. Open Yonder /capture and paste it into the box.':"
-        "'Yonder could not post or auto-copy on this page. Open Yonder /capture and "
+        "'Run·dere could not post to the server (this page may block it). The page "
+        "HTML is now on your clipboard. Open Run·dere /capture and paste it into the box.':"
+        "'Run·dere could not post or auto-copy on this page. Open Run·dere /capture and "
         "paste the page source manually.')};"
         "if(navigator.clipboard&&navigator.clipboard.writeText){"
         "navigator.clipboard.writeText(h).then(function(){say(true)},function(){say(cp())})}"
@@ -203,8 +221,10 @@ def capture_page(request: Request):
         ".then(function(r){return r.text()}).then(function(t){alert(t)})"
         ".catch(function(){fb()})})()" % endpoint
     )
+    from app import authn
+    trips = _filing_trips(session, authn.resolve_user(session, request))
     return templates.TemplateResponse(request, "capture.html", {
-        "bookmarklet": bookmarklet, "endpoint": endpoint})
+        "bookmarklet": bookmarklet, "endpoint": endpoint, "trips": trips})
 
 
 @router.post("/capture/web")
@@ -226,13 +246,13 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     if ctype.startswith("text/html"):
         raw = (await request.body()).decode("utf-8", errors="replace")
         if len(raw) > settings.ingest_max_body_bytes:
-            return PlainTextResponse("Yonder: page too large to capture.", status_code=413)
+            return PlainTextResponse("Run·dere: page too large to capture.", status_code=413)
         if not raw.strip():
-            return PlainTextResponse("Yonder: empty page — nothing captured.", status_code=400)
+            return PlainTextResponse("Run·dere: empty page — nothing captured.", status_code=400)
         source_url = request.headers.get("X-Yonder-Source-Url") or request.headers.get("Referer")
         batch_id = _queue_web(session, raw, source_url=source_url, submitted_by=submitted_by, owner_user_id=owner_user_id)
         return PlainTextResponse(
-            f"Yonder captured this page ✓ (batch {batch_id[:8]}). "
+            f"Run·dere captured this page ✓ (batch {batch_id[:8]}). "
             f"Run “Process new captures” in the review queue to extract it.")
 
     # --- page form path ---
@@ -247,6 +267,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     title = (form.get("title") or "").strip() or None
     notes = (form.get("notes") or "").strip() or None
     collection_id = (form.get("collection_id") or "").strip() or None
+    trip_id = (form.get("trip_id") or "").strip() or None
 
     def _msg(ok, message, batch_id=None):
         return templates.TemplateResponse(request, "_capture_result.html", {
@@ -263,6 +284,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
                                travel_date=travel_date, travel_time=travel_time,
                                end_date=end_date, timezone=timezone, mode=mode,
                                title=title, notes=notes, collection_id=collection_id,
+                               trip_id=trip_id,
                                owner_user_id=owner_user_id, provider=provider)
         return _msg(True, "Captured the trip. Run “Process new captures” in the "
                           "review queue to extract it.", batch_id)
@@ -311,7 +333,8 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
 
     batch_id = _queue_web(session, html, source_url=source_url, submitted_by=submitted_by,
                           travel_date=travel_date, travel_time=travel_time, title=title,
-                          notes=notes, collection_id=collection_id, owner_user_id=owner_user_id)
+                          notes=notes, collection_id=collection_id, owner_user_id=owner_user_id,
+                          trip_id=trip_id)
     return templates.TemplateResponse(request, "_capture_result.html", {
         "ok": True, "batch_id": batch_id,
         "message": "Captured. Run “Process new captures” in the review queue to extract it."})
@@ -321,5 +344,5 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
 def about(request: Request):
     return templates.TemplateResponse(request, "about.html", {
         "version": settings.app_version,
-        "repo_url": "https://github.com/jeeves5454/yonder",
+        "repo_url": "https://github.com/jeeves5454/rundere-server",
     })

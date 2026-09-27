@@ -59,4 +59,86 @@
   color:var(--ink-2);border-radius:var(--r);font:inherit;font-size:14px;
   line-height:1;padding:5px 9px;cursor:pointer}
 .appbar .theme:hover{color:var(--ink);border-color:var(--line-strong)}
+.appnav .lbl-short{display:none}
 @media (max-width:720px){.appnav .grouplbl{display:none}.appbar{gap:10px;padding:0 10px}}
+/* Phones: the bar must fit Home…Trips + Settings without scrolling sideways. */
+@media (max-width:520px){.appbar{gap:2px;padding:0 6px}
+  .appbar .wordmark,.appbar .signout,.appnav .lbl-long{display:none}
+  .appnav .lbl-short{display:inline}
+  .appnav a{padding:0 5px;font-size:13px}
+  .appbar .theme{padding:5px 7px}}
+
+/* ---- settings hub (/settings) ---- */
+.settings-hub{max-width:960px;padding:8px 16px 32px}
+.settings-h{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
+  font-weight:600;margin:22px 0 10px}
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.settings-card{display:flex;flex-direction:column;gap:4px;padding:14px 16px;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  text-decoration:none;color:var(--ink)}
+.settings-card:hover{border-color:var(--accent)}
+.settings-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.settings-title{font-weight:600;font-size:14px}
+.settings-desc{font-size:12.5px;color:var(--ink-2);line-height:1.4}
+.settings-foot{margin-top:24px;font-size:13px}
+.settings-foot a{color:var(--ink-2)}
+
+/* ---- settings sidebar (every settings page, incl. the admin tables) ---- */
+.yn-set-shell{display:flex;align-items:flex-start;min-height:calc(100vh - 46px)}
+.yn-set-nav{flex:0 0 208px;position:sticky;top:46px;align-self:flex-start;
+  max-height:calc(100vh - 46px);overflow-y:auto;padding:14px 10px 24px;
+  background:var(--surface);border-right:1px solid var(--line);font-family:var(--ui)}
+.yn-set-nav a{display:block;padding:6px 10px;border-radius:var(--r);font-size:13.5px;
+  color:var(--ink-2);text-decoration:none;border-left:2px solid transparent}
+.yn-set-nav a:hover{color:var(--ink);background:var(--surface-sunk)}
+.yn-set-nav a.on{color:var(--ink);font-weight:600;background:var(--surface-sunk);
+  border-left-color:var(--accent)}
+.yn-set-nav .yn-set-top{font-weight:600;color:var(--ink);margin-bottom:4px}
+.yn-set-grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink-3);padding:14px 10px 4px}
+.yn-set-nav .yn-set-about{margin-top:14px;font-size:12.5px}
+.yn-set-main{flex:1;min-width:0}
+@media (max-width:720px){
+  .yn-set-shell{display:block;min-height:0}
+  .yn-set-nav{position:static;max-height:none;display:flex;gap:4px;overflow-x:auto;
+    padding:8px;border-right:0;border-bottom:1px solid var(--line);white-space:nowrap}
+  .yn-set-nav a{flex:0 0 auto;border-left:0;border-bottom:2px solid transparent}
+  .yn-set-nav a.on{border-bottom-color:var(--accent)}
+  .yn-set-grp{display:none}
+  .yn-set-nav .yn-set-about{margin-top:0}
+}
+
+/* ---- Run·dere brand (4.4) — logo files come from design/logo (served at /brand/logo).
+   Masks, so the mark and wordmark take the current text colour in either theme.
+   Size rule from design/README: -32 mark for 24–63px, full mark from 64px. ---- */
+.rd-mark{display:inline-block;width:24px;height:24px;vertical-align:middle;background:currentColor;
+  -webkit-mask:url(/brand/logo/rundere-mark-32.svg) center/contain no-repeat;
+          mask:url(/brand/logo/rundere-mark-32.svg) center/contain no-repeat}
+.rd-mark-full{-webkit-mask-image:url(/brand/logo/rundere-mark.svg);mask-image:url(/brand/logo/rundere-mark.svg)}
+.rd-wordmark{display:inline-block;height:1em;width:4.375em;vertical-align:middle;background:currentColor;
+  -webkit-mask:url(/brand/logo/rundere-wordmark.svg) left center/contain no-repeat;
+          mask:url(/brand/logo/rundere-wordmark.svg) left center/contain no-repeat}
+.appbar .wordmark{align-items:center;color:var(--ink)}
+.appbar .wordmark .rd-mark,.appbar .wordmark .rd-wordmark{color:var(--ink)}
+.appbar .wordmark .rd-wordmark{font-size:19px}
+.brand{align-items:center!important}
+.brand h1{display:flex;align-items:center;gap:8px;color:var(--ink)}
+.brand .rd-mark,.brand .rd-wordmark{color:var(--ink)}
+.brand .rd-wordmark{font-size:22px}
+.dash-hero h1{display:flex;align-items:center;gap:10px}
+.dash-hero h1 .rd-mark{width:32px;height:32px}
+.dash-hero h1 .rd-wordmark{font-size:30px}
+/* About: dictionary-style name card (say it, hear it) */
+.rd-dict{display:flex;gap:16px;align-items:flex-start;padding:16px 18px;margin:0 0 18px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--surface-sunk)}
+.rd-dict-mark{width:64px;height:64px;flex:none;color:var(--ink)}
+.rd-dict-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.rd-dict-word{display:inline-flex;font-size:34px;color:var(--ink)}
+.rd-dict-say{font-family:var(--mono);font-size:15px;color:var(--ink-2)}
+.rd-dict-play{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;
+  border-radius:50%;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);cursor:pointer}
+.rd-dict-play:hover{border-color:var(--accent);color:var(--accent)}
+.rd-dict-play:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.rd-dict-pos{font-style:italic;color:var(--ink-3);font-size:13px;margin-top:2px}
+.rd-dict-def{margin:8px 0 0;color:var(--ink-2)}
+.rd-dict-note{color:var(--ink-3)}

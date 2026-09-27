@@ -1,9 +1,17 @@
 <div class="app" id="home-app">
   <div class="ops"><div class="ops-row"><h1 class="pagetitle">Home profiles</h1></div></div>
+  {% include "_acting_for.html" %}
 
+  {% if no_traveller %}
+  <div class="home-wrap"><section class="home-list">
+    <p class="why">Your account isn't linked to a traveller yet, so there's nowhere to
+      keep your homes. <a href="/account/traveller">Link it now</a>, or ask an admin (Settings → Users), then
+      add your home airports and residences here.</p>
+  </section></div>
+  {% else %}
   <div class="home-wrap">
     <section class="home-list">
-      <h3>Your homes over time</h3>
+      <h3>{% if acting and acting.is_other %}{{ acting.traveler.display_name }}'s homes over time{% else %}Your homes over time{% endif %}</h3>
       <p class="why">Home decides which places are never logged as “visited,”
         and which local trips don’t count. Each move is a new row with dates,
         so old trips stay judged against the home you had then.</p>
@@ -25,8 +33,8 @@
             </td>
             <td class="mono">{{ p.effective_from or 'start' }} → {{ p.effective_to or 'current' }}</td>
             <td class="rowacts">
-              <a class="act tiny" href="/review/home?edit={{ p.id }}">Edit</a>
-              <button class="act tiny quiet" hx-post="/review/home/delete/{{ p.id }}"
+              <a class="act tiny" href="/review/home?edit={{ p.id }}{{ '&for=' ~ acting.for_id if acting and acting.for_id is not none else '' }}">Edit</a>
+              <button class="act tiny quiet" hx-post="/review/home/delete/{{ p.id }}{{ acting.qs if acting else '' }}"
                       hx-target="#home-app" hx-swap="outerHTML"
                       hx-confirm="Delete “{{ p.label }}”?">Delete</button>
             </td>
@@ -40,7 +48,7 @@
     <section class="home-form">
       <h3>{% if edit_id %}Edit home{% else %}Add a home{% endif %}</h3>
       {% if error %}<div class="violations">{{ error }}</div>{% endif %}
-      <form hx-post="/review/home" hx-target="#home-app" hx-swap="outerHTML">
+      <form hx-post="/review/home{{ acting.qs if acting else '' }}" hx-target="#home-app" hx-swap="outerHTML">
         {% if edit_id %}<input type="hidden" name="edit_id" value="{{ edit_id }}">{% endif %}
 
         <div class="field">
@@ -100,9 +108,10 @@
 
         <div class="actions">
           <button type="submit" class="act primary">{% if edit_id %}Save changes{% else %}Add home{% endif %}</button>
-          {% if edit_id %}<a class="act quiet" href="/review/home">Cancel</a>{% endif %}
+          {% if edit_id %}<a class="act quiet" href="/review/home{{ acting.qs if acting else '' }}">Cancel</a>{% endif %}
         </div>
       </form>
     </section>
   </div>
+  {% endif %}
 </div>

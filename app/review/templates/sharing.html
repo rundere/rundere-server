@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Sharing{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <h1 class="pagetitle">Share your data with admins?</h1>
+  </div></div>
+
+  {% if request.query_params.get('err') %}<div class="violations">{{ request.query_params.get('err') }}</div>{% endif %}
+
+  <div style="padding:16px;max-width:680px">
+    <p class="why">This Run·dere server has administrators. Choose whether they can see
+      and manage your trips, captures and journal.</p>
+
+    <form method="post" action="/account/sharing">
+      <input type="hidden" name="next" value="{{ next }}">
+      {% if travelers is not none %}
+      <fieldset style="border:1px solid var(--line, #ddd);border-radius:8px;padding:12px 14px;margin:12px 0 18px">
+        <legend><b>Which traveller are you?</b></legend>
+        <p class="why" style="margin-top:0">Your account isn't linked to a traveller yet. Linking
+          one lets you set up your travel and packing profiles and shows your trips as yours.</p>
+        {% include "_traveller_claim.html" %}
+        <p class="why">Leave both empty to skip — you can do it later from your profile pages.</p>
+      </fieldset>
+      {% endif %}
+      <label class="pax-opt on" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0">
+        <input type="radio" name="choice" value="share" checked>
+        <span><b>Share with admins</b> (default)<br>
+          <span class="why">Admins can view and edit your trips, captures and journal —
+            handy if someone sets trips up for you.</span></span>
+      </label>
+      <label class="pax-opt" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0">
+        <input type="radio" name="choice" value="private" {% if blocker %}disabled{% endif %}>
+        <span><b>Keep my data to myself</b><br>
+          <span class="why">Admins only see trips you invite them into. They can still
+            manage your account (for example deactivate it), and they'll never see a
+            password-reset link for you — it's emailed to you instead.</span>
+          {% if blocker %}<br><span class="why"><b>Not available yet:</b> {{ blocker }}</span>{% endif %}
+        </span>
+      </label>
+      <p class="why" style="margin-top:14px">Either way, whoever runs this server can reach the
+        database directly — this setting controls what admins see in Run·dere, it isn't
+        encryption. You can change it any time under Settings → Account.</p>
+      <button class="act primary" type="submit" style="margin-top:12px">Continue</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

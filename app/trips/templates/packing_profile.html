@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Packing profile{% endblock %}
 {% block content %}
-<a class="bp-back" href="/trips">← All trips</a>
 
 <div class="card blueprint bp-trip-header">
   <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
@@ -9,6 +8,16 @@
   <p class="bp-trip-notes">Set these once — they shape every packing plan. After
     changing them, re-generate a trip's plan to apply.</p>
 </div>
+{% include "_acting_for.html" %}
+
+
+{% if no_traveller %}
+<div class="card blueprint yn-note-card yn-todo">
+  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+  <p class="bp-trip-notes">Your account isn't linked to a traveller yet, so there's nowhere to
+    keep your packing preferences. <a href="/account/traveller">Link it now</a>, or ask an admin (Settings → Users).</p>
+</div>
+{% endif %}
 
 {% if saved %}
 <div class="card blueprint yn-note-card yn-todo yn-profile-saved">
@@ -18,7 +27,7 @@
 </div>
 {% endif %}
 
-<form method="post" action="/trips/settings/packing-profile"
+<form method="post" action="/trips/settings/packing-profile{{ acting.qs if acting else '' }}"
       class="card blueprint yn-profile-card">
   <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
 

@@ -15,6 +15,8 @@ import re
 import uuid
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
@@ -28,6 +30,8 @@ from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
                         TripActivity, TravelerIdentity, TripTraveler)
 from app.trips import types as activity_types
+from app.trips.enrich import prepare_activity
+from app.trips import who
 
 log = logging.getLogger("yonder.trips")
 router = APIRouter(prefix="/trips")
@@ -172,8 +176,14 @@ def _list_context(session: Session, q: str, status: str, user=None) -> dict:
     }
 
 
-def _activity_display(a: TripActivity) -> dict:
+def _activity_display(a: TripActivity, tagged: list[int] | None = None,
+                      names: dict[int, str] | None = None) -> dict:
+    """`tagged` is who this activity is for ([]/None = everyone) and `names`
+    the trip's roster (id -> name). Names are only shown when the activity is
+    for part of a multi-traveller trip."""
     t = activity_types.get_type(a.type)
+    names = names or {}
+    who_ids = [tid for tid in (tagged or []) if tid in names]
     v = a.values or {}
     when = v.get("when") or ""
     end_when = v.get("endWhen") or ""
@@ -191,7 +201,18 @@ def _activity_display(a: TripActivity) -> dict:
         "start_label": activity_types.time_labels(a.type)[0] or "Start",
         "start_display": fmt_datetime(when),
         "has_end": bool(end_when),
+        "traveler_ids": who_ids,
+        "traveler_names": [names[tid] for tid in who_ids],
+        "geo": a.geo,                    # located points / route line (geo.py)
     }
+
+
+def _roster_names(session: Session, trip_id: str) -> dict[int, str]:
+    ids = who.roster_ids(session, trip_id)
+    if not ids:
+        return {}
+    return {t.id: t.display_name for t in session.query(TravelerIdentity)
+            .filter(TravelerIdentity.id.in_(ids)).all()}
 
 
 def _sharing_context(session: Session, trip: Trip, user=None) -> dict:
@@ -234,6 +255,8 @@ def timeline_day_groups(session: Session, trip: Trip) -> list[dict]:
     acts = list(trip_activities(session, trip.id))
     # Sort by the denormalized starts_at; '' (undated) sorts to the end.
     acts.sort(key=lambda a: (a.starts_at or "￿"))
+    names = _roster_names(session, trip.id)
+    tags = who.activity_map(session, [a.id for a in acts]) if len(names) > 1 else {}
     day_groups: list[dict] = []
     index: dict[str, dict] = {}
     for a in acts:
@@ -245,7 +268,7 @@ def timeline_day_groups(session: Session, trip: Trip) -> list[dict]:
                    "activities": []}
             index[key] = grp
             day_groups.append(grp)
-        grp["activities"].append(_activity_display(a))
+        grp["activities"].append(_activity_display(a, tags.get(a.id), names))
     return day_groups
 
 
@@ -267,7 +290,7 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         "linked_captures": _linked_captures(session, trip.id),
         **_push_state(trip),
         **_travelers_context(session, trip.id),
-        **_discovery_context(session, trip.id),
+        **_discovery_context(session, trip.id, user.id if user else None),
         **_packing_context(session, trip.id, user.id if user else None),
         **_sharing_context(session, trip, user),
     }
@@ -317,6 +340,24 @@ def discovery_travelers(session: Session, trip_id: str) -> list[TravelerIdentity
             .filter(TravelerIdentity.id.in_(ids),
                     TravelerIdentity.generic.is_(False))
             .order_by(TravelerIdentity.display_name).all())
+
+
+def _viewer_uid(request) -> str | None:
+    """Whose Discover/Packing this is (4.1): the signed-in user; None with auth
+    off (the single-user mode those rows use)."""
+    u = scope.user_of(request)
+    return u.id if u else None
+
+
+def _viewer_traveler(session: Session, request) -> TravelerIdentity | None:
+    """The viewing person's traveller — their nationality, base currency and
+    discovery profile shape their Discover tab. Auth off: the `self` traveller.
+    A signed-in user with no traveller linked: None."""
+    u = scope.user_of(request)
+    if u is None:
+        return _self_identity(session)
+    tid = getattr(u, "traveler_id", None)
+    return session.get(TravelerIdentity, tid) if tid is not None else None
 
 
 def _self_identity(session: Session) -> TravelerIdentity | None:
@@ -462,6 +503,15 @@ def _redirect(url: str) -> HTMLResponse:
     return resp
 
 
+def _refresh() -> HTMLResponse:
+    """Reload the page the action came from, keeping its #section (4.5: a
+    Discover action returns to the same section and city — a redirect that only
+    changed the #fragment wouldn't reload at all)."""
+    resp = HTMLResponse("")
+    resp.headers["HX-Refresh"] = "true"
+    return resp
+
+
 # ----------------------------------------------------------------- list / detail
 
 @router.get("", response_class=HTMLResponse)
@@ -569,21 +619,25 @@ def derived_locations(trip_id: str, request: Request,
                                       _derived_locations_ctx(request, session, trip))
 
 
-def _excluded_keys(session: Session, trip_id: str) -> set[str]:
+def _excluded_keys(session: Session, trip_id: str, uid: str | None) -> set[str]:
+    """Places this person chose not to research on this trip (per person, 4.1)."""
     return {e.place_key for e in session.query(DiscoveryExclusion)
-            .filter(DiscoveryExclusion.trip_id == trip_id).all()}
+            .filter(DiscoveryExclusion.trip_id == trip_id,
+                    DiscoveryExclusion.user_id == uid).all()}
 
 
 def _derived_locations_ctx(request: Request, session: Session, trip: Trip) -> dict:
-    from app.resolving import load_home_profiles
+    from app.resolving import load_homes_for_user
     from discover.home_filter import home_country_set, is_home_place
     from discover.places import derive_locations
     acts = trip_activities(session, trip.id)
     result = derive_locations(acts, resolve_airport=_airport_resolver(),
                               geocoder=_photon())
-    profiles = load_home_profiles(session)
+    # Discover is per person (4.1): the viewer's homes and exclusions.
+    uid = _viewer_uid(request)
+    profiles = load_homes_for_user(session, uid)
     hc = home_country_set(result.places, profiles, trip.start_date)
-    excluded = _excluded_keys(session, trip.id)
+    excluded = _excluded_keys(session, trip.id, uid)
     places = [{
         "label": p.label, "city": p.city, "country": p.country,
         "lat": p.lat, "lon": p.lon, "key": p.place_key,
@@ -611,18 +665,23 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not place_key:
         return HTMLResponse("", status_code=404)
+    uid = _viewer_uid(request)
     existing = (session.query(DiscoveryExclusion)
                 .filter(DiscoveryExclusion.trip_id == trip_id,
+                        DiscoveryExclusion.user_id == uid,
                         DiscoveryExclusion.place_key == place_key).first())
     if existing is not None:
         session.delete(existing)
     else:
-        session.add(DiscoveryExclusion(trip_id=trip_id, place_key=place_key))
+        session.add(DiscoveryExclusion(trip_id=trip_id, user_id=uid, place_key=place_key))
         # Instant feedback: remove this place's own draft findings now.
         for f in (session.query(DiscoveryFinding)
                   .filter(DiscoveryFinding.trip_id == trip_id,
+                          DiscoveryFinding.user_id == uid,
                           DiscoveryFinding.place_key == place_key,
                           DiscoveryFinding.status == "draft").all()):
+            from discover import items as discovery_items
+            discovery_items.delete_for_finding(session, f.id)
             session.delete(f)
     session.commit()
     return templates.TemplateResponse(request, "_derived_locations.html",
@@ -632,13 +691,17 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
 # --------------------------------------------------------------- discovery (3.0)
 
 TOPIC_ORDER = ["weather", "currency", "plugs", "visa", "safety", "events",
-               "food", "language", "language_regional", "language_local", "packing"]
+               "food", "language", "language_regional", "language_local", "packing",
+               "research"]
 TOPIC_LABELS = {
     "weather": "Weather", "currency": "Currency", "plugs": "Plugs & voltage",
     "visa": "Visa & vaccination", "safety": "Safety & transport",
     "events": "Events & activities", "food": "Food & drink", "language": "Language",
     "language_regional": "Regional language", "language_local": "Local phrases & register",
     "packing": "Packing",
+    # YONDER-108: research saved by an AI agent over MCP/API (`save_research`,
+    # POST /api/v1/trips/{id}/findings) — the caller's own, reviewed like any finding.
+    "research": "Research (AI agents)",
 }
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
@@ -695,20 +758,176 @@ def _render_md(text: str | None) -> Markup:
 
 
 def _finding_view(f: DiscoveryFinding) -> dict:
+    from discover import policy as _policy
     data = f.data or {}
     return {
         "id": f.id, "topic": f.topic, "place_key": f.place_key,
         "scope": f.scope, "status": f.status, "confidence": f.confidence,
         "body": _render_md(f.body_md), "sources": f.sources or [],
         "is_currency": f.topic == "currency",
+        # 4.5 Food/Events: the city write-up shown above the tables.
+        "summary": _render_md(data.get("summary")) if data.get("summary") else None,
+        "dishes": [d for d in (data.get("local_dishes") or []) if isinstance(d, str)],
+        "warnings": [w for w in (data.get("allergy_warnings") or []) if isinstance(w, str)],
+        "currency": data.get("currency") or "",
+        "rates_date": data.get("date") or "",
+        "parts": _safety_parts(data) if f.topic == "safety" else None,
         "is_language": f.topic == "language",
         # Language findings aren't per-finding re-runnable: national detection is
         # a pure function of country (re-run can only clobber a manual Languages
         # pick), and the regional/local overlays key on the trip's places. The
         # Languages picker is the tool for those; other topics keep Re-run.
-        "rerunnable": not f.topic.startswith("language"),
+        # Saved research (YONDER-108) has no resolver to re-run either.
+        "rerunnable": not f.topic.startswith("language") and f.topic != "research",
         "has_rates": bool(data.get("rates")),
+        "lockable": _policy.is_lockable(f.topic),
+        "locked": _policy.is_locked(f),
+        "external": _policy.is_external(f),
+        "agent": _policy.agent_label(f),
+        # Superseded versions of saved research (YONDER-108), newest first.
+        "history": [{"when": (h.get("generated_at") or "")[:10], "status": h.get("status"),
+                     "agent": h.get("agent"),
+                     "body": _render_md(h.get("body_md")), "sources": h.get("sources") or []}
+                    for h in (data.get("history") or []) if isinstance(h, dict)],
     }
+
+
+_KIND_LABELS = {
+    "restaurant": "Restaurants", "cafe": "Cafés", "bar": "Bars", "pub": "Pubs",
+    "brewery": "Breweries", "distillery": "Distilleries", "winery": "Wineries",
+    "market": "Markets", "bakery": "Bakeries", "dessert": "Desserts",
+    "street_food": "Street food",
+}
+
+
+def _when_label(i) -> str:
+    """"Oct 14" / "Oct 14 – 16" / the source's own wording."""
+    def fmt(v):
+        try:
+            d = datetime.strptime(v[:10], "%Y-%m-%d")
+        except (TypeError, ValueError):
+            return None
+        out = d.strftime("%b %-d")
+        return out + (f", {v[11:16]}" if len(v) > 10 else "")
+    start, end = fmt(i.starts_on), fmt(i.ends_on)
+    if start and end and end != start:
+        return f"{start} – {end}"
+    return start or (i.when_text or "")
+
+
+def _item_view(i, on_timeline: dict) -> dict:
+    from discover import items as disc_items
+    src = next((s.get("url") for s in (i.sources or []) if s.get("url")), None)
+    act = on_timeline.get(i.activity_id) if i.activity_id else None
+    extra = i.extra or {}
+    return {
+        "id": i.id, "name": i.name, "kind": i.kind,
+        "kind_label": _KIND_LABELS.get(i.kind, i.kind.replace("_", " ").title()),
+        "neighbourhood": i.neighbourhood, "address": i.address,
+        "what_to_get": i.what_to_get,
+        "price": "$" * i.price_tier if i.price_tier else "",
+        "when": _when_label(i), "sort_when": i.starts_on or "9999",
+        "venue": i.venue, "details": i.details, "duration": i.duration,
+        "booking": i.booking, "website": i.website, "source_url": src,
+        "map_url": disc_items.map_url(i), "hidden": bool(i.hidden),
+        "hidden_reason": (i.hidden_reason or disc_items.DEFAULT_HIDE_REASON) if i.hidden else None,
+        "heads_up": bool(extra.get("heads_up")), "local_specialty": bool(extra.get("local_specialty")),
+        "agent": i.agent if i.origin == "agent" else None,
+        "on_timeline": act,   # {"when": "Oct 14"} or None
+    }
+
+
+def _item_cities(session: Session, trip_id: str, uid: str | None,
+                 views: dict[str, list]) -> dict[str, list]:
+    """Food & Drink / Events & Activities as cities (4.5): each city's finding
+    (summary, status) plus its items grouped into tables. Keyed by section."""
+    from app.models import DiscoveryItem
+    rows = (session.query(DiscoveryItem)
+            .filter(DiscoveryItem.trip_id == trip_id, DiscoveryItem.user_id == uid)
+            .order_by(DiscoveryItem.name).all())
+    act_ids = [r.activity_id for r in rows if r.activity_id]
+    on_tl = {}
+    for a in (session.query(TripActivity).filter(TripActivity.id.in_(act_ids)).all()
+              if act_ids else []):
+        on_tl[a.id] = {"when": _when_label(SimpleNamespace(starts_on=a.starts_at or None,
+                                                           ends_on=None, when_text=""))}
+    by_finding: dict[str, list] = {}
+    for r in rows:
+        by_finding.setdefault(r.finding_id, []).append(_item_view(r, on_tl))
+    out: dict[str, list] = {}
+    for topic in ("food", "events"):
+        cities = []
+        for f in views.get(topic, []):
+            its = by_finding.get(f["id"], [])
+            shown = [i for i in its if not i["hidden"]]
+            if topic == "food":
+                order = list(_KIND_LABELS)
+                groups = [{"label": _KIND_LABELS[k], "kind": k,
+                           "rows": [i for i in its if i["kind"] == k]} for k in order]
+                groups += [{"label": "Other", "kind": "other",
+                            "rows": [i for i in its if i["kind"] not in _KIND_LABELS]}]
+            else:
+                dated = sorted([i for i in its if i["kind"] == "event" and not i["heads_up"]],
+                               key=lambda i: i["sort_when"])
+                groups = [
+                    {"label": "Heads-up while you're there", "kind": "heads_up",
+                     "rows": [i for i in its if i["heads_up"]]},
+                    {"label": "Events", "kind": "event", "rows": dated},
+                    {"label": "Activities", "kind": "activity",
+                     "rows": [i for i in its if i["kind"] == "activity"]},
+                ]
+            groups = [g for g in groups if g["rows"]]
+            srcs, seen = [], set()
+            for s in (f["sources"] or []) + [{"url": i["source_url"], "title": i["name"]}
+                                             for i in its if i["source_url"]]:
+                u = (s or {}).get("url")
+                if u and u not in seen:
+                    seen.add(u)
+                    srcs.append({"url": u, "title": s.get("title") or u,
+                                 "domain": urlparse(u).netloc.removeprefix("www.")})
+            srcs.sort(key=lambda s: s["domain"])
+            cities.append({"finding": f, "key": f["place_key"],
+                           "label": f["place_key"].split(":", 1)[-1],
+                           "groups": groups, "count": len(shown),
+                           "hidden": len(its) - len(shown), "sources": srcs})
+        out[topic] = cities
+    return out
+
+
+def _safety_parts(data: dict) -> dict | None:
+    """Safety & Transport as headed subsections (4.5, YONDER-168) from the
+    structured data the local resolver stores. None for a finding without it
+    (e.g. an agent's markdown) — that one renders its text as before."""
+    safety = data.get("safety") if isinstance(data.get("safety"), dict) else None
+    transport = data.get("transport") if isinstance(data.get("transport"), dict) else None
+    if not (safety or transport):
+        return None
+
+    def strs(xs):
+        return [x.strip() for x in (xs or []) if isinstance(x, str) and x.strip()]
+
+    out = {"safety": [], "transport": [], "single_source": False}
+    if safety:
+        if (safety.get("summary") or "").strip():
+            out["safety"].append({"h": "Summary", "text": safety["summary"].strip()})
+        adv = [{"text": a.get("text", "").strip(), "url": a.get("source_url")}
+               for a in (safety.get("advisories") or [])
+               if isinstance(a, dict) and (a.get("text") or "").strip()]
+        if adv:
+            out["safety"].append({"h": "Advisories", "links": adv})
+        if strs(safety.get("scams")):
+            out["safety"].append({"h": "Scams to know", "list": strs(safety.get("scams"))})
+        out["single_source"] = safety.get("corroborated") is False
+    if transport:
+        for key, h in (("summary", "Getting around"), ("public_transit", "Public transit"),
+                       ("from_airport", "From the airport")):
+            if isinstance(transport.get(key), str) and transport[key].strip():
+                out["transport"].append({"h": h, "text": transport[key].strip()})
+        for key, h in (("ride_hailing", "Ride-hailing that works here"),
+                       ("apps", "Apps to install"), ("tips", "Tips")):
+            if strs(transport.get(key)):
+                out["transport"].append({"h": h, "list": strs(transport.get(key))})
+    return out if (out["safety"] or out["transport"]) else None
 
 
 def _run_view(run: DiscoveryRun) -> dict:
@@ -718,22 +937,30 @@ def _run_view(run: DiscoveryRun) -> dict:
             if run.finished_at else ""}
 
 
-def _discovery_context(session: Session, trip_id: str) -> dict:
+def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
+    """The Discover tab for ONE person (4.1): their own findings and runs."""
     findings = (session.query(DiscoveryFinding)
-                .filter(DiscoveryFinding.trip_id == trip_id).all())
+                .filter(DiscoveryFinding.trip_id == trip_id,
+                        DiscoveryFinding.user_id == uid).all())
+    from discover import sections as disc_sections
     grouped: dict[str, list] = {}
     for f in findings:
         grouped.setdefault(f.topic, []).append(f)
+    views: dict[str, list] = {}
     topic_groups = []
     for topic in TOPIC_ORDER:
         fs = grouped.get(topic)
         if fs:
             fs.sort(key=lambda x: x.place_key or "")
+            views[topic] = [_finding_view(f) for f in fs]
             topic_groups.append({"topic": topic,
                                  "label": TOPIC_LABELS.get(topic, topic),
-                                 "findings": [_finding_view(f) for f in fs]})
+                                 "findings": views[topic]})
+    # 4.5: the currency calculator lives in the trip header (YONDER-166).
+    currencies = [{"id": v["id"], "code": v["currency"], "place_key": v["place_key"]}
+                  for v in views.get("currency", []) if v["has_rates"]]
     last = (session.query(DiscoveryRun)
-            .filter(DiscoveryRun.trip_id == trip_id)
+            .filter(DiscoveryRun.trip_id == trip_id, DiscoveryRun.user_id == uid)
             .order_by(DiscoveryRun.started_at.desc()).first())
     running = last is not None and last.status == "running"
     run_progress = None
@@ -741,11 +968,30 @@ def _discovery_context(session: Session, trip_id: str) -> dict:
         pct = int(100 * last.done / last.total) if last.total else 0
         run_progress = {"phase": last.phase or "starting", "done": last.done,
                         "total": last.total, "pct": pct}
+    secs = disc_sections.build(views)
+    cities = _item_cities(session, trip_id, uid, views)
+    from discover.weather_summary import summarize as weather_summary
+    weather = weather_summary([((f.place_key or "").split(":", 1)[-1], f.data)
+                               for f in grouped.get("weather", [])])
+    for s in secs:
+        if s["key"] in cities:
+            s["cities"] = cities[s["key"]]
+        if s["key"] == "weather":
+            s["summary"] = weather
     return {"discovery_topics": topic_groups,
+            "discovery_sections": secs,
+            "discovery_default_section": disc_sections.DEFAULT_SECTION,
+            "trip_currencies": currencies,
             "discovery_has_findings": bool(findings),
             "discovery_last": _run_view(last) if last else None,
             "discovery_running": running,
-            "discovery_run": run_progress}
+            "discovery_run": run_progress,
+            "hide_reasons": _hide_reasons()}
+
+
+def _hide_reasons():
+    from discover.items import HIDE_REASONS
+    return HIDE_REASONS
 
 
 def _resolvers():
@@ -764,32 +1010,22 @@ def _llm_resolvers():
 
 def _discovery_section(request: Request, session: Session, trip: Trip) -> HTMLResponse:
     ctx = {"request": request, "trip": {"id": trip.id},
-           **_discovery_context(session, trip.id)}
+           **_discovery_context(session, trip.id, _viewer_uid(request))}
     return templates.TemplateResponse(request, "_discovery_section.html", ctx)
 
 
-def _trip_base_currencies(session: Session, trip_id: str) -> tuple[str, ...]:
-    """Base currencies the currency resolver + calculator convert FROM (D-65).
-
-    The union of two sources, traveller picks first:
-      1. each trip traveller's EXPLICIT base currency, chosen on their travel
-         profile (TravelerIdentity.base_currency) — its own field, not derived
-         from nationality or the home profile. A UK traveller who picks GBP
-         converts from GBP, not a hardcoded CAD.
-      2. the deployment's ALWAYS-ON base currencies (TX_DISCOVERY_BASE_CURRENCIES).
-         These add reference visibility on top of the profile pick — e.g. keep
-         USD in view for a Cuba trip (CUP is a closed currency, but USD is the
-         practical reference) while a traveller's profile stays CAD.
-    When no traveller has picked one, the result is just the deployment set."""
-    from app.models import TravelerIdentity, TripTraveler
-    travelers = (session.query(TravelerIdentity)
-                 .join(TripTraveler, TripTraveler.traveler_id == TravelerIdentity.id)
-                 .filter(TripTraveler.trip_id == trip_id).all())
+def _base_currencies(traveler: TravelerIdentity | None) -> tuple[str, ...]:
+    """Base currencies the currency resolver + calculator convert FROM (D-65),
+    for ONE person (4.1 — Discover is per person):
+      1. their EXPLICIT base currency from their travel profile
+         (TravelerIdentity.base_currency) — not derived from nationality or home;
+      2. then the deployment's ALWAYS-ON base currencies
+         (TX_DISCOVERY_BASE_CURRENCIES), for reference (e.g. USD for Cuba).
+    With no pick, just the deployment set."""
     codes: list[str] = []
-    for t in travelers:
-        c = (t.base_currency or "").strip().upper()
-        if c and c not in codes:
-            codes.append(c)
+    c = ((traveler.base_currency if traveler else None) or "").strip().upper()
+    if c:
+        codes.append(c)
     for c in settings.base_currency_list:          # always-on deployment extras
         if c not in codes:
             codes.append(c)
@@ -802,25 +1038,29 @@ def run_discovery_route(trip_id: str, request: Request,
     """Launch a Discovery pass — BOTH tiers on a background worker (§6.1) — and
     return the self-polling section. The deterministic findings land in the first
     few seconds; the LLM findings stream in as each resolver finishes. A run is
-    already in flight for this trip? Just show its panel (one run per trip)."""
-    from app.resolving import load_home_profiles
+    already in flight? Just show its panel (one run per person per trip).
+
+    Per person (4.1): the run uses the VIEWER's discovery profile, nationality,
+    base currency, homes and excluded places, and its findings are theirs."""
+    from app.resolving import load_homes_for_user
     from app.trips import discovery_jobs as dj
     from datetime import date as _date
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    if dj.running_run(session, trip_id) is None:
-        profile = _discovery_profile_row(session)
-        ident = _self_identity(session)
+    uid = _viewer_uid(request)
+    if dj.running_run(session, trip_id, uid) is None:
+        ident = _viewer_traveler(session, request)
+        profile = _discovery_profile_row(session, ident, uid is None)
         today = _date.today().isoformat()
         dj.launch(trip_id, resolve_airport=_airport_resolver(), geocoder=_photon(),
                   det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(),
-                  home_profiles=load_home_profiles(session),
-                  excluded=_excluded_keys(session, trip_id),
+                  home_profiles=load_homes_for_user(session, uid),
+                  excluded=_excluded_keys(session, trip_id, uid),
                   discovery_profile=(profile.values if profile else None),
                   nationality=(ident.nationality if ident else None),
-                  base_currencies=_trip_base_currencies(session, trip_id),
-                  today=today)
+                  base_currencies=_base_currencies(ident),
+                  today=today, user_id=uid)
     return _discovery_section(request, session, trip)
 
 
@@ -834,38 +1074,93 @@ def discovery_status_route(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    dj.running_run(session, trip_id)          # settle orphans as a side effect
+    dj.running_run(session, trip_id, _viewer_uid(request))   # settle orphans
     return _discovery_section(request, session, trip)
 
 
-def _finding_or_404(session: Session, trip_id: str, fid: str) -> DiscoveryFinding | None:
+def _finding_or_404(session: Session, request: Request, trip_id: str,
+                    fid: str) -> DiscoveryFinding | None:
+    """A finding on a trip the viewer can access, and only their OWN (4.1).
+    Anything else reads as missing."""
     f = session.get(DiscoveryFinding, fid)
-    return f if (f is not None and f.trip_id == trip_id) else None
+    if f is None or f.trip_id != trip_id or f.user_id != _viewer_uid(request):
+        return None
+    if scope.trip_or_none(session, request, trip_id) is None:
+        return None
+    return f
+
+
+def _item_or_none(session: Session, request: Request, trip_id: str, item_id: str):
+    """A Discover item on a trip the viewer can access, and only their OWN."""
+    from app.models import DiscoveryItem
+    if not item_id:
+        return None
+    i = session.get(DiscoveryItem, item_id)
+    if i is None or i.trip_id != trip_id or i.user_id != _viewer_uid(request):
+        return None
+    if scope.trip_or_none(session, request, trip_id) is None:
+        return None
+    return i
+
+
+@router.get("/{trip_id}/discovery-item/{item_id}/to-timeline", response_class=HTMLResponse)
+def item_to_timeline_form(trip_id: str, item_id: str, request: Request,
+                          session: Session = Depends(get_session)):
+    """The activity form, filled in from a Discover item (4.5): Restaurant for
+    food, Event on its date, Tour / activity otherwise. The person sets the time."""
+    from discover import items as disc_items
+    i = _item_or_none(session, request, trip_id, item_id)
+    if i is None:
+        return HTMLResponse("", status_code=404)
+    atype, values = disc_items.activity_for(i)
+    ctx = _activity_modal_ctx(request, trip_id, mode="create",
+                              action=f"/trips/{trip_id}/activity", atype=atype,
+                              values=values, session=session)
+    ctx.update(title=f"Add to timeline — {i.name}", discovery_item_id=i.id)
+    return templates.TemplateResponse(request, "_activity_modal.html", ctx)
+
+
+@router.post("/{trip_id}/discovery-item/{item_id}/hide", response_class=HTMLResponse)
+def item_hide(trip_id: str, item_id: str, request: Request, hidden: str = Form("1"),
+              reason: str = Form(""), session: Session = Depends(get_session)):
+    """Hide (or bring back) a Discover row. Hidden rows stay hidden when Discover
+    or an agent refreshes the city. The reason defaults to "not my thing" (what
+    agents read as a dislike); "closed" and "been there" say nothing about taste."""
+    from discover import items as disc_items
+    i = _item_or_none(session, request, trip_id, item_id)
+    if i is None:
+        return HTMLResponse("", status_code=404)
+    if hidden == "1":
+        disc_items.hide(i, reason or None)
+    else:
+        disc_items.unhide(i)
+    session.commit()
+    return _discovery_section(request, session, scope.trip_or_none(session, request, trip_id))
 
 
 @router.post("/{trip_id}/finding/{fid}/rerun", response_class=HTMLResponse)
-def rerun_finding_route(trip_id: str, fid: str,
+def rerun_finding_route(trip_id: str, fid: str, request: Request,
                         session: Session = Depends(get_session)):
     """Regenerate this one finding (the per-topic re-run). Re-fetches live topics
     (weather/currency) and overrides a manual edit — an explicit fresh copy."""
     from discover.runner import rerun_finding
-    f = _finding_or_404(session, trip_id, fid)
+    f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
     # Language findings aren't re-runnable (see _finding_view) — never let a
     # stale/forged POST overwrite a manual Languages pick.
-    if f.topic.startswith("language"):
-        return _redirect(f"/trips/{trip_id}")
+    if f.topic.startswith("language") or f.topic == "research":
+        return _refresh()
     rerun_finding(session, f, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
-                  base_currencies=_trip_base_currencies(session, trip_id))
-    return _redirect(f"/trips/{trip_id}")
+                  base_currencies=_base_currencies(_viewer_traveler(session, request)))
+    return _refresh()
 
 
 @router.get("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
 def edit_finding(trip_id: str, fid: str, request: Request,
                  session: Session = Depends(get_session)):
-    f = _finding_or_404(session, trip_id, fid)
+    f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
     # Language uses a structured picker, not free text (you pick from the vetted
@@ -892,21 +1187,27 @@ def edit_finding(trip_id: str, fid: str, request: Request,
         return templates.TemplateResponse(request, "_currency_edit.html", {
             "request": request, "trip_id": trip_id, "fid": fid,
             "code": code, "place_key": f.place_key, "rows": rows})
+    # Food/Events (4.5): the text you edit is the city summary above the tables;
+    # the rows are edited in place, so the old generated list isn't offered.
+    item_topic = f.topic in ("food", "events")
     return templates.TemplateResponse(request, "_finding_edit.html", {
         "request": request, "trip_id": trip_id, "fid": fid,
-        "topic_label": TOPIC_LABELS.get(f.topic, f.topic),
-        "place_key": f.place_key, "body": f.body_md or ""})
+        "topic_label": ("City summary · " if item_topic else "")
+                       + TOPIC_LABELS.get(f.topic, f.topic),
+        "place_key": f.place_key,
+        "body": (data.get("summary") or "") if item_topic else (f.body_md or "")})
 
 
 @router.post("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
-def save_finding(trip_id: str, fid: str, body: str = Form(""),
+def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
                  langs: list[str] = Form(default=[]),
                  cur_base: list[str] = Form(default=[]),
                  cur_rate: list[str] = Form(default=[]),
                  session: Session = Depends(get_session)):
-    f = _finding_or_404(session, trip_id, fid)
+    f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
+    kept_history = (f.data or {}).get("history") if isinstance(f.data, dict) else None
     if f.topic == "language":
         # Rebuild the phrasebook from the picked languages (a manual override,
         # not "official"); marking edited protects it from a whole-trip re-run.
@@ -946,11 +1247,34 @@ def save_finding(trip_id: str, fid: str, body: str = Form(""),
             data.get("currency_name") or code, bases, per_base, as_of,
             bool(data.get("usd_useful")), source_note="manually edited")
         f.confidence = "high" if per_base else "flagged"
+    elif f.topic in ("food", "events"):
+        f.data = {**(f.data or {}), "summary": body.strip()}
+        f.body_md = f"**{_bold_label(f.body_md) or f.place_key}**\n\n{body.strip()}"
     else:
         f.body_md = body
-    f.status = "edited"
+    if kept_history and not (f.data or {}).get("history"):
+        f.data = {**(f.data or {}), "history": kept_history}   # an edit keeps earlier versions
+    f.status = "edited"          # on a lockable topic this also LOCKS it (discover/policy.py)
     session.commit()
-    return _redirect(f"/trips/{trip_id}")
+    return _refresh()
+
+
+@router.post("/{trip_id}/finding/{fid}/lock", response_class=HTMLResponse)
+def lock_finding(trip_id: str, fid: str, request: Request, lock: str = Form("1"),
+                 session: Session = Depends(get_session)):
+    """Lock (approve) or unlock a finding on a LOCKABLE topic (plugs, visa,
+    languages). Locked: neither a local Discover run nor an AI agent overwrites it.
+    Unlocking returns it to draft, so the next run may refresh it."""
+    from discover import policy
+    f = _finding_or_404(session, request, trip_id, fid)
+    if f is None or scope.trip_or_none(session, request, trip_id) is None:
+        return HTMLResponse("", status_code=404)
+    if not policy.is_lockable(f.topic):
+        return HTMLResponse("This topic can't be locked — it's refreshed on every run.",
+                            status_code=400)
+    f.status = "approved" if lock == "1" else "draft"
+    session.commit()
+    return _refresh()
 
 
 @router.get("/{trip_id}/finding/{fid}/calculator", response_class=HTMLResponse)
@@ -961,11 +1285,12 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
     base so any pair converts, including local↔local on a multi-country trip. The
     pivot is chosen from the trip's own base currencies (no hardcoded CAD), so a
     non-Canadian traveller's calculator works too."""
-    f = _finding_or_404(session, trip_id, fid)
+    f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
     cur_findings = (session.query(DiscoveryFinding)
                     .filter(DiscoveryFinding.trip_id == trip_id,
+                            DiscoveryFinding.user_id == f.user_id,
                             DiscoveryFinding.topic == "currency").all())
     # rates[code][base] = units of `code` per 1 `base` (from the snapshots).
     rates: dict[str, dict[str, float]] = {}
@@ -1072,6 +1397,9 @@ DISCOVERY_MOBILITY = [("no_limits", "No limits"),
                       ("moderate", "Moderate — some walking is fine"),
                       ("limited", "Limited — minimal walking or stairs"),
                       ("wheelchair", "Wheelchair accessible only")]
+
+
+DISCOVERY_NOTES_MAX = 2000
 
 
 def _discovery_default() -> dict:
@@ -1194,14 +1522,14 @@ def generate_packing_plan_route(trip_id: str, request: Request,
                                 session: Session = Depends(get_session)):
     """Generate (or re-generate) the Packing Plan and reload the detail. Preserves
     your ticked-off / removed items."""
-    from app.resolving import load_home_profiles
+    from app.resolving import load_homes_for_user
     from planning.runner import generate_plan
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
     uid, tid = _pack_identity(request)
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_home_profiles(session),
+                  geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
                   user_id=uid, traveler_id=tid)
     return _redirect(f"/trips/{trip_id}")
 
@@ -1216,11 +1544,11 @@ def _current_archetype_ids(session: Session, trip_id: str, user_id=None) -> list
 
 def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
                                 ids: list[str]) -> HTMLResponse:
-    from app.resolving import load_home_profiles
+    from app.resolving import load_homes_for_user
     from planning.runner import generate_plan
     uid, tid = _pack_identity(request)
     generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_home_profiles(session),
+                  geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
                   manual_archetypes=ids, user_id=uid, traveler_id=tid)
     return templates.TemplateResponse(request, "_packing_section.html",
         {"request": request, "trip": {"id": trip.id},
@@ -1403,21 +1731,20 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
         {"request": request, "trip": trip, **_packing_context(session, trip_id, uid)})
 
 
-def _profile_row(session: Session, traveler_id=None) -> PackingProfile | None:
-    """The packing profile to DISPLAY for a user (D-123): their own if it exists,
-    else the deployment default (traveler_id NULL) as a starting point."""
-    if traveler_id is not None:
-        own = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
-        if own is not None:
-            return own
-    return (session.query(PackingProfile).filter_by(traveler_id=None)
-            .order_by(PackingProfile.created_at).first())
+def _profile_row(session: Session, traveler_id=None, owner: bool = False):
+    """The packing profile to DISPLAY for one person (D-123, 4.1) — their own;
+    never another person's. See planning.runner.profile_row."""
+    from planning.runner import profile_row
+    return profile_row(session, traveler_id, owner=owner)
 
 
 def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -> dict:
     from planning.engine import default_profile
     from planning import catalog
-    row = _profile_row(session, _pack_identity(request)[1])
+    from app.acting import acting_for
+    acting = acting_for(session, request)
+    tid = acting.traveler.id if acting.traveler else None
+    row = _profile_row(session, tid, owner=acting.owner_mode)
     values = {**default_profile(), **((row.values if row else None) or {})}
     bag = values.get("bag") or {}
     items = catalog.items(session)
@@ -1440,7 +1767,8 @@ def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -
                 for v, t in PROFILE_SELECTS[field]]
     chosen_cons = set(values.get("style_constraints") or [])
     return {
-        "request": request, "saved": saved,
+        "request": request, "saved": saved, "acting": acting,
+        "no_traveller": tid is None and not acting.owner_mode,
         "bag_opts": [{"value": v, "label": t,
                       "selected": v == bag.get("mode", "carry_on")}
                      for v, t in PROFILE_SELECTS["bag_mode"]],
@@ -1492,25 +1820,26 @@ def save_packing_profile(request: Request,
     # Save to the CURRENT user's OWN profile (D-123: tied to their traveller),
     # creating it if missing — never overwrite another traveller's or the shared
     # default when this user has their own.
-    traveler_id = _pack_identity(request)[1]
-    own = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
+    from app.acting import acting_for, audit_if_other
+    acting = acting_for(session, request)          # self, or an admin acting for someone
+    traveler_id = acting.traveler.id if acting.traveler else None
+    if traveler_id is None and not acting.owner_mode:
+        # Signed in but no traveller linked: nowhere of their own to save it —
+        # and never into the owner's unassigned row.
+        return templates.TemplateResponse(request, "packing_profile.html",
+                                          _profile_form_ctx(request, session))
+    audit_if_other(session, request, acting, "packing profile")
+    own = _profile_row(session, traveler_id, owner=acting.owner_mode)
     if own is None:
         session.add(PackingProfile(values=values, traveler_id=traveler_id))
     else:
+        own.traveler_id = traveler_id   # claims a pre-4.1 unassigned row for self
         own.values = values
     session.commit()
     # Re-render the page with a saved banner; the plan applies the new profile on
     # the next Re-generate.
     return templates.TemplateResponse(request, "packing_profile.html",
                                       _profile_form_ctx(request, session, saved=True))
-
-
-def _my_traveller(session: Session, request: Request):
-    """The current user's own TravelerIdentity, or None (auth off / not linked)."""
-    from app.models import TravelerIdentity
-    user = scope.user_of(request)
-    tid = getattr(user, "traveler_id", None) if user else None
-    return session.get(TravelerIdentity, tid) if tid else None
 
 
 def _currency_options() -> list[tuple[str, str]]:
@@ -1531,12 +1860,15 @@ def _currency_options() -> list[tuple[str, str]]:
 def edit_travel_profile(request: Request, session: Session = Depends(get_session)):
     """A user edits THEIR OWN traveller's personal attributes (D-124): nationality
     (for visa research), base currency (for discovery currency conversion),
-    name-on-ticket aliases, AirTrail mapping, notes. These are deliberately NOT in
-    the admin UI — travel is personal."""
-    trav = _my_traveller(session, request)
+    name-on-ticket aliases, AirTrail mapping, notes. Not in the admin tables —
+    travel is personal. An admin may edit it FOR a traveller with no account or
+    one whose user shares with admins (4.1, app/acting.py)."""
+    from app.acting import acting_for
+    acting = acting_for(session, request)
+    trav = acting.traveler
     return templates.TemplateResponse(request, "travel_profile.html",
         {"request": request, "trav": trav, "no_traveller": trav is None,
-         "currencies": _currency_options(), "saved": False})
+         "acting": acting, "currencies": _currency_options(), "saved": False})
 
 
 @router.post("/settings/travel-profile", response_class=HTMLResponse)
@@ -1546,11 +1878,14 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
                         notes: str = Form(""), session: Session = Depends(get_session)):
     from sqlalchemy.orm.attributes import flag_modified
     from babel.numbers import list_currencies
-    trav = _my_traveller(session, request)
+    from app.acting import acting_for, audit_if_other
+    acting = acting_for(session, request)
+    trav = acting.traveler
     if trav is None:
         return templates.TemplateResponse(request, "travel_profile.html",
-            {"request": request, "trav": None, "no_traveller": True,
+            {"request": request, "trav": None, "no_traveller": True, "acting": acting,
              "currencies": _currency_options(), "saved": False})
+    audit_if_other(session, request, acting, "travel profile")
     trav.nationality = (nationality or "").strip().upper()[:2] or None
     bc = (base_currency or "").strip().upper()
     trav.base_currency = bc if bc in set(list_currencies()) else None
@@ -1561,22 +1896,99 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
     session.commit()
     session.refresh(trav)
     return templates.TemplateResponse(request, "travel_profile.html",
-        {"request": request, "trav": trav, "no_traveller": False,
+        {"request": request, "trav": trav, "no_traveller": False, "acting": acting,
          "currencies": _currency_options(), "saved": True})
 
 
 # ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------
 
-def _discovery_profile_row(session: Session) -> DiscoveryProfile | None:
-    """Single-user for now (D-89): the first row is the deployment-wide default,
-    same convention as _profile_row for packing."""
+def _discovery_profile_row(session: Session, traveler: TravelerIdentity | None,
+                           owner: bool = False) -> DiscoveryProfile | None:
+    """ONE person's discovery profile (4.1, D-95: exactly one per person). The
+    row on their traveller; for the `self` traveller, a pre-4.1 unassigned row
+    counts too (it was the owner's). Nobody else ever sees another person's
+    tastes — no traveller, or no row yet, means a blank profile. `owner` (auth
+    off, single-user): with no traveller at all, the unassigned row."""
+    if traveler is None:
+        if not owner:
+            return None
+        return (session.query(DiscoveryProfile)
+                .filter(DiscoveryProfile.traveler_id.is_(None))
+                .order_by(DiscoveryProfile.created_at).first())
+    own = (session.query(DiscoveryProfile)
+           .filter(DiscoveryProfile.traveler_id == traveler.id)
+           .order_by(DiscoveryProfile.created_at).first())
+    if own is not None or traveler.kind != "self":
+        return own
     return (session.query(DiscoveryProfile)
+            .filter(DiscoveryProfile.traveler_id.is_(None))
             .order_by(DiscoveryProfile.created_at).first())
+
+
+def discovery_profile_public(session: Session, traveler: TravelerIdentity | None,
+                             owner: bool = False, user_id: str | None = None) -> dict:
+    """ONE person's discovery profile for an AI agent (4.5, MCP/API): the same
+    preferences the local Discover run shapes its research with, each value
+    with its label, their free-text notes for agents, the rows they hid as
+    "not my thing" (`user_id`'s, across trips), and how to apply it all. Only
+    ever the caller's own."""
+    from discover.items import dislikes as hidden_dislikes
+    row = _discovery_profile_row(session, traveler, owner)
+    d = _discovery_default()
+    v = {**d, **((row.values if row else None) or {})}
+    food = {**d["food"], **(v.get("food") or {})}
+    drink = {**d["drink"], **(v.get("drink") or {})}
+    activity = {**d["activity"], **(v.get("activity") or {})}
+    practical = {**d["practical"], **(v.get("practical") or {})}
+    diet_l, drink_l, act_l = (dict(DISCOVERY_DIETARY), dict(DISCOVERY_DRINKS),
+                              dict(DISCOVERY_ACTIVITIES))
+    budget = food.get("budget_ceiling") or 0
+    mob = practical.get("mobility") or "no_limits"
+
+    def tagged(keys, labels):
+        return [{"key": k, "label": labels.get(k, k)} for k in keys or []]
+
+    out = {
+        "food": {
+            "dietary_restrictions": tagged(food.get("dietary_restrictions"), diet_l),
+            "avoid_cuisines": list(food.get("cuisine_dislikes") or []),
+            "allergies": food.get("allergies") or "",
+            "budget_ceiling": {"tier": budget,
+                               "label": dict(DISCOVERY_BUDGET).get(budget, "No limit")},
+        },
+        "drink": {"interests": tagged(drink.get("interests"), drink_l)},
+        "activity": {"interests": tagged(activity.get("interests"), act_l)},
+        "practical": {"mobility": {"key": mob,
+                                   "label": dict(DISCOVERY_MOBILITY).get(mob, mob)}},
+        "travel": {"nationality": traveler.nationality if traveler else None,
+                   "base_currency": traveler.base_currency if traveler else None},
+        "notes": (v.get("notes") or "").strip(),
+        "not_my_thing": hidden_dislikes(session, user_id),
+    }
+    out["blank"] = row is None or not any([
+        food.get("dietary_restrictions"), food.get("cuisine_dislikes"),
+        food.get("allergies"), budget, drink.get("interests"),
+        activity.get("interests"), mob != "no_limits", out["notes"]])
+    out["how_to_use"] = (
+        "Constraint-first: every recommendation must fit the dietary restrictions; "
+        "never recommend the avoided cuisines; stay at or under the budget ceiling "
+        "(1–4, $–$$$$; 0 = no limit); flag — don't exclude — anything that may "
+        "involve a listed allergen. Interests ADD places (breweries, museums, …) on "
+        "top of the usual mix; they never narrow it. Respect mobility for activities. "
+        "`notes` is the person in their own words — likes, dislikes, past "
+        "favourites; follow it like the rest. `not_my_thing` lists places and "
+        "events they hid as not their thing: don't suggest those again, and steer "
+        "away from similar ones. If `blank` is true, ask the person what they like "
+        "and want to avoid before researching. Never infer tastes from nationality.")
+    return out
 
 
 def _discovery_form_ctx(request: Request, session: Session,
                         saved: bool = False) -> dict:
-    row = _discovery_profile_row(session)
+    from app.acting import acting_for
+    acting = acting_for(session, request)           # self, or an admin acting for someone
+    trav, owner = acting.traveler, acting.owner_mode
+    row = _discovery_profile_row(session, trav, owner)
     d = _discovery_default()
     v = {**d, **((row.values if row else None) or {})}
     food = {**d["food"], **(v.get("food") or {})}
@@ -1589,7 +2001,8 @@ def _discovery_form_ctx(request: Request, session: Session,
     budget = food.get("budget_ceiling") or 0
     mob = practical.get("mobility") or "no_limits"
     return {
-        "request": request, "saved": saved,
+        "request": request, "saved": saved, "acting": acting,
+        "no_traveller": trav is None and not owner,
         "dietary": [{"value": k, "label": t, "checked": k in diet}
                     for k, t in DISCOVERY_DIETARY],
         "cuisine_dislikes": ", ".join(food.get("cuisine_dislikes") or []),
@@ -1602,6 +2015,7 @@ def _discovery_form_ctx(request: Request, session: Session,
                        for k, t in DISCOVERY_ACTIVITIES],
         "mobility_opts": [{"value": k, "label": t, "selected": k == mob}
                           for k, t in DISCOVERY_MOBILITY],
+        "notes": v.get("notes") or "",
     }
 
 
@@ -1624,6 +2038,7 @@ def save_discovery_profile(request: Request,
                            drink_interests: list[str] = Form(default=[]),
                            activity_interests: list[str] = Form(default=[]),
                            mobility: str = Form("no_limits"),
+                           notes: str = Form(""),
                            session: Session = Depends(get_session)):
     try:
         budget = int(budget_ceiling)
@@ -1648,11 +2063,21 @@ def save_discovery_profile(request: Request,
         "drink": {"interests": [x for x in drink_interests if x in drinks_ok]},
         "activity": {"interests": [x for x in activity_interests if x in acts_ok]},
         "practical": {"mobility": mobility if mobility in mob_ok else "no_limits"},
+        "notes": notes.strip()[:DISCOVERY_NOTES_MAX],   # for agents (4.5); free text
     }
-    row = _discovery_profile_row(session)
+    from app.acting import acting_for, audit_if_other
+    acting = acting_for(session, request)
+    trav, owner = acting.traveler, acting.owner_mode
+    if trav is None and not owner:   # signed in, no traveller: nowhere to keep it
+        return templates.TemplateResponse(request, "discovery_profile.html",
+                                          _discovery_form_ctx(request, session))
+    audit_if_other(session, request, acting, "discovery profile")
+    tid = trav.id if trav else None
+    row = _discovery_profile_row(session, trav, owner)
     if row is None:
-        session.add(DiscoveryProfile(values=values))
+        session.add(DiscoveryProfile(traveler_id=tid, values=values))
     else:
+        row.traveler_id = tid        # claims a pre-4.1 unassigned row for self
         row.values = values
     session.commit()
     return templates.TemplateResponse(request, "discovery_profile.html",
@@ -1736,20 +2161,10 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
 def delete_trip(trip_id: str, request: Request, session: Session = Depends(get_session)):
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is not None:
-        # Explicit child delete: SQLite in tests does not enforce ON DELETE
-        # CASCADE unless PRAGMA foreign_keys is on, so never rely on the DB to
-        # sweep the activities.
-        session.query(TripActivity).filter(
-            TripActivity.trip_id == trip_id).delete(synchronize_session=False)
-        session.query(TripTraveler).filter(
-            TripTraveler.trip_id == trip_id).delete(synchronize_session=False)
-        # Clear the soft link from any captured items filed into this trip
-        # (2.1.2) — there's no DB FK to null it for us (migration 0008).
-        from app.models import TravelItem
-        session.query(TravelItem).filter(
-            TravelItem.trip_id == trip_id).update({"trip_id": None},
-                                                  synchronize_session=False)
-        session.delete(trip)
+        # Everything that only exists for this trip goes with it; captures and
+        # journal entries are kept and unlinked (app/trips/purge.py).
+        from app.trips.purge import purge_trip
+        purge_trip(session, trip)
         session.commit()
     return _redirect("/trips")
 
@@ -1822,6 +2237,7 @@ def remove_traveler(trip_id: str, traveler_id: int, request: Request,
                       {"trip_id": trip_id, "traveler_id": traveler_id})
     if row is not None:
         session.delete(row)
+        who.remove_from_trip(session, trip_id, traveler_id)
         session.commit()
     return _travelers_section(request, session, trip_id)
 
@@ -1926,7 +2342,10 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
     subtitle = t.subtitle(v)
     starts = _al_iso(v.get("when"))
     ends = _al_iso(v.get("endWhen")) or starts
-    link = v.get("sourceLink") or None
+    # AdventureLog's link is a URL field: the Source when it is a link (it may be
+    # plain text, e.g. an email subject), else the map link.
+    link = next((u for u in (v.get("sourceLink"), v.get("mapLink"))
+                 if (u or "").strip().lower().startswith(("http://", "https://"))), None)
     detail_lines = [f"Confirmation: {v['confirmation']}"] if v.get("confirmation") else []
     if v.get("notes"):
         detail_lines.append(v["notes"])
@@ -1936,8 +2355,13 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
         name = f"{title} – {subtitle}" if subtitle else title
         origin = v.get("from") or v.get("pickupLocation") or v.get("departurePort")
         dest = v.get("to") or v.get("dropoffLocation") or v.get("arrivalPort")
-        origin_lat, origin_lon = _resolve_coords(origin, airports, photon, coord_cache)
-        dest_lat, dest_lon = _resolve_coords(dest, airports, photon, coord_cache)
+        # Stored coordinates first (app/trips/geo.py); look up only what's missing.
+        stored = {p["role"]: (p["lat"], p["lon"])
+                  for p in ((activity.geo or {}).get("points") or [])}
+        origin_lat, origin_lon = stored.get("from") or _resolve_coords(
+            origin, airports, photon, coord_cache)
+        dest_lat, dest_lon = stored.get("to") or _resolve_coords(
+            dest, airports, photon, coord_cache)
         body = {
             "type": _AL_TRANSPORT_TYPE[activity.type], "name": name,
             "date": starts, "end_date": ends,
@@ -1953,8 +2377,11 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
         return "transportation", {k: v for k, v in body.items() if v is not None}
 
     if activity.type == "lodging":
+        place = next((p for p in ((activity.geo or {}).get("points") or [])
+                      if p.get("role") == "place"), {})
         body = {
             "name": v.get("name") or title, "check_in": starts, "check_out": ends,
+            "latitude": place.get("lat"), "longitude": place.get("lon"),
             "location": v.get("address"), "reservation_number": v.get("confirmation"),
             "link": link, "description": v.get("notes") or None,
             "type": _al_lodging_type(v.get("type")),
@@ -2126,6 +2553,15 @@ def _from_al_iso(value: str | None) -> str:
     return date_p if time_p in ("", "00:00") else f"{date_p}T{time_p}"
 
 
+def _al_link_values(link: str | None) -> dict:
+    """An AdventureLog record's link lands in the Map field when it is a Maps
+    link (so it drives the Map button), else in Source."""
+    link = (link or "").strip()
+    if not link:
+        return {}
+    return {"mapLink": link} if activity_types._is_maps_url(link) else {"sourceLink": link}
+
+
 def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
     """Map an AdventureLog transportation/lodging record onto a Yonder TripActivity
     (a Timeline item). Notes have no Timeline equivalent and are never pulled."""
@@ -2139,7 +2575,7 @@ def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
                   "endWhen": _from_al_iso(rec.get("end_date")),
                   "confirmation": rec.get("reservation_number") or "",
                   "notes": _clean(rec.get("description")),
-                  "sourceLink": rec.get("link") or ""}
+                  **_al_link_values(rec.get("link"))}
         if ytype == "flight" and rec.get("flight_number"):
             values["flightNumber"] = rec["flight_number"]
     else:                                                # lodging
@@ -2150,7 +2586,7 @@ def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
                   "address": rec.get("location") or "",
                   "confirmation": rec.get("reservation_number") or "",
                   "type": rec.get("type") or "", "notes": _clean(rec.get("description")),
-                  "sourceLink": rec.get("link") or ""}
+                  **_al_link_values(rec.get("link"))}
     values = {k: v for k, v in values.items() if v}
     return TripActivity(trip_id=trip_id, type=ytype, values=values,
                         starts_at=values.get("when") or "")
@@ -2167,7 +2603,7 @@ def _al_airports_photon():
     return airports, _photon(), {}
 
 
-def _al_sync_ctx(session: Session, trip: Trip, client) -> dict:
+def _al_sync_ctx(session: Session, trip: Trip, client, uid: str | None = None) -> dict:
     """Everything the sync page renders: pushable Yonder items (with a per-item
     'already there?' flag) and pullable AdventureLog records."""
     cid = trip.adventurelog_collection_id
@@ -2181,8 +2617,10 @@ def _al_sync_ctx(session: Session, trip: Trip, client) -> dict:
                            "label": t.title(a.values or {}) or a.type,
                            "kind": kind.title(),
                            "exists": _activity_marker(a.id) in index})
+    # Only the viewer's own Discover findings (4.1: Discover is per person).
     for f in (session.query(DiscoveryFinding)
-              .filter(DiscoveryFinding.trip_id == trip.id).all()):
+              .filter(DiscoveryFinding.trip_id == trip.id,
+                      DiscoveryFinding.user_id == uid).all()):
         push_items.append({"id": f"discovery:{f.id}", "source": "Discovery",
                            "label": f"{TOPIC_LABELS.get(f.topic, f.topic)} — {f.place_key}",
                            "kind": "Note",
@@ -2219,11 +2657,12 @@ def adventurelog_sync_page(trip_id: str, request: Request,
     if client is None:
         return HTMLResponse("AdventureLog isn't configured on this server.",
                             status_code=503)
-    ctx = {"request": request, **_al_sync_ctx(session, trip, client)}
+    ctx = {"request": request, **_al_sync_ctx(session, trip, client, _viewer_uid(request))}
     return templates.TemplateResponse(request, "adventurelog.html", ctx)
 
 
-def _build_push_plan(session, trip, item_ids, collection_id, airports, photon, cache):
+def _build_push_plan(session, trip, item_ids, collection_id, airports, photon, cache,
+                     uid=None):
     """(kind, body, marker, is_note, label) for each selected item, markers stamped."""
     plan = []
     for raw in item_ids:
@@ -2237,7 +2676,7 @@ def _build_push_plan(session, trip, item_ids, collection_id, airports, photon, c
             label = activity_types.get_type(a.type).title(a.values or {}) or a.type
         elif source == "discovery":
             f = session.get(DiscoveryFinding, ident)
-            if f is None or f.trip_id != trip.id:
+            if f is None or f.trip_id != trip.id or f.user_id != uid:
                 continue
             kind, body = "note", _finding_note_body(f, collection_id)
             marker = _discovery_marker(f.topic, f.place_key)
@@ -2268,7 +2707,8 @@ def adventurelog_push(trip_id: str, request: Request,
     cid = trip.adventurelog_collection_id
     index = _al_collection_index(client, cid)
     airports, photon, cache = _al_airports_photon()
-    plan = _build_push_plan(session, trip, item_ids, cid, airports, photon, cache)
+    plan = _build_push_plan(session, trip, item_ids, cid, airports, photon, cache,
+                            uid=_viewer_uid(request))
 
     # Note collisions need confirmation unless already confirmed.
     collisions = [{"label": p["label"], "existing": index[p["marker"]]["name"]}
@@ -2347,9 +2787,18 @@ def adventurelog_pull(trip_id: str, request: Request,
 # ----------------------------------------------------------------- activities
 
 def _activity_modal_ctx(request: Request, trip_id: str, *, mode: str,
-                        action: str, atype: str, values: dict) -> dict:
+                        action: str, atype: str, values: dict,
+                        session: Session | None = None,
+                        tagged: list[int] | None = None) -> dict:
     t = activity_types.get_type(atype)
+    names = _roster_names(session, trip_id) if session is not None else {}
+    # "Who is this for" only appears once the trip has more than one traveller;
+    # an untagged activity (everyone) shows every box ticked.
+    chosen = set(tagged or []) & set(names) or set(names)
     return {
+        "travelers": ([{"id": tid, "name": n, "checked": tid in chosen}
+                       for tid, n in sorted(names.items(), key=lambda kv: kv[1].lower())]
+                      if len(names) > 1 else []),
         "request": request, "mode": mode,
         "title": "New activity" if mode == "create" else "Edit activity",
         "action": action, "trip_id": trip_id,
@@ -2366,11 +2815,14 @@ def _modal_fields(t: activity_types.ActivityType, values: dict) -> list[dict]:
 
 @router.get("/{trip_id}/activity/new", response_class=HTMLResponse)
 def new_activity(trip_id: str, request: Request,
-                 type: str = activity_types.DEFAULT_TYPE):
+                 type: str = activity_types.DEFAULT_TYPE,
+                 session: Session = Depends(get_session)):
+    if scope.trip_or_none(session, request, trip_id) is None:
+        return HTMLResponse("", status_code=404)
     return templates.TemplateResponse(request, "_activity_modal.html",
         _activity_modal_ctx(request, trip_id, mode="create",
                             action=f"/trips/{trip_id}/activity",
-                            atype=type, values={}))
+                            atype=type, values={}, session=session))
 
 
 @router.get("/{trip_id}/activity/fields", response_class=HTMLResponse)
@@ -2392,12 +2844,14 @@ def activity_fields(trip_id: str, request: Request,
 def edit_activity(trip_id: str, activity_id: str, request: Request,
                   session: Session = Depends(get_session)):
     a = session.get(TripActivity, activity_id)
-    if a is None or a.trip_id != trip_id:
+    if (a is None or a.trip_id != trip_id
+            or scope.trip_or_none(session, request, trip_id) is None):
         return HTMLResponse("", status_code=404)
     return templates.TemplateResponse(request, "_activity_modal.html",
         _activity_modal_ctx(request, trip_id, mode="edit",
                             action=f"/trips/{trip_id}/activity/{a.id}",
-                            atype=a.type, values=a.values or {}))
+                            atype=a.type, values=a.values or {}, session=session,
+                            tagged=who.activity_map(session, [a.id]).get(a.id)))
 
 
 def _collect_values(t: activity_types.ActivityType, form) -> dict:
@@ -2418,11 +2872,20 @@ async def create_activity(trip_id: str, request: Request,
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or activity_types.DEFAULT_TYPE)
-    values = _collect_values(t, form)
-    a = TripActivity(trip_id=trip_id, type=t.key, values=values,
+    values, geo = prepare_activity(t.key, _collect_values(t, form),
+                                   session=session, trip_id=trip_id)
+    a = TripActivity(trip_id=trip_id, type=t.key, values=values, geo=geo,
                      starts_at=values.get("when") or "")
     session.add(a)
+    session.flush()
+    if "travelers_shown" in form:
+        who.set_travelers(session, a.id, trip_id, form.getlist("traveler_ids"))
+    item = _item_or_none(session, request, trip_id, form.get("discovery_item_id") or "")
+    if item is not None:
+        item.activity_id = a.id          # the Discover row now shows "On timeline"
     session.commit()
+    if item is not None:
+        return _refresh()            # stay on the Discover section + city it came from
     return _redirect(f"/trips/{trip_id}")
 
 
@@ -2430,23 +2893,35 @@ async def create_activity(trip_id: str, request: Request,
 async def update_activity(trip_id: str, activity_id: str, request: Request,
                           session: Session = Depends(get_session)):
     a = session.get(TripActivity, activity_id)
-    if a is None or a.trip_id != trip_id:
+    if (a is None or a.trip_id != trip_id
+            or scope.trip_or_none(session, request, trip_id) is None):
         return HTMLResponse("", status_code=404)
     form = await request.form()
     t = activity_types.get_type(form.get("activity_kind") or a.type)
-    values = _collect_values(t, form)
+    values, geo = prepare_activity(t.key, _collect_values(t, form),
+                                   old_geo=a.geo if a.type == t.key else None,
+                                   session=session, trip_id=trip_id, activity_id=a.id)
     a.type = t.key
     a.values = values
+    a.geo = geo
     a.starts_at = values.get("when") or ""
+    # Only touch the tags when the form showed the picker (a multi-traveller
+    # trip); a solo trip's form never posts them, so nothing is cleared.
+    if "travelers_shown" in form:
+        who.set_travelers(session, a.id, trip_id, form.getlist("traveler_ids"))
     session.commit()
     return _redirect(f"/trips/{trip_id}")
 
 
 @router.post("/{trip_id}/activity/{activity_id}/delete", response_class=HTMLResponse)
-def delete_activity(trip_id: str, activity_id: str,
+def delete_activity(trip_id: str, activity_id: str, request: Request,
                     session: Session = Depends(get_session)):
     a = session.get(TripActivity, activity_id)
-    if a is not None and a.trip_id == trip_id:
+    if (a is not None and a.trip_id == trip_id
+            and scope.trip_or_none(session, request, trip_id) is not None):
+        who.clear_activity(session, a.id)
+        from discover import items as discovery_items
+        discovery_items.unlink_activity(session, a.id)
         session.delete(a)
         session.commit()
     return _redirect(f"/trips/{trip_id}")

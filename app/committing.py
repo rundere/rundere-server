@@ -426,12 +426,37 @@ def _label(place: dict | None) -> str | None:
             or place.get("raw") or None)
 
 
-def build_yonder_activity(payload: dict) -> tuple[str, dict]:
+def _capture_source(session: Session, item: TravelItem) -> str | None:
+    """What the timeline's Source field says for a capture: the email's subject
+    or the captured page's address. Maps captures carry their link in the Map
+    field instead, so they get none here."""
+    from app.models import IngestBatch
+    batch = session.get(IngestBatch, item.batch_id) if item.batch_id else None
+    p = (batch.payload or {}) if batch is not None else {}
+    kind = (item.source or {}).get("type")
+    if kind == "gmail" and p.get("subject"):
+        return f"Email: {p['subject']}"
+    if kind == "web":
+        return p.get("source_url") or "Captured web page"
+    if kind == "gcal":
+        return "Google Calendar"
+    return None
+
+
+def build_yonder_activity(payload: dict, *, source: str | None = None) -> tuple[str, dict]:
     """Map a capture payload to a Yonder (type, values) for a TripActivity.
 
     Yonder is a first-party trip system, so this mirrors the manual add-activity
     form's value keys (app/trips/types.py) rather than an external API shape. The
-    activity is filed under the item's linked Yonder trip by the commit stage."""
+    activity is filed under the item's linked Yonder trip by the commit stage.
+    `source` is the capture's origin for the Source field (see _capture_source)."""
+    atype, values = _yonder_activity(payload)
+    if source and not values.get("sourceLink"):
+        values["sourceLink"] = source
+    return atype, values
+
+
+def _yonder_activity(payload: dict) -> tuple[str, dict]:
     t = payload.get("item_type")
     ref = payload.get("booking_reference") or None
 
@@ -455,10 +480,23 @@ def build_yonder_activity(payload: dict) -> tuple[str, dict]:
         a, b = _label(dep.get("place")), _label(arr.get("place"))
         atype = _YONDER_GROUND_TYPE.get(g.get("mode"), "drive")
         provider = (prov.get("name") if isinstance(prov, dict) else None)
+        route = g.get("route") or {}
         base = {"when": _local(dep.get("time")), "endWhen": _local(arr.get("time")),
-                "confirmation": ref}
+                "confirmation": ref,
+                # the directions link the drive was captured from (owner,
+                # 2026-09-26: the activity must keep it — it's the Map button)
+                "mapLink": route.get("source_url") or None}
         if atype == "drive":
-            base["route"] = " → ".join(x for x in (a, b) if x) or None
+            from resolve.routing import (RouteEstimate, format_distance,
+                                         stop_address, stop_label)
+            dp, ap = dep.get("place"), arr.get("place")
+            base["route"] = " → ".join(
+                x for x in (stop_label(dp), stop_label(ap)) if x) or None
+            # The full From/To (a reviewer's edited address wins over the name)
+            base["from"], base["to"] = stop_address(dp), stop_address(ap)
+            if route.get("distance_km") is not None:
+                base["distance"] = format_distance(RouteEstimate(
+                    float(route["distance_km"]), int(route.get("duration_minutes") or 0)))
         elif atype == "carRental":
             base.update({"company": provider, "pickupLocation": a, "dropoffLocation": b})
         elif atype == "cruise":
@@ -748,10 +786,14 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 if not existing:
                     results.append({"target": target, "operation": "cancel",
                                     "ok": True, "skipped": "cancellation — nothing "
-                                    "on the Yonder trip to remove"})
+                                    "on the Run·dere trip to remove"})
                     continue
                 extra = {"deleted_id": existing.id}
                 if not dry_run:
+                    from app.trips import who
+                    who.clear_activity(session, existing.id)
+                    from discover import items as discovery_items
+                    discovery_items.unlink_activity(session, existing.id)
                     session.delete(existing)
                 _record(target, "cancel", {"trip_id": tid},
                         None if dry_run else (200, {}, ""), extra=extra)
@@ -759,26 +801,35 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
             if not tid:
                 results.append({"target": target, "operation": "create", "ok": False,
                                 "dry_run": dry_run,
-                                "error": "no Yonder trip is linked to this item"})
+                                "error": "no Run·dere trip is linked to this item"})
                 continue
-            atype, values = build_yonder_activity(payload)
+            atype, values = build_yonder_activity(
+                payload, source=_capture_source(session, item))
             op = "update" if existing else "create"
             if dry_run:
                 _record(target, op, {"trip_id": tid, "type": atype, "values": values},
                         None, extra={"yonder_type": atype})
                 continue
+            # Where it is: the capture's own located places (already verified at
+            # resolve), else located from the activity's text like a manual one.
+            from app.trips.geo import geo_from_payload, locate_activity
+            geo = geo_from_payload(atype, values, payload) or locate_activity(
+                atype, values, old_geo=existing.geo if existing else None)
             if existing:
                 existing.type, existing.values = atype, values
+                existing.geo = geo
                 existing.starts_at = values.get("when") or ""
                 flag_modified(existing, "values")
                 act_id = existing.id
             else:
-                act = TripActivity(trip_id=tid, type=atype, values=values,
+                act = TripActivity(trip_id=tid, type=atype, values=values, geo=geo,
                                    starts_at=values.get("when") or "",
                                    source_item_key=key)
                 session.add(act)
                 session.flush()
                 act_id = act.id
+            _tag_booked_travelers(session, act_id, tid, payload, identities,
+                                  keep_existing=existing is not None, item=item)
             _record(target, op, {"trip_id": tid, "type": atype, "values": values},
                     (200, {"id": act_id}, ""), extra={"yonder_type": atype})
             continue
@@ -1025,21 +1076,63 @@ def _resolve_or_mint_yonder_trip(session: Session, item: TravelItem,
     if not resolution.get("is_minter"):
         return None                    # minter hasn't committed its trip yet
     if dry_run:
-        return "(new Yonder trip)"
+        return "(new Run·dere trip)"
     from app.models import Trip
     cid = (collection_id if collection_id
            and not str(collection_id).startswith("(") else None)
+    # The minted trip belongs to whoever owns the capture that minted it (the
+    # ingesting key's user, D-120) — same as a hand-made trip is owned by its
+    # creator. NULL only when the capture itself is open (unscoped key).
     trip = Trip(source="resolver",
                name=resolution.get("collection_name") or "Untitled trip",
                start_date=resolution.get("collection_start"),
                end_date=resolution.get("collection_end"),
-               adventurelog_collection_id=cid)
+               adventurelog_collection_id=cid,
+               owner_id=item.owner_id)
     session.add(trip)
     session.flush()
     item.trip_id = trip.id
     item.resolution = {**(item.resolution or {}), "yonder_trip_id": trip.id}
     flag_modified(item, "resolution")
     return trip.id
+
+
+def _tag_booked_travelers(session: Session, activity_id: str, trip_id: str,
+                          payload: dict, identities, *, keep_existing: bool,
+                          item: TravelItem | None = None) -> None:
+    """4.1: on a multi-traveller trip, tag the activity with who it's for.
+
+    - A flight: the passengers on the booking ("Who flew" in review), matched
+      to the trip's travellers. An unnamed booking was already assumed to be
+      the capturing user's at resolve.
+    - Anything else: the reviewer's "Who is this for" pick, else the traveller
+      of the user who captured it.
+    Only the trip's own travellers count; the whole roster means everyone. A
+    re-commit of an activity someone already tagged by hand keeps their tags."""
+    from app.trips import who
+    roster = who.roster_ids(session, trip_id)
+    if len(roster) < 2:
+        return
+    if keep_existing and who.activity_map(session, [activity_id]):
+        return
+    chosen: set = set()
+    if payload.get("item_type") == "flight":
+        if not identities:
+            return
+        from resolve.identity import match_identity
+        for t in (payload.get("travelers") or []):
+            ident, _, _ = match_identity(t.get("raw_name", ""), identities)
+            if ident is not None:
+                chosen.add(ident.id)
+    elif item is not None:
+        chosen = set((item.review or {}).get("traveler_ids") or [])
+        if not chosen and item.owner_id:
+            from app.models import User
+            user = session.get(User, item.owner_id)
+            if user is not None and user.traveler_id is not None:
+                chosen = {user.traveler_id}
+    if chosen:
+        who.set_travelers(session, activity_id, trip_id, chosen)
 
 
 def _unsuppressed_places(payload: dict) -> list[dict]:
@@ -1202,9 +1295,14 @@ def _apply_status(item: TravelItem, results: list[dict]) -> None:
 
 def commit_pending(session: Session, adventurelog, airtrail, *,
                    identities=None, dry_run: bool = True, limit: int = 0,
-                   progress=None) -> dict:
+                   progress=None, item_filter=None) -> dict:
     """Commit every approved, resolved item. Sequential (one flight at a time,
-    D-06); per-item commit so one failure never blocks the rest."""
+    D-06); per-item commit so one failure never blocks the rest.
+
+    `item_filter` (a TravelItem predicate, e.g. scope.capture_filter(user))
+    limits it to the captures that person may log — the web "Log approved"
+    button passes the pressing user's, so nobody logs someone else's approved
+    items (YONDER-105). None = every item (the operator CLI)."""
     flown_airports = flown_airlines = {}
     if airtrail is not None:
         try:
@@ -1218,8 +1316,10 @@ def commit_pending(session: Session, adventurelog, airtrail, *,
     airports = _Resolver(flown_airports, db, "airport")
     airlines = _Resolver(flown_airlines, db, "airline")
 
-    items = [i for i in session.query(TravelItem)
-             .order_by(TravelItem.created_at).all() if committable(i)]
+    q = session.query(TravelItem)
+    if item_filter is not None:
+        q = q.filter(item_filter)
+    items = [i for i in q.order_by(TravelItem.created_at).all() if committable(i)]
     if limit:
         items = items[:limit]
 

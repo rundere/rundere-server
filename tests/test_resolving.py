@@ -612,6 +612,44 @@ def test_resolve_auto_links_a_single_matching_yonder_trip():
     _skip_or(run)
 
 
+def test_resolve_auto_link_only_considers_the_owners_trips():
+    """4.1: a capture is only auto-filed into a trip its owner could edit — not
+    another user's trip that merely has matching dates. Here the sister's
+    capture ignores her brother's trip (so the one match is her own) and a
+    trip she travels on counts as hers."""
+    def run():
+        from app.models import TravelerIdentity, Trip, TripTraveler, User
+        with SessionLocal() as s:
+            _reset_items_and_trips(s); _seed_home(s)
+            s.query(User).filter(User.username.in_(["al-bro", "al-sis"])).delete(
+                synchronize_session=False)
+            s.query(TravelerIdentity).filter_by(display_name="AL Sister").delete()
+            sis_t = TravelerIdentity(display_name="AL Sister", kind="guest")
+            s.add(sis_t); s.flush()
+            bro = User(username="al-bro", auth_source="local", is_admin=True)
+            sis = User(username="al-sis", auth_source="local", traveler_id=sis_t.id)
+            s.add_all([bro, sis]); s.flush()
+            his = Trip(name="His Lisbon", start_date="2027-05-01",
+                       end_date="2027-05-31", owner_id=bro.id)
+            s.add(his); s.commit()
+            it = _add_item(s, _lodging_payload())     # 2027-05-10 -> 2027-05-14
+            it.owner_id = sis.id; s.commit()
+            resolve_pending(s, adventurelog=None)
+            assert s.get(TravelItem, it.id).trip_id is None      # not his trip
+            # ...but a trip of his that she's travelling on is fair game
+            s.add(TripTraveler(trip_id=his.id, traveler_id=sis_t.id, role="companion"))
+            it2 = _add_item(s, _lodging_payload())
+            it2.canonical_key = (it2.canonical_key or "") + ":2"
+            it2.owner_id = sis.id; s.commit()
+            resolve_pending(s, adventurelog=None)
+            assert s.get(TravelItem, it2.id).trip_id == his.id
+            s.query(TripTraveler).filter_by(trip_id=his.id).delete()
+            s.query(User).filter(User.id.in_([bro.id, sis.id])).delete(
+                synchronize_session=False)
+            s.delete(sis_t); s.commit()
+    _skip_or(run)
+
+
 def test_resolve_does_not_link_when_two_yonder_trips_match():
     """Overlapping trips -> ambiguous -> left for the operator; never guess."""
     def run():
@@ -663,3 +701,66 @@ def test_resolve_adds_yonder_target_when_linked_to_a_trip():
             assert "yonder.activity" in (done.resolution or {}).get("targets", [])
             assert (done.status or {}).get("resolve") == "ok"   # writable to Yonder
     _skip_or(run)
+
+
+def test_named_maps_drive_is_geocoded_before_keying():
+    """YONDER-121: a Maps directions capture that names its stops (no embedded
+    coords) must be located BEFORE keying — the road key is built from the
+    endpoint coordinates — instead of blocking as unknown_type. Unlocatable
+    stops fall back to the actionable geocode_failed."""
+    if not DEPS:
+        return
+
+    class _StubPhoton:
+        def __init__(self, known):
+            self.known = known
+
+        def geocode_place(self, place):
+            from resolve.geocode import GeocodeResult
+            hit = self.known.get(place.get("city") or place.get("name"))
+            if not hit:
+                return None
+            return GeocodeResult(lat=hit[0], lon=hit[1], country="US",
+                                 city=place.get("city"), name=place.get("name"),
+                                 confidence="verified")
+
+    def drive():
+        return {"item_type": "ground_transport", "booking_status": "planned",
+                "ground_transport": {
+                    "mode": "car",
+                    "departure": {"place": {"raw": "Phoenix International Sunport",
+                                            "name": "Phoenix International Sunport"},
+                                  "time": {"local": "2027-10-10", "precision": "date",
+                                           "origin": "capture_context"}},
+                    "arrival": {"place": {"raw": "Heritage Square, Phoenix, NM",
+                                          "name": "Heritage Square, Phoenix, NM",
+                                          "city": "Phoenix", "region": "NM"},
+                                "time": {"local": "2027-10-10", "precision": "date",
+                                         "origin": "capture_context"}},
+                    "waypoints": [],
+                    "route": {"provider": "google_maps", "is_estimate": True,
+                              "source_url": "https://www.google.com/maps/dir/A/B/"}}}
+
+    def add_drive(s):
+        it = _add_item(s, drive())
+        # a directions capture's date comes from the person (RULE-31/34)
+        it.source = {**it.source, "capture_context": {"travel_date": "2027-10-10"}}
+        s.commit()
+        return it
+
+    with SessionLocal() as s:
+        _seed_home(s)
+        found = add_drive(s)
+        resolve_pending(s, adventurelog=None,
+                        geocoder=_StubPhoton({
+                            "Phoenix International Sunport": (35.04, -106.61),
+                            "Phoenix": (35.10, -106.67)}))
+        done = s.get(TravelItem, found.id)
+        assert "unknown_type" not in ((done.review or {}).get("reasons") or [])
+        assert s.query(ItemKey).filter(ItemKey.item_id == done.id,
+                                       ItemKey.key.like("road:2027-10-10:%")).first()
+
+        lost = add_drive(s)
+        resolve_pending(s, adventurelog=None, geocoder=_StubPhoton({}))
+        done = s.get(TravelItem, lost.id)
+        assert done.review["reasons"] == ["geocode_failed"]

@@ -28,18 +28,31 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def load_profile(session: Session, traveler_id: int | None = None) -> dict:
-    """The packing profile values for a traveller (D-123: per-user via traveller),
-    falling back to the deployment default (traveler_id NULL), then any profile,
-    then engine defaults. This is the per-traveller lookup D-82 anticipated."""
-    row = None
+def profile_row(session: Session, traveler_id: int | None, *,
+                owner: bool = False) -> PackingProfile | None:
+    """ONE person's packing profile row (D-123, 4.1). Their traveller's own row;
+    the deployment owner (the `self` traveller, or `owner` = auth off) also
+    keeps the pre-4.1 unassigned row. Anyone else without a row of their own
+    gets None — never the owner's preferences."""
+    from app.models import TravelerIdentity
     if traveler_id is not None:
-        row = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
-    if row is None:
-        row = (session.query(PackingProfile).filter_by(traveler_id=None)
-               .order_by(PackingProfile.created_at).first())
-    if row is None:
-        row = session.query(PackingProfile).order_by(PackingProfile.created_at).first()
+        own = session.query(PackingProfile).filter_by(traveler_id=traveler_id).first()
+        if own is not None:
+            return own
+        ident = session.get(TravelerIdentity, traveler_id)
+        if ident is None or ident.kind != "self":
+            return None
+    elif not owner:
+        return None
+    return (session.query(PackingProfile).filter_by(traveler_id=None)
+            .order_by(PackingProfile.created_at).first())
+
+
+def load_profile(session: Session, traveler_id: int | None = None, *,
+                 owner: bool = True) -> dict:
+    """The packing profile values for one person (see profile_row), over the
+    engine defaults. This is the per-traveller lookup D-82 anticipated."""
+    row = profile_row(session, traveler_id, owner=owner)
     return {**default_profile(), **(row.values or {})} if row else default_profile()
 
 
@@ -97,14 +110,18 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
             TripActivity.trip_id == trip.id).all()
         derived = derive_locations(acts, resolve_airport=resolve_airport,
                                    geocoder=geocoder)
-        weather = (session.query(DiscoveryFinding)
-                   .filter(DiscoveryFinding.trip_id == trip.id,
-                           DiscoveryFinding.topic == "weather").all())
+        # Weather is the same for everyone on the trip, so use this person's own
+        # weather findings, else any traveller's (4.1: Discover is per person) —
+        # a companion shouldn't have to run Discover before packing.
+        wq = session.query(DiscoveryFinding).filter(
+            DiscoveryFinding.trip_id == trip.id, DiscoveryFinding.topic == "weather")
+        weather = wq.filter(DiscoveryFinding.user_id == user_id).all() or wq.all()
         profiles = list(home_profiles or [])
         home_countries = home_country_set(derived.places, profiles, trip.start_date)
         ctx = derive_context(acts, derived, weather, start_date=trip.start_date,
                              end_date=trip.end_date,
-                             profile=load_profile(session, traveler_id),
+                             profile=load_profile(session, traveler_id,
+                                                  owner=user_id is None),
                              home_countries=home_countries)
         result = build_plan(ctx, catalog.items(session), force_archetypes=override)
 

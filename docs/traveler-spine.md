@@ -5,14 +5,14 @@ Implementation: `app/models.py` (data model), `alembic/versions/0014_traveler_sp
 (the "Who's traveling" UI).
 Tests: `tests/test_trips.py` (travellers + guest sections).
 
-Yonder 3.2, phases 1–2 of `SPEC-3.2-discovery-llm.md`. This lands the person
+Run·dere 3.2, phases 1–2 of `SPEC-3.2-discovery-llm.md`. This lands the person
 data model the LLM discovery tier will read, plus the trip-level UI to populate
 it. No resolver consumes it yet — that is phase 3 onward.
 
 ## The model: one person record everything hangs off
 
 `TravelerIdentity` (introduced in 3.0 for the flight-review identity matcher) is
-promoted to Yonder's **central person record**. Every per-person table links to
+promoted to Run·dere's **central person record**. Every per-person table links to
 it by a nullable `traveler_id`; trip membership is a structured association, not
 a free-text hint.
 
@@ -47,7 +47,7 @@ TravelerIdentity (the person)
 
 `traveler_id` columns are plain `Integer` columns with **no** `ForeignKey`
 constraint — the established house convention (as `PackingProfile` already used).
-NULL means "deployment-wide default" while Yonder is single-user. The type is
+NULL means "deployment-wide default" while Run·dere is single-user. The type is
 `Integer` to match `traveler_identities.id`; the earlier `String(36)` on
 `PackingProfile` was a soft-link that could never actually match the integer PK.
 

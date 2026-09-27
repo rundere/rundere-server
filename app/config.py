@@ -38,6 +38,35 @@ class Settings(BaseSettings):
 
     # Geocoding (D-22: Photon on travel-net, avoids Google Maps quota)
     photon_url: str = "http://photon:2322"
+    # Road routing for a drive's distance, time and route line
+    # (resolve/routing.py). Routers are tried in this order; one that isn't
+    # configured is skipped, and one with no road data for the area (e.g. a
+    # home-region Valhalla asked about India) falls through to the next — so
+    # self-host for home and let a hosted API cover the rest of the world.
+    routing_providers: str = "valhalla,ors,osrm"
+    # Valhalla: the full /route endpoint — self-hosted
+    # (http://valhalla:8002/route) or Stadia Maps
+    # (https://api.stadiamaps.com/route/v1, with valhalla_api_key). Empty = off.
+    valhalla_url: str = ""
+    valhalla_api_key: str = ""
+    # openrouteservice.org — worldwide, free key tier. Empty key = off.
+    ors_api_key: str = ""
+    ors_url: str = "https://api.openrouteservice.org"
+    # OSRM: self-hosted, or the public demo server (fair use, driving only) as
+    # the last resort. Empty = off.
+    osrm_url: str = "https://router.project-osrm.org"
+    # Map background for the PDF's trip maps (app/trips/maps.py): an XYZ raster
+    # tile template. Default is OpenStreetMap's own tile server — fine for a
+    # personal deployment's occasional PDF (cached 30 days, attributed, never
+    # bulk); a public or busy instance must point this at its own TileServer GL
+    # (e.g. http://tileserver:8080/styles/osm-bright/{z}/{x}/{y}{r}.png — {r}
+    # asks for @2x tiles, crisper in print) or a hosted style. Empty = a plain
+    # schematic background (lines + pins only).
+    map_tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    map_tile_attribution: str = "© OpenStreetMap contributors"
+    # Where fetched tiles are kept; empty = artifacts_dir/tile-cache (on the
+    # artifacts volume, so it survives redeploys).
+    map_tile_cache_dir: str = ""
 
     # Discovery (Yonder 3.0, SPEC-3-discovery.md). Deterministic-tier sources —
     # overridable so a deployment can self-host (e.g. its own Frankfurter) and
@@ -98,6 +127,9 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_starttls: bool = True
+    # Implicit TLS from the first byte (SMTPS, usually port 465) instead of
+    # upgrading a plain connection with STARTTLS (usually 587).
+    smtp_ssl: bool = False
     # Absolute base (e.g. https://yonder.home.example) for links in emails. Empty
     # => derive from the request that triggered the reset.
     public_base_url: str = ""
@@ -116,8 +148,35 @@ class Settings(BaseSettings):
     oidc_username_claim: str = "preferred_username"
     oidc_auto_create: bool = True            # provision a User on first SSO login
     oidc_admin_group: str = ""               # a `groups` claim value that grants admin (optional)
+    # Per-hostname SSO (YONDER-164). Comma-separated host names, matched exactly
+    # against the request's Host. Listing hosts also makes the OIDC callback URL
+    # follow the host the user came in on (leave TX_OIDC_REDIRECT_URL empty).
+    #   oidc_hosts        where "Sign in with SSO" is offered; empty = every host.
+    #   oidc_force_hosts  SSO only: /login goes straight to the IdP and password
+    #                     sign-in, registration and resets are refused there.
+    # e.g. force the public name and keep the LAN name password-only, so the LAN
+    # still works when the IdP is down.
+    oidc_hosts: str = ""
+    oidc_force_hosts: str = ""
+    # Also refuse the app's password sign-in (/api/v1/auth/login) on forced
+    # hosts. Off by default: the iOS app signs in with a password until it
+    # can use SSO (YONDER-104), so turning this on locks it out away from home.
+    oidc_force_api_login: bool = False
 
-    app_version: str = "4.0.0"
+    # Yonder as an OAuth 2.1 authorization server (YONDER-107) — for the
+    # claude.ai connector and other OAuth clients. Yonder always issues these
+    # tokens itself; sign-in at /oauth/authorize is local, OIDC or proxy-header,
+    # whatever the deployment has. Set TX_PUBLIC_BASE_URL in prod so the
+    # metadata documents carry the public https URLs.
+    oauth_access_ttl_seconds: int = 3600                    # access token (1 h)
+    oauth_refresh_idle_ttl_seconds: int = 60 * 60 * 24 * 90  # grant dies after 90 idle days
+    oauth_code_ttl_seconds: int = 60                        # authorization code lifetime
+    oauth_register_rate_limit: int = 10                     # DCR registrations per IP…
+    oauth_register_rate_window_seconds: int = 3600          # …per hour
+    oauth_token_rate_limit: int = 60                        # /oauth/token calls per IP…
+    oauth_token_rate_window_seconds: int = 60               # …per minute
+
+    app_version: str = "4.5.0"
 
     @property
     def base_currency_list(self) -> tuple[str, ...]:

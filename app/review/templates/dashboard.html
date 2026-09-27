@@ -6,7 +6,7 @@
 
     <div class="dash-hero">
       <div>
-        <h1>Yonder</h1>
+        <h1><span class="rd-mark" aria-hidden="true"></span> <span class="rd-wordmark" role="img" aria-label="Run·dere"></span></h1>
         <p>Travel documents in, clean trip records out — capture, review, and
           your trips, all in one place.</p>
       </div>
@@ -98,35 +98,10 @@
           <div class="name">Journal</div>
           <div class="desc">Quick daily notes, attached to a trip later</div>
         </a>
-        <a class="dash-card admin" href="/review/home">
-          <div class="ico">🏠</div>
-          <div class="name">Home profiles</div>
-          <div class="desc">Where "home" is, so it's never logged as a trip</div>
-        </a>
-        <a class="dash-card admin" href="/trips/settings/packing-profile">
-          <div class="ico">🎒</div>
-          <div class="name">Packing profile</div>
-          <div class="desc">Bag, laundry, style — shapes every packing plan</div>
-        </a>
-        <a class="dash-card admin" href="/trips/settings/discovery-profile">
-          <div class="ico">🔎</div>
-          <div class="name">Discovery profile</div>
-          <div class="desc">Diet, drinks, activities — shapes trip briefings</div>
-        </a>
-        <a class="dash-card admin" href="/admin/traveler-identity/list">
-          <div class="ico">🧑‍🤝‍🧑</div>
-          <div class="name">Travellers</div>
-          <div class="desc">Who's who — self and guests</div>
-        </a>
-        <a class="dash-card admin" href="/admin/rule-setting/list">
-          <div class="ico">📏</div>
-          <div class="name">Rules</div>
-          <div class="desc">Enforce / audit / off, per rule</div>
-        </a>
-        <a class="dash-card admin" href="/admin/">
-          <div class="ico">🗄️</div>
-          <div class="name">Tables</div>
-          <div class="desc">Raw admin over every table</div>
+        <a class="dash-card admin" href="/settings">
+          <div class="ico">⚙️</div>
+          <div class="name">Settings</div>
+          <div class="desc">Your profiles, plus administration</div>
         </a>
       </div>
     </div>
@@ -136,11 +111,11 @@
       <div class="dash-row">
         <div class="dash-stat"><b>{{ 'On' if have_adventurelog else 'Off' }}</b><span>AdventureLog</span></div>
         <div class="dash-stat"><b>{{ 'On' if have_airtrail else 'Off' }}</b><span>AirTrail</span></div>
-        <div class="dash-stat"><b>Yonder</b><span>always on — built-in trips</span></div>
+        <div class="dash-stat"><b>Run·dere</b><span>always on — built-in trips</span></div>
       </div>
     </div>
 
-    <p style="color:var(--ink-3);font-size:12px;margin:0">Yonder v{{ version }} · <a href="/about">About</a></p>
+    <p style="color:var(--ink-3);font-size:12px;margin:0">Run·dere v{{ version }} · <a href="/about">About</a></p>
 
   </div>
 </div>

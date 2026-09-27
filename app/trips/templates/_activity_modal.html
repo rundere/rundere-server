@@ -2,6 +2,11 @@
   <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
     <div class="dialog-title">{{ title }}</div>
     <form class="dialog-body" hx-post="{{ action }}" hx-target="#modal-root" hx-swap="innerHTML">
+      {% if discovery_item_id %}
+      {# Added from a Discover item (4.5): link the two once saved. #}
+      <input type="hidden" name="discovery_item_id" value="{{ discovery_item_id }}">
+      <p class="bp-who-hint" style="margin-top:0">Filled in from Discover — set the time, check the rest.</p>
+      {% endif %}
       <div class="field">
         <label>Type</label>
         <select class="input" name="activity_kind"
@@ -14,6 +19,19 @@
         </select>
       </div>
       <div id="activity-fields">{% include "_activity_fields.html" %}</div>
+      {% if travelers %}
+      <div class="field">
+        <label>Who is this for</label>
+        <input type="hidden" name="travelers_shown" value="1">
+        <div class="bp-who-picks">
+          {% for t in travelers %}
+          <label class="bp-who-pick"><input type="checkbox" name="traveler_ids" value="{{ t.id }}"
+                 {% if t.checked %}checked{% endif %}> {{ t.name }}</label>
+          {% endfor %}
+        </div>
+        <div class="bp-who-hint">Leave everyone ticked for a shared activity.</div>
+      </div>
+      {% endif %}
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
         <button type="submit" class="btn btn-primary">Save activity</button>

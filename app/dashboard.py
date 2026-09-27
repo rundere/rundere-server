@@ -66,9 +66,7 @@ def _pipeline_counts(session: Session, user=None) -> dict:
 def _capture_activity(session: Session, today: str, user=None) -> dict:
     q = session.query(IngestBatch)
     if not scope.unrestricted(user):
-        from sqlalchemy import or_
-        q = q.filter(or_(IngestBatch.user_id.is_(None),
-                         IngestBatch.user_id == user.id))    # own + open, like the queue
+        q = q.filter(scope.batch_filter(user))              # own + open (+ sharing, admin)
     rows = q.all()
     return {
         "today": sum(1 for b in rows

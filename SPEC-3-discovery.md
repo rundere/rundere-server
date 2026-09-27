@@ -339,6 +339,16 @@ restart. So: **keep the pattern, change the backing store.**
 - **D-71** — Reviewers can trigger **steerable single-topic re-runs** with an
   optional correction note fed into the resolver prompt; the note is recorded on
   the finding.
+- **D-71a (owner, 2026-09-26, with YONDER-108)** — *Replaces* "a re-run never
+  touches approved/edited findings". Locking is per topic: only **plugs, visa
+  and language** findings lock (approve/edit = lock; Lock/Unlock on the card).
+  Time-sensitive topics (weather, currency, food, events, safety, packing)
+  never lock — a whole-trip re-run refreshes them even when approved/edited.
+  A local run never overwrites a finding written by an external AI agent over
+  MCP/API (`resolver="agent"`; which agent — Claude, Perplexica, … — is
+  `data["agent"]`, the connecting OAuth app's or API token's name) or a
+  rejected one; a lock is absolute for agents too. Superseded versions are kept (last 10) as "Earlier versions".
+  Code: `discover/policy.py`.
 - **D-72** — Home is **not researched**, suppressed scope-aware via the existing
   Home Profiles (D-07 `resolve/home.py` matcher — first-party, so Discovery and
   commit agree on what home is): a home **country** skips country-scope topics

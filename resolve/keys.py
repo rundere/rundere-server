@@ -379,4 +379,20 @@ def unkeyable_reason(payload: dict, capture_context: dict | None = None) -> str:
                 place = ((f.get(side) or {}).get("place")) or {}
                 if not place.get("iata"):
                     return "missing_airport_code"
+    if t == "ground_transport":
+        # A drive (the road path in keys_for — anything without a printed
+        # service number) keys on its date plus both endpoints' coordinates. A
+        # Google Maps link that names its stops but embeds no coordinates, where
+        # the geocoder could not place a stop, is a perfectly-typed drive; the fix
+        # is a date or a locatable From/To, never "set the type" (YONDER-121).
+        g = payload.get("ground_transport") or {}
+        if not g.get("service_number"):
+            ctx = capture_context or {}
+            date = ctx.get("travel_date") or (
+                (g.get("departure") or {}).get("time") or {}).get("local", "")[:10]
+            if not date:
+                return "missing_travel_date"
+            for side in ("departure", "arrival"):
+                if ((g.get(side) or {}).get("place") or {}).get("lat") is None:
+                    return "geocode_failed"
     return "unknown_type"

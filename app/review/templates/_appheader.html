@@ -1,30 +1,28 @@
 {# Global app header, rendered above every page so the three surfaces read as
-   ONE product with two sections — Action (the daily Review surface) and
-   Administer (config). Active item is derived from the request path. #}
+   ONE product. The bar holds only the daily surfaces (Home, Review, Capture, Trips, Journal); every profile and
+   administration page lives under Settings (/settings), which stays
+   highlighted while you're on any of them. Active item is derived from the
+   request path. #}
 {% set p = (request.url.path if request else '') %}
 {% set cu = request.state.user if request else none %}
+{% import "_settings_menu.html" as settings_menu with context %}
+{% set in_settings = settings_menu.in_settings %}
 <header class="appbar">
-  <a class="wordmark" href="/" style="text-decoration:none">Yonder
+  <a class="wordmark" href="/" style="text-decoration:none" aria-label="Run·dere home" title="Run·dere — say “run there”">
+    <span class="rd-mark" aria-hidden="true"></span><span class="rd-wordmark" role="img" aria-label="Run·dere"></span>
     <span>self-hosted</span></a>
   <nav class="appnav" aria-label="Sections">
     <a href="/" class="{{ 'on' if p == '/' else '' }}">Home</a>
     <a href="/review" class="{{ 'on' if p in ('/review', '/review/') else '' }}">Review</a>
     <a href="/capture" class="{{ 'on' if p.startswith('/capture') else '' }}">Capture</a>
-    <a href="/trips" class="{{ 'on' if p.startswith('/trips') else '' }}">Trips</a>
-    <span class="sep" aria-hidden="true"></span>
-    <span class="grouplbl">Administer</span>
-    <a href="/review/home" class="{{ 'on' if p.startswith('/review/home') else '' }}">Home&nbsp;profiles</a>
-    {% if cu %}<a href="/trips/settings/travel-profile" class="{{ 'on' if 'travel-profile' in p else '' }}">Travel&nbsp;profile</a>{% endif %}
-    <a href="/trips/settings/packing-profile" class="{{ 'on' if 'packing-profile' in p else '' }}">Packing&nbsp;profile</a>
-    <a href="/trips/settings/discovery-profile" class="{{ 'on' if 'discovery-profile' in p else '' }}">Discovery&nbsp;profile</a>
-    <a href="/admin/traveler-identity/list" class="{{ 'on' if 'traveler-identity' in p else '' }}">Travellers</a>
-    {% if cu and cu.is_admin %}<a href="/users" class="{{ 'on' if p.startswith('/users') else '' }}">Users</a>{% endif %}
-    <a href="/admin/rule-setting/list" class="{{ 'on' if 'rule-setting' in p else '' }}">Rules</a>
-    <a href="/admin/" class="{{ 'on' if p.startswith('/admin') and 'traveler-identity' not in p and 'rule-setting' not in p else '' }}">Tables</a>
-    <a href="/about" class="{{ 'on' if p.startswith('/about') else '' }}">About</a>
+    <a href="/trips" class="{{ 'on' if p.startswith('/trips') and not in_settings else '' }}">Trips</a>
+    <a href="/journal" class="{{ 'on' if p.startswith('/journal') else '' }}">Journal</a>
   </nav>
   <span class="grow"></span>
-  {% if cu %}<form method="post" action="/logout" style="margin:0">
+  <nav class="appnav" aria-label="Settings">
+    <a href="/settings" class="{{ 'on' if in_settings else '' }}" title="Profiles and administration" aria-label="Settings"><span class="lbl-long">Settings</span><span class="lbl-short" aria-hidden="true">⚙</span></a>
+  </nav>
+  {% if cu %}<form class="signout" method="post" action="/logout" style="margin:0">
     <button class="theme" type="submit" title="Sign out {{ cu.username }}"
             aria-label="Sign out" style="width:auto;padding:0 8px">{{ cu.username }} · sign out</button>
   </form>{% endif %}

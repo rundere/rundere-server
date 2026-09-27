@@ -1,0 +1,24 @@
+{# Settings sidebar (4.1.x): on every settings page, so moving between them never
+   means going back to the top bar. Same entries and names as the Settings page
+   (_settings_menu.html). Phones: a horizontal strip above the page. #}
+{% import "_settings_menu.html" as m with context %}
+<nav class="yn-set-nav" aria-label="Settings">
+  <a class="yn-set-top{% if m.is_hub %} on{% endif %}" href="/settings">Settings</a>
+  <div class="yn-set-grp">You</div>
+  {% for e in m.you %}
+    <a href="{{ e.href }}"{% if m.cur_path.startswith(e.match) %} class="on" aria-current="page"{% endif %}>{{ e.title }}</a>
+  {% endfor %}
+  {% if m.admin %}
+  <div class="yn-set-grp">Administration</div>
+  {% for e in m.admin %}
+    <a href="{{ e.href }}"{% if m.cur_path.startswith(e.match) %} class="on" aria-current="page"{% endif %}>{{ e.title }}</a>
+  {% endfor %}
+  {% endif %}
+  <a class="yn-set-about{% if m.cur_path.startswith('/about') %} on{% endif %}" href="/about">About</a>
+</nav>
+<script>
+// Phones: the sidebar is a horizontal strip — bring the current page into view
+// (scrolls the strip only, never the page).
+(function(){var n=document.currentScript.previousElementSibling,a=n&&n.querySelector('a.on');
+  if(a&&n.scrollWidth>n.clientWidth){n.scrollLeft=a.offsetLeft-n.offsetLeft-8;}})();
+</script>

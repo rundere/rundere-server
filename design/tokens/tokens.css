@@ -1,0 +1,122 @@
+/* Rundere design tokens — web. Mirror of tokens.json; change both together.
+ *
+ * Dark is the designed default. Light applies when the OS prefers light,
+ * unless the page forces a theme with <html data-theme="dark|light">.
+ *
+ * Fonts (load once per page):
+ * <link rel="preconnect" href="https://fonts.googleapis.com">
+ * <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+ */
+
+:root {
+  /* Ramps */
+  --rd-night-950: #070F19; --rd-night-900: #0A1624; --rd-night-800: #0F2135;
+  --rd-night-700: #16304A; --rd-night-600: #22405F; --rd-night-500: #35557A;
+  --rd-night-400: #4F6F94;
+  --rd-silver-50: #F4F6F9; --rd-silver-100: #E6EAF0; --rd-silver-200: #CBD3DD;
+  --rd-silver-300: #AAB6C4; --rd-silver-400: #8594A6; --rd-silver-500: #5E6E82;
+  --rd-silver-600: #44536A;
+  --rd-beacon-100: #E3EEFF; --rd-beacon-200: #C7DDFF; --rd-beacon-300: #A9CCFF;
+  --rd-beacon-400: #7FB2FF; --rd-beacon-500: #4F8FEA; --rd-beacon-600: #2F6FD6;
+  --rd-beacon-700: #1F57B0;
+  --rd-runway-100: #FDF1D8; --rd-runway-200: #FADFA6; --rd-runway-300: #F6CB72;
+  --rd-runway-400: #F2B544; --rd-runway-500: #D9951C; --rd-runway-600: #B07810;
+  --rd-runway-700: #8A5C08;
+  --rd-success-400: #4CC38A; --rd-success-600: #1E7F52;
+  --rd-danger-400: #F2766B; --rd-danger-600: #C23B30;
+
+  /* Type */
+  --rd-font-display: "Outfit", system-ui, sans-serif;
+  --rd-font-body: "Figtree", system-ui, sans-serif;
+  --rd-font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Space (4pt) */
+  --rd-space-1: 4px; --rd-space-2: 8px; --rd-space-3: 12px; --rd-space-4: 16px;
+  --rd-space-6: 24px; --rd-space-8: 32px; --rd-space-12: 48px; --rd-space-16: 64px;
+
+  /* Radius */
+  --rd-radius-xs: 6px; --rd-radius-control: 10px; --rd-radius-card: 16px;
+  --rd-radius-sheet: 24px; --rd-radius-pill: 999px;
+
+  /* Sizes */
+  --rd-touch-min: 44px; --rd-control-md: 44px; --rd-control-sm: 32px;
+
+  /* Motion */
+  --rd-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --rd-ease-takeoff: cubic-bezier(0.3, 0, 0, 1);
+  --rd-dur-quick: 120ms; --rd-dur-standard: 200ms; --rd-dur-takeoff: 320ms;
+
+  /* Semantic — dark (default) */
+  color-scheme: dark;
+  --rd-bg: var(--rd-night-900);
+  --rd-surface: var(--rd-night-800);
+  --rd-surface-raised: var(--rd-night-700);
+  --rd-border: var(--rd-night-600);
+  --rd-border-subtle: rgba(170, 182, 196, 0.14);
+  --rd-text: var(--rd-silver-100);
+  --rd-text-secondary: var(--rd-silver-300);
+  --rd-text-muted: var(--rd-silver-400);
+  --rd-accent: var(--rd-beacon-400);
+  --rd-accent-hover: var(--rd-beacon-300);
+  --rd-on-accent: var(--rd-night-900);
+  --rd-highlight: var(--rd-runway-400);
+  --rd-success: var(--rd-success-400);
+  --rd-danger: var(--rd-danger-400);
+  --rd-focus-ring: var(--rd-beacon-300);
+  --rd-shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(230, 234, 240, 0.08);
+  --rd-glow: drop-shadow(0 0 14px rgba(169, 204, 255, 0.55));
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --rd-bg: var(--rd-silver-50);
+    --rd-surface: #FFFFFF;
+    --rd-surface-raised: #FFFFFF;
+    --rd-border: var(--rd-silver-200);
+    --rd-border-subtle: rgba(15, 33, 53, 0.10);
+    --rd-text: var(--rd-night-800);
+    --rd-text-secondary: var(--rd-silver-600);
+    --rd-text-muted: var(--rd-silver-500);
+    --rd-accent: var(--rd-beacon-700);
+    --rd-accent-hover: var(--rd-beacon-600);
+    --rd-on-accent: #FFFFFF;
+    --rd-highlight: var(--rd-runway-700);
+    --rd-success: var(--rd-success-600);
+    --rd-danger: var(--rd-danger-600);
+    --rd-focus-ring: var(--rd-beacon-600);
+    --rd-shadow-raised: 0 4px 16px rgba(15, 33, 53, 0.10), inset 0 0 0 1px rgba(15, 33, 53, 0.08);
+    --rd-glow: none;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --rd-bg: var(--rd-silver-50);
+  --rd-surface: #FFFFFF;
+  --rd-surface-raised: #FFFFFF;
+  --rd-border: var(--rd-silver-200);
+  --rd-border-subtle: rgba(15, 33, 53, 0.10);
+  --rd-text: var(--rd-night-800);
+  --rd-text-secondary: var(--rd-silver-600);
+  --rd-text-muted: var(--rd-silver-500);
+  --rd-accent: var(--rd-beacon-700);
+  --rd-accent-hover: var(--rd-beacon-600);
+  --rd-on-accent: #FFFFFF;
+  --rd-highlight: var(--rd-runway-700);
+  --rd-success: var(--rd-success-600);
+  --rd-danger: var(--rd-danger-600);
+  --rd-focus-ring: var(--rd-beacon-600);
+  --rd-shadow-raised: 0 4px 16px rgba(15, 33, 53, 0.10), inset 0 0 0 1px rgba(15, 33, 53, 0.08);
+  --rd-glow: none;
+}
+
+/* Focus: the mark's glow, made functional. */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--rd-surface), 0 0 0 4px var(--rd-focus-ring), 0 0 16px 4px rgba(127, 178, 255, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --rd-dur-standard: 1ms; --rd-dur-takeoff: 1ms; }
+}

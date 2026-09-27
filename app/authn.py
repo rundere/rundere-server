@@ -136,7 +136,10 @@ def issue_api_token(user: User, *, ttl: int | None = None) -> str:
     return _token(user, "api", ttl if ttl is not None else settings.jwt_api_ttl_seconds)
 
 
-def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "web")) -> User | None:
+def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "web"),
+                    audiences: set[str] | None = None) -> User | None:
+    """Resolve a Yonder JWT to its user. An `oauth` token (YONDER-107) must also
+    name an audience in `audiences` (when given) and a grant that is still live."""
     claims = jwt_decode(token)
     if not claims or claims.get("typ") not in kinds:
         return None
@@ -145,7 +148,34 @@ def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "we
         return None
     if claims.get("ver") != user.token_version:   # revoked via "sign out everywhere"
         return None
+    if claims.get("typ") == "oauth":
+        from app import oauth
+        if audiences is not None and claims.get("aud") not in audiences:
+            return None
+        if not oauth.grant_allows(session, claims, user):
+            return None
     return user
+
+
+def user_from_bearer(session, token: str, request=None) -> User | None:
+    """A bearer credential → user: a personal API token (`ypat_…`), or a JWT of
+    kind access / api (CLI-minted) / oauth (YONDER-107)."""
+    from app import oauth
+    if token.startswith(oauth.PAT_PREFIX):
+        return oauth.pat_user(session, token)
+    auds = oauth.audiences(request) if request is not None else None
+    return user_from_token(session, token, kinds=("access", "api", "oauth"), audiences=auds)
+
+
+# Machine endpoints (YONDER-107/109): reached from the open internet without the
+# Authentik forward-auth, so an identity header on them is never trusted — even
+# with TX_AUTH_PROXY_HEADER_TRUST on (Traefik strips it there too).
+_MACHINE_EXACT = {"/mcp", "/oauth/token", "/oauth/register", "/oauth/revoke"}
+_MACHINE_PREFIX = ("/mcp/", "/api/", "/.well-known/")
+
+
+def is_machine_path(path: str) -> bool:
+    return path in _MACHINE_EXACT or path.startswith(_MACHINE_PREFIX)
 
 
 # --------------------------------------------------------------------------- refresh tokens
@@ -209,27 +239,41 @@ def _proxy_identity(request) -> str | None:
     return None
 
 
+class SSOLinkConflict(Exception):
+    """The IdP username belongs to an account already linked to a different
+    OIDC subject — refuse rather than sign the caller in as that account."""
+
+
 def provision_oidc_user(session, *, sub: str, username: str, email: str | None = None,
                         is_admin: bool = False) -> User | None:
     """Find-or-provision the User for an OIDC subject (Phase 1b, D-118). Matches
     on external_subject `oidc:<sub>` (or a same-named local account being adopted
     by SSO). Returns None if the user is unknown and auto-create is off."""
     subject = f"oidc:{sub}"
-    user = session.query(User).filter(
-        (User.external_subject == subject) | (User.username == username)
-    ).one_or_none()
+    # Subject first: once linked, the IdP subject is the identity (YONDER-143).
+    # Only then fall back to adopting a same-named account — and never one that
+    # is already bound to a DIFFERENT OIDC subject, or a renamed/recycled IdP
+    # username would sign in as someone else.
+    user = session.query(User).filter_by(external_subject=subject).one_or_none()
+    if user is None:
+        user = session.query(User).filter_by(username=username).one_or_none()
+        if user is not None and (user.external_subject or "").startswith("oidc:"):
+            raise SSOLinkConflict(username)
     if user is None:
         if not settings.oidc_auto_create:
             return None
+        # Signed themselves up via SSO: ask at first sign-in whether to share
+        # their data with admins (4.1).
         user = User(username=username, email=email, auth_source="oidc",
-                    external_subject=subject, is_admin=is_admin)
+                    external_subject=subject, is_admin=is_admin, sharing_prompt=True)
         session.add(user)
         session.commit()
         session.refresh(user)
         return user
     # Existing account: adopt the SSO subject, fill a missing email, and allow an
     # UP-grade to admin from the mapped group — never an automatic downgrade.
-    if user.external_subject is None:
+    # A proxy-header link came from the same IdP username, so SSO takes it over.
+    if user.external_subject is None or user.external_subject.startswith("proxy:"):
         user.external_subject = subject
     if email and not user.email:
         user.email = email
@@ -248,12 +292,13 @@ def resolve_proxy_user(session, request) -> User | None:
     if not name:
         return None
     subject = f"proxy:{name}"
-    user = session.query(User).filter(
-        (User.external_subject == subject) | (User.username == name)
-    ).one_or_none()
+    # Subject first, then username — never both at once, which 500s when they
+    # match two different accounts (YONDER-143).
+    user = (session.query(User).filter_by(external_subject=subject).one_or_none()
+            or session.query(User).filter_by(username=name).one_or_none())
     if user is None:
         user = User(username=name, auth_source="proxy", external_subject=subject,
-                    is_active=True, is_admin=settings.auth_proxy_auto_admin)
+                    is_active=True, is_admin=settings.auth_proxy_auto_admin, sharing_prompt=True)
         session.add(user)
         session.commit()
     return user
@@ -261,10 +306,11 @@ def resolve_proxy_user(session, request) -> User | None:
 
 def resolve_user(session, request) -> User | None:
     """The one request→user resolver used by the web gate and the API. Order:
-    bearer access token → session cookie (web token) → trusted proxy header."""
+    bearer token (JWT or personal API token) → session cookie (web token) →
+    trusted proxy header (browser routes only, never machine endpoints)."""
     authz = request.headers.get("authorization", "")
     if authz[:7].lower() == "bearer ":
-        u = user_from_token(session, authz[7:].strip(), kinds=("access", "api"))
+        u = user_from_bearer(session, authz[7:].strip(), request)
         if u:
             return u
     cookie = request.cookies.get(settings.auth_cookie_name)
@@ -272,7 +318,7 @@ def resolve_user(session, request) -> User | None:
         u = user_from_token(session, cookie, kinds=("web", "access"))
         if u:
             return u
-    if settings.auth_proxy_header_trust:
+    if settings.auth_proxy_header_trust and not is_machine_path(request.url.path):
         return resolve_proxy_user(session, request)
     return None
 
@@ -305,6 +351,30 @@ def current_user_optional(request: "Request") -> "User | None":
         return user
 
 
+def is_first_party(request) -> bool:
+    """Was this request made by Yonder itself — the web session cookie, or the
+    app's own login token (`typ="access"`, from /api/v1/auth/login|refresh)?
+    Connected apps / agents (OAuth tokens), personal API tokens and CLI-minted
+    API tokens are NOT: they may use the user's data, but must not change the
+    account's own settings (sharing with admins, email). YONDER-101."""
+    authz = request.headers.get("authorization", "")
+    if authz[:7].lower() == "bearer ":
+        claims = jwt_decode(authz[7:].strip()) or {}
+        return claims.get("typ") == "access"
+    return bool(request.cookies.get(settings.auth_cookie_name))
+
+
+def first_party_user(request: "Request") -> "User":
+    """FastAPI dependency: an authenticated user on a first-party credential
+    (403 for connected apps and API tokens)."""
+    from fastapi import HTTPException
+    user = current_user(request)
+    if not is_first_party(request):
+        raise HTTPException(status_code=403, detail="change this in the Run·dere app or on "
+                            "the web — connected apps and API tokens can't")
+    return user
+
+
 def current_user(request: "Request") -> "User":
     """FastAPI dependency: require an authenticated user (401 otherwise)."""
     from fastapi import HTTPException
@@ -331,15 +401,41 @@ def user_count(session) -> int:
 def create_user(session, username: str, password: str | None = None, *,
                 email: str | None = None, is_admin: bool = False,
                 auth_source: str = "local", traveler_id: int | None = None,
-                external_subject: str | None = None) -> User:
+                external_subject: str | None = None,
+                sharing_prompt: bool = False) -> User:
     user = User(username=username.strip(), email=(email or "").strip() or None,
                 password_hash=hash_password(password) if password else None,
                 is_admin=is_admin, auth_source=auth_source,
-                traveler_id=traveler_id, external_subject=external_subject)
+                traveler_id=traveler_id, external_subject=external_subject,
+                sharing_prompt=sharing_prompt)
     session.add(user)
     session.commit()
     session.refresh(user)
     return user
+
+
+def email_in_use(session, email: str, *, exclude_id: str | None = None) -> bool:
+    """Emails are unique, case-insensitively: /forgot looks a user up by email,
+    so two accounts sharing one would make that lookup ambiguous."""
+    from sqlalchemy import func
+    q = session.query(User).filter(func.lower(User.email) == email.strip().lower())
+    if exclude_id:
+        q = q.filter(User.id != exclude_id)
+    return q.count() > 0
+
+
+def set_user_email(session, user: User, email: str | None) -> str | None:
+    """Set (or clear, with an empty value) a user's email. Returns an error
+    message instead of saving when it's malformed or already taken."""
+    email = (email or "").strip() or None
+    if email is not None:
+        if "@" not in email or " " in email or len(email) > 255:
+            return "That doesn't look like an email address."
+        if email_in_use(session, email, exclude_id=user.id):
+            return "That email is already used by another account."
+    user.email = email
+    session.commit()
+    return None
 
 
 def resolve_traveler(session, *, traveler_id: str | int | None,

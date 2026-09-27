@@ -3,11 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Trips{% endblock %} · Yonder</title>
+<title>{% block title %}Trips{% endblock %} · Run·dere</title>
 <script src="/review/static/htmx.min.js" defer></script>
 {# theme.css owns the shared header + the light/dark toggle; trips.css layers the
    blueprint aesthetic over the page body (its --color-* vars never collide with
    theme.css's --accent/--surface/--ink names). #}
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/brand/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/brand/icons/apple-touch-icon.png">
+<link rel="manifest" href="/brand/icons/site.webmanifest">
 <link rel="stylesheet" href="/review/static/theme.css">
 <link rel="stylesheet" href="/trips/static/trips.css">
 <script>
@@ -22,8 +26,27 @@ function txToggleTheme(){var r=document.documentElement,c=r.getAttribute('data-t
 </head>
 <body class="trips-body">
 {% include "_appheader.html" %}
-<main class="bp-wrap">{% block content %}{% endblock %}</main>
+{% import "_settings_menu.html" as settings_menu with context %}
+{% if settings_menu.in_settings %}
+<div class="yn-set-shell">{% include "_settings_nav.html" %}
+<main class="bp-wrap yn-set-main">{% block content %}{% endblock %}</main></div>
+{% else %}<main class="bp-wrap">{{ self.content() }}</main>{% endif %}
 {# Modals swap into this slot; /trips/close empties it. #}
 <div id="modal-root"></div>
+<script>
+// Start → end: setting a start fills an empty end with the same date (and time),
+// and pulls an end that is now before the start up to it. Works for timeline
+// activities (when/endWhen) and trips (start/end). Delegated, so it
+// also covers modals HTMX swaps in later.
+document.addEventListener('change', function (e) {
+  var pairs = {when: 'endWhen', start: 'end'};
+  var el = e.target, endName = el && pairs[el.name];
+  if (!endName || !el.form || !el.value) return;
+  var end = el.form.querySelector('[name="' + endName + '"]');
+  if (!end || end.type !== el.type) return;
+  if (!end.value || end.value < el.value) end.value = el.value;
+  end.min = el.value;
+});
+</script>
 </body>
 </html>
