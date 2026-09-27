@@ -754,6 +754,8 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         "scope": f.scope, "status": f.status, "confidence": f.confidence,
         "body": _render_md(f.body_md), "sources": f.sources or [],
         "is_currency": f.topic == "currency",
+        "currency": data.get("currency") or "",
+        "rates_date": data.get("date") or "",
         "is_language": f.topic == "language",
         # Language findings aren't per-finding re-runnable: national detection is
         # a pure function of country (re-run can only clobber a manual Languages
@@ -786,17 +788,23 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
     findings = (session.query(DiscoveryFinding)
                 .filter(DiscoveryFinding.trip_id == trip_id,
                         DiscoveryFinding.user_id == uid).all())
+    from discover import sections as disc_sections
     grouped: dict[str, list] = {}
     for f in findings:
         grouped.setdefault(f.topic, []).append(f)
+    views: dict[str, list] = {}
     topic_groups = []
     for topic in TOPIC_ORDER:
         fs = grouped.get(topic)
         if fs:
             fs.sort(key=lambda x: x.place_key or "")
+            views[topic] = [_finding_view(f) for f in fs]
             topic_groups.append({"topic": topic,
                                  "label": TOPIC_LABELS.get(topic, topic),
-                                 "findings": [_finding_view(f) for f in fs]})
+                                 "findings": views[topic]})
+    # 4.5: the currency calculator lives in the trip header (YONDER-166).
+    currencies = [{"id": v["id"], "code": v["currency"], "place_key": v["place_key"]}
+                  for v in views.get("currency", []) if v["has_rates"]]
     last = (session.query(DiscoveryRun)
             .filter(DiscoveryRun.trip_id == trip_id, DiscoveryRun.user_id == uid)
             .order_by(DiscoveryRun.started_at.desc()).first())
@@ -807,6 +815,9 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
         run_progress = {"phase": last.phase or "starting", "done": last.done,
                         "total": last.total, "pct": pct}
     return {"discovery_topics": topic_groups,
+            "discovery_sections": disc_sections.build(views),
+            "discovery_default_section": disc_sections.DEFAULT_SECTION,
+            "trip_currencies": currencies,
             "discovery_has_findings": bool(findings),
             "discovery_last": _run_view(last) if last else None,
             "discovery_running": running,

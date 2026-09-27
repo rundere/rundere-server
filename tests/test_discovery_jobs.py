@@ -198,7 +198,7 @@ def test_status_panel_stops_and_shows_findings_when_done():
     rid = _new_run(tid)
     _execute(tid, rid)                              # completes -> status done
     html = _client.get(f"/trips/{tid}/discover/status").text
-    assert "Food &amp; drink" in html or "Food & drink" in html   # findings group
+    assert "Food &amp; Drink" in html                             # the section rail
     assert 'hx-trigger="load delay:1500ms' not in html            # polling stopped
     assert "Re-run discovery" in html                             # button back
 

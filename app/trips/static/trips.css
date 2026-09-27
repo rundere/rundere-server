@@ -500,3 +500,53 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-table td:first-child, .yn-table th:first-child { width: 1.5rem; }
 .yn-warn-list { margin: 0.5rem 0 0.75rem; padding-left: 1.2rem; }
 .yn-warn-list li { margin: 0.2rem 0; }
+
+/* ---- Discovery sections (4.5, YONDER-166) --------------------------------
+   One section visible at a time. Desktop: a rail on the left, the open item
+   filled with a 2px accent bar (design/README "active item" pattern). Narrow:
+   the rail becomes a row of scrollable chips. Touch targets ≥ 44px, a visible
+   focus ring, and counts/"new from agent" in text — never colour alone. */
+.yn-disc { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px;
+  align-items: start; }
+.yn-disc-rail { position: sticky; top: 64px; display: flex; flex-direction: column;
+  gap: 2px; }
+.yn-disc-link { display: flex; flex-direction: column; align-items: flex-start;
+  gap: 1px; min-height: 44px; padding: 7px 12px; border: none; border-radius: 8px;
+  background: none; cursor: pointer; text-align: left; font: inherit;
+  color: var(--color-neutral-700); box-shadow: inset 0 0 0 0 var(--color-accent); }
+.yn-disc-link:hover { background: var(--yn-tab-track); color: var(--color-neutral-900); }
+.yn-disc-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.yn-disc-link.active { background: var(--yn-tab-track); color: var(--color-neutral-900);
+  box-shadow: inset 2px 0 0 0 var(--color-accent); font-weight: 600; }
+.yn-disc-label { font-size: 14px; }
+.yn-disc-meta { font-size: 12px; font-weight: 500; color: var(--color-neutral-500);
+  font-variant-numeric: tabular-nums; }
+.yn-disc-link.is-empty .yn-disc-label { color: var(--color-neutral-500); }
+.yn-disc-flag { color: var(--color-accent); }
+.yn-dsec { display: none; }
+.yn-dsec.active, .yn-filtering .yn-dsec { display: block; }
+.yn-dsec-head { margin: 2px 0 10px; }
+.yn-dsec-title { margin: 0; font-size: 18px; font-weight: 600; }
+.yn-dsec-about { margin: 2px 0 0; font-size: 13px; color: var(--color-neutral-500); }
+.yn-dsec-sub { margin: 16px 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--color-neutral-500); }
+.yn-finding-compact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  padding: 8px 0; }
+.yn-finding-compact .yn-finding-btns { margin-left: auto; margin-top: 0; }
+.yn-finding-compact .yn-finding-more { flex-basis: 100%; }
+.yn-finding-sources { margin-top: 6px; }
+.yn-menu { position: relative; display: inline-block; }
+.yn-menu > summary { list-style: none; }
+.yn-menu > summary::-webkit-details-marker { display: none; }
+.yn-menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
+  display: flex; flex-direction: column; min-width: 160px; padding: 4px;
+  background: var(--color-bg); border: 1px solid var(--color-divider); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+@media (max-width: 760px) {
+  .yn-disc { grid-template-columns: 1fr; gap: 10px; }
+  .yn-disc-rail { position: static; flex-direction: row; overflow-x: auto; gap: 6px;
+    padding-bottom: 4px; scrollbar-width: thin; }
+  .yn-disc-link { flex: none; min-height: 44px; border: 1px solid var(--color-divider);
+    border-radius: 999px; padding: 6px 14px; }
+  .yn-disc-link.active { box-shadow: inset 0 -2px 0 0 var(--color-accent); }
+}

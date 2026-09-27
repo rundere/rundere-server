@@ -22,6 +22,22 @@
                 hx-post="/trips/{{ trip.id }}/push-adventurelog"
                 hx-target="#push-msg" hx-swap="innerHTML" hx-disabled-elt="this">Push to AdventureLog</button>
       {% endif %}
+      {% if trip_currencies | length == 1 %}
+      <button class="btn btn-secondary" title="Convert {{ trip_currencies[0].code }}"
+              hx-get="/trips/{{ trip.id }}/finding/{{ trip_currencies[0].id }}/calculator"
+              hx-target="#modal-root">Currency · {{ trip_currencies[0].code }}</button>
+      {% elif trip_currencies %}
+      <details class="yn-menu">
+        <summary class="btn btn-secondary">Currency</summary>
+        <div class="yn-menu-list" role="menu">
+          {% for c in trip_currencies %}
+          <button class="btn btn-ghost bp-sm" role="menuitem"
+                  hx-get="/trips/{{ trip.id }}/finding/{{ c.id }}/calculator"
+                  hx-target="#modal-root">{{ c.code }} · {{ c.place_key }}</button>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Run·dere found</button>
       <button class="btn btn-secondary"
@@ -250,6 +266,9 @@ function ynAll(open) {
 // HTMX-driven redirects and shared links land on the same tab; the old
 // #sec-* jump anchors map onto their tab.
 function ynTab(name) {
+  // "discovery/food" = the Discovery tab, open on its Food & Drink section.
+  var parts = (name || '').split('/'), sub = parts[1] || '';
+  name = parts[0];
   var tabs = document.querySelectorAll('.yn-tab');
   var known = Array.prototype.some.call(tabs, function (t) { return t.dataset.tab === name; });
   if (!known) name = 'timeline';
@@ -261,8 +280,51 @@ function ynTab(name) {
   document.querySelectorAll('.yn-tabpanel').forEach(function (p) {
     p.classList.toggle('active', p.dataset.tab === name);
   });
+  if (name === 'discovery') { ynDisc(sub || ynDiscCurrent()); return; }
   if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
 }
+// Discovery sections (4.5): one visible at a time; the rail marks the open one.
+function ynDiscCurrent() {
+  var on = document.querySelector('.yn-disc-link.active');
+  if (on) return on.dataset.sec;
+  var h = location.hash.split('/');
+  if (h[0] === '#discovery' && h[1]) return h[1];
+  var first = document.querySelector('.yn-disc-link:not(.is-empty)');
+  return first ? first.dataset.sec : 'weather';
+}
+function ynDisc(sec) {
+  var links = document.querySelectorAll('.yn-disc-link');
+  if (!links.length) return;
+  var known = Array.prototype.some.call(links, function (l) { return l.dataset.sec === sec; });
+  if (!known) sec = links[0].dataset.sec;
+  links.forEach(function (l) {
+    var on = l.dataset.sec === sec;
+    l.classList.toggle('active', on);
+    l.setAttribute('aria-selected', on ? 'true' : 'false');
+    l.tabIndex = on ? 0 : -1;
+  });
+  document.querySelectorAll('.yn-dsec').forEach(function (s) {
+    s.classList.toggle('active', s.dataset.sec === sec);
+  });
+  var tab = document.querySelector('.yn-tabpanel[data-tab="discovery"]');
+  if (tab && tab.classList.contains('active') && location.hash !== '#discovery/' + sec)
+    history.replaceState(null, '', '#discovery/' + sec);
+}
+// After an HTMX refresh of the Discovery tab, reopen the same section.
+function ynDiscInit() {
+  var h = location.hash.split('/');
+  ynDisc(h[0] === '#discovery' && h[1] ? h[1] : ynDiscCurrent());
+}
+// Arrow keys move along the rail (tab pattern).
+document.addEventListener('keydown', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('yn-disc-link')) return;
+  var dir = {ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1}[e.key];
+  if (!dir) return;
+  var links = Array.prototype.slice.call(document.querySelectorAll('.yn-disc-link'));
+  var i = links.indexOf(e.target) + dir;
+  var next = links[(i + links.length) % links.length];
+  e.preventDefault(); ynDisc(next.dataset.sec); next.focus();
+});
 (function () {
   var h = location.hash.replace(/^#(sec-)?/, '');
   ynTab(h === 'travelers' ? 'travellers' : h);
