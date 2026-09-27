@@ -1,5 +1,5 @@
 {% import "_finding_card.html" as fc %}
-{% import "_item_section.html" as isec %}
+{% import "_item_section.html" as isec with context %}
 <div id="discovery-section" class="yn-sec"
      {% if discovery_running %}hx-get="/trips/{{ trip.id }}/discover/status"
      hx-trigger="load delay:1500ms, every 2s" hx-target="#discovery-section"

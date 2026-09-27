@@ -82,6 +82,12 @@
       </select></div>
   </div>
 
+  <div class="field"><label for="dp-notes">Notes for agents <span class="yn-help">— in your own words; AI agents read this when they research for you</span></label>
+    <textarea class="input" id="dp-notes" name="notes" rows="4" maxlength="2000"
+              placeholder="e.g. Love tiny family-run places and natural wine. Hate queues, rooftop bars and anything with a dress code. Favourites so far: Bar Mut (Barcelona), the Sunday market in Lisbon.">{{ notes }}</textarea>
+    <p class="yn-help">Places you hide in Discover as “not my thing” are passed on too.</p>
+  </div>
+
   <div class="dialog-actions">
     <a class="btn btn-ghost" href="/trips">Back to trips</a>
     <button type="submit" class="btn btn-primary">Save profile</button>

@@ -638,3 +638,6 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-part ul { margin: 2px 0 0; padding-left: 18px; }
 .yn-part-note { margin: 4px 0; font-size: 13px; color: var(--color-neutral-700); }
 .yn-part a, .yn-city-sources a, .yn-sources a { color: var(--color-accent); text-underline-offset: 2px; }
+
+/* Why a row is hidden (4.5) — sits beside Show on a hidden row. */
+.yn-hide-reason { width: auto; padding: 2px 6px; font-size: .8rem; min-height: 0; }

@@ -47,12 +47,14 @@ places, the user's Discover findings, their discovery profile and packing).
 Timeline items take a `type` from list_activity_types and a `values` object with
 that type's field keys. Research with the user's preferences: get_trip's
 `discovery_profile` (also get_discovery_profile) gives dietary restrictions,
-cuisines to avoid, allergies, budget and interests, and how to apply them.
+cuisines to avoid, allergies, budget, interests, their own notes and what they
+hid as "not my thing", and how to apply them; if it's blank, ask them first.
 Use save_research to keep research on the user's Discover tab — in your own
-"research" section or updating a topic such as safety; it lands as a draft they
+"research" section or updating a topic such as visa; it lands as a draft they
 review, and locked findings are theirs to keep. For Food & Drink or Events &
 Activities use save_city_guide (a city summary plus rows — for food, say what to
-get); for a city's local phrases use save_phrases. Items in get_trip's
+get); for a city's local phrases use save_phrases; for Safety & Transport use
+save_safety. Items in get_trip's
 `discovery_items` can go on the timeline with add_item_to_timeline. The
 research_* prompts are step-by-step research kits for these. Dates are
 ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items)."""
@@ -329,7 +331,7 @@ def save_research(trip_id: TripId,
     shown as written by the app you connected as. A finding the user LOCKED
     (see `locked` in get_trip) is refused — tell them instead.
     For restaurants/bars or events/activities as rows, use save_city_guide;
-    for local phrases, use save_phrases."""
+    for local phrases, use save_phrases; for Safety & Transport, save_safety."""
     body = api_v1.FindingIn(topic=topic, title=title, body_md=body_md, place_key=place_key,
                             sources=[api_v1.SourceIn(**s) for s in (sources or [])
                                      if isinstance(s, dict) and s.get("url")])
@@ -346,9 +348,11 @@ _PLACE_KEY = Field(description="The city key, e.g. \"MA:Harar\" — reuse the pl
 def get_discovery_profile() -> dict[str, Any]:
     """The user's discovery profile: dietary restrictions, cuisines to avoid,
     allergies, budget ceiling, drink and activity interests, mobility,
-    nationality and base currency — each with a label, plus `how_to_use`.
-    Read it before researching food, drink or things to do, and follow it the
-    way Run·dere's own Discover does. (get_trip includes it too.)"""
+    nationality and base currency — each with a label — plus `notes` (their
+    likes, dislikes and past favourites in their own words), `not_my_thing`
+    (places/events they hid as not their thing, across trips) and `how_to_use`.
+    Read it before researching food, drink or things to do and follow it; if
+    `blank` is true, ask them what they like first. (get_trip includes it too.)"""
     return _run(lambda session, user: api_v1.my_discovery_profile(session, user))
 
 
@@ -429,6 +433,38 @@ def save_phrases(trip_id: TripId,
         topic="language_local", place_key=place_key, title=city_of(place_key),
         phrases=api_v1.PhrasesIn(register_summary=register_summary, greetings=greetings,
                                  expressions=expressions, etiquette=etiquette),
+        sources=[api_v1.SourceIn(**s) for s in (sources or [])
+                 if isinstance(s, dict) and s.get("url")])
+    agent = _caller_agent.get()
+    return _run(lambda session, user: api_v1.save_research_finding(
+        session, user, trip_id, body, agent=agent))
+
+
+@mcp.tool()
+def save_safety(trip_id: TripId,
+                place_key: Annotated[str, _PLACE_KEY],
+                safety: Annotated[api_v1.SafetyIn | None, Field(
+                    description="summary (brief, factual, non-alarmist), advisories "
+                                "[{text, source_url}] — every advisory needs its source; "
+                                "two or more different sites avoid the 'verify' "
+                                "banner — and scams (one per item)")] = None,
+                transport: Annotated[api_v1.TransportIn | None, Field(
+                    description="summary (getting around), public_transit, "
+                                "from_airport, ride_hailing (apps that work here), "
+                                "apps (to install), tips")] = None,
+                notes_md: Annotated[str, Field(
+                    description="Optional extra markdown shown after the subsections")] = "",
+                sources: Annotated[list[dict[str, str]] | None, Field(
+                    description="Other sources as [{\"title\": \"…\", \"url\": \"https://…\"}]")] = None,
+                ) -> dict[str, Any]:
+    """Save a city's Safety & Transport onto the USER'S OWN Discover tab, as
+    headed subsections (Summary, Advisories, Scams; Getting around, Public
+    transit, From the airport, Ride-hailing, Apps, Tips). Lands as a draft they
+    review and supersedes the previous version (kept as history)."""
+    from discover.items import city_of
+    body = api_v1.FindingIn(
+        topic="safety", place_key=place_key, title=city_of(place_key), body_md=notes_md,
+        safety_transport=api_v1.SafetyTransportIn(safety=safety, transport=transport),
         sources=[api_v1.SourceIn(**s) for s in (sources or [])
                  if isinstance(s, dict) and s.get("url")])
     agent = _caller_agent.get()

@@ -97,10 +97,24 @@ if DEPS:
                                data={"hidden": "1"}).text
             assert 'id="discovery-section"' in html and "Show hidden (1)" in html
             with SessionLocal() as s:
-                assert s.get(DiscoveryItem, ids["Kabana"]).hidden is True
+                i = s.get(DiscoveryItem, ids["Kabana"])
+                assert i.hidden is True and i.hidden_reason == "not_my_thing"   # the default
+            # the reason picker on the hidden row, with the current reason selected
+            assert 'class="input bp-sm yn-hide-reason"' in html
+            assert '<option value="not_my_thing" selected>Not my thing</option>' in html
+            html = client.post(f"/trips/{tid}/discovery-item/{ids['Kabana']}/hide",
+                               data={"hidden": "1", "reason": "closed"}).text
+            assert '<option value="closed" selected>' in html
+            with SessionLocal() as s:
+                assert s.get(DiscoveryItem, ids["Kabana"]).hidden_reason == "closed"
+            client.post(f"/trips/{tid}/discovery-item/{ids['Kabana']}/hide",
+                        data={"hidden": "1", "reason": "bogus"})
+            with SessionLocal() as s:
+                assert s.get(DiscoveryItem, ids["Kabana"]).hidden_reason == "not_my_thing"
             client.post(f"/trips/{tid}/discovery-item/{ids['Kabana']}/hide", data={"hidden": "0"})
             with SessionLocal() as s:
-                assert s.get(DiscoveryItem, ids["Kabana"]).hidden is False
+                i = s.get(DiscoveryItem, ids["Kabana"])
+                assert i.hidden is False and i.hidden_reason is None
             assert client.post(f"/trips/{tid}/discovery-item/nope/hide").status_code == 404
         finally:
             _cleanup(tid)

@@ -9,17 +9,21 @@ into Run·dere's Discover tab, using the Run·dere MCP connector
 | [`food-and-drink`](food-and-drink/SKILL.md) | Discover → Food & Drink | `save_city_guide(topic="food")` |
 | [`events-and-activities`](events-and-activities/SKILL.md) | Discover → Events & Activities | `save_city_guide(topic="events")` |
 | [`local-phrases`](local-phrases/SKILL.md) | Discover → Language → Local phrases | `save_phrases` |
+| [`safety-and-transport`](safety-and-transport/SKILL.md) | Discover → Safety & Transport | `save_safety` |
+| [`visa-and-entry`](visa-and-entry/SKILL.md) | Discover → Practical → Visa | `save_research(topic="visa")` |
 
 Every kit starts from `get_trip`, researches with the person's
 `discovery_profile` (dietary needs, cuisines to avoid, budget, interests,
-mobility), and lands as a **draft** they review — nothing goes live unreviewed,
-and anything they locked is refused.
+mobility, their own notes, and what they've hidden as "not my thing"), and
+lands as a **draft** they review — nothing goes live unreviewed, and anything
+they locked is refused. With a blank profile, the kits ask the person first.
 
 ## Three ways to use them
 
 1. **As MCP prompts (easiest in Claude).** The Run·dere connector serves each kit
    as a prompt — `research_food_and_drink`, `research_events_and_activities`,
-   `research_local_phrases` — taking the trip id and optionally a city key. Pick
+   `research_local_phrases`, `research_safety_and_transport`,
+   `research_visa_and_entry` — taking the trip id and optionally a city key. Pick
    it from the connector's prompts and send.
 2. **As a skill.** Each folder is a skill: `SKILL.md` with a `name` and
    `description` header. Download it as a zip (`GET /api/v1/research-kits/<kit>.zip`)

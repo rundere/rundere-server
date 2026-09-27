@@ -21,7 +21,16 @@ section, one city at a time. You need the Run·dere MCP connector.
      - **never** recommend an **avoided cuisine**;
      - stay at or under the **budget ceiling** (1 = $, 4 = $$$$; 0 = no limit);
      - **flag** any **allergen** risk in `details` — don't just drop the place;
-     - their **drink interests** add bars, breweries, wineries or cafés to the mix.
+     - their **drink interests** add bars, breweries, wineries or cafés to the mix;
+     - **`notes`** is them in their own words — likes, dislikes, past
+       favourites. Treat a dislike there like an avoided cuisine, and use the
+       favourites to judge what they'd enjoy;
+     - **`not_my_thing`** lists places they hid as not their thing, on this or
+       earlier trips. Never suggest those again, and skip places like them.
+   - If `discovery_profile.blank` is true, **ask the person first** what they
+     like and want to avoid (diet, budget, favourite kinds of places), and
+     suggest they fill in their Discovery profile in Run·dere so next time you
+     won't need to.
    - `discovery_items` shows what's already there. Rows marked `hidden` were
      dismissed; don't bring them back. Rows with `activity_id` are already
      booked into the timeline.

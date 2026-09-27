@@ -651,6 +651,7 @@ class DiscoveryItem(Base):
     origin: Mapped[str] = mapped_column(String(12), default="local")   # local | agent
     agent: Mapped[str | None] = mapped_column(String(128))
     hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    hidden_reason: Mapped[str | None] = mapped_column(String(16))  # not_my_thing | closed | been_there
     edited: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     activity_id: Mapped[str | None] = mapped_column(String(36))  # added to the timeline as
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

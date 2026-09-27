@@ -127,6 +127,7 @@ class DiscoveryItemOut(BaseModel):
     origin: str = "local"
     agent: str | None = None
     hidden: bool = False
+    hidden_reason: str | None = None        # not_my_thing | closed | been_there
     edited: bool = False
     activity_id: str | None = None
 
@@ -389,6 +390,33 @@ class PhrasesIn(BaseModel):
     etiquette: list[str] = []
 
 
+class AdvisoryIn(BaseModel):
+    text: str
+    source_url: str                        # every safety claim carries its source
+
+
+class SafetyIn(BaseModel):
+    summary: str = ""                      # brief, factual, non-alarmist
+    advisories: list[AdvisoryIn] = []
+    scams: list[str] = []
+
+
+class TransportIn(BaseModel):
+    summary: str = ""                      # getting around, in a paragraph
+    public_transit: str = ""
+    from_airport: str = ""
+    ride_hailing: list[str] = []           # apps that actually work here
+    apps: list[str] = []
+    tips: list[str] = []
+
+
+class SafetyTransportIn(BaseModel):
+    """Safety & Transport for one city (topic `safety`, 4.5) — the same
+    structure the local resolver stores, so it renders as headed subsections."""
+    safety: SafetyIn | None = None
+    transport: TransportIn | None = None
+
+
 class FindingIn(BaseModel):
     """A finding from an external agent for the caller's Discover tab (YONDER-108).
     Food/events may carry `items` (4.5); language_local carries `phrases`."""
@@ -400,6 +428,7 @@ class FindingIn(BaseModel):
     items: list[ItemIn] | None = None      # food/events rows (replace the list unless replace_items=False)
     replace_items: bool = True
     phrases: PhrasesIn | None = None       # language_local only
+    safety_transport: SafetyTransportIn | None = None   # safety only (structured)
 
 
 class PackingItemIn(BaseModel):
@@ -1209,7 +1238,15 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
         ph = body.phrases.model_dump()
         if not (ph["register_summary"].strip() or ph["greetings"] or ph["expressions"]):
             raise HTTPException(400, "phrases need a register_summary, greetings or expressions")
-    if not title or not (text or rows or topic == PHRASES_TOPIC):
+    st = None
+    if body.safety_transport is not None:
+        if topic != "safety":
+            raise HTTPException(400, "safety_transport goes with topic safety")
+        st = _safety_data(body.safety_transport)
+        if st is None:
+            raise HTTPException(400, "safety_transport needs a safety summary, advisories "
+                                     "or scams, or a transport summary")
+    if not title or not (text or rows or st or topic == PHRASES_TOPIC):
         raise HTTPException(400, "title and body_md are required")
     place_key = (body.place_key or "").strip()[:128]
     if not place_key:
@@ -1220,10 +1257,25 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
     if topic == PHRASES_TOPIC:
         md = render_phrases(title, ph["register_summary"].strip(), ph["greetings"],
                             ph["expressions"], [e for e in ph["etiquette"] if e.strip()])
+    elif st is not None:
+        from discover.grounding import corroborate
+        from discover.resolvers.safety import render_safety
+        sd = st["safety"] or {}
+        md = render_safety(title, sd, sd.get("advisories") or [], sd.get("scams") or [],
+                           corroborate([a["source_url"] for a in sd.get("advisories") or []]),
+                           st["transport"])
+        if text:
+            md += "\n\n" + text
     else:
         md = f"**{title}**\n\n{text}"[:100_000]
     sources = [{"title": (s.title or s.url)[:300], "url": s.url[:2000]}
                for s in body.sources[:50] if s.url.startswith(("http://", "https://"))]
+    if st is not None:          # every advisory's source is a source of the finding
+        seen = {s["url"] for s in sources}
+        for a in (st["safety"] or {}).get("advisories") or []:
+            if a["source_url"] not in seen:
+                seen.add(a["source_url"])
+                sources.append({"title": a["source_url"], "url": a["source_url"]})
     f = (session.query(DiscoveryFinding)
          .filter(DiscoveryFinding.trip_id == trip.id, DiscoveryFinding.user_id == user.id,
                  DiscoveryFinding.topic == topic,
@@ -1248,6 +1300,8 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
     f.data = {"title": title, "agent": agent_name, "history": history}
     if topic in discovery_items.ITEM_TOPICS and text:
         f.data["summary"] = text                      # the city write-up (4.5)
+    if st is not None:
+        f.data.update(st)                              # renders as subsections (4.5)
     if topic == PHRASES_TOPIC:
         f.data.update({"register_summary": ph["register_summary"].strip(),
                        "greetings": ph["greetings"], "expressions": ph["expressions"],
@@ -1262,12 +1316,42 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
     return _finding_out(f)
 
 
+def _safety_data(body: SafetyTransportIn) -> dict | None:
+    """Clean an agent's Safety & Transport into the resolver's stored shape.
+    Advisories need an http(s) source; empty parts are dropped."""
+    from discover.grounding import corroborate
+
+    def strs(xs, n=20):
+        return [x.strip()[:500] for x in (xs or [])[:n] if x and x.strip()]
+
+    safety = transport = None
+    if body.safety:
+        adv = [{"text": a.text.strip()[:1000], "source_url": a.source_url.strip()[:2000]}
+               for a in body.safety.advisories[:20]
+               if a.text.strip() and a.source_url.strip().startswith(("http://", "https://"))]
+        summary = body.safety.summary.strip()[:3000]
+        scams = strs(body.safety.scams)
+        if summary or adv or scams:
+            safety = {"summary": summary, "advisories": adv, "scams": scams,
+                      "corroborated": corroborate([a["source_url"] for a in adv]).corroborated}
+    if body.transport and body.transport.summary.strip():
+        t = body.transport
+        transport = {"summary": t.summary.strip()[:3000],
+                     "public_transit": t.public_transit.strip()[:2000],
+                     "from_airport": t.from_airport.strip()[:2000],
+                     "ride_hailing": strs(t.ride_hailing), "apps": strs(t.apps),
+                     "tips": strs(t.tips)}
+    if not (safety or transport):
+        return None
+    return {"safety": safety, "transport": transport}
+
+
 def my_discovery_profile(session: Session, user) -> dict:
     """The caller's own discovery profile (dietary, cuisines to avoid, budget,
     drink/activity interests, mobility), labelled, with how to apply it."""
     from app.trips.routes import discovery_profile_public
     trav = session.get(TravelerIdentity, user.traveler_id) if user.traveler_id else None
-    return discovery_profile_public(session, trav)
+    return discovery_profile_public(session, trav, user_id=user.id)
 
 
 @router.get("/me/discovery-profile")

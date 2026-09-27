@@ -20,7 +20,13 @@ Activities** section, one city at a time. You need the Run·dere MCP connector.
      they're in which city, and match events to those days.
    - `discovery_profile` is **this person's** preferences, with `how_to_use`:
      their **activity interests** add to the mix (museums, live music,
-     outdoor…); **mobility** rules out anything they can't do.
+     outdoor…); **mobility** rules out anything they can't do; **`notes`** is
+     them in their own words (likes, dislikes, past favourites) — follow it;
+     **`not_my_thing`** lists things they hid as not their thing, on this or
+     earlier trips — never suggest those again, and skip similar ones.
+   - If `discovery_profile.blank` is true, **ask the person first** what they
+     enjoy and want to avoid, and suggest they fill in their Discovery profile
+     in Run·dere.
    - `discovery_items` shows what's already there. Don't bring back `hidden`
      rows; rows with `activity_id` are already on the timeline.
 2. If the user named a city, do only that one. Otherwise every city in `places`.

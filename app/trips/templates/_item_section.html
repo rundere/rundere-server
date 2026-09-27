@@ -92,9 +92,18 @@
                aria-label="Website for {{ i.name }}">Site</a>{% endif %}
             {% if i.source_url %}<a class="yn-icon-link" href="{{ i.source_url }}" target="_blank" rel="noopener"
                aria-label="Source for {{ i.name }}">Source</a>{% endif %}
+            {% if i.hidden %}
+            {# Why it's hidden: "not my thing" (the default) is what agents read as a dislike. #}
+            <select class="input bp-sm yn-hide-reason" name="reason" aria-label="Why {{ i.name }} is hidden"
+                    hx-post="/trips/{{ trip.id }}/discovery-item/{{ i.id }}/hide" hx-vals='{"hidden": "1"}'
+                    hx-trigger="change" hx-target="#discovery-section" hx-swap="outerHTML">
+              {% for k, label in hide_reasons %}<option value="{{ k }}" {% if k == i.hidden_reason %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            {% endif %}
             <button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/discovery-item/{{ i.id }}/hide"
                     hx-vals='{"hidden": "{{ '0' if i.hidden else '1' }}"}'
                     hx-target="#discovery-section" hx-swap="outerHTML"
+                    title="{{ 'Show it again' if i.hidden else 'Hide — counts as not my thing; change the reason once hidden' }}"
                     aria-label="{{ 'Show' if i.hidden else 'Hide' }} {{ i.name }}">{{ 'Show' if i.hidden else 'Hide' }}</button>
           </td>
         </tr>

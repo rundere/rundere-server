@@ -290,4 +290,40 @@ def item_dict(i) -> dict:
             "venue": i.venue, "details": i.details, "duration": i.duration,
             "booking": i.booking, "sources": i.sources or [], "extra": i.extra or {},
             "origin": i.origin, "agent": i.agent, "hidden": bool(i.hidden),
+            "hidden_reason": i.hidden_reason if i.hidden else None,
             "edited": bool(i.edited), "activity_id": i.activity_id}
+
+
+# Why a row was hidden (4.5). Hiding defaults to not_my_thing — the only reason
+# that says something about the person's taste, so the only one agents get as
+# a dislike.
+HIDE_REASONS = (("not_my_thing", "Not my thing"), ("closed", "Closed / gone"),
+                ("been_there", "Been there"))
+DEFAULT_HIDE_REASON = "not_my_thing"
+MAX_DISLIKES = 50
+
+
+def hide(item, reason: str | None = None) -> None:
+    item.hidden = True
+    item.hidden_reason = reason if reason in dict(HIDE_REASONS) else DEFAULT_HIDE_REASON
+    item.updated_at = datetime.now(timezone.utc)
+
+
+def unhide(item) -> None:
+    item.hidden = False
+    item.hidden_reason = None
+    item.updated_at = datetime.now(timezone.utc)
+
+
+def dislikes(session, user_id) -> list[dict]:
+    """The rows this person hid as "not my thing", across all their trips —
+    newest first, capped. What an agent should steer away from (4.5)."""
+    from app.models import DiscoveryItem
+    if user_id is None:
+        return []
+    rows = (session.query(DiscoveryItem)
+            .filter(DiscoveryItem.user_id == user_id, DiscoveryItem.hidden.is_(True),
+                    DiscoveryItem.hidden_reason == DEFAULT_HIDE_REASON)
+            .order_by(DiscoveryItem.updated_at.desc()).limit(MAX_DISLIKES).all())
+    return [{"name": r.name, "kind": r.kind, "city": city_of(r.place_key),
+             "what_to_get": r.what_to_get, "details": r.details} for r in rows]

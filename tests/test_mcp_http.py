@@ -40,7 +40,8 @@ if DEPS:
                  "get_journal_entry", "update_journal_entry", "attach_journal_entry",
                  "capture_url", "list_review", "get_review_item",
                  "assign_review_item_to_trip", "save_research", "save_city_guide",
-                 "save_phrases", "add_item_to_timeline", "get_discovery_profile"}
+                 "save_phrases", "add_item_to_timeline", "get_discovery_profile",
+                 "save_safety"}
 
     @pytest.fixture(scope="module")
     def client():
@@ -682,7 +683,8 @@ if DEPS:
         assert r.status_code == 200, r.text
         names = {p["name"]: p for p in r.json()["result"]["prompts"]}
         assert {"research_food_and_drink", "research_events_and_activities",
-                "research_local_phrases"} <= set(names)
+                "research_local_phrases", "research_safety_and_transport",
+                "research_visa_and_entry"} <= set(names)
         args = {a["name"]: a.get("required") for a in names["research_food_and_drink"]["arguments"]}
         assert args["trip_id"] is True and not args.get("place_key")
         r = _rpc(client, tok, "prompts/get", {"name": "research_food_and_drink",
@@ -697,7 +699,8 @@ if DEPS:
         assert client.get("/api/v1/research-kits").status_code == 401
         kits = client.get("/api/v1/research-kits", headers=h).json()
         by = {k["slug"]: k for k in kits}
-        assert set(by) >= {"food-and-drink", "events-and-activities", "local-phrases"}
+        assert set(by) >= {"food-and-drink", "events-and-activities", "local-phrases",
+                           "safety-and-transport", "visa-and-entry"}
         assert by["local-phrases"]["mcp_prompt"] == "research_local_phrases"
         assert by["food-and-drink"]["name"] == "rundere-food-and-drink"
         one = client.get("/api/v1/research-kits/events-and-activities", headers=h).json()
@@ -707,3 +710,79 @@ if DEPS:
         assert zipfile.ZipFile(io.BytesIO(z.content)).namelist() == ["rundere-food-and-drink/SKILL.md"]
         assert client.get("/api/v1/research-kits/nope", headers=h).status_code == 404
         assert client.get("/api/v1/research-kits/..%2Fapp.zip", headers=h).status_code == 404
+
+
+    # ------------------------------------------------------------------ likes & dislikes, safety (4.5)
+    def test_profile_notes_and_not_my_thing(client, w):
+        from app.models import DiscoveryProfile
+        from discover import items as disc_items
+        tok = _tok(w["alice"])
+        ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
+           place_key="MA:Tangier", summary_md="x",
+           items=[{"kind": "bar", "name": "Sky Bar", "details": "Rooftop"},
+                  {"kind": "cafe", "name": "Café Hafa"},
+                  {"kind": "cafe", "name": "Gone Café"}])
+        with SessionLocal() as s:
+            alice = s.get(User, w["alice"])
+            s.query(DiscoveryProfile).filter_by(traveler_id=alice.traveler_id).delete()
+            s.add(DiscoveryProfile(traveler_id=alice.traveler_id,
+                                   values={"notes": "Hate rooftop bars. Loved Bar Mut."}))
+            rows = {i.name: i for i in s.query(DiscoveryItem).filter_by(
+                trip_id=w["shared"], user_id=w["alice"], place_key="MA:Tangier")}
+            disc_items.hide(rows["Sky Bar"])                  # default: not my thing
+            disc_items.hide(rows["Gone Café"], "closed")      # says nothing about taste
+            s.commit()
+            tid = alice.traveler_id
+        try:
+            p = ok(client, tok, "get_discovery_profile")
+            assert p["notes"] == "Hate rooftop bars. Loved Bar Mut." and p["blank"] is False
+            names = [d["name"] for d in p["not_my_thing"]]
+            assert "Sky Bar" in names and "Gone Café" not in names and "Café Hafa" not in names
+            sky = next(d for d in p["not_my_thing"] if d["name"] == "Sky Bar")
+            assert sky["city"] == "Tangier" and sky["kind"] == "bar"
+            assert "not_my_thing" in p["how_to_use"] and "ask the person" in p["how_to_use"]
+            snap = ok(client, tok, "get_trip", trip_id=w["shared"])
+            assert snap["discovery_profile"]["notes"].startswith("Hate rooftop")
+            by = {i["name"]: i for i in snap["discovery_items"]}
+            assert by["Sky Bar"]["hidden_reason"] == "not_my_thing"
+            assert by["Café Hafa"]["hidden_reason"] is None
+            # bob never sees alice's dislikes
+            bob = ok(client, _tok(w["bob"]), "get_discovery_profile")
+            assert bob["not_my_thing"] == [] and bob["notes"] == ""
+        finally:
+            with SessionLocal() as s:
+                s.query(DiscoveryProfile).filter_by(traveler_id=tid).delete()
+                s.commit()
+
+    def test_save_safety_structured(client, w):
+        tok = _tok(w["alice"])
+        f = ok(client, tok, "save_safety", trip_id=w["shared"], place_key="MA:Gondar",
+               safety={"summary": "Generally calm.",
+                       "advisories": [{"text": "Use licensed guides in the medina",
+                                       "source_url": "https://gov.example/ma"},
+                                      {"text": "No source", "source_url": "ftp://x"}],
+                       "scams": ["Fake guides", "  "]},
+               transport={"summary": "Walk the medina; petit taxis outside.",
+                          "from_airport": "Grand taxi, fixed fare", "apps": ["Careem"]})
+        assert f["external"] and f["status"] == "draft"
+        d = f["data"]
+        assert d["safety"]["advisories"] == [{"text": "Use licensed guides in the medina",
+                                              "source_url": "https://gov.example/ma"}]
+        assert d["safety"]["scams"] == ["Fake guides"]
+        assert d["safety"]["corroborated"] is False          # one site → verify banner
+        assert d["transport"]["apps"] == ["Careem"]
+        assert "### Getting around" in f["body_md"] and "Verify at official source" in f["body_md"]
+        assert any(s["url"] == "https://gov.example/ma" for s in f["sources"])
+        # renders as headed subsections on the Discover tab
+        from app.trips.routes import _safety_parts
+        parts = _safety_parts(d)
+        assert [p["h"] for p in parts["safety"]] == ["Summary", "Advisories", "Scams to know"]
+        assert [p["h"] for p in parts["transport"]][:2] == ["Getting around", "From the airport"]
+        good, err = call(client, tok, "save_safety", trip_id=w["shared"], place_key="MA:Gondar",
+                         transport={"summary": ""})
+        assert not good and "safety_transport needs" in err
+        r = client.post(f"/api/v1/trips/{w['shared']}/findings",
+                        headers={"authorization": f"Bearer {tok}"},
+                        json={"topic": "food", "title": "x", "place_key": "MA:Gondar",
+                              "safety_transport": {"safety": {"summary": "x"}}})
+        assert r.status_code == 400 and "topic safety" in r.text

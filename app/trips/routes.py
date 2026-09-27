@@ -830,6 +830,7 @@ def _item_view(i, on_timeline: dict) -> dict:
         "venue": i.venue, "details": i.details, "duration": i.duration,
         "booking": i.booking, "website": i.website, "source_url": src,
         "map_url": disc_items.map_url(i), "hidden": bool(i.hidden),
+        "hidden_reason": (i.hidden_reason or disc_items.DEFAULT_HIDE_REASON) if i.hidden else None,
         "heads_up": bool(extra.get("heads_up")), "local_specialty": bool(extra.get("local_specialty")),
         "agent": i.agent if i.origin == "agent" else None,
         "on_timeline": act,   # {"when": "Oct 14"} or None
@@ -984,7 +985,13 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
             "discovery_has_findings": bool(findings),
             "discovery_last": _run_view(last) if last else None,
             "discovery_running": running,
-            "discovery_run": run_progress}
+            "discovery_run": run_progress,
+            "hide_reasons": _hide_reasons()}
+
+
+def _hide_reasons():
+    from discover.items import HIDE_REASONS
+    return HIDE_REASONS
 
 
 def _resolvers():
@@ -1115,13 +1122,18 @@ def item_to_timeline_form(trip_id: str, item_id: str, request: Request,
 
 @router.post("/{trip_id}/discovery-item/{item_id}/hide", response_class=HTMLResponse)
 def item_hide(trip_id: str, item_id: str, request: Request, hidden: str = Form("1"),
-              session: Session = Depends(get_session)):
+              reason: str = Form(""), session: Session = Depends(get_session)):
     """Hide (or bring back) a Discover row. Hidden rows stay hidden when Discover
-    or an agent refreshes the city."""
+    or an agent refreshes the city. The reason defaults to "not my thing" (what
+    agents read as a dislike); "closed" and "been there" say nothing about taste."""
+    from discover import items as disc_items
     i = _item_or_none(session, request, trip_id, item_id)
     if i is None:
         return HTMLResponse("", status_code=404)
-    i.hidden = hidden == "1"
+    if hidden == "1":
+        disc_items.hide(i, reason or None)
+    else:
+        disc_items.unhide(i)
     session.commit()
     return _discovery_section(request, session, scope.trip_or_none(session, request, trip_id))
 
@@ -1385,6 +1397,9 @@ DISCOVERY_MOBILITY = [("no_limits", "No limits"),
                       ("moderate", "Moderate — some walking is fine"),
                       ("limited", "Limited — minimal walking or stairs"),
                       ("wheelchair", "Wheelchair accessible only")]
+
+
+DISCOVERY_NOTES_MAX = 2000
 
 
 def _discovery_default() -> dict:
@@ -1911,10 +1926,13 @@ def _discovery_profile_row(session: Session, traveler: TravelerIdentity | None,
 
 
 def discovery_profile_public(session: Session, traveler: TravelerIdentity | None,
-                             owner: bool = False) -> dict:
+                             owner: bool = False, user_id: str | None = None) -> dict:
     """ONE person's discovery profile for an AI agent (4.5, MCP/API): the same
     preferences the local Discover run shapes its research with, each value
-    with its label, plus how to apply them. Only ever the caller's own."""
+    with its label, their free-text notes for agents, the rows they hid as
+    "not my thing" (`user_id`'s, across trips), and how to apply it all. Only
+    ever the caller's own."""
+    from discover.items import dislikes as hidden_dislikes
     row = _discovery_profile_row(session, traveler, owner)
     d = _discovery_default()
     v = {**d, **((row.values if row else None) or {})}
@@ -1944,18 +1962,24 @@ def discovery_profile_public(session: Session, traveler: TravelerIdentity | None
                                    "label": dict(DISCOVERY_MOBILITY).get(mob, mob)}},
         "travel": {"nationality": traveler.nationality if traveler else None,
                    "base_currency": traveler.base_currency if traveler else None},
+        "notes": (v.get("notes") or "").strip(),
+        "not_my_thing": hidden_dislikes(session, user_id),
     }
     out["blank"] = row is None or not any([
         food.get("dietary_restrictions"), food.get("cuisine_dislikes"),
         food.get("allergies"), budget, drink.get("interests"),
-        activity.get("interests"), mob != "no_limits"])
+        activity.get("interests"), mob != "no_limits", out["notes"]])
     out["how_to_use"] = (
         "Constraint-first: every recommendation must fit the dietary restrictions; "
         "never recommend the avoided cuisines; stay at or under the budget ceiling "
         "(1–4, $–$$$$; 0 = no limit); flag — don't exclude — anything that may "
         "involve a listed allergen. Interests ADD places (breweries, museums, …) on "
         "top of the usual mix; they never narrow it. Respect mobility for activities. "
-        "A blank profile means show everything. Never infer tastes from nationality.")
+        "`notes` is the person in their own words — likes, dislikes, past "
+        "favourites; follow it like the rest. `not_my_thing` lists places and "
+        "events they hid as not their thing: don't suggest those again, and steer "
+        "away from similar ones. If `blank` is true, ask the person what they like "
+        "and want to avoid before researching. Never infer tastes from nationality.")
     return out
 
 
@@ -1991,6 +2015,7 @@ def _discovery_form_ctx(request: Request, session: Session,
                        for k, t in DISCOVERY_ACTIVITIES],
         "mobility_opts": [{"value": k, "label": t, "selected": k == mob}
                           for k, t in DISCOVERY_MOBILITY],
+        "notes": v.get("notes") or "",
     }
 
 
@@ -2013,6 +2038,7 @@ def save_discovery_profile(request: Request,
                            drink_interests: list[str] = Form(default=[]),
                            activity_interests: list[str] = Form(default=[]),
                            mobility: str = Form("no_limits"),
+                           notes: str = Form(""),
                            session: Session = Depends(get_session)):
     try:
         budget = int(budget_ceiling)
@@ -2037,6 +2063,7 @@ def save_discovery_profile(request: Request,
         "drink": {"interests": [x for x in drink_interests if x in drinks_ok]},
         "activity": {"interests": [x for x in activity_interests if x in acts_ok]},
         "practical": {"mobility": mobility if mobility in mob_ok else "no_limits"},
+        "notes": notes.strip()[:DISCOVERY_NOTES_MAX],   # for agents (4.5); free text
     }
     from app.acting import acting_for, audit_if_other
     acting = acting_for(session, request)
