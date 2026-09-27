@@ -624,3 +624,17 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-items th:nth-child(1) { width: 21%; }
 .yn-items th:last-child { width: 30%; }
 .yn-on-tl { white-space: nowrap; }
+
+/* ---- Weather summary + Safety subsections (4.5, YONDER-167/168) ---- */
+.yn-weather-sum { margin: 0 0 14px; padding: 12px 14px; border-radius: 8px;
+  background: var(--yn-tab-track); border-left: 3px solid var(--color-accent);
+  font-size: 15px; line-height: 1.5; }
+.yn-weather-hints { margin-top: 4px; font-size: 14px; }
+.yn-parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 4px 24px; margin: 6px 0; }
+.yn-part { margin: 0 0 10px; font-size: 14px; line-height: 1.5; }
+.yn-part-h { display: block; margin-bottom: 2px; }
+.yn-part p { margin: 0; }
+.yn-part ul { margin: 2px 0 0; padding-left: 18px; }
+.yn-part-note { margin: 4px 0; font-size: 13px; color: var(--color-neutral-700); }
+.yn-part a, .yn-city-sources a, .yn-sources a { color: var(--color-accent); text-underline-offset: 2px; }

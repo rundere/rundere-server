@@ -62,6 +62,14 @@
         <h3 class="yn-dsec-title">{{ s.label }}</h3>
         <p class="yn-dsec-about">{{ s.about }}</p>
       </div>
+      {% if s.summary %}
+      {# Weather (4.5): one consolidated line for the whole trip, from the numbers. #}
+      <div class="yn-weather-sum" role="note">
+        <b>{{ s.summary.line }}</b>
+        {% if s.summary.hints %}<div class="yn-weather-hints">Pack: {{ s.summary.hints | join(" · ") }}</div>{% endif %}
+        {% if s.summary.seasonal %}<div class="yn-dsec-about">Based on last year's weather for these dates — a guide, not a forecast.</div>{% endif %}
+      </div>
+      {% endif %}
       {% if s.cities %}
         {{ isec.section(s, trip) }}
       {% elif s.groups %}

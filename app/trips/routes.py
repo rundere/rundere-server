@@ -771,6 +771,7 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         "warnings": [w for w in (data.get("allergy_warnings") or []) if isinstance(w, str)],
         "currency": data.get("currency") or "",
         "rates_date": data.get("date") or "",
+        "parts": _safety_parts(data) if f.topic == "safety" else None,
         "is_language": f.topic == "language",
         # Language findings aren't per-finding re-runnable: national detection is
         # a pure function of country (re-run can only clobber a manual Languages
@@ -892,6 +893,42 @@ def _item_cities(session: Session, trip_id: str, uid: str | None,
     return out
 
 
+def _safety_parts(data: dict) -> dict | None:
+    """Safety & Transport as headed subsections (4.5, YONDER-168) from the
+    structured data the local resolver stores. None for a finding without it
+    (e.g. an agent's markdown) — that one renders its text as before."""
+    safety = data.get("safety") if isinstance(data.get("safety"), dict) else None
+    transport = data.get("transport") if isinstance(data.get("transport"), dict) else None
+    if not (safety or transport):
+        return None
+
+    def strs(xs):
+        return [x.strip() for x in (xs or []) if isinstance(x, str) and x.strip()]
+
+    out = {"safety": [], "transport": [], "single_source": False}
+    if safety:
+        if (safety.get("summary") or "").strip():
+            out["safety"].append({"h": "Summary", "text": safety["summary"].strip()})
+        adv = [{"text": a.get("text", "").strip(), "url": a.get("source_url")}
+               for a in (safety.get("advisories") or [])
+               if isinstance(a, dict) and (a.get("text") or "").strip()]
+        if adv:
+            out["safety"].append({"h": "Advisories", "links": adv})
+        if strs(safety.get("scams")):
+            out["safety"].append({"h": "Scams to know", "list": strs(safety.get("scams"))})
+        out["single_source"] = safety.get("corroborated") is False
+    if transport:
+        for key, h in (("summary", "Getting around"), ("public_transit", "Public transit"),
+                       ("from_airport", "From the airport")):
+            if isinstance(transport.get(key), str) and transport[key].strip():
+                out["transport"].append({"h": h, "text": transport[key].strip()})
+        for key, h in (("ride_hailing", "Ride-hailing that works here"),
+                       ("apps", "Apps to install"), ("tips", "Tips")):
+            if strs(transport.get(key)):
+                out["transport"].append({"h": h, "list": strs(transport.get(key))})
+    return out if (out["safety"] or out["transport"]) else None
+
+
 def _run_view(run: DiscoveryRun) -> dict:
     return {"status": run.status, "phase": run.phase, "done": run.done,
             "total": run.total,
@@ -932,9 +969,14 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
                         "total": last.total, "pct": pct}
     secs = disc_sections.build(views)
     cities = _item_cities(session, trip_id, uid, views)
+    from discover.weather_summary import summarize as weather_summary
+    weather = weather_summary([((f.place_key or "").split(":", 1)[-1], f.data)
+                               for f in grouped.get("weather", [])])
     for s in secs:
         if s["key"] in cities:
             s["cities"] = cities[s["key"]]
+        if s["key"] == "weather":
+            s["summary"] = weather
     return {"discovery_topics": topic_groups,
             "discovery_sections": secs,
             "discovery_default_section": disc_sections.DEFAULT_SECTION,

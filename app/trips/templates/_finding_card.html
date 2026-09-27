@@ -26,7 +26,28 @@
     {% elif f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
     {% if f.external %}<span class="yn-status-badge" title="Written by {{ f.agent }} over MCP — local Discover runs won't overwrite it">via {{ f.agent }}</span>{% endif %}
   </summary>
+  {% if f.parts %}
+  {# Safety & Transport (4.5): the stored structure as headed subsections. #}
+  <div class="yn-parts">
+    {% for group, title in (("safety", "Safety"), ("transport", "Transport")) %}
+    {% if f.parts[group] %}
+    <div class="yn-parts-col">
+      <h5 class="yn-dsec-sub">{{ title }}</h5>
+      {% for p in f.parts[group] %}
+      <div class="yn-part"><b class="yn-part-h">{{ p.h }}</b>
+        {% if p.text %}<p>{{ p.text }}</p>{% endif %}
+        {% if p.list %}<ul>{% for x in p.list %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+        {% if p.links %}<ul>{% for x in p.links %}<li>{{ x.text }}{% if x.url %} <a href="{{ x.url }}" target="_blank" rel="noopener">source</a>{% endif %}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% if f.parts.single_source %}<p class="yn-part-note" role="note">⚠️ Some safety points rest on a single source — check the official travel advisory.</p>{% endif %}
+  {% else %}
   <div class="yn-finding-body">{{ f.body }}</div>
+  {% endif %}
   {% if f.sources %}
   {# Sources on demand (4.5): there, but not in the way. #}
   <details class="yn-finding-sources">
