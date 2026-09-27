@@ -74,13 +74,20 @@ class CurrencyResolver:
         """1 `base` = X `symbol`, with the feed's own date. Same currency → 1.0.
 
         Frankfurter v2 renamed the latest-rates path (`/latest` → `/rates`) and the
-        target-filter param (`symbols` → `quotes`); the JSON body is unchanged
-        (`{base, date, rates}`)."""
+        target-filter param (`symbols` → `quotes`), and returns a list of
+        `{date, base, quote, rate}` rows. The v1 `{base, date, rates}` body is
+        still accepted so a self-hosted v1 instance keeps working."""
         if base == symbol:
             return 1.0, None
         data = get_json(f"{self.base_url}/rates?{qs(base=base, quotes=symbol)}",
                         timeout=timeout)
-        if not data:
+        if isinstance(data, list):
+            row = next((r for r in data if isinstance(r, dict)
+                        and r.get("quote") == symbol), None)
+            if not row or row.get("rate") is None:
+                return None, None
+            return float(row["rate"]), row.get("date")
+        if not isinstance(data, dict):
             return None, None
         rate = (data.get("rates") or {}).get(symbol)
         return (float(rate) if rate is not None else None), data.get("date")
