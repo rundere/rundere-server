@@ -16,6 +16,10 @@
         <div class="rd-dict-head">
           <span class="rd-dict-word"><span class="rd-wordmark" role="img" aria-label="Run·dere"></span></span>
           <span class="rd-dict-say" title="Pronunciation">/ run-THAIR /</span>
+          <audio id="rd-say-audio" preload="none">
+            <source src="/brand/audio/rundere.m4a" type="audio/mp4">
+            <source src="/brand/audio/rundere.webm" type="audio/webm; codecs=opus">
+          </audio>
           <button type="button" class="rd-dict-play" id="rd-say" hidden
                   aria-label="Hear how to say Run·dere" title="Hear it">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none"
@@ -30,16 +34,27 @@
     </div>
     <script>
     (function(){
-      // The browser's own speech engine says it — nothing to host, and the button
-      // stays hidden where speech isn't available.
-      var b = document.getElementById('rd-say');
-      if (!b || !('speechSynthesis' in window)) return;
-      b.hidden = false;
-      b.addEventListener('click', function(){
+      // Plays the recorded pronunciation (design/audio: AAC for Safari/Chrome/Edge,
+      // Opus for browsers without AAC). If neither plays, the browser's voice says it.
+      var b = document.getElementById('rd-say'), a = document.getElementById('rd-say-audio');
+      var canSpeak = 'speechSynthesis' in window;
+      var canPlay = !!(a && a.canPlayType &&
+        (a.canPlayType('audio/mp4') || a.canPlayType('audio/webm; codecs=opus')));
+      if (!b || !(canPlay || canSpeak)) return;
+      function speak(){
+        if (!canSpeak) return;
         var u = new SpeechSynthesisUtterance('Run there');
         u.lang = 'en-US'; u.rate = 0.9;
         window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+      }
+      b.hidden = false;
+      b.addEventListener('click', function(){
+        if (!canPlay) return speak();
+        a.currentTime = 0;
+        var p = a.play();
+        if (p && p.catch) p.catch(speak);
       });
+      if (a) a.addEventListener('error', function(){ canPlay = false; });
     })();
     </script>
 
