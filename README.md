@@ -390,6 +390,15 @@ personal API tokens are managed on the Account page.
 
 ---
 
+## Run·dere for iPhone and iPad
+
+The native app lives in its own repository, **[rundere/rundere-ios](https://github.com/rundere/rundere-ios)**
+(private, separately licensed), and talks to this server's `/api/v1`. Sign in with a
+Run·dere username and password; the app's API route isn't behind Authentik, so it works on
+the LAN and on the public host. Keep `TX_OIDC_FORCE_API_LOGIN` off until the app supports
+SSO. `contracts/ios/DTOs.swift` is the app's API contract, which this repo's tests check,
+so a server change that would break the app fails CI.
+
 ## Rules
 
 Rule logic lives in `rules.py`; whether each rule is in force lives in the
