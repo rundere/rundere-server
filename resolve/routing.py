@@ -109,7 +109,7 @@ def locate(place: dict, geocoder) -> dict:
 #   ors       TX_ORS_API_KEY — openrouteservice.org (worldwide, free key tier)
 #   osrm      TX_OSRM_URL — self-hosted OSRM or the public demo server
 
-_UA = {"User-Agent": "yonder (+https://github.com/jeeves5454/yonder)"}
+_UA = {"User-Agent": "rundere (+https://github.com/jeeves5454/rundere-server)"}
 
 
 def _http_json(url: str, *, body: dict | None = None, headers: dict | None = None,

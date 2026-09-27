@@ -1,10 +1,10 @@
-# Connect Yonder to Claude
+# Connect Run·dere (formerly Yonder) to Claude
 
-Yonder has a built-in remote MCP server at **`https://<yonder-host>/mcp`**
+Run·dere has a built-in remote MCP server at **`https://<rundere-host>/mcp`**
 (YONDER-108) and is its own OAuth 2.1 authorization server (YONDER-107). Add it
 to claude.ai once and it works in claude.ai on the web, Claude Desktop and the
 Claude mobile app. Claude then acts **as you**: it sees and changes exactly what
-you can in Yonder, and nothing more. Per-user scoping and the admin-sharing
+you can in Run·dere, and nothing more. Per-user scoping and the admin-sharing
 opt-out apply to every tool.
 
 **Not only Claude.** `/mcp` is a standard MCP server with standard OAuth
@@ -22,7 +22,7 @@ that name labels whatever it writes to Discover.
 | `TX_AUTH_REQUIRED=true` | Connectors are meant for authenticated deployments. |
 | Reachability | claude.ai connects **from Anthropic's cloud** (`160.79.104.0/21`), so these must be public and must bypass browser forward-auth (Authentik): `/mcp`, `/oauth/token`, `/oauth/register`, `/oauth/revoke`, `/.well-known/oauth-*` (plus `/api/v1` for the app). That's YONDER-109. Keep `/oauth/authorize` and `/login` behind your normal browser route. |
 
-Yonder never trusts a proxy identity header (`TX_AUTH_PROXY_HEADER_TRUST`) on
+Run·dere never trusts a proxy identity header (`TX_AUTH_PROXY_HEADER_TRUST`) on
 those machine endpoints, even when the setting is on. Traefik should strip the
 header there anyway.
 
@@ -34,13 +34,13 @@ Optional OAuth knobs (defaults in brackets): `TX_OAUTH_ACCESS_TTL_SECONDS`
 ## Add the connector (each user)
 
 1. claude.ai → **Settings → Connectors → Add custom connector**.
-2. Name: `Yonder`. URL: `https://<yonder-host>/mcp`. Leave the advanced settings
+2. Name: `Run·dere`. URL: `https://<rundere-host>/mcp`. Leave the advanced settings
    empty: Claude registers itself automatically (dynamic client registration).
-3. **Connect**. You land on Yonder's sign-in page. Sign in the way your
+3. **Connect**. You land on Run·dere's sign-in page. Sign in the way your
    deployment offers: username + password, "Sign in with <SSO>" when OIDC is on,
    or automatically when a trusted proxy header is on.
-4. Yonder asks **"Allow Claude to access your Yonder data?"**. Choose **Allow**.
-5. Back in Claude, enable the Yonder tools in a chat and ask, e.g., *"What's on
+4. Run·dere asks **"Allow Claude to access your Run·dere data?"**. Choose **Allow**.
+5. Back in Claude, enable the Run·dere tools in a chat and ask, e.g., *"What's on
    my Banff trip on day 2?"* or *"Research day hikes near Banff and save them to
    my Discover tab."*
 
@@ -53,10 +53,10 @@ connector's advanced settings.
 
 Claude Code can use the same endpoint. Either:
 
-- `claude mcp add --transport http yonder https://<yonder-host>/mcp`, then
+- `claude mcp add --transport http yonder https://<rundere-host>/mcp`, then
   `/mcp` in Claude Code to sign in through the browser (loopback redirect), or
 - use a **personal API token** (Account → Personal API tokens):
-  `claude mcp add --transport http yonder https://<yonder-host>/mcp --header "Authorization: Bearer ypat_…"`
+  `claude mcp add --transport http yonder https://<rundere-host>/mcp --header "Authorization: Bearer ypat_…"`
 
 On a LAN that can't reach `/mcp`, the stdio script in [`mcp/`](../mcp/README.md)
 does the same over `/api/v1`.
@@ -78,6 +78,9 @@ end every token: changing or resetting your password, "sign out everywhere"
 | Journal (yours) | `create_journal_entry`, `list_journal_entries`, `get_journal_entry`, `update_journal_entry`, `attach_journal_entry` |
 | Capture / review | `capture_url`, `list_review`, `get_review_item`, `assign_review_item_to_trip` (own / open / trips you travel on) |
 | Discover | `save_research`: saves to **your** Discover tab as a draft. By default it goes into a "Research (AI agents)" section; with `topic` it can instead update the Food, Events, Safety, Visa, Plugs or Packing finding for a place. A later save supersedes the earlier one, which stays under "Earlier versions". A **locked** finding is refused. Also available as `POST /api/v1/trips/{id}/findings`. |
+| Discover (4.5) | `save_city_guide`: a city's **Food & Drink** or **Events & Activities** — a summary + recommendation, and the places/events as rows (food rows carry *what to get*; events have dates, activities don't). Rows land in `get_trip`'s `discovery_items`; re-saving updates them by name and keeps anything you hid, edited or scheduled (`replace_items=false` only adds). `save_phrases`: a city's **Local phrases & register** (greetings, expressions, etiquette) under Language. `save_safety`: a city's **Safety & Transport** as headed subsections (summary, advisories with sources, scams; getting around, transit, from the airport, ride-hailing, apps, tips). `add_item_to_timeline`: puts a Discover item on the timeline as a Restaurant, Event or Tour, filled in from the item. REST: `POST /api/v1/trips/{id}/findings` with `items` / `phrases`, and `POST /api/v1/trips/{id}/discovery-items/{item_id}/timeline`. |
+| Profile (4.5) | `get_discovery_profile`: your own discovery profile — dietary restrictions, cuisines to avoid, allergies, budget ceiling, drink and activity interests, mobility, nationality and base currency — with labels, plus your **Notes for agents** (Discovery profile page) and the places you hid as *not my thing* in Discover, and how to apply them (the same rules Discover follows). `get_trip` includes it as `discovery_profile`. Read-only; never another traveller's. REST: `GET /api/v1/me/discovery-profile`. |
+| Research kits (4.5) | Prompts, not tools: `research_food_and_drink`, `research_events_and_activities`, `research_local_phrases`, `research_safety_and_transport`, `research_visa_and_entry` — each takes the trip id (and optionally one city key) and walks the agent through `get_trip` → research with your profile → `save_city_guide` / `save_phrases` / `save_safety` / `save_research(topic="visa")`. With a blank profile they ask you first. In Claude, pick them from the connector's prompts. The same kits are skill folders in [`research_kits/`](../research_kits/README.md); list them at `GET /api/v1/research-kits` and download one as a skill zip at `GET /api/v1/research-kits/{kit}.zip`. |
 
 ## Discover: who can overwrite what
 
@@ -113,7 +116,7 @@ above. The rules live in `discover/policy.py`:
 - `GET /.well-known/oauth-authorization-server` → the endpoints. PKCE S256 is
   required; public clients (`none`) and confidential clients
   (`client_secret_post` / `client_secret_basic`) are both supported.
-- Access token: a Yonder JWT (`typ=oauth`, `aud=<base>/mcp`, ~1 h) naming its
+- Access token: a Run·dere JWT (`typ=oauth`, `aud=<base>/mcp`, ~1 h) naming its
   grant. Refresh token: rotated on every use; replaying an old one revokes the
   grant. Codes are single-use and expire after 60 s; a replayed code revokes the
   grant it produced.

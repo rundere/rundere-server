@@ -1,0 +1,91 @@
+{# One Discover finding (a topic for one place). Shared by every section of the
+   Discovery tab (4.5). Currency renders as one compact line — its calculator is
+   in the trip header, so the card only needs the rates date and a refresh. #}
+{% macro card(f, trip) %}
+{% if f.is_currency %}
+<div class="yn-finding yn-finding-compact yn-filterable">
+  <span class="tag tag-outline bp-typetag">{{ f.place_key }}</span>
+  <span class="yn-compact-text">{% if f.currency %}<b>{{ f.currency }}</b>{% endif %}
+    {% if f.has_rates %}· rates from {{ f.rates_date or "—" }}{% else %}· no reference rate{% endif %}</span>
+  <span class="yn-finding-btns">
+    {% if f.has_rates %}<button class="btn btn-secondary bp-sm"
+      hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/calculator" hx-target="#modal-root">Calculator</button>{% endif %}
+    <button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun"
+            hx-disabled-elt="this">Refresh rates</button>
+  </span>
+  <details class="yn-finding-more"><summary class="yn-run-meta">Details</summary>
+    <div class="yn-finding-body">{{ f.body }}</div></details>
+</div>
+{% else %}
+<details class="yn-finding yn-status-{{ f.status }} yn-filterable" data-grp="discovery" open>
+  <summary class="yn-finding-head">
+    <span class="bp-chevron yn-finding-caret">▸</span>
+    <span class="tag tag-outline bp-typetag">{{ f.place_key }}</span>
+    <span class="yn-conf yn-conf-{{ f.confidence }}">{{ f.confidence }}</span>
+    {% if f.locked %}<span class="yn-status-badge" title="Locked — Discover runs and AI agents won't overwrite it">🔒 locked</span>
+    {% elif f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
+    {% if f.external %}<span class="yn-status-badge" title="Written by {{ f.agent }} over MCP — local Discover runs won't overwrite it">via {{ f.agent }}</span>{% endif %}
+  </summary>
+  {% if f.parts %}
+  {# Safety & Transport (4.5): the stored structure as headed subsections. #}
+  <div class="yn-parts">
+    {% for group, title in (("safety", "Safety"), ("transport", "Transport")) %}
+    {% if f.parts[group] %}
+    <div class="yn-parts-col">
+      <h5 class="yn-dsec-sub">{{ title }}</h5>
+      {% for p in f.parts[group] %}
+      <div class="yn-part"><b class="yn-part-h">{{ p.h }}</b>
+        {% if p.text %}<p>{{ p.text }}</p>{% endif %}
+        {% if p.list %}<ul>{% for x in p.list %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+        {% if p.links %}<ul>{% for x in p.links %}<li>{{ x.text }}{% if x.url %} <a href="{{ x.url }}" target="_blank" rel="noopener">source</a>{% endif %}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% if f.parts.single_source %}<p class="yn-part-note" role="note">⚠️ Some safety points rest on a single source — check the official travel advisory.</p>{% endif %}
+  {% else %}
+  <div class="yn-finding-body">{{ f.body }}</div>
+  {% endif %}
+  {% if f.sources %}
+  {# Sources on demand (4.5): there, but not in the way. #}
+  <details class="yn-finding-sources">
+    <summary class="yn-run-meta">Sources ({{ f.sources | length }})</summary>
+    <div class="yn-sources">
+      {% for s in f.sources %}
+        {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title or s.url }}</a>
+        {% else %}<span>{{ s.title }}</span>{% endif %}
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+  {% if f.history %}
+  <details class="yn-finding-history">
+    <summary class="yn-run-meta">Earlier versions ({{ f.history | length }})</summary>
+    {% for h in f.history %}
+    <div class="yn-finding-body" style="opacity:.75;border-top:1px solid var(--line);margin-top:6px;padding-top:6px">
+      <div class="yn-run-meta">{{ h.when }}{% if h.agent %} · via {{ h.agent }}{% endif %}{% if h.status and h.status != 'draft' %} · was {{ h.status }}{% endif %}</div>
+      {{ h.body }}
+      {% if h.sources %}<div class="yn-sources">{% for s in h.sources %}{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a>{% endif %}{% endfor %}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </details>
+  {% endif %}
+  <div class="yn-finding-btns">
+    {% if f.rerunnable %}
+    <button class="btn btn-secondary bp-sm"
+            hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun" hx-disabled-elt="this">Re-run</button>
+    {% endif %}
+    <button class="btn btn-secondary bp-sm"
+            hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">{{ 'Languages' if f.is_language else 'Edit' }}</button>
+    {% if f.lockable %}
+    <button class="btn btn-secondary bp-sm"
+            hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/lock"
+            hx-vals='{"lock": "{{ '0' if f.locked else '1' }}"}'
+            hx-disabled-elt="this">{{ 'Unlock' if f.locked else 'Lock' }}</button>
+    {% endif %}
+  </div>
+</details>
+{% endif %}
+{% endmacro %}

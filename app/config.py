@@ -148,6 +148,20 @@ class Settings(BaseSettings):
     oidc_username_claim: str = "preferred_username"
     oidc_auto_create: bool = True            # provision a User on first SSO login
     oidc_admin_group: str = ""               # a `groups` claim value that grants admin (optional)
+    # Per-hostname SSO (YONDER-164). Comma-separated host names, matched exactly
+    # against the request's Host. Listing hosts also makes the OIDC callback URL
+    # follow the host the user came in on (leave TX_OIDC_REDIRECT_URL empty).
+    #   oidc_hosts        where "Sign in with SSO" is offered; empty = every host.
+    #   oidc_force_hosts  SSO only: /login goes straight to the IdP and password
+    #                     sign-in, registration and resets are refused there.
+    # e.g. force the public name and keep the LAN name password-only, so the LAN
+    # still works when the IdP is down.
+    oidc_hosts: str = ""
+    oidc_force_hosts: str = ""
+    # Also refuse the app's password sign-in (/api/v1/auth/login) on forced
+    # hosts. Off by default: the iOS app signs in with a password until it
+    # can use SSO (YONDER-104), so turning this on locks it out away from home.
+    oidc_force_api_login: bool = False
 
     # Yonder as an OAuth 2.1 authorization server (YONDER-107) — for the
     # claude.ai connector and other OAuth clients. Yonder always issues these
@@ -162,7 +176,7 @@ class Settings(BaseSettings):
     oauth_token_rate_limit: int = 60                        # /oauth/token calls per IP…
     oauth_token_rate_window_seconds: int = 60               # …per minute
 
-    app_version: str = "4.3.1"
+    app_version: str = "4.5.0"
 
     @property
     def base_currency_list(self) -> tuple[str, ...]:

@@ -283,7 +283,7 @@ def test_about_page_shows_version_repo_and_credit():
         from app.config import settings
         r = _client.get("/about")
         assert r.status_code == 200
-        assert "github.com/jeeves5454/yonder" in r.text
+        assert "github.com/jeeves5454/rundere-server" in r.text
         assert "Claude" in r.text
         assert settings.app_version in r.text
     _route_or_skip(run)
@@ -302,3 +302,33 @@ if __name__ == "__main__":
                 failures += 0 if "Skip" in kind else 1
     print(f"\n{failures} failure(s)")
     sys.exit(1 if failures else 0)
+
+
+def test_brand_assets_are_public():
+    """Run·dere logos/icons come from design/ and load on the sign-in page (no auth)."""
+    def run():
+        from app.config import settings
+        prev, settings.auth_required = settings.auth_required, True
+        try:
+            assert _client.get("/favicon.ico").status_code == 200
+            r = _client.get("/brand/logo/rundere-mark-32.svg")
+            assert r.status_code == 200 and "<svg" in r.text
+            assert _client.get("/brand/icons/site.webmanifest").status_code == 200
+        finally:
+            settings.auth_required = prev
+    _route_or_skip(run)
+
+
+def test_name_recording_is_public_and_wired():
+    """The About page plays design/audio/rundere.m4a; it loads without signing in."""
+    def run():
+        from app.config import settings
+        prev, settings.auth_required = settings.auth_required, True
+        try:
+            r = _client.get("/brand/audio/rundere.m4a")
+            assert r.status_code == 200 and r.content[4:8] == b"ftyp"
+        finally:
+            settings.auth_required = prev
+        page = _client.get("/about").text
+        assert "/brand/audio/rundere.m4a" in page and "/brand/audio/rundere.webm" in page
+    _route_or_skip(run)

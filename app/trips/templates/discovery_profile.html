@@ -18,7 +18,7 @@
 <div class="card blueprint yn-note-card yn-todo">
   <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <p class="bp-trip-notes">Your account isn't linked to a traveller yet, so there's nowhere to
-    keep your preferences. Ask an admin to link your account (Settings → Users).</p>
+    keep your preferences. <a href="/account/traveller">Link it now</a>, or ask an admin (Settings → Users).</p>
 </div>
 {% endif %}
 
@@ -80,6 +80,12 @@
       <select class="input" name="mobility">
         {% for o in mobility_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
       </select></div>
+  </div>
+
+  <div class="field"><label for="dp-notes">Notes for agents <span class="yn-help">— in your own words; AI agents read this when they research for you</span></label>
+    <textarea class="input" id="dp-notes" name="notes" rows="4" maxlength="2000"
+              placeholder="e.g. Love tiny family-run places and natural wine. Hate queues, rooftop bars and anything with a dress code. Favourites so far: Bar Mut (Barcelona), the Sunday market in Lisbon.">{{ notes }}</textarea>
+    <p class="yn-help">Places you hide in Discover as “not my thing” are passed on too.</p>
   </div>
 
   <div class="dialog-actions">

@@ -101,10 +101,14 @@ _SCHEMA = {
                     **_ITEM,
                     "matched_interest": {"type": ["string", "null"]},
                     "why": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["event", "activity"]},
+                    "venue": {"type": ["string", "null"]},
+                    "address": {"type": ["string", "null"]},
                 },
                 "required": ["name", "why", "source_url"],
             },
         },
+        "summary": {"type": "string"},
     },
     "required": ["impacts", "notable"],
 }
@@ -125,7 +129,11 @@ _SYSTEM = (
     "during the window — a famous annual festival happening while they're there is "
     "exactly the point; never omit a real, well-known one out of caution. Do NOT "
     "invent a vague 'local festival' to pad the list. When a notable item matches a "
-    "stated interest, set matched_interest to it, else null. Skip aggregators and ads.")
+    "stated interest, set matched_interest to it, else null. Skip aggregators and ads. "
+    "Set each notable item's kind: `event` when it happens on specific dates, "
+    "`activity` when you can do it any day (an attraction, a tour, a hike); give "
+    "its venue and address when the results do. Also write `summary`: two or three "
+    "sentences on what's on in this city during the window and what you'd prioritise.")
 
 
 class EventsResolver:
@@ -236,8 +244,8 @@ class EventsResolver:
     def _extract(self, place: DerivedPlace, start: str, end: str,
                  interests: list[str], queries: list[str]):
         """One pass: search → synthesize → ground. Returns (impacts, notable,
-        results) with results kept for source attribution, or None when the search
-        itself came back empty."""
+        results, summary) with results kept for source attribution, or None when
+        the search itself came back empty."""
         results = self._search(queries)
         if not results:
             return None
@@ -247,11 +255,12 @@ class EventsResolver:
         if not out:
             log.warning("events: Ollama returned nothing for %s — is Ollama reachable "
                         "at %s and is %s pulled?", place.label, self.ollama_url, self.model)
-            return [], [], results
+            return [], [], results, ""
         allowed = [r.url for r in results]
         impacts = _dedupe(ground_items(out.get("impacts") or [], allowed).kept)
         notable = _dedupe(ground_items(out.get("notable") or [], allowed).kept)
-        return impacts, notable, results
+        summary = out.get("summary").strip() if isinstance(out.get("summary"), str) else ""
+        return impacts, notable, results, summary
 
     # -- resolve ------------------------------------------------------------
     def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:
@@ -268,7 +277,7 @@ class EventsResolver:
         primary = self._extract(
             place, start, end, interests,
             self._queries(place.city, place.country, when, interests))
-        impacts, notable, results = primary or ([], [], [])
+        impacts, notable, results, summary = primary or ([], [], [], "")
         if not (impacts or notable):
             # Nothing grounded on the events-shaped pass — retry with broader,
             # tourism-shaped queries before giving up, so a smaller town still
@@ -276,11 +285,12 @@ class EventsResolver:
             fb = self._extract(place, start, end, interests,
                                self._fallback_queries(place.city, when))
             if fb is not None:
-                f_impacts, f_notable, f_results = fb
+                f_impacts, f_notable, f_results, f_summary = fb
                 if f_impacts or f_notable:
                     log.info("events: primary empty, fallback surfaced %s",
                              place.label)
-                    impacts, notable, results = f_impacts, f_notable, f_results
+                    impacts, notable, results, summary = (f_impacts, f_notable,
+                                                          f_results, f_summary)
         if not results:
             log.warning("events: no SearXNG results for %s (primary+fallback) — is "
                         "SearXNG reachable at %s?", place.label, self.searxng_url)
@@ -298,8 +308,8 @@ class EventsResolver:
             resolver="events.searxng+ollama", confidence="medium",
             ttl_seconds=604_800,                 # 7 days — most date-sensitive
             sources=sources,
-            data={"impacts": impacts, "notable": notable},
-            body_md=self._render(place, impacts, notable))
+            data={"impacts": impacts, "notable": notable, "summary": summary},
+            body_md=self._render(place, impacts, notable, summary))
 
     @staticmethod
     def _sources(items: list[dict], title_by_url: dict) -> list[dict]:
@@ -313,8 +323,10 @@ class EventsResolver:
         return out
 
     def _render(self, place: DerivedPlace, impacts: list[dict],
-                notable: list[dict]) -> str:
+                notable: list[dict], summary: str = "") -> str:
         out = [f"**{place.label}** — events & activities", ""]
+        if summary:
+            out += [summary, ""]
         if impacts:
             out.append("### Heads-up while you're there")
             for im in impacts:

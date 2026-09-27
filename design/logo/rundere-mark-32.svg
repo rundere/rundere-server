@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>Rundere</title>
+  <!-- Reduced mark for 24–48px. Drops the tail fins; fuselage becomes solid. -->
+  <g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="miter" stroke-linecap="butt">
+    <path d="M14 9.5 L2.2 21.3 L2 24.2 L14 16.2"/>
+    <path d="M18 9.5 L29.8 21.3 L30 24.2 L18 16.2"/>
+    <path d="M10.6 12.9 L1.4 4 L6.8 16.7"/>
+    <path d="M21.4 12.9 L30.6 4 L25.2 16.7"/>
+  </g>
+  <path d="M16 1.2 L18 4.6 V23 L16 26.4 L14 23 V4.6 Z" fill="currentColor"/>
+  <circle cx="16" cy="30" r="1.7" fill="currentColor"/>
+</svg>

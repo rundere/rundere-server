@@ -21,9 +21,11 @@ Rules:
   the person unlocks it (or explicitly re-runs that one finding).
 - A **local** whole-trip run never overwrites an **external** finding, nor one
   the person **rejected**.
-- Agents may write only `EXTERNAL_TOPICS` — not weather/currency/languages,
-  whose structured data (forecast series, calculator rates, the language
-  picker) only the local resolvers produce.
+- Agents may write only `EXTERNAL_TOPICS` — not weather/currency or the
+  national/regional language, whose structured data (forecast series,
+  calculator rates, the language picker) only the local resolvers produce.
+  Local phrases & register (`language_local`) IS agent-writable (4.5), as
+  structured phrases in the same shape the local resolver stores.
 - Whatever is superseded goes into `data["history"]` (newest first, last
   `HISTORY_KEPT`), shown on the Discover card as "Earlier versions".
 """
@@ -35,7 +37,8 @@ EXTERNAL_RESOLVER = "agent"
 DEFAULT_AGENT = "AI agent"
 LOCKABLE_TOPICS = frozenset({"plugs", "visa", "language", "language_regional",
                              "language_local"})
-EXTERNAL_TOPICS = ("research", "food", "events", "safety", "visa", "plugs", "packing")
+EXTERNAL_TOPICS = ("research", "food", "events", "safety", "visa", "plugs", "packing",
+                   "language_local")
 LOCKING_STATUSES = ("approved", "edited")
 HISTORY_KEPT = 10
 

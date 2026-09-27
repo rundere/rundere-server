@@ -31,6 +31,32 @@ def enabled() -> bool:
     return bool(settings.oidc_enabled and settings.oidc_issuer and settings.oidc_client_id)
 
 
+def _host_list(csv: str) -> set[str]:
+    return {h.strip().lower() for h in csv.split(",") if h.strip()}
+
+
+def request_host(request) -> str:
+    return (request.url.hostname or "").lower()
+
+
+def listed_host(request) -> bool:
+    """The request came in on a host named in TX_OIDC_HOSTS / TX_OIDC_FORCE_HOSTS."""
+    host = request_host(request)
+    return host in _host_list(settings.oidc_hosts) | _host_list(settings.oidc_force_hosts)
+
+
+def forced_on(request) -> bool:
+    """SSO is the only way to sign in on this host (YONDER-164)."""
+    return enabled() and request_host(request) in _host_list(settings.oidc_force_hosts)
+
+
+def offered_on(request) -> bool:
+    """Show / allow "Sign in with SSO" on this host. No TX_OIDC_HOSTS = everywhere."""
+    if not enabled():
+        return False
+    return not _host_list(settings.oidc_hosts) or listed_host(request)
+
+
 def _b64u(b: bytes) -> str:
     return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
 
@@ -46,7 +72,7 @@ def discovery() -> dict | None:
     base = settings.oidc_issuer.rstrip("/")
     url = base + "/.well-known/openid-configuration"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Yonder-OIDC"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Rundere-OIDC"})
         with urllib.request.urlopen(req, timeout=12) as resp:
             doc = json.loads(resp.read())
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
@@ -97,7 +123,7 @@ def exchange_code(code: str, redirect_uri: str, verifier: str) -> dict | None:
         req = urllib.request.Request(
             doc["token_endpoint"], data=body,
             headers={"Content-Type": "application/x-www-form-urlencoded",
-                     "Accept": "application/json", "User-Agent": "Yonder-OIDC"})
+                     "Accept": "application/json", "User-Agent": "Rundere-OIDC"})
         with urllib.request.urlopen(req, timeout=12) as resp:
             return json.loads(resp.read())
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):

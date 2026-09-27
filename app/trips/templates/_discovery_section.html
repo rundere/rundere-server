@@ -1,3 +1,5 @@
+{% import "_finding_card.html" as fc %}
+{% import "_item_section.html" as isec with context %}
 <div id="discovery-section" class="yn-sec"
      {% if discovery_running %}hx-get="/trips/{{ trip.id }}/discover/status"
      hx-trigger="load delay:1500ms, every 2s" hx-target="#discovery-section"
@@ -9,10 +11,6 @@
     <h2 class="bp-h2">Discovery</h2>
   </div>
   <div class="bp-head-actions">
-    {% if discovery_has_findings %}
-    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('discovery', true)">Expand all</button>
-    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('discovery', false)">Collapse all</button>
-    {% endif %}
     {% if discovery_running %}
     <span class="yn-run-live">● Researching…</span>
     {% else %}
@@ -38,70 +36,63 @@
 </div>
 {% elif discovery_last %}
 <p class="bp-trip-notes">Last run: <b>{{ discovery_last.status }}</b>{% if discovery_last.when %} · {{ discovery_last.when }}{% endif %} · {{ discovery_last.done }}/{{ discovery_last.total }} topics.
-  Findings stay on Yonder for review; push to AdventureLog is a later step.</p>
+  Findings stay on Run·dere for review; push to AdventureLog is a later step.</p>
 {% endif %}
 
 {% if discovery_has_findings %}
-  {% for grp in discovery_topics %}
-  <details class="bp-group" data-grp="discovery" open>
-    <summary class="bp-group-label">{{ grp.label }}
-      <span class="bp-group-count">{{ grp.findings | length }}</span></summary>
-    <div class="card blueprint bp-daycard yn-findings">
-      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      {% for f in grp.findings %}
-      <details class="yn-finding yn-status-{{ f.status }} yn-filterable" data-grp="discovery" open>
-        <summary class="yn-finding-head">
-          <span class="bp-chevron yn-finding-caret">▸</span>
-          <span class="tag tag-outline bp-typetag">{{ f.place_key }}</span>
-          <span class="yn-conf yn-conf-{{ f.confidence }}">{{ f.confidence }}</span>
-          {% if f.locked %}<span class="yn-status-badge" title="Locked — Discover runs and AI agents won't overwrite it">🔒 locked</span>
-          {% elif f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
-          {% if f.external %}<span class="yn-status-badge" title="Written by {{ f.agent }} over MCP — local Discover runs won't overwrite it">via {{ f.agent }}</span>{% endif %}
-        </summary>
-        <div class="yn-finding-body">{{ f.body }}</div>
-        {% if f.sources %}
-        <div class="yn-sources">
-          {% for s in f.sources %}
-            {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a>
-            {% else %}<span>{{ s.title }}</span>{% endif %}
-          {% endfor %}
+{# 4.5: one section at a time — a rail on the left (chips on narrow screens).
+   The open section lives in the URL (#discovery/food) so reloads and shared
+   links land on it. While the page filter is active every section shows. #}
+<div class="yn-disc">
+  <nav class="yn-disc-rail" role="tablist" aria-label="Discovery sections">
+    {% for s in discovery_sections %}
+    <button type="button" role="tab" class="yn-disc-link{% if not s.count %} is-empty{% endif %}"
+            id="dtab-{{ s.key }}" data-sec="{{ s.key }}" aria-controls="dsec-{{ s.key }}"
+            aria-selected="false" onclick="ynDisc(this.dataset.sec)">
+      <span class="yn-disc-label">{{ s.label }}</span>
+      <span class="yn-disc-meta">{{ s.count if s.count else "none yet" }}{% if s.from_agent %}<span class="yn-disc-flag"> · {{ s.from_agent }} new from agent</span>{% endif %}</span>
+    </button>
+    {% endfor %}
+  </nav>
+  <div class="yn-disc-body">
+    {% for s in discovery_sections %}
+    <section class="yn-dsec" id="dsec-{{ s.key }}" data-sec="{{ s.key }}" role="tabpanel"
+             aria-labelledby="dtab-{{ s.key }}">
+      <div class="yn-dsec-head">
+        <h3 class="yn-dsec-title">{{ s.label }}</h3>
+        <p class="yn-dsec-about">{{ s.about }}</p>
+      </div>
+      {% if s.summary %}
+      {# Weather (4.5): one consolidated line for the whole trip, from the numbers. #}
+      <div class="yn-weather-sum" role="note">
+        <b>{{ s.summary.line }}</b>
+        {% if s.summary.hints %}<div class="yn-weather-hints">Pack: {{ s.summary.hints | join(" · ") }}</div>{% endif %}
+        {% if s.summary.seasonal %}<div class="yn-dsec-about">Based on last year's weather for these dates — a guide, not a forecast.</div>{% endif %}
+      </div>
+      {% endif %}
+      {% if s.cities %}
+        {{ isec.section(s, trip) }}
+      {% elif s.groups %}
+        {% for g in s.groups %}
+        {% if s.groups | length > 1 or g.label != s.label %}<h4 class="yn-dsec-sub">{{ g.label }}</h4>{% endif %}
+        <div class="card blueprint bp-daycard yn-findings">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          {% for f in g.findings %}{{ fc.card(f, trip) }}{% endfor %}
         </div>
-        {% endif %}
-        {% if f.history %}
-        <details class="yn-finding-history">
-          <summary class="yn-run-meta">Earlier versions ({{ f.history | length }})</summary>
-          {% for h in f.history %}
-          <div class="yn-finding-body" style="opacity:.75;border-top:1px solid var(--line);margin-top:6px;padding-top:6px">
-            <div class="yn-run-meta">{{ h.when }}{% if h.agent %} · via {{ h.agent }}{% endif %}{% if h.status and h.status != 'draft' %} · was {{ h.status }}{% endif %}</div>
-            {{ h.body }}
-            {% if h.sources %}<div class="yn-sources">{% for s in h.sources %}{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a>{% endif %}{% endfor %}</div>{% endif %}
-          </div>
-          {% endfor %}
-        </details>
-        {% endif %}
-        <div class="yn-finding-btns">
-          {% if f.is_currency and f.has_rates %}
-          <button class="btn btn-secondary bp-sm"
-                  hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/calculator" hx-target="#modal-root">Open calculator</button>
-          {% endif %}
-          {% if f.rerunnable %}
-          <button class="btn btn-secondary bp-sm"
-                  hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun" hx-disabled-elt="this">Re-run</button>
-          {% endif %}
-          <button class="btn btn-secondary bp-sm"
-                  hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">{{ 'Languages' if f.is_language else 'Edit' }}</button>
-          {% if f.lockable %}
-          <button class="btn btn-secondary bp-sm"
-                  hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/lock"
-                  hx-vals='{"lock": "{{ '0' if f.locked else '1' }}"}'
-                  hx-disabled-elt="this">{{ 'Unlock' if f.locked else 'Lock' }}</button>
-          {% endif %}
+        {% endfor %}
+      {% else %}
+        <div class="card blueprint bp-empty-card">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="bp-empty-msg">Nothing here yet.{% if s.key in ('food', 'events', 'research', 'safety') %}
+            Run discovery, or ask a connected AI agent to research it.{% elif s.key == 'language' %}
+            Run discovery for the language; a connected AI agent can add local phrases.{% else %}
+            Run discovery to fill this in.{% endif %}</div>
         </div>
-      </details>
-      {% endfor %}
-    </div>
-  </details>
-  {% endfor %}
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+</div>
 {% elif not discovery_running %}
   <div class="card blueprint bp-empty-card">
     <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
@@ -110,4 +101,5 @@
   </div>
 {% endif %}
 </div>
+<script>if (window.ynDiscInit) ynDiscInit();</script>
 </div>

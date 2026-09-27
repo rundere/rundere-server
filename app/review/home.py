@@ -196,7 +196,8 @@ async def save(request: Request, session: Session = Depends(get_session)):
 
     error = ""
     if tid is None:
-        error = "Your account isn't linked to a traveller yet — ask an admin."
+        error = ("Your account isn't linked to a traveller yet — link it under "
+                 "/account/traveller, or ask an admin.")
     elif not label:
         error = "Give this a name."
     elif kind == "home_airport" and not (len(iata) == 3 and iata.isalpha()):

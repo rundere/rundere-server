@@ -253,28 +253,35 @@ class LanguageLocalResolver:
 
     def _render(self, place: DerivedPlace, summary: str, greetings: list[dict],
                 expressions: list[dict], etiquette: list[str]) -> str:
-        out = [f"**{place.label}** — local phrases & register", ""]
-        out.append("> ⚠️ **Local colour, not a phrasebook** — colloquial forms from "
-                   "the web; the vetted standard phrases are under Language.")
+        return render_phrases(place.label, summary, greetings, expressions, etiquette)
+
+
+def render_phrases(label: str, summary: str, greetings: list[dict],
+                   expressions: list[dict], etiquette: list[str]) -> str:
+    """The Local phrases & register write-up — shared by this resolver and by
+    phrases an AI agent saves over MCP/API (same data shape either way)."""
+    out = [f"**{label}** — local phrases & register", ""]
+    out.append("> ⚠️ **Local colour, not a phrasebook** — colloquial forms from "
+               "the web; the vetted standard phrases are under Language.")
+    out.append("")
+    if summary:
+        out.append(summary)
         out.append("")
-        if summary:
-            out.append(summary)
-            out.append("")
-        if greetings:
-            out.append("### How locals greet")
-            for g in greetings:
-                pron = f" · {g['pronunciation']}" if g.get("pronunciation") else ""
-                note = f" — {g['note'].strip()}" if g.get("note") else ""
-                out.append(f"- **{g.get('phrase', '?')}**{pron} "
-                           f"({g.get('meaning', '').strip()}){note}")
-            out.append("")
-        if expressions:
-            out.append("### Useful local expressions")
-            for e in expressions:
-                out.append(f"- **{e.get('phrase', '?')}** — {e.get('meaning', '').strip()}")
-            out.append("")
-        if etiquette:
-            out.append("### Etiquette")
-            for e in etiquette:
-                out.append(f"- {e}")
-        return "\n".join(out).rstrip()
+    if greetings:
+        out.append("### How locals greet")
+        for g in greetings:
+            pron = f" · {g['pronunciation']}" if g.get("pronunciation") else ""
+            note = f" — {g['note'].strip()}" if g.get("note") else ""
+            out.append(f"- **{g.get('phrase', '?')}**{pron} "
+                       f"({g.get('meaning', '').strip()}){note}")
+        out.append("")
+    if expressions:
+        out.append("### Useful local expressions")
+        for e in expressions:
+            out.append(f"- **{e.get('phrase', '?')}** — {e.get('meaning', '').strip()}")
+        out.append("")
+    if etiquette:
+        out.append("### Etiquette")
+        for e in etiquette:
+            out.append(f"- {e}")
+    return "\n".join(out).rstrip()

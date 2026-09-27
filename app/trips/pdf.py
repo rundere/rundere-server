@@ -130,9 +130,10 @@ def _add_maps(days: list[dict]) -> dict:
                 if a["type"] == "drive":
                     a["route_map"] = _data_uri(_drive_map(a, colour))
             ground_markers.append(maps.Marker(anchor["lat"], anchor["lon"], str(n), colour))
-    trip_map = (maps.render_map(ground_markers, ground_lines, width=680, height=400)
+    # Sized to share page 1 with the header and the first day of the timeline.
+    trip_map = (maps.render_map(ground_markers, ground_lines, width=680, height=330)
                 if ground_markers else None)
-    flight_map = (maps.render_map(flight_markers, flight_lines, width=680, height=260)
+    flight_map = (maps.render_map(flight_markers, flight_lines, width=680, height=420)
                   if flight_lines else None)
     return {
         "trip_map": _data_uri(trip_map), "flight_map": _data_uri(flight_map),

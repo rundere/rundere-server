@@ -847,7 +847,7 @@ def test_yonder_write_refused_without_a_linked_trip():
                         dry_run=False)
     s.commit()
     ya = [r for r in env["results"] if r["target"] == "yonder.activity"][0]
-    assert not ya["ok"] and "no Yonder trip" in ya["error"]
+    assert not ya["ok"] and "no Run·dere trip" in ya["error"]
     s.close()
 
 
@@ -958,7 +958,7 @@ def test_yonder_trip_mint_deferred_until_minter_commits():
                         identities=[Ident("self", "vu75")], dry_run=False)
     s.commit()
     ya = [r for r in env["results"] if r["target"] == "yonder.activity"][0]
-    assert not ya["ok"] and "no Yonder trip" in ya["error"]
+    assert not ya["ok"] and "no Run·dere trip" in ya["error"]
     assert s.query(Trip).count() == 0                    # never guessed one into being
 
     s.query(TravelItem).filter(TravelItem.id == attach.id).delete(

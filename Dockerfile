@@ -9,10 +9,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml .
 COPY app/ app/
+# Brand logos, icons and the name recording, served at /brand/* (the design system lives in design/).
+COPY design/logo/ design/logo/
+COPY design/icons/ design/icons/
+COPY design/audio/ design/audio/
 COPY resolve/ resolve/
 COPY extract/ extract/
 COPY adapters/ adapters/
 COPY discover/ discover/
+COPY research_kits/ research_kits/
 COPY planning/ planning/
 COPY rules.py validation.py ./
 COPY schemas/ schemas/
