@@ -1,9 +1,18 @@
 import os
+from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import create_engine
 
 from app.models import Base
+
+config = context.config
+
+# Apply alembic.ini's [loggers] so `alembic upgrade head` prints the
+# "Running upgrade X -> Y" INFO lines. disable_existing_loggers=False keeps
+# any already-configured app loggers alive if Alembic is run in-process.
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
