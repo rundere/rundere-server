@@ -339,6 +339,30 @@ deployment stack.
 | `TX_OAUTH_ACCESS_TTL_SECONDS` | `3600` | OAuth access-token lifetime (Claude connector) |
 | `TX_OAUTH_REFRESH_IDLE_TTL_SECONDS` | `7776000` | A connected app's grant expires after this long unused (90 days) |
 
+### Single sign-on (OIDC, e.g. Authentik)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `TX_OIDC_ENABLED` | `false` | Turn SSO on (also needs issuer + client id) |
+| `TX_OIDC_ISSUER` | `""` | Issuer URL; `/.well-known/openid-configuration` lives under it. Authentik: `https://auth.example.net/application/o/<slug>/` |
+| `TX_OIDC_CLIENT_ID` / `TX_OIDC_CLIENT_SECRET` | `""` | From the IdP's OAuth2/OpenID provider |
+| `TX_OIDC_DISPLAY_NAME` | `SSO` | Button label: "Sign in with …" |
+| `TX_OIDC_ADMIN_GROUP` | `""` | A `groups` claim value that makes the user an admin (upgrade only) |
+| `TX_OIDC_AUTO_CREATE` | `true` | Create an account on first SSO sign-in. An existing account with the same username is adopted |
+| `TX_OIDC_HOSTS` | `""` | Hosts that offer "Sign in with SSO" (comma-separated). Empty = every host |
+| `TX_OIDC_FORCE_HOSTS` | `""` | SSO-only hosts: `/login` goes straight to the IdP; password sign-in, sign-up and "forgot password" are refused there |
+| `TX_OIDC_FORCE_API_LOGIN` | `false` | Also refuse the app's password sign-in on forced hosts. Leave off while the iOS app signs in with a password |
+| `TX_OIDC_REDIRECT_URL` | `""` | Fixed callback URL. Leave empty when using the host lists — each listed host then uses `https://<host>/oidc/callback` |
+
+**Force SSO on the public name, keep the LAN as the fallback.** One Authentik redirect URI, and a way in when Authentik is down:
+
+```
+TX_OIDC_HOSTS=yonder.example.net
+TX_OIDC_FORCE_HOSTS=yonder.example.net
+```
+
+`yonder.example.net` always signs in through Authentik (redirect URI `https://yonder.example.net/oidc/callback`); `yonder.home.example` shows only the username/password form. To offer SSO on the LAN too, leave `TX_OIDC_HOSTS` empty and add the LAN callback as a second redirect URI in Authentik. Emailed password-reset links (built from `TX_PUBLIC_BASE_URL`) still open on a forced host; the new password is used on the LAN.
+
 ---
 
 ## Use Yonder from Claude (remote MCP)

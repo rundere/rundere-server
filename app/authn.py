@@ -239,15 +239,26 @@ def _proxy_identity(request) -> str | None:
     return None
 
 
+class SSOLinkConflict(Exception):
+    """The IdP username belongs to an account already linked to a different
+    OIDC subject — refuse rather than sign the caller in as that account."""
+
+
 def provision_oidc_user(session, *, sub: str, username: str, email: str | None = None,
                         is_admin: bool = False) -> User | None:
     """Find-or-provision the User for an OIDC subject (Phase 1b, D-118). Matches
     on external_subject `oidc:<sub>` (or a same-named local account being adopted
     by SSO). Returns None if the user is unknown and auto-create is off."""
     subject = f"oidc:{sub}"
-    user = session.query(User).filter(
-        (User.external_subject == subject) | (User.username == username)
-    ).one_or_none()
+    # Subject first: once linked, the IdP subject is the identity (YONDER-143).
+    # Only then fall back to adopting a same-named account — and never one that
+    # is already bound to a DIFFERENT OIDC subject, or a renamed/recycled IdP
+    # username would sign in as someone else.
+    user = session.query(User).filter_by(external_subject=subject).one_or_none()
+    if user is None:
+        user = session.query(User).filter_by(username=username).one_or_none()
+        if user is not None and (user.external_subject or "").startswith("oidc:"):
+            raise SSOLinkConflict(username)
     if user is None:
         if not settings.oidc_auto_create:
             return None
@@ -261,7 +272,8 @@ def provision_oidc_user(session, *, sub: str, username: str, email: str | None =
         return user
     # Existing account: adopt the SSO subject, fill a missing email, and allow an
     # UP-grade to admin from the mapped group — never an automatic downgrade.
-    if user.external_subject is None:
+    # A proxy-header link came from the same IdP username, so SSO takes it over.
+    if user.external_subject is None or user.external_subject.startswith("proxy:"):
         user.external_subject = subject
     if email and not user.email:
         user.email = email
@@ -280,9 +292,10 @@ def resolve_proxy_user(session, request) -> User | None:
     if not name:
         return None
     subject = f"proxy:{name}"
-    user = session.query(User).filter(
-        (User.external_subject == subject) | (User.username == name)
-    ).one_or_none()
+    # Subject first, then username — never both at once, which 500s when they
+    # match two different accounts (YONDER-143).
+    user = (session.query(User).filter_by(external_subject=subject).one_or_none()
+            or session.query(User).filter_by(username=name).one_or_none())
     if user is None:
         user = User(username=name, auth_source="proxy", external_subject=subject,
                     is_active=True, is_admin=settings.auth_proxy_auto_admin, sharing_prompt=True)

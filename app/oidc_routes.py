@@ -35,6 +35,10 @@ def _safe_next(nxt: str | None) -> str:
 def _redirect_uri(request: Request) -> str:
     if settings.oidc_redirect_url:
         return settings.oidc_redirect_url
+    # A host named in the per-host settings gets its own callback (YONDER-164) —
+    # safe to take from the request because the name is on an explicit list.
+    if oidc.listed_host(request):
+        return f"{str(request.base_url).rstrip('/')}/oidc/callback"
     base = (settings.public_base_url or str(request.base_url)).rstrip("/")
     return f"{base}/oidc/callback"
 
@@ -49,6 +53,8 @@ def _fail(reason: str) -> RedirectResponse:
 def oidc_login(request: Request, next: str = "/"):
     if not oidc.enabled():
         return _fail("not configured")
+    if not oidc.offered_on(request):
+        return _fail("not available on this address")
     verifier, challenge = oidc.new_pkce()
     state, nonce = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
     auth_url = oidc.build_auth_url(_redirect_uri(request), state, nonce, challenge)
@@ -67,7 +73,7 @@ def oidc_login(request: Request, next: str = "/"):
 def oidc_callback(request: Request, code: str = "", state: str = "", error: str = ""):
     if error:
         return _fail(error[:40])
-    if not oidc.enabled() or not code:
+    if not oidc.offered_on(request) or not code:
         return _fail("bad request")
     saved = authn.jwt_decode(request.cookies.get(_STATE_COOKIE, ""))
     if not saved or saved.get("typ") != "oidc_state":
@@ -89,9 +95,12 @@ def oidc_callback(request: Request, code: str = "", state: str = "", error: str 
     if not fields.get("sub") or not fields.get("username"):
         return _fail("missing subject")
     with SessionLocal() as session:
-        user = authn.provision_oidc_user(
-            session, sub=fields["sub"], username=fields["username"],
-            email=fields.get("email"), is_admin=fields["is_admin"])
+        try:
+            user = authn.provision_oidc_user(
+                session, sub=fields["sub"], username=fields["username"],
+                email=fields.get("email"), is_admin=fields["is_admin"])
+        except authn.SSOLinkConflict:
+            return _fail("username linked to another SSO account")
         if user is None:
             return _fail("account not provisioned")
         from datetime import datetime, timezone

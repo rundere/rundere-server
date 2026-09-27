@@ -11,7 +11,10 @@
 - **/account** also lists Connected apps (OAuth grants, YONDER-107) with
                revoke, and personal API tokens (create / show once / revoke).
 - **/account/sharing** that choice; self-registered / SSO users are asked it
-               at first sign-in.
+               at first sign-in, together with which traveller they are when
+               the account has none (YONDER-145).
+- **/account/traveller** link an unlinked account to an unclaimed traveller
+               (or a new one) without waiting for an admin.
 - **/users**   Administer → Users: admin creates accounts, sets/【resets】
                passwords, toggles admin/active, and links a Traveller
                (pick existing OR create new).
@@ -53,6 +56,51 @@ def _travelers(session: Session) -> list[TravelerIdentity]:
     return (session.query(TravelerIdentity)
             .filter(TravelerIdentity.generic.is_(False))
             .order_by(TravelerIdentity.display_name).all())
+
+
+def _unclaimed_travelers(session: Session) -> list[TravelerIdentity]:
+    """Roster people no account is linked to yet — the only ones a user may
+    claim for themselves (YONDER-145); claiming someone else's traveller would
+    hand over their profiles."""
+    claimed = {tid for (tid,) in session.query(User.traveler_id)
+               .filter(User.traveler_id.isnot(None))}
+    return [t for t in _travelers(session) if t.id not in claimed]
+
+
+def _claim_traveler(session: Session, user: User, traveler_id: str,
+                    new_name: str) -> str:
+    """Link an unlinked user to an unclaimed traveller, or a new one named
+    `new_name`. Leaving both empty skips it. Returns an error message or ""."""
+    new_name = (new_name or "").strip()
+    if user.traveler_id is not None or (not new_name and traveler_id in ("", "none")):
+        return ""
+    if new_name:
+        if session.query(TravelerIdentity).filter(
+                func.lower(TravelerIdentity.display_name) == new_name.lower()).first():
+            return (f"There's already a traveller called {new_name} — pick them "
+                    "from the list if that's you, or use a different name.")
+        tid = authn.resolve_traveler(session, traveler_id=None, new_name=new_name)
+    else:
+        try:
+            tid = int(traveler_id)
+        except ValueError:
+            return "Pick a traveller from the list."
+        if tid not in {t.id for t in _unclaimed_travelers(session)}:
+            return "That traveller is already linked to another account."
+    user.traveler_id = tid
+    session.commit()
+    return ""
+
+
+def _sso_only(request: Request):
+    """On an SSO-only host (YONDER-164) nobody signs up or asks for a password
+    reset — those bounce to the SSO sign-in. A reset LINK (/reset/<token>) still
+    works there: reset emails are built from TX_PUBLIC_BASE_URL, often that same
+    public host, and the new password is then used on a non-forced host."""
+    from app import oidc
+    if oidc.forced_on(request):
+        return RedirectResponse("/login", status_code=303)
+    return None
 
 
 def _base_url(request: Request) -> str:
@@ -136,6 +184,8 @@ def setup_submit(request: Request, username: str = Form(...), password: str = Fo
 # --------------------------------------------------------------------------- self-service register
 @router.get("/register", response_class=HTMLResponse)
 def register_form(request: Request, session: Session = Depends(get_session)):
+    if (blocked := _sso_only(request)) is not None:
+        return blocked
     if not settings.auth_registration_open:
         return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse(request, "register.html",
@@ -146,6 +196,8 @@ def register_form(request: Request, session: Session = Depends(get_session)):
 def register_submit(request: Request, username: str = Form(...), password: str = Form(...),
                     email: str = Form(""), traveler_id: str = Form("none"),
                     new_traveler: str = Form(""), session: Session = Depends(get_session)):
+    if (blocked := _sso_only(request)) is not None:
+        return blocked
     if not settings.auth_registration_open:
         return RedirectResponse("/login", status_code=303)
     if session.query(User).filter_by(username=username.strip()).one_or_none():
@@ -169,6 +221,8 @@ def register_submit(request: Request, username: str = Form(...), password: str =
 # --------------------------------------------------------------------------- forgot / reset
 @router.get("/forgot", response_class=HTMLResponse)
 def forgot_form(request: Request):
+    if (blocked := _sso_only(request)) is not None:
+        return blocked
     return templates.TemplateResponse(request, "forgot.html",
                                       {"smtp": email_configured()})
 
@@ -176,6 +230,8 @@ def forgot_form(request: Request):
 @router.post("/forgot", response_class=HTMLResponse)
 def forgot_submit(request: Request, identifier: str = Form(...),
                   session: Session = Depends(get_session)):
+    if (blocked := _sso_only(request)) is not None:
+        return blocked
     ident = identifier.strip()
     user = (session.query(User).filter_by(username=ident).one_or_none()
             or session.query(User).filter(
@@ -322,16 +378,26 @@ def account_set_password(current_password: str = Form(""), password: str = Form(
 
 @router.get("/account/sharing", response_class=HTMLResponse)
 def sharing_prompt_page(request: Request, next: str = "/",
-                        user: User = Depends(authn.current_user)):
+                        user: User = Depends(authn.current_user),
+                        session: Session = Depends(get_session)):
+    # A self-registered/SSO account with no traveller also says who it is here
+    # (YONDER-145) — otherwise its profile pages dead-end at "ask an admin".
+    travelers = _unclaimed_travelers(session) if user.traveler_id is None else None
     return templates.TemplateResponse(request, "sharing.html", {
-        "u": user, "next": _safe_next(next), "blocker": opt_out_blocker(user)})
+        "u": user, "next": _safe_next(next), "blocker": opt_out_blocker(user),
+        "travelers": travelers})
 
 
 @router.post("/account/sharing")
 def sharing_choose(choice: str = Form(""), next: str = Form("/account"),
+                   traveler_id: str = Form("none"), new_traveler: str = Form(""),
                    user: User = Depends(authn.current_user),
                    session: Session = Depends(get_session)):
     user = session.get(User, user.id)
+    error = _claim_traveler(session, user, traveler_id, new_traveler)
+    if error:
+        dest = f"/account/sharing?next={quote_plus(_safe_next(next))}&err={quote_plus(error)}"
+        return RedirectResponse(dest, status_code=303)
     error = _set_sharing(session, user, choice != "private")
     dest = _safe_next(next)
     if error:
@@ -340,6 +406,30 @@ def sharing_choose(choice: str = Form(""), next: str = Form("/account"),
             return RedirectResponse(f"/account/sharing?err={quote_plus(error)}", status_code=303)
         return RedirectResponse(f"{dest}{sep}err={quote_plus(error)}", status_code=303)
     return RedirectResponse(dest, status_code=303)
+
+
+@router.get("/account/traveller", response_class=HTMLResponse)
+def traveller_page(request: Request, next: str = "/account",
+                   user: User = Depends(authn.current_user),
+                   session: Session = Depends(get_session)):
+    """Self-service traveller link for an unlinked account (YONDER-145)."""
+    if user.traveler_id is not None:
+        return RedirectResponse(_safe_next(next), status_code=303)
+    return templates.TemplateResponse(request, "traveller.html", {
+        "next": _safe_next(next), "travelers": _unclaimed_travelers(session)})
+
+
+@router.post("/account/traveller")
+def traveller_link(next: str = Form("/account"), traveler_id: str = Form("none"),
+                   new_traveler: str = Form(""),
+                   user: User = Depends(authn.current_user),
+                   session: Session = Depends(get_session)):
+    user = session.get(User, user.id)
+    error = _claim_traveler(session, user, traveler_id, new_traveler)
+    if error:
+        return RedirectResponse(f"/account/traveller?next={quote_plus(_safe_next(next))}"
+                                f"&err={quote_plus(error)}", status_code=303)
+    return RedirectResponse(_safe_next(next), status_code=303)
 
 
 def _safe_next(nxt: str) -> str:
