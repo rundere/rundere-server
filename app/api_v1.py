@@ -99,6 +99,38 @@ class FindingOut(BaseModel):
     agent: str | None = None    # which one (its OAuth app / API token name)
 
 
+class DiscoveryItemOut(BaseModel):
+    """A place, event or activity inside a Food & Drink or Events & Activities
+    finding (4.5, YONDER-147). `finding_id` ties it to its city's write-up."""
+    id: str
+    finding_id: str
+    topic: str
+    place_key: str
+    kind: str
+    name: str
+    neighbourhood: str | None = None
+    address: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    website: str | None = None
+    what_to_get: str | None = None
+    price_tier: int | None = None
+    starts_on: str | None = None
+    ends_on: str | None = None
+    when_text: str | None = None
+    venue: str | None = None
+    details: str | None = None
+    duration: str | None = None
+    booking: bool | None = None
+    sources: Any = None
+    extra: Any = None
+    origin: str = "local"
+    agent: str | None = None
+    hidden: bool = False
+    edited: bool = False
+    activity_id: str | None = None
+
+
 class PackingItemOut(BaseModel):
     id: str
     item_key: str
@@ -131,6 +163,7 @@ class TripSnapshot(BaseModel):
     travelers: list[TravelerOut] = []
     places: list[PlaceOut] = []
     discovery: list[FindingOut] = []
+    discovery_items: list[DiscoveryItemOut] = []
     packing: PackingOut | None = None
     captures: list[CaptureLite] = []
 
@@ -432,6 +465,15 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
                  .filter(DiscoveryFinding.trip_id == trip.id,
                          DiscoveryFinding.user_id == user.id).all()]
 
+    from app.models import DiscoveryItem
+    from discover.items import item_dict
+    discovery_items = [DiscoveryItemOut(**item_dict(i))
+                       for i in session.query(DiscoveryItem)
+                       .filter(DiscoveryItem.trip_id == trip.id,
+                               DiscoveryItem.user_id == user.id)
+                       .order_by(DiscoveryItem.place_key, DiscoveryItem.topic,
+                                 DiscoveryItem.kind, DiscoveryItem.name).all()]
+
     # packing — PER-USER (D-123)
     packing = _packing_out(session, trip.id, user.id)
 
@@ -446,7 +488,8 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
 
     return TripSnapshot(trip=_trip_summary(session, trip), activities=activities,
                         travelers=travelers, places=places, discovery=discovery,
-                        packing=packing, captures=captures)
+                        discovery_items=discovery_items, packing=packing,
+                        captures=captures)
 
 
 def _review_item(v: dict) -> ReviewItemOut:
@@ -935,6 +978,8 @@ def api_delete_activity(trip_id: str, activity_id: str,
     if a is not None and a.trip_id == trip_id:
         from app.trips import who
         who.clear_activity(session, a.id)
+        from discover import items as discovery_items
+        discovery_items.unlink_activity(session, a.id)
         session.delete(a)
         session.commit()
     return None

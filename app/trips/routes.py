@@ -669,6 +669,8 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
                           DiscoveryFinding.user_id == uid,
                           DiscoveryFinding.place_key == place_key,
                           DiscoveryFinding.status == "draft").all()):
+            from discover import items as discovery_items
+            discovery_items.delete_for_finding(session, f.id)
             session.delete(f)
     session.commit()
     return templates.TemplateResponse(request, "_derived_locations.html",
@@ -1867,6 +1869,9 @@ def delete_trip(trip_id: str, request: Request, session: Session = Depends(get_s
             TripActivity.trip_id == trip_id).delete(synchronize_session=False)
         session.query(TripTraveler).filter(
             TripTraveler.trip_id == trip_id).delete(synchronize_session=False)
+        from app.models import DiscoveryItem
+        session.query(DiscoveryItem).filter(
+            DiscoveryItem.trip_id == trip_id).delete(synchronize_session=False)
         # Clear the soft link from any captured items filed into this trip
         # (2.1.2) — there's no DB FK to null it for us (migration 0008).
         from app.models import TravelItem
@@ -2624,6 +2629,8 @@ def delete_activity(trip_id: str, activity_id: str, request: Request,
     if (a is not None and a.trip_id == trip_id
             and scope.trip_or_none(session, request, trip_id) is not None):
         who.clear_activity(session, a.id)
+        from discover import items as discovery_items
+        discovery_items.unlink_activity(session, a.id)
         session.delete(a)
         session.commit()
     return _redirect(f"/trips/{trip_id}")

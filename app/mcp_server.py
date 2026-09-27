@@ -92,7 +92,9 @@ def get_trip(trip_id: TripId) -> dict[str, Any]:
     """Full snapshot of one trip: the timeline (each activity with its type,
     values, times and `traveler_ids` — empty means everyone), the travellers,
     places with lat/lon, the user's OWN Discover findings (weather, currency,
-    visa, food, saved research…) and packing list, and linked captures."""
+    visa, food, saved research…), the places/events/activities inside the Food
+    and Events findings (`discovery_items`, each tied to its finding by
+    `finding_id`), the packing list, and linked captures."""
     return _run(api_v1.api_trip_snapshot, trip_id=trip_id)
 
 

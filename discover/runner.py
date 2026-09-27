@@ -22,7 +22,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import DiscoveryFinding, DiscoveryRun, TripActivity
-from discover import policy
+from discover import items, policy
 from discover.home_filter import home_country_set, is_home_place
 from discover.places import DerivedLocations, DerivedPlace, derive_locations
 from discover.resolvers import Finding, Resolver, ResolverContext
@@ -110,6 +110,7 @@ def _upsert(session: Session, run: DiscoveryRun, trip_id: str, f: Finding) -> No
     existing.resolver = f.resolver
     existing.ttl_seconds = f.ttl_seconds
     existing.generated_at = _now()
+    items.sync_from_finding(session, existing)      # Food/Events rows (YONDER-147)
 
 
 def _in_scope_keys(derived: DerivedLocations) -> set[str]:
@@ -145,6 +146,7 @@ def _prune_stale_drafts(session: Session, trip_id: str,
                       DiscoveryFinding.topic != "research",
                       DiscoveryFinding.status == "draft").all()):
         if f.place_key not in in_scope_keys and not policy.is_external(f):
+            items.delete_for_finding(session, f.id)
             session.delete(f)
 
 
@@ -200,6 +202,7 @@ def rerun_finding(session: Session, finding, *, resolve_airport, geocoder,
     finding.ttl_seconds = fresh.ttl_seconds
     finding.status = "draft"
     finding.generated_at = _now()
+    items.sync_from_finding(session, finding)
     session.commit()
     return finding
 

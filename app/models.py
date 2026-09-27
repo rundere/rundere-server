@@ -608,6 +608,55 @@ class DiscoveryFinding(Base):
     adventurelog_note_id: Mapped[str | None] = mapped_column(String(64))
 
 
+class DiscoveryItem(Base):
+    """Run·dere 4.5 — one place, event or activity inside a Food & Drink or
+    Events & Activities finding (Discovery 2.0, YONDER-147).
+
+    A finding is the city's write-up; its items are the rows people sort, hide
+    and add to the timeline, so each needs its own identity. Items belong to a
+    finding and are re-synced whenever that finding is regenerated
+    (discover/items.py): matched by name, a row keeps what the person did with
+    it (hidden, edited, added to the timeline); rows the new result no longer
+    has are dropped unless the person touched them.
+
+    `kind` is the fine type — restaurant/cafe/bar/pub/brewery/… for food,
+    `event` or `activity` for events. Dates are ISO strings like the rest of
+    the schema; `when_text` keeps the source's own wording ("12–14 Oct")."""
+    __tablename__ = "discovery_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    finding_id: Mapped[str] = mapped_column(String(36), index=True)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    topic: Mapped[str] = mapped_column(String(24))               # food | events
+    place_key: Mapped[str] = mapped_column(String(128))          # the finding's city key
+    kind: Mapped[str] = mapped_column(String(24))
+    name: Mapped[str] = mapped_column(String(300))
+    neighbourhood: Mapped[str | None] = mapped_column(String(200))
+    address: Mapped[str | None] = mapped_column(String(500))
+    lat: Mapped[float | None] = mapped_column(Float)
+    lon: Mapped[float | None] = mapped_column(Float)
+    website: Mapped[str | None] = mapped_column(String(2000))
+    what_to_get: Mapped[str | None] = mapped_column(Text)       # food: the dish/drink to order
+    price_tier: Mapped[int | None] = mapped_column(Integer)      # food: 1–4
+    starts_on: Mapped[str | None] = mapped_column(String(16))    # event: YYYY-MM-DD[THH:MM]
+    ends_on: Mapped[str | None] = mapped_column(String(16))
+    when_text: Mapped[str | None] = mapped_column(String(200))
+    venue: Mapped[str | None] = mapped_column(String(300))
+    details: Mapped[str | None] = mapped_column(Text)            # why go / what it is
+    duration: Mapped[str | None] = mapped_column(String(100))    # activity
+    booking: Mapped[bool | None] = mapped_column(Boolean)        # activity/food: book ahead
+    sources: Mapped[list | None] = mapped_column(JsonCol)
+    extra: Mapped[dict | None] = mapped_column(JsonCol)          # anything else the source had
+    origin: Mapped[str] = mapped_column(String(12), default="local")   # local | agent
+    agent: Mapped[str | None] = mapped_column(String(128))
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    edited: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    activity_id: Mapped[str | None] = mapped_column(String(36))  # added to the timeline as
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class PackingProfile(Base):
     """Yonder 3.1 — the "ask once" packing preferences (SPEC-3.1-planning.md §3).
 
