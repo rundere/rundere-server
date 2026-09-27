@@ -1,4 +1,5 @@
 {% import "_finding_card.html" as fc %}
+{% import "_item_section.html" as isec %}
 <div id="discovery-section" class="yn-sec"
      {% if discovery_running %}hx-get="/trips/{{ trip.id }}/discover/status"
      hx-trigger="load delay:1500ms, every 2s" hx-target="#discovery-section"
@@ -61,7 +62,9 @@
         <h3 class="yn-dsec-title">{{ s.label }}</h3>
         <p class="yn-dsec-about">{{ s.about }}</p>
       </div>
-      {% if s.groups %}
+      {% if s.cities %}
+        {{ isec.section(s, trip) }}
+      {% elif s.groups %}
         {% for g in s.groups %}
         {% if s.groups | length > 1 or g.label != s.label %}<h4 class="yn-dsec-sub">{{ g.label }}</h4>{% endif %}
         <div class="card blueprint bp-daycard yn-findings">

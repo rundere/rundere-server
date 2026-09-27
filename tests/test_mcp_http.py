@@ -504,7 +504,7 @@ if DEPS:
             f.data = {"history": [{"body_md": "older", "status": "draft"}]}
             s.commit()
         r = client.post(f"/trips/{w['shared']}/finding/{fid}/lock", data={"lock": "1"})
-        assert r.status_code == 200 and r.headers.get("hx-redirect")
+        assert r.status_code == 200 and r.headers.get("hx-refresh") == "true"
         with SessionLocal() as s:
             assert s.get(DiscoveryFinding, fid).status == "approved"
         page = client.get(f"/trips/{w['shared']}").text

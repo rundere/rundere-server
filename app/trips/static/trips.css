@@ -550,3 +550,77 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
     border-radius: 999px; padding: 6px 14px; }
   .yn-disc-link.active { box-shadow: inset 0 -2px 0 0 var(--color-accent); }
 }
+
+/* ---- Food & Drink / Events & Activities (4.5, YONDER-150/151/152) ---- */
+.yn-city-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.yn-city-chip { min-height: 44px; padding: 6px 14px; border: 1px solid var(--color-divider);
+  border-radius: 999px; background: none; font: inherit; font-size: 14px; cursor: pointer;
+  color: var(--color-neutral-700); }
+.yn-city-chip:hover { color: var(--color-neutral-900); }
+.yn-city-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.yn-city-chip.active { background: var(--yn-tab-track); color: var(--color-neutral-900);
+  font-weight: 600; box-shadow: inset 0 -2px 0 0 var(--color-accent); }
+.yn-city { display: none; }
+.yn-city.active, .yn-filtering .yn-city { display: block; }
+.yn-city-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  margin: 0 0 8px; }
+.yn-city-title { margin: 0; font-size: 16px; font-weight: 600; }
+.yn-city-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 4px; }
+.yn-city-summary { font-size: 15px; line-height: 1.55; margin: 0 0 10px; max-width: 72ch; }
+.yn-city-dishes { margin: 0 0 8px; font-size: 14px; }
+.yn-city-warn { margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--color-accent);
+  background: var(--yn-tab-track); font-size: 13px; border-radius: 4px; }
+.yn-items-group { margin: 0 0 14px; }
+.yn-items { width: 100%; border-collapse: collapse; font-size: 14px; }
+.yn-items th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--color-neutral-500); padding: 6px 8px;
+  border-bottom: 1px solid var(--color-divider); }
+.yn-items td { padding: 8px; vertical-align: top; border-bottom: 1px solid var(--color-divider); }
+.yn-items tr:last-child td { border-bottom: none; }
+.yn-item-sub { font-size: 12px; color: var(--color-neutral-500); margin-top: 2px; }
+.yn-mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.yn-item-actions { white-space: nowrap; text-align: right; }
+.yn-item-actions > * { margin-left: 4px; vertical-align: middle; }
+.yn-icon-link { display: inline-flex; align-items: center; min-height: 32px; padding: 0 6px;
+  font-size: 13px; }
+.yn-on-tl { font-size: 13px; font-weight: 600; }
+.yn-item.is-hidden { display: none; }
+.show-hidden .yn-item.is-hidden { display: table-row; opacity: .6; }
+.yn-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.yn-city-sources .yn-src-group { margin: 0 0 10px; }
+.yn-city-sources ul { margin: 4px 0 0; padding-left: 18px; font-size: 14px; }
+@media (max-width: 760px) {
+  /* Tables become cards: one row per block, each cell labelled. */
+  .yn-items thead { display: none; }
+  .yn-items, .yn-items tbody, .yn-items tr, .yn-items td { display: block; width: 100%; }
+  .yn-items tr { padding: 8px 0; border-bottom: 1px solid var(--color-divider); }
+  .yn-items td { border: none; padding: 2px 0; }
+  .yn-items td[data-label]:not(.yn-item-name)::before { content: attr(data-label) ": ";
+    font-size: 12px; color: var(--color-neutral-500); }
+  .yn-item-actions { text-align: left; white-space: normal; padding-top: 6px !important; }
+  .yn-item-actions > * { margin: 0 6px 4px 0; }
+  .show-hidden .yn-item.is-hidden { display: block; }
+  .yn-city-actions { margin-left: 0; }
+}
+.yn-items-group.all-hidden { display: none; }
+.show-hidden .yn-items-group.all-hidden { display: block; }
+.yn-icon-link, .yn-on-tl { color: var(--color-accent); text-underline-offset: 2px; }
+.yn-icon-link:hover, .yn-on-tl:hover { color: var(--color-neutral-900); }
+.yn-city-head .yn-status-badge { margin-left: 0; }
+/* Same columns in every table of a city, so the groups line up. */
+.yn-items { table-layout: fixed; }
+.yn-items th:nth-child(1) { width: 22%; }
+.yn-items th:nth-child(2) { width: 17%; }
+.yn-items-food th:nth-child(3) { width: 8%; }
+.yn-items th:nth-child(3) { width: 16%; }
+.yn-items th:last-child { width: 31%; }
+.yn-items td { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .yn-items { table-layout: auto; }
+  .yn-items td:empty { display: none; }
+}
+.yn-item-actions { white-space: normal; }
+.yn-item-actions > * { margin: 0 0 4px 6px; }
+.yn-items th:nth-child(1) { width: 21%; }
+.yn-items th:last-child { width: 30%; }
+.yn-on-tl { white-space: nowrap; }

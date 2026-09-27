@@ -2,6 +2,11 @@
   <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
     <div class="dialog-title">{{ title }}</div>
     <form class="dialog-body" hx-post="{{ action }}" hx-target="#modal-root" hx-swap="innerHTML">
+      {% if discovery_item_id %}
+      {# Added from a Discover item (4.5): link the two once saved. #}
+      <input type="hidden" name="discovery_item_id" value="{{ discovery_item_id }}">
+      <p class="bp-who-hint" style="margin-top:0">Filled in from Discover — set the time, check the rest.</p>
+      {% endif %}
       <div class="field">
         <label>Type</label>
         <select class="input" name="activity_kind"

@@ -307,13 +307,47 @@ function ynDisc(sec) {
     s.classList.toggle('active', s.dataset.sec === sec);
   });
   var tab = document.querySelector('.yn-tabpanel[data-tab="discovery"]');
-  if (tab && tab.classList.contains('active') && location.hash !== '#discovery/' + sec)
+  // Keep a deeper path (#discovery/food/MA:Gondar) when the section is already right.
+  if (tab && tab.classList.contains('active')
+      && location.hash.split('/').slice(0, 2).join('/') !== '#discovery/' + sec)
     history.replaceState(null, '', '#discovery/' + sec);
 }
-// After an HTMX refresh of the Discovery tab, reopen the same section.
+// After an HTMX refresh of the Discovery tab, reopen the same section + city.
 function ynDiscInit() {
   var h = location.hash.split('/');
   ynDisc(h[0] === '#discovery' && h[1] ? h[1] : ynDiscCurrent());
+  if (h[0] === '#discovery' && h[1] && h[2]) ynCity(h[1], decodeURIComponent(h[2]));
+  else document.querySelectorAll('.yn-dsec').forEach(function (s) {
+    var c = s.querySelector('.yn-city'); if (c) ynCity(s.dataset.sec, c.dataset.city, true);
+  });
+}
+// City chips inside Food / Events: one city at a time, kept in the URL.
+function ynCity(sec, city, quiet) {
+  var panel = document.querySelector('.yn-dsec[data-sec="' + sec + '"]');
+  if (!panel) return;
+  var found = false;
+  panel.querySelectorAll('.yn-city').forEach(function (c) {
+    var on = c.dataset.city === city; c.classList.toggle('active', on); found = found || on;
+  });
+  if (!found) { var first = panel.querySelector('.yn-city'); if (first) first.classList.add('active'); }
+  panel.querySelectorAll('.yn-city-chip').forEach(function (b) {
+    var on = b.dataset.city === city || (!found && b === panel.querySelector('.yn-city-chip'));
+    b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  if (!quiet && found) history.replaceState(null, '', '#discovery/' + sec + '/' + city);
+}
+// Flip a city between its tables and its sources.
+function ynSources(btn) {
+  var city = btn.closest('.yn-city'), on = btn.getAttribute('aria-pressed') !== 'true';
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  city.querySelector('.yn-city-main').hidden = on;
+  city.querySelector('.yn-city-sources').hidden = !on;
+  btn.textContent = on ? 'Back to the list' : btn.dataset.label;
+}
+function ynShowHidden(btn) {
+  var main = btn.closest('.yn-city-main'), on = !main.classList.contains('show-hidden');
+  main.classList.toggle('show-hidden', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 // Arrow keys move along the rail (tab pattern).
 document.addEventListener('keydown', function (e) {
@@ -328,6 +362,7 @@ document.addEventListener('keydown', function (e) {
 (function () {
   var h = location.hash.replace(/^#(sec-)?/, '');
   ynTab(h === 'travelers' ? 'travellers' : h);
+  ynDiscInit();          // open section + city (the partial's own call ran before these existed)
 })();
 // Live filter: hide anything (a city finding, a day, a packing row, a traveller)
 // that doesn't contain the query; reveal + open matches; hide now-empty groups.

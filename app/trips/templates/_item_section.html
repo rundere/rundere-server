@@ -1,0 +1,133 @@
+{# Food & Drink / Events & Activities (4.5, YONDER-150/151/152): city chips,
+   then per city a summary + recommendation and the rows as tables by type.
+   Row actions: add to timeline (form filled in from the row), map, website,
+   source, hide. Sources for the city are a view you flip to, not a list that
+   is always there. #}
+{% import "_finding_card.html" as fc %}
+{% macro section(s, trip) %}
+{% if s.cities | length > 1 %}
+<div class="yn-city-chips" role="tablist" aria-label="Cities">
+  {% for c in s.cities %}
+  <button type="button" role="tab" class="yn-city-chip" data-city="{{ c.key }}"
+          aria-selected="false" onclick="ynCity('{{ s.key }}', this.dataset.city)">
+    {{ c.label }} <span class="yn-disc-meta">{{ c.count }}</span></button>
+  {% endfor %}
+</div>
+{% endif %}
+{% for c in s.cities %}
+{% set f = c.finding %}
+<div class="yn-city{% if loop.first %} active{% endif %}" data-city="{{ c.key }}">
+  <div class="yn-city-head">
+    <h4 class="yn-city-title">{{ c.label }}</h4>
+    {% if f.locked %}<span class="yn-status-badge">🔒 locked</span>
+    {% elif f.status == 'edited' %}<span class="yn-status-badge">edited</span>
+    {% elif f.status == 'draft' %}<span class="yn-status-badge">draft</span>{% endif %}
+    {% if f.external %}<span class="yn-status-badge" title="Written by {{ f.agent }} over MCP — local Discover runs won't overwrite it">via {{ f.agent }}</span>{% endif %}
+    <span class="yn-city-actions">
+      {% if c.sources %}
+      <button type="button" class="btn btn-ghost bp-sm yn-src-toggle" aria-pressed="false"
+              data-label="Sources ({{ c.sources | length }})"
+              onclick="ynSources(this)">Sources ({{ c.sources | length }})</button>
+      {% endif %}
+      <button class="btn btn-ghost bp-sm"
+              hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">Edit summary</button>
+      {% if f.rerunnable and not f.external %}
+      <button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun"
+              hx-disabled-elt="this">Re-run</button>
+      {% endif %}
+    </span>
+  </div>
+
+  <div class="yn-city-main">
+    {% if f.summary %}<div class="yn-city-summary">{{ f.summary }}</div>
+    {% elif not c.groups %}<div class="yn-finding-body">{{ f.body }}</div>{% endif %}
+    {% if f.dishes %}<p class="yn-city-dishes"><b>Local specialties to try:</b> {{ f.dishes | join(", ") }}</p>{% endif %}
+    {% if f.warnings %}
+    <div class="yn-city-warn" role="note"><b>⚠️ Allergy check:</b>
+      {% for w in f.warnings %}<span>{{ w }}</span>{% if not loop.last %} · {% endif %}{% endfor %}</div>
+    {% endif %}
+
+    {% for g in c.groups %}
+    <div class="yn-items-group{% if g.rows | rejectattr('hidden') | list | length == 0 %} all-hidden{% endif %}">
+      <h5 class="yn-dsec-sub">{{ g.label }}</h5>
+      <table class="yn-items yn-items-{{ s.key }}">
+        <thead><tr>
+          <th scope="col">Name</th>
+          {% if s.key == 'food' %}<th scope="col">What to get</th><th scope="col">Price</th>
+          {% elif g.kind == 'activity' %}<th scope="col">Where</th><th scope="col">Duration</th>
+          {% else %}<th scope="col">When</th><th scope="col">Where</th>{% endif %}
+          <th scope="col">Why go</th>
+          <th scope="col"><span class="yn-sr">Actions</span></th>
+        </tr></thead>
+        <tbody>
+        {% for i in g.rows %}
+        <tr class="yn-item yn-filterable{% if i.hidden %} is-hidden{% endif %}">
+          <td class="yn-item-name" data-label="Name"><b>{{ i.name }}</b>
+            {% if i.local_specialty %}<span class="yn-status-badge" title="Local specialty">local</span>{% endif %}
+            {% if i.neighbourhood %}<div class="yn-item-sub">{{ i.neighbourhood }}</div>{% endif %}
+            {% if s.key == 'food' and i.address %}<div class="yn-item-sub">{{ i.address }}</div>{% endif %}
+            {% if i.agent %}<div class="yn-item-sub">via {{ i.agent }}</div>{% endif %}</td>
+          {% if s.key == 'food' %}
+          <td data-label="What to get">{{ i.what_to_get or "—" }}</td>
+          <td data-label="Price" class="yn-mono">{{ i.price or "—" }}</td>
+          {% elif g.kind == 'activity' %}
+          <td data-label="Where">{{ i.address or i.venue or "—" }}</td>
+          <td data-label="Duration">{{ i.duration or "—" }}{% if i.booking %}<div class="yn-item-sub">book ahead</div>{% endif %}</td>
+          {% else %}
+          <td data-label="When" class="yn-mono">{{ i.when or "—" }}</td>
+          <td data-label="Where">{{ i.venue or i.address or "—" }}{% if i.venue and i.address %}<div class="yn-item-sub">{{ i.address }}</div>{% endif %}</td>
+          {% endif %}
+          <td data-label="Why go">{{ i.details or "" }}</td>
+          <td class="yn-item-actions">
+            {% if i.on_timeline %}
+            <a class="yn-on-tl" href="#timeline" onclick="ynTab('timeline')">On timeline{% if i.on_timeline.when %} · {{ i.on_timeline.when }}{% endif %}</a>
+            {% elif not i.hidden and not i.heads_up %}
+            <button class="btn btn-secondary bp-sm"
+                    hx-get="/trips/{{ trip.id }}/discovery-item/{{ i.id }}/to-timeline"
+                    hx-target="#modal-root">Add to timeline</button>
+            {% endif %}
+            <a class="yn-icon-link" href="{{ i.map_url }}" target="_blank" rel="noopener"
+               title="Map" aria-label="Map for {{ i.name }}">Map</a>
+            {% if i.website %}<a class="yn-icon-link" href="{{ i.website }}" target="_blank" rel="noopener"
+               aria-label="Website for {{ i.name }}">Site</a>{% endif %}
+            {% if i.source_url %}<a class="yn-icon-link" href="{{ i.source_url }}" target="_blank" rel="noopener"
+               aria-label="Source for {{ i.name }}">Source</a>{% endif %}
+            <button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/discovery-item/{{ i.id }}/hide"
+                    hx-vals='{"hidden": "{{ '0' if i.hidden else '1' }}"}'
+                    hx-target="#discovery-section" hx-swap="outerHTML"
+                    aria-label="{{ 'Show' if i.hidden else 'Hide' }} {{ i.name }}">{{ 'Show' if i.hidden else 'Hide' }}</button>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+    {% if c.hidden %}
+    <button type="button" class="btn btn-ghost bp-sm yn-hidden-toggle" aria-pressed="false"
+            onclick="ynShowHidden(this)">Show hidden ({{ c.hidden }})</button>
+    {% endif %}
+    {% if f.history %}
+    <details class="yn-finding-history">
+      <summary class="yn-run-meta">Earlier versions of the summary ({{ f.history | length }})</summary>
+      {% for h in f.history %}
+      <div class="yn-finding-body" style="opacity:.75;border-top:1px solid var(--line);margin-top:6px;padding-top:6px">
+        <div class="yn-run-meta">{{ h.when }}{% if h.agent %} · via {{ h.agent }}{% endif %}</div>{{ h.body }}</div>
+      {% endfor %}
+    </details>
+    {% endif %}
+  </div>
+
+  {% if c.sources %}
+  <div class="yn-city-sources" hidden>
+    <p class="yn-dsec-about">Every source behind {{ c.label }}'s write-up and rows, by site.</p>
+    {% for dom, group in c.sources | groupby("domain") %}
+    <div class="yn-src-group"><b>{{ dom }}</b>
+      <ul>{% for s in group %}<li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a></li>{% endfor %}</ul>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endmacro %}

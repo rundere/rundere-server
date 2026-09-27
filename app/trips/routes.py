@@ -15,6 +15,8 @@ import re
 import uuid
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
@@ -501,6 +503,15 @@ def _redirect(url: str) -> HTMLResponse:
     return resp
 
 
+def _refresh() -> HTMLResponse:
+    """Reload the page the action came from, keeping its #section (4.5: a
+    Discover action returns to the same section and city — a redirect that only
+    changed the #fragment wouldn't reload at all)."""
+    resp = HTMLResponse("")
+    resp.headers["HX-Refresh"] = "true"
+    return resp
+
+
 # ----------------------------------------------------------------- list / detail
 
 @router.get("", response_class=HTMLResponse)
@@ -754,6 +765,10 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         "scope": f.scope, "status": f.status, "confidence": f.confidence,
         "body": _render_md(f.body_md), "sources": f.sources or [],
         "is_currency": f.topic == "currency",
+        # 4.5 Food/Events: the city write-up shown above the tables.
+        "summary": _render_md(data.get("summary")) if data.get("summary") else None,
+        "dishes": [d for d in (data.get("local_dishes") or []) if isinstance(d, str)],
+        "warnings": [w for w in (data.get("allergy_warnings") or []) if isinstance(w, str)],
         "currency": data.get("currency") or "",
         "rates_date": data.get("date") or "",
         "is_language": f.topic == "language",
@@ -774,6 +789,107 @@ def _finding_view(f: DiscoveryFinding) -> dict:
                      "body": _render_md(h.get("body_md")), "sources": h.get("sources") or []}
                     for h in (data.get("history") or []) if isinstance(h, dict)],
     }
+
+
+_KIND_LABELS = {
+    "restaurant": "Restaurants", "cafe": "Cafés", "bar": "Bars", "pub": "Pubs",
+    "brewery": "Breweries", "distillery": "Distilleries", "winery": "Wineries",
+    "market": "Markets", "bakery": "Bakeries", "dessert": "Desserts",
+    "street_food": "Street food",
+}
+
+
+def _when_label(i) -> str:
+    """"Oct 14" / "Oct 14 – 16" / the source's own wording."""
+    def fmt(v):
+        try:
+            d = datetime.strptime(v[:10], "%Y-%m-%d")
+        except (TypeError, ValueError):
+            return None
+        out = d.strftime("%b %-d")
+        return out + (f", {v[11:16]}" if len(v) > 10 else "")
+    start, end = fmt(i.starts_on), fmt(i.ends_on)
+    if start and end and end != start:
+        return f"{start} – {end}"
+    return start or (i.when_text or "")
+
+
+def _item_view(i, on_timeline: dict) -> dict:
+    from discover import items as disc_items
+    src = next((s.get("url") for s in (i.sources or []) if s.get("url")), None)
+    act = on_timeline.get(i.activity_id) if i.activity_id else None
+    extra = i.extra or {}
+    return {
+        "id": i.id, "name": i.name, "kind": i.kind,
+        "kind_label": _KIND_LABELS.get(i.kind, i.kind.replace("_", " ").title()),
+        "neighbourhood": i.neighbourhood, "address": i.address,
+        "what_to_get": i.what_to_get,
+        "price": "$" * i.price_tier if i.price_tier else "",
+        "when": _when_label(i), "sort_when": i.starts_on or "9999",
+        "venue": i.venue, "details": i.details, "duration": i.duration,
+        "booking": i.booking, "website": i.website, "source_url": src,
+        "map_url": disc_items.map_url(i), "hidden": bool(i.hidden),
+        "heads_up": bool(extra.get("heads_up")), "local_specialty": bool(extra.get("local_specialty")),
+        "agent": i.agent if i.origin == "agent" else None,
+        "on_timeline": act,   # {"when": "Oct 14"} or None
+    }
+
+
+def _item_cities(session: Session, trip_id: str, uid: str | None,
+                 views: dict[str, list]) -> dict[str, list]:
+    """Food & Drink / Events & Activities as cities (4.5): each city's finding
+    (summary, status) plus its items grouped into tables. Keyed by section."""
+    from app.models import DiscoveryItem
+    rows = (session.query(DiscoveryItem)
+            .filter(DiscoveryItem.trip_id == trip_id, DiscoveryItem.user_id == uid)
+            .order_by(DiscoveryItem.name).all())
+    act_ids = [r.activity_id for r in rows if r.activity_id]
+    on_tl = {}
+    for a in (session.query(TripActivity).filter(TripActivity.id.in_(act_ids)).all()
+              if act_ids else []):
+        on_tl[a.id] = {"when": _when_label(SimpleNamespace(starts_on=a.starts_at or None,
+                                                           ends_on=None, when_text=""))}
+    by_finding: dict[str, list] = {}
+    for r in rows:
+        by_finding.setdefault(r.finding_id, []).append(_item_view(r, on_tl))
+    out: dict[str, list] = {}
+    for topic in ("food", "events"):
+        cities = []
+        for f in views.get(topic, []):
+            its = by_finding.get(f["id"], [])
+            shown = [i for i in its if not i["hidden"]]
+            if topic == "food":
+                order = list(_KIND_LABELS)
+                groups = [{"label": _KIND_LABELS[k], "kind": k,
+                           "rows": [i for i in its if i["kind"] == k]} for k in order]
+                groups += [{"label": "Other", "kind": "other",
+                            "rows": [i for i in its if i["kind"] not in _KIND_LABELS]}]
+            else:
+                dated = sorted([i for i in its if i["kind"] == "event" and not i["heads_up"]],
+                               key=lambda i: i["sort_when"])
+                groups = [
+                    {"label": "Heads-up while you're there", "kind": "heads_up",
+                     "rows": [i for i in its if i["heads_up"]]},
+                    {"label": "Events", "kind": "event", "rows": dated},
+                    {"label": "Activities", "kind": "activity",
+                     "rows": [i for i in its if i["kind"] == "activity"]},
+                ]
+            groups = [g for g in groups if g["rows"]]
+            srcs, seen = [], set()
+            for s in (f["sources"] or []) + [{"url": i["source_url"], "title": i["name"]}
+                                             for i in its if i["source_url"]]:
+                u = (s or {}).get("url")
+                if u and u not in seen:
+                    seen.add(u)
+                    srcs.append({"url": u, "title": s.get("title") or u,
+                                 "domain": urlparse(u).netloc.removeprefix("www.")})
+            srcs.sort(key=lambda s: s["domain"])
+            cities.append({"finding": f, "key": f["place_key"],
+                           "label": f["place_key"].split(":", 1)[-1],
+                           "groups": groups, "count": len(shown),
+                           "hidden": len(its) - len(shown), "sources": srcs})
+        out[topic] = cities
+    return out
 
 
 def _run_view(run: DiscoveryRun) -> dict:
@@ -814,8 +930,13 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
         pct = int(100 * last.done / last.total) if last.total else 0
         run_progress = {"phase": last.phase or "starting", "done": last.done,
                         "total": last.total, "pct": pct}
+    secs = disc_sections.build(views)
+    cities = _item_cities(session, trip_id, uid, views)
+    for s in secs:
+        if s["key"] in cities:
+            s["cities"] = cities[s["key"]]
     return {"discovery_topics": topic_groups,
-            "discovery_sections": disc_sections.build(views),
+            "discovery_sections": secs,
             "discovery_default_section": disc_sections.DEFAULT_SECTION,
             "trip_currencies": currencies,
             "discovery_has_findings": bool(findings),
@@ -920,6 +1041,49 @@ def _finding_or_404(session: Session, request: Request, trip_id: str,
     return f
 
 
+def _item_or_none(session: Session, request: Request, trip_id: str, item_id: str):
+    """A Discover item on a trip the viewer can access, and only their OWN."""
+    from app.models import DiscoveryItem
+    if not item_id:
+        return None
+    i = session.get(DiscoveryItem, item_id)
+    if i is None or i.trip_id != trip_id or i.user_id != _viewer_uid(request):
+        return None
+    if scope.trip_or_none(session, request, trip_id) is None:
+        return None
+    return i
+
+
+@router.get("/{trip_id}/discovery-item/{item_id}/to-timeline", response_class=HTMLResponse)
+def item_to_timeline_form(trip_id: str, item_id: str, request: Request,
+                          session: Session = Depends(get_session)):
+    """The activity form, filled in from a Discover item (4.5): Restaurant for
+    food, Event on its date, Tour / activity otherwise. The person sets the time."""
+    from discover import items as disc_items
+    i = _item_or_none(session, request, trip_id, item_id)
+    if i is None:
+        return HTMLResponse("", status_code=404)
+    atype, values = disc_items.activity_for(i)
+    ctx = _activity_modal_ctx(request, trip_id, mode="create",
+                              action=f"/trips/{trip_id}/activity", atype=atype,
+                              values=values, session=session)
+    ctx.update(title=f"Add to timeline — {i.name}", discovery_item_id=i.id)
+    return templates.TemplateResponse(request, "_activity_modal.html", ctx)
+
+
+@router.post("/{trip_id}/discovery-item/{item_id}/hide", response_class=HTMLResponse)
+def item_hide(trip_id: str, item_id: str, request: Request, hidden: str = Form("1"),
+              session: Session = Depends(get_session)):
+    """Hide (or bring back) a Discover row. Hidden rows stay hidden when Discover
+    or an agent refreshes the city."""
+    i = _item_or_none(session, request, trip_id, item_id)
+    if i is None:
+        return HTMLResponse("", status_code=404)
+    i.hidden = hidden == "1"
+    session.commit()
+    return _discovery_section(request, session, scope.trip_or_none(session, request, trip_id))
+
+
 @router.post("/{trip_id}/finding/{fid}/rerun", response_class=HTMLResponse)
 def rerun_finding_route(trip_id: str, fid: str, request: Request,
                         session: Session = Depends(get_session)):
@@ -932,11 +1096,11 @@ def rerun_finding_route(trip_id: str, fid: str, request: Request,
     # Language findings aren't re-runnable (see _finding_view) — never let a
     # stale/forged POST overwrite a manual Languages pick.
     if f.topic.startswith("language") or f.topic == "research":
-        return _redirect(f"/trips/{trip_id}")
+        return _refresh()
     rerun_finding(session, f, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
                   base_currencies=_base_currencies(_viewer_traveler(session, request)))
-    return _redirect(f"/trips/{trip_id}")
+    return _refresh()
 
 
 @router.get("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
@@ -969,10 +1133,15 @@ def edit_finding(trip_id: str, fid: str, request: Request,
         return templates.TemplateResponse(request, "_currency_edit.html", {
             "request": request, "trip_id": trip_id, "fid": fid,
             "code": code, "place_key": f.place_key, "rows": rows})
+    # Food/Events (4.5): the text you edit is the city summary above the tables;
+    # the rows are edited in place, so the old generated list isn't offered.
+    item_topic = f.topic in ("food", "events")
     return templates.TemplateResponse(request, "_finding_edit.html", {
         "request": request, "trip_id": trip_id, "fid": fid,
-        "topic_label": TOPIC_LABELS.get(f.topic, f.topic),
-        "place_key": f.place_key, "body": f.body_md or ""})
+        "topic_label": ("City summary · " if item_topic else "")
+                       + TOPIC_LABELS.get(f.topic, f.topic),
+        "place_key": f.place_key,
+        "body": (data.get("summary") or "") if item_topic else (f.body_md or "")})
 
 
 @router.post("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
@@ -1024,13 +1193,16 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
             data.get("currency_name") or code, bases, per_base, as_of,
             bool(data.get("usd_useful")), source_note="manually edited")
         f.confidence = "high" if per_base else "flagged"
+    elif f.topic in ("food", "events"):
+        f.data = {**(f.data or {}), "summary": body.strip()}
+        f.body_md = f"**{_bold_label(f.body_md) or f.place_key}**\n\n{body.strip()}"
     else:
         f.body_md = body
     if kept_history and not (f.data or {}).get("history"):
         f.data = {**(f.data or {}), "history": kept_history}   # an edit keeps earlier versions
     f.status = "edited"          # on a lockable topic this also LOCKS it (discover/policy.py)
     session.commit()
-    return _redirect(f"/trips/{trip_id}")
+    return _refresh()
 
 
 @router.post("/{trip_id}/finding/{fid}/lock", response_class=HTMLResponse)
@@ -1048,7 +1220,7 @@ def lock_finding(trip_id: str, fid: str, request: Request, lock: str = Form("1")
                             status_code=400)
     f.status = "approved" if lock == "1" else "draft"
     session.commit()
-    return _redirect(f"/trips/{trip_id}")
+    return _refresh()
 
 
 @router.get("/{trip_id}/finding/{fid}/calculator", response_class=HTMLResponse)
@@ -2590,7 +2762,12 @@ async def create_activity(trip_id: str, request: Request,
     session.flush()
     if "travelers_shown" in form:
         who.set_travelers(session, a.id, trip_id, form.getlist("traveler_ids"))
+    item = _item_or_none(session, request, trip_id, form.get("discovery_item_id") or "")
+    if item is not None:
+        item.activity_id = a.id          # the Discover row now shows "On timeline"
     session.commit()
+    if item is not None:
+        return _refresh()            # stay on the Discover section + city it came from
     return _redirect(f"/trips/{trip_id}")
 
 
