@@ -97,7 +97,7 @@ def _fetch_public_html(url: str) -> str | None:
                 or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
             return None
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "RunDere-web-capture"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Rundere-web-capture"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             ctype = resp.headers.get("Content-Type", "")
             if "html" not in ctype and "xml" not in ctype:
@@ -209,9 +209,9 @@ def capture_page(request: Request, session: Session = Depends(get_session)):
         "t.focus();t.select();var k=false;try{k=document.execCommand('copy')}catch(e){}"
         "document.body.removeChild(t);return k};"
         "var fb=function(){var say=function(k){alert(k?"
-        "'Run.Dere could not post to the server (this page may block it). The page "
-        "HTML is now on your clipboard. Open Run.Dere /capture and paste it into the box.':"
-        "'Run.Dere could not post or auto-copy on this page. Open Run.Dere /capture and "
+        "'Run·dere could not post to the server (this page may block it). The page "
+        "HTML is now on your clipboard. Open Run·dere /capture and paste it into the box.':"
+        "'Run·dere could not post or auto-copy on this page. Open Run·dere /capture and "
         "paste the page source manually.')};"
         "if(navigator.clipboard&&navigator.clipboard.writeText){"
         "navigator.clipboard.writeText(h).then(function(){say(true)},function(){say(cp())})}"
@@ -246,13 +246,13 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     if ctype.startswith("text/html"):
         raw = (await request.body()).decode("utf-8", errors="replace")
         if len(raw) > settings.ingest_max_body_bytes:
-            return PlainTextResponse("Run.Dere: page too large to capture.", status_code=413)
+            return PlainTextResponse("Run·dere: page too large to capture.", status_code=413)
         if not raw.strip():
-            return PlainTextResponse("Run.Dere: empty page — nothing captured.", status_code=400)
+            return PlainTextResponse("Run·dere: empty page — nothing captured.", status_code=400)
         source_url = request.headers.get("X-Yonder-Source-Url") or request.headers.get("Referer")
         batch_id = _queue_web(session, raw, source_url=source_url, submitted_by=submitted_by, owner_user_id=owner_user_id)
         return PlainTextResponse(
-            f"Run.Dere captured this page ✓ (batch {batch_id[:8]}). "
+            f"Run·dere captured this page ✓ (batch {batch_id[:8]}). "
             f"Run “Process new captures” in the review queue to extract it.")
 
     # --- page form path ---

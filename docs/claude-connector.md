@@ -1,10 +1,10 @@
-# Connect Run.Dere (formerly Yonder) to Claude
+# Connect Run·dere (formerly Yonder) to Claude
 
-Run.Dere has a built-in remote MCP server at **`https://<rundere-host>/mcp`**
+Run·dere has a built-in remote MCP server at **`https://<rundere-host>/mcp`**
 (YONDER-108) and is its own OAuth 2.1 authorization server (YONDER-107). Add it
 to claude.ai once and it works in claude.ai on the web, Claude Desktop and the
 Claude mobile app. Claude then acts **as you**: it sees and changes exactly what
-you can in Run.Dere, and nothing more. Per-user scoping and the admin-sharing
+you can in Run·dere, and nothing more. Per-user scoping and the admin-sharing
 opt-out apply to every tool.
 
 **Not only Claude.** `/mcp` is a standard MCP server with standard OAuth
@@ -22,7 +22,7 @@ that name labels whatever it writes to Discover.
 | `TX_AUTH_REQUIRED=true` | Connectors are meant for authenticated deployments. |
 | Reachability | claude.ai connects **from Anthropic's cloud** (`160.79.104.0/21`), so these must be public and must bypass browser forward-auth (Authentik): `/mcp`, `/oauth/token`, `/oauth/register`, `/oauth/revoke`, `/.well-known/oauth-*` (plus `/api/v1` for the app). That's YONDER-109. Keep `/oauth/authorize` and `/login` behind your normal browser route. |
 
-Run.Dere never trusts a proxy identity header (`TX_AUTH_PROXY_HEADER_TRUST`) on
+Run·dere never trusts a proxy identity header (`TX_AUTH_PROXY_HEADER_TRUST`) on
 those machine endpoints, even when the setting is on. Traefik should strip the
 header there anyway.
 
@@ -34,13 +34,13 @@ Optional OAuth knobs (defaults in brackets): `TX_OAUTH_ACCESS_TTL_SECONDS`
 ## Add the connector (each user)
 
 1. claude.ai → **Settings → Connectors → Add custom connector**.
-2. Name: `Run.Dere`. URL: `https://<rundere-host>/mcp`. Leave the advanced settings
+2. Name: `Run·dere`. URL: `https://<rundere-host>/mcp`. Leave the advanced settings
    empty: Claude registers itself automatically (dynamic client registration).
-3. **Connect**. You land on Run.Dere's sign-in page. Sign in the way your
+3. **Connect**. You land on Run·dere's sign-in page. Sign in the way your
    deployment offers: username + password, "Sign in with <SSO>" when OIDC is on,
    or automatically when a trusted proxy header is on.
-4. Run.Dere asks **"Allow Claude to access your Run.Dere data?"**. Choose **Allow**.
-5. Back in Claude, enable the Run.Dere tools in a chat and ask, e.g., *"What's on
+4. Run·dere asks **"Allow Claude to access your Run·dere data?"**. Choose **Allow**.
+5. Back in Claude, enable the Run·dere tools in a chat and ask, e.g., *"What's on
    my Banff trip on day 2?"* or *"Research day hikes near Banff and save them to
    my Discover tab."*
 
@@ -113,7 +113,7 @@ above. The rules live in `discover/policy.py`:
 - `GET /.well-known/oauth-authorization-server` → the endpoints. PKCE S256 is
   required; public clients (`none`) and confidential clients
   (`client_secret_post` / `client_secret_basic`) are both supported.
-- Access token: a Run.Dere JWT (`typ=oauth`, `aud=<base>/mcp`, ~1 h) naming its
+- Access token: a Run·dere JWT (`typ=oauth`, `aud=<base>/mcp`, ~1 h) naming its
   grant. Refresh token: rotated on every use; replaying an old one revokes the
   grant. Codes are single-use and expire after 60 s; a replayed code revokes the
   grant it produced.

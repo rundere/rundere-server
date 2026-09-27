@@ -19,7 +19,7 @@
 
 {# Two independent trip pickers (2.1.2). Each is its OWN form (HTML forms can't
    nest), sitting outside the save form below. AdventureLog files the item into a
-   collection and drives the commit; Run.Dere is an in-house association only. Both
+   collection and drives the commit; Run·dere is an in-house association only. Both
    degrade gracefully — omitted entirely when not applicable. #}
 {% if trip_al or trip_yonder %}
 <div class="trip-pickers">
@@ -52,17 +52,17 @@
   {% if trip_yonder %}
   <form class="trip-picker" hx-post="/review/item/{{ i.id }}/assign-trip?bucket={{ bucket }}"
         hx-target="#d-{{ i.id }}" hx-swap="innerHTML">
-    <h3>Run.Dere trip</h3>
+    <h3>Run·dere trip</h3>
     {% if trip_yonder.selected_name %}
       <p class="why">Linked to <b>{{ trip_yonder.selected_name }}</b> — an in-house
         link only; it doesn’t touch AdventureLog.</p>
     {% else %}
-      <p class="why">Not linked to a Run.Dere trip (in-house association, independent
+      <p class="why">Not linked to a Run·dere trip (in-house association, independent
         of AdventureLog).</p>
     {% endif %}
     {% if trip_yonder.have_trips %}
     <div class="trip-row">
-      <select name="trip_id" aria-label="Run.Dere trip">
+      <select name="trip_id" aria-label="Run·dere trip">
         <option value="">— Not linked —</option>
         {% for t in trip_yonder.trips %}
           <option value="{{ t.id }}" {% if t.selected %}selected{% endif %}>{% if t.contains %}• {% endif %}{{ t.name }}{% if t.start_date %} · {{ t.start_date }}{% if t.end_date and t.end_date != t.start_date %}–{{ t.end_date }}{% endif %}{% endif %}</option>
@@ -72,7 +72,7 @@
     </div>
     <p class="hint quiet">• dates fall inside this trip. <a href="/trips" target="_blank" rel="noopener">Manage trips</a></p>
     {% else %}
-    <p class="hint">No Run.Dere trips yet. <a href="/trips" target="_blank" rel="noopener">Create one</a>, then reopen this item.</p>
+    <p class="hint">No Run·dere trips yet. <a href="/trips" target="_blank" rel="noopener">Create one</a>, then reopen this item.</p>
     {% endif %}
   </form>
   {% endif %}

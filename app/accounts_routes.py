@@ -132,8 +132,8 @@ def _notify_private(user: User, what: str) -> None:
     """Tell a user who opted out of sharing that an admin acted on their account."""
     if user.share_with_admins or not user.email:
         return
-    send_email(user.email, "An admin changed your Run.Dere account",
-               f"An administrator {what} on your Run.Dere account "
+    send_email(user.email, "An admin changed your Run·dere account",
+               f"An administrator {what} on your Run·dere account "
                f"({user.username}).\n\nIf you didn't expect this, contact them.")
 
 
@@ -241,7 +241,7 @@ def forgot_submit(request: Request, identifier: str = Form(...),
         token = authn.create_reset_token(session, user)
         if user.email and email_configured():
             link = f"{_base_url(request)}/reset/{token}"
-            send_email(user.email, "Reset your Run.Dere password",
+            send_email(user.email, "Reset your Run·dere password",
                        f"Use this link to set a new password (valid ~1 hour):\n\n{link}\n\n"
                        "If you didn't request this, ignore this email.")
     return templates.TemplateResponse(request, "forgot.html",
@@ -509,8 +509,8 @@ def users_test_email(to: str = Form(""), admin: User = Depends(authn.require_adm
         return RedirectResponse("/users?err=Enter+an+address+to+send+the+test+to",
                                 status_code=303)
     try:
-        deliver(to, "Run.Dere test email",
-                "This is a test from Run.Dere. Password-reset emails will arrive "
+        deliver(to, "Run·dere test email",
+                "This is a test from Run·dere. Password-reset emails will arrive "
                 "the same way.")
     except Exception as e:
         return RedirectResponse(
@@ -554,7 +554,7 @@ def users_reset_link(request: Request, user_id: str,
                 "/users?err=" + quote_plus(f"Can't reach {user.username} by email — "
                                            "check the email settings."), status_code=303)
         token = authn.create_reset_token(session, user)
-        send_email(user.email, "Reset your Run.Dere password",
+        send_email(user.email, "Reset your Run·dere password",
                    "An administrator sent you a password-reset link (valid ~1 hour):\n\n"
                    f"{_base_url(request)}/reset/{token}\n\n"
                    "If you didn't ask for this, you can ignore it.")

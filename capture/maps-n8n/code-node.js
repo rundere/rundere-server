@@ -1,5 +1,5 @@
 /**
- * Run.Dere — Google Maps directions capture (n8n Code node).
+ * Run·dere — Google Maps directions capture (n8n Code node).
  *
  * The thin capture client for the maps_url channel (D-61). n8n gives us a hosted
  * form for free; this node turns the submission into a SIGNED POST to the same

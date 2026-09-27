@@ -7,9 +7,9 @@
   <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <h1 class="bp-h1">AdventureLog sync</h1>
   <p class="bp-trip-notes">Move data between this trip and its linked AdventureLog
-    collection. <b>Push</b> sends Run.Dere items over (deduplicated — a re-push
+    collection. <b>Push</b> sends Run·dere items over (deduplicated — a re-push
     updates in place, never duplicates). <b>Pull</b> brings AdventureLog transport
-    &amp; lodging back into the Run.Dere Timeline.
+    &amp; lodging back into the Run·dere Timeline.
     {% if adventurelog_url %}<a href="{{ adventurelog_url }}" target="_blank" rel="noopener">↗ Open the collection</a>.{% endif %}</p>
 </div>
 
@@ -50,9 +50,9 @@
 <form hx-post="/trips/{{ trip.id }}/adventurelog/pull" hx-target="#al-result"
       hx-swap="innerHTML" class="card blueprint yn-profile-card">
   <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-  <div class="bp-group-label">Pull to Run.Dere Timeline <span class="bp-group-count">{{ pull_rows | length }}</span></div>
+  <div class="bp-group-label">Pull to Run·dere Timeline <span class="bp-group-count">{{ pull_rows | length }}</span></div>
   <p class="bp-trip-notes">Transport &amp; lodging only — Notes have no Timeline
-    equivalent in Run.Dere, so they can't be pulled back.</p>
+    equivalent in Run·dere, so they can't be pulled back.</p>
   {% if pull_rows %}
   <div class="yn-table-wrap">
     <table class="yn-table">

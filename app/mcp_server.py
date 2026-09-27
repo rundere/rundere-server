@@ -40,8 +40,8 @@ _caller_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 _caller_agent: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "yonder_mcp_agent", default=None)
 
-INSTRUCTIONS = """Run.Dere (formerly Yonder) is the user's personal travel planner.
-Tools act as the signed-in Run.Dere user and see only what they can see in the app.
+INSTRUCTIONS = """Run·dere (formerly Yonder) is the user's personal travel planner.
+Tools act as the signed-in Run·dere user and see only what they can see in the app.
 Start with list_trips, then get_trip for the full picture (timeline, travellers,
 places, the user's Discover findings and packing). Timeline items take a `type`
 from list_activity_types and a `values` object with that type's field keys.
@@ -50,7 +50,7 @@ in your own "research" section or updating a topic such as food or events; it
 lands as a draft they review, and locked findings are theirs to keep. Dates are ISO (YYYY-MM-DD, or
 YYYY-MM-DDTHH:MM local time for timeline items)."""
 
-mcp = MCPServer("Run.Dere", instructions=INSTRUCTIONS, version=settings.app_version)
+mcp = MCPServer("Run·dere", instructions=INSTRUCTIONS, version=settings.app_version)
 
 
 # --------------------------------------------------------------------------- plumbing
@@ -63,7 +63,7 @@ def _run(fn, /, **kwargs) -> Any:
     with SessionLocal() as session:
         user = session.get(User, uid)
         if user is None or not user.is_active:
-            raise ToolError("this Run.Dere account is not active")
+            raise ToolError("this Run·dere account is not active")
         try:
             return jsonable_encoder(fn(session=session, user=user, **kwargs))
         except HTTPException as e:
@@ -302,7 +302,7 @@ def save_research(trip_id: TripId,
                   topic: Annotated[Literal["research", "food", "events", "safety", "visa",
                                            "plugs", "packing"], Field(
                       description="Which Discover topic. `research` (default) is your own "
-                                  "section; the others update the same finding Run.Dere's "
+                                  "section; the others update the same finding Run·dere's "
                                   "local Discover run produces for that place")] = "research",
                   place_key: Annotated[str | None, Field(
                       description="Which place: a country code (\"CA\") or city key "
@@ -353,7 +353,7 @@ def _unauthorized(request: Request, invalid: bool) -> tuple[int, list, bytes]:
     if invalid:
         challenge += ', error="invalid_token"'
     body = json.dumps({"error": "invalid_token" if invalid else "unauthorized",
-                       "error_description": "a Run.Dere bearer token is required"}).encode()
+                       "error_description": "a Run·dere bearer token is required"}).encode()
     headers = [(b"content-type", b"application/json"), (b"www-authenticate", challenge.encode()),
                (b"cache-control", b"no-store")]
     return 401, headers, body

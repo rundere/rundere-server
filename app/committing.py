@@ -786,7 +786,7 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 if not existing:
                     results.append({"target": target, "operation": "cancel",
                                     "ok": True, "skipped": "cancellation — nothing "
-                                    "on the Run.Dere trip to remove"})
+                                    "on the Run·dere trip to remove"})
                     continue
                 extra = {"deleted_id": existing.id}
                 if not dry_run:
@@ -799,7 +799,7 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
             if not tid:
                 results.append({"target": target, "operation": "create", "ok": False,
                                 "dry_run": dry_run,
-                                "error": "no Run.Dere trip is linked to this item"})
+                                "error": "no Run·dere trip is linked to this item"})
                 continue
             atype, values = build_yonder_activity(
                 payload, source=_capture_source(session, item))
@@ -1074,7 +1074,7 @@ def _resolve_or_mint_yonder_trip(session: Session, item: TravelItem,
     if not resolution.get("is_minter"):
         return None                    # minter hasn't committed its trip yet
     if dry_run:
-        return "(new Run.Dere trip)"
+        return "(new Run·dere trip)"
     from app.models import Trip
     cid = (collection_id if collection_id
            and not str(collection_id).startswith("(") else None)

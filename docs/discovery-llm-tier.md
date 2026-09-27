@@ -4,7 +4,7 @@ Implementation: `discover/search.py` (SearXNG helper), `discover/grounding.py`
 (source grounding + corroboration), `app/config.py` (`TX_SEARXNG_URL`).
 Tests: `tests/test_discover_search.py`, `tests/test_discover_grounding.py`.
 
-Run.Dere 3.2, phases 4–5 of `SPEC-3.2-discovery-llm.md`. The deterministic tier
+Run·dere 3.2, phases 4–5 of `SPEC-3.2-discovery-llm.md`. The deterministic tier
 (plugs / weather / currency / language) covers stable facts from free APIs. The
 LLM tier adds the four topics that need web search + synthesis — food & drink,
 events & activities, visa & entry, safety & transport. Every LLM resolver runs

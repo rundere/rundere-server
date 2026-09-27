@@ -1,4 +1,4 @@
-# Releasing Run.Dere
+# Releasing Run·dere
 
 Issues and the roadmap are tracked in Plane (self-hosted, internal). GitHub
 stays the source of truth for code, tags, and published releases; Plane

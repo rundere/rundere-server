@@ -2,11 +2,11 @@
 {% block title %}Allow access{% endblock %}
 {% block body %}
 <form class="card" method="post" action="/oauth/authorize">
-  <div class="brand"><h1><span class="rd-mark" aria-hidden="true"></span> Run<i class="rd-dot">.</i>Dere</h1><span>connect an app</span></div>
-  <p class="sub">Allow <b>{{ client.name }}</b> to access your Run.Dere data?</p>
+  <div class="brand"><h1><span class="rd-mark" aria-hidden="true"></span> <span class="rd-wordmark" role="img" aria-label="Run·dere"></span></h1><span>connect an app</span></div>
+  <p class="sub">Allow <b>{{ client.name }}</b> to access your Run·dere data?</p>
   <p class="hint">Signed in as <b>{{ user.username }}</b>. {{ client.name }} will be able to
     read and change your trips, timeline, packing, journal, captures and Discover
-    findings — exactly what you can see and edit in Run.Dere, nothing more.</p>
+    findings — exactly what you can see and edit in Run·dere, nothing more.</p>
   <p class="hint">After you allow it, you'll be sent to <b>{{ redirect_host }}</b>.</p>
   {% if loopback_only %}
   <div class="err">This app only returns to your own computer ({{ redirect_host }}).

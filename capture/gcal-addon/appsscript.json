@@ -19,7 +19,7 @@
   ],
   "addOns": {
     "common": {
-      "name": "Run.Dere Capture (Calendar)",
+      "name": "Run·dere Capture (Calendar)",
       "logoUrl": "https://www.gstatic.com/images/icons/material/system/1x/event_googblue_48dp.png",
       "homepageTrigger": {
         "runFunction": "buildHomepageCard"

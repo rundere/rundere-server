@@ -1,6 +1,6 @@
-"""Product name, in one place (Run.Dere 4.4, formerly Yonder — YONDER-155).
+"""Product name, in one place (Run·dere 4.4, formerly Yonder — YONDER-155).
 
-User-facing Python text reads BRAND. Templates spell "Run.Dere" out: there are
+User-facing Python text reads BRAND. Templates spell "Run·dere" out: there are
 a dozen Jinja environments, and a missed global would render an empty name.
 
 BRAND_HISTORY is the continuity line for the 4.4.x release; drop it from the
@@ -12,5 +12,5 @@ existing deployments, tokens and installed bookmarklets keep working.
 """
 from __future__ import annotations
 
-BRAND = "Run.Dere"
-BRAND_HISTORY = "Run.Dere (formerly Yonder)"
+BRAND = "Run·dere"
+BRAND_HISTORY = "Run·dere (formerly Yonder)"

@@ -43,7 +43,7 @@ if DEPS:
         r = client.get("/api/v1/openapi.json", headers=_h())
         assert r.status_code == 200
         spec = r.json()
-        assert spec["info"]["title"] == "Run.Dere API"
+        assert spec["info"]["title"] == "Run·dere API"
         assert spec["paths"] and all(p.startswith("/api/v1") for p in spec["paths"])
         assert "/api/v1/trips/{trip_id}" in spec["paths"]
         assert "/api/v1/openapi.json" not in spec["paths"]

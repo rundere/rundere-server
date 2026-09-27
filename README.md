@@ -1,24 +1,29 @@
-<p align="center"><img src="docs/assets/rundere-logo.svg" alt="Run.Dere" width="360"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="design/logo/rundere-lockup-horizontal-silver.svg">
+    <img src="design/logo/rundere-lockup-horizontal-night.svg" alt="Run·dere" width="360">
+  </picture>
+</p>
 
-# Run.Dere (formerly Yonder)
+# Run·dere (formerly Yonder)
 
 **Version 4.3.3** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/rundere-server/releases) · [releasing](RELEASING.md)
 
-> **Yonder is now Run.Dere** (say "run there"). Same app, same data, same
+> **Yonder is now Run·dere** (say "run there"; plain-text spelling: Rundere). Same app, same data, same
 > `TX_*` settings — from 4.4.0 the repository is `jeeves5454/rundere-server` and
 > the image is `ghcr.io/jeeves5454/rundere-server`. Releases up to 4.3.x were
 > published as Yonder (`ghcr.io/jeeves5454/yonder`).
 
-Run.Dere turns travel documents — booking emails, calendar invites, PDF
+Run·dere turns travel documents — booking emails, calendar invites, PDF
 confirmations, and Google Maps directions — into clean records in your
 self-hosted travel apps: **flights → [AirTrail](https://github.com/johanohly/AirTrail)**,
 **trips & places → [AdventureLog](https://github.com/seanmorley15/AdventureLog)** —
-and into **Run.Dere's own built-in trips**, a first-party trip system with its own
+and into **Run·dere's own built-in trips**, a first-party trip system with its own
 timeline, pre-trip research (**Discovery**) and packing plans (**Planning**), that
-Run.Dere writes to alongside the others.
+Run·dere writes to alongside the others.
 
 It is a self-hosted FastAPI service. You *capture* travel items from where you
-already read them (Gmail, Google Calendar, Maps), Run.Dere extracts and resolves
+already read them (Gmail, Google Calendar, Maps), Run·dere extracts and resolves
 the structured facts, you review them in a web queue, and it commits them to
 your trackers. Nothing is auto-posted without passing through review. The root
 URL (`/`) is a dashboard: what's next, what the review queue looks like right
@@ -28,7 +33,7 @@ now, and quick links into every surface.
 
 ## What it does (and what's covered)
 
-Run.Dere is a pipeline of five stages:
+Run·dere is a pipeline of five stages:
 
 ```
 capture  →  /ingest  →  process (extract)  →  resolve  →  review  →  commit
@@ -64,9 +69,9 @@ D-11) — nothing is sent to a cloud model.
 
 ---
 
-## Run.Dere's own Trips
+## Run·dere's own Trips
 
-Since v2.0, Run.Dere isn't just a pipe to AirTrail/AdventureLog — trips are also a
+Since v2.0, Run·dere isn't just a pipe to AirTrail/AdventureLog — trips are also a
 first-party feature at **`/trips`**, with their own day-by-day timeline
 (flights, lodging, drives, notes — added by hand or linked from a capture),
 a traveller roster (self + guests, per-trip), and two capabilities layered on
@@ -90,27 +95,27 @@ top:
   by a **Packing Profile** (`/trips/settings/packing-profile` — bag size,
   laundry comfort, style, must-have items). Pack/unpack/omit items inline; a
   removed item can always be brought back.
-- **AdventureLog managed sync** (v3.8) — once a Run.Dere trip is pushed to
+- **AdventureLog managed sync** (v3.8) — once a Run·dere trip is pushed to
   AdventureLog as a collection, `/trips/{id}/adventurelog` is a two-way,
   dedup-aware sync surface: **push** selected timeline activities and approved
   Discovery findings into that collection (ownership markers keep re-pushing
   idempotent — updates in place, never duplicates), or **pull** AdventureLog's
-  own transportation/lodging records into the Run.Dere timeline.
+  own transportation/lodging records into the Run·dere timeline.
 
 Trips work with or without AdventureLog/AirTrail configured — captured items
-can link straight to a Run.Dere trip (independent of any AdventureLog
+can link straight to a Run·dere trip (independent of any AdventureLog
 collection), so the in-house trip system is never a second-class citizen.
 
 ---
 
 ## Prerequisites
 
-### Hard prerequisites (Run.Dere will not run without these)
+### Hard prerequisites (Run·dere will not run without these)
 
 | Requirement | Why | Notes |
 |---|---|---|
 | **Docker Engine + Compose** | Runs the app and its Postgres | Any orchestrator works — a reference stack is provided |
-| **Docker network reachability to your tools** | Run.Dere talks to the reverse proxy and to each target/geocoder it calls over Docker networking | Put the container on whatever existing Docker network(s) those services use — one or several. The stack *joins* external networks, it doesn't create them (`docker network create` any that are missing). The reference stack's `traefik-net` + `travel-net` split is just this deployment's shape, not a requirement |
+| **Docker network reachability to your tools** | Run·dere talks to the reverse proxy and to each target/geocoder it calls over Docker networking | Put the container on whatever existing Docker network(s) those services use — one or several. The stack *joins* external networks, it doesn't create them (`docker network create` any that are missing). The reference stack's `traefik-net` + `travel-net` split is just this deployment's shape, not a requirement |
 | **PostgreSQL 16** | App database | Bundled in the stack as `yonder-db` — nothing to install separately |
 | **A reverse proxy with public HTTPS** | The Gmail/GCal add-ons POST from Google's servers to `/ingest` | Reference uses **Traefik**. The public route exposes **only** `POST /ingest` |
 | **A Google account** | For the Gmail & Calendar capture add-ons | Personal, unpublished Apps Script — no Google review needed |
@@ -119,7 +124,7 @@ collection), so the in-house trip system is never a second-class citizen.
 
 | Requirement | Unlocks | Without it |
 |---|---|---|
-| **AdventureLog and/or AirTrail** (external targets) | Also pushing out — flights → AirTrail, trips/places → AdventureLog | Run.Dere still records everything to its **own built-in trips** (the default, first-party target); the external pushes simply don't happen |
+| **AdventureLog and/or AirTrail** (external targets) | Also pushing out — flights → AirTrail, trips/places → AdventureLog | Run·dere still records everything to its **own built-in trips** (the default, first-party target); the external pushes simply don't happen |
 | **[Ollama](https://ollama.com/)** + a model (`qwen3:14b`) | LLM extractor for free-form text | Structured sources (JSON-LD/iCal/PDF/Maps) still work; unstructured items go to review unparsed |
 | **[Photon](https://github.com/komoot/photon)** (self-hosted geocoder) | Address → coordinates without Google quota (D-22) | Geocoding unavailable; places needing lookup stall in review |
 | **AirTrail's own Postgres** (read-only) | Committing flights to airports you've **never flown before** (D-50) — supplies internal airport id/coords/tz | A flight to a never-flown airport is refused at commit |
@@ -131,19 +136,19 @@ Discovery's deterministic tier also calls two free, keyless public APIs —
 [Open-Meteo](https://open-meteo.com/) (weather) — over the open internet by
 default; both are overridable (`TX_FRANKFURTER_URL`, `TX_OPEN_METEO_URL`,
 `TX_OPEN_METEO_ARCHIVE_URL`) if you'd rather point at a self-hosted mirror to
-keep Run.Dere fully local.
+keep Run·dere fully local.
 
 ### How to find each prerequisite / credential
 
-- **Docker network reachability** — Run.Dere must share a Docker network with your reverse proxy and with each target/tool it calls (AdventureLog, AirTrail, Photon, Ollama). Put it on whatever external network(s) those already use — check with `docker network ls`; the stack joins them, so `docker network create <name>` any that are missing. Whether that's one network or several (the reference stack uses `traefik-net` + `travel-net`) is up to your setup.
+- **Docker network reachability** — Run·dere must share a Docker network with your reverse proxy and with each target/tool it calls (AdventureLog, AirTrail, Photon, Ollama). Put it on whatever external network(s) those already use — check with `docker network ls`; the stack joins them, so `docker network create <name>` any that are missing. Whether that's one network or several (the reference stack uses `traefik-net` + `travel-net`) is up to your setup.
 - **AdventureLog API key** (`TX_ADVENTURELOG_API_KEY`) — in the AdventureLog web UI → **Settings → Integrations / API tokens** → generate a token.
 - **AirTrail token** (`TX_AIRTRAIL_TOKEN`) — in the AirTrail UI → your **account / API settings** → create an API token.
 - **AirTrail DB URL** (`TX_AIRTRAIL_DB_URL`) — read the Postgres user/password/db from AirTrail's own compose file; it looks like
-  `postgresql://airtrail:<password>@airtrail_db:5432/airtrail`. Run.Dere's container must share a Docker network with that DB.
+  `postgresql://airtrail:<password>@airtrail_db:5432/airtrail`. Run·dere's container must share a Docker network with that DB.
 - **Ollama** — `docker`-run Ollama on `travel-net`/`traefik-net`, then `ollama pull qwen3:14b`. Point `TX_OLLAMA_URL` at it.
 - **Photon** — self-host the Photon container with an OpenStreetMap index; point `TX_PHOTON_URL` at it.
 - **SearXNG** — self-host with its JSON API enabled (`search.formats: [html, json]` in `settings.yml`); point `TX_SEARXNG_URL` at it. Needed only for Discovery's LLM-tier topics (visa/safety/events/food/regional language) — it also requires Ollama.
-- **Run.Dere `/ingest` API keys** — you create these yourself with the CLI (see [First-run setup](#3-first-run-setup)); one per capture client.
+- **Run·dere `/ingest` API keys** — you create these yourself with the CLI (see [First-run setup](#3-first-run-setup)); one per capture client.
 
 ---
 
@@ -188,7 +193,7 @@ inline (some orchestrators can't interpolate `.env` files); adapt to your setup.
 **Two routes, split by exposure** (the reference stack wires these with Traefik
 labels — adapt to your proxy):
 - A **LAN/private** route to the **full app** (`/admin`, the review queue, the CLI-backed UI).
-- A **public HTTPS** route exposing **only `POST /ingest`**, for the Apps Script add-ons — they POST from Google's servers, which can't do an interactive proxy login, so this route authenticates purely with Run.Dere's own API keys + HMAC. Keep the rest of the app off the public route.
+- A **public HTTPS** route exposing **only `POST /ingest`**, for the Apps Script add-ons — they POST from Google's servers, which can't do an interactive proxy login, so this route authenticates purely with Run·dere's own API keys + HMAC. Keep the rest of the app off the public route.
 
 > **Container names in commands below.** The examples use `yonder` as
 > the app container name. Yours will match your deployment — e.g. a Compose
@@ -253,12 +258,12 @@ Identical flow to Gmail, with Calendar scopes:
 
 ### Web pages & Google Maps directions (built-in `/capture`, no external client)
 
-Run.Dere serves its own capture page at **`/capture`** on the private app — no add-on, no n8n, no API key or HMAC. Because this page lives on the private router, it is authenticated by whatever you put in front of that router (a reverse-proxy auth layer, SSO, mTLS, or a trusted LAN); if your proxy forwards an identity header (`X-authentik-username`, `X-Forwarded-User`, …) Run.Dere records it as the submitter.
+Run·dere serves its own capture page at **`/capture`** on the private app — no add-on, no n8n, no API key or HMAC. Because this page lives on the private router, it is authenticated by whatever you put in front of that router (a reverse-proxy auth layer, SSO, mTLS, or a trusted LAN); if your proxy forwards an identity header (`X-authentik-username`, `X-Forwarded-User`, …) Run·dere records it as the submitter.
 
 Three ways to use it:
-- **Bookmarklet** (primary, for web pages) — the `/capture` page offers a bookmarklet to drag to your bookmarks bar. Click it on any booking page — including one behind a login — and it POSTs the page's rendered HTML to Run.Dere. This is the reliable path: your browser has already loaded and authenticated the page. If a strict-CSP page blocks the direct send, it copies the HTML to your clipboard to paste instead.
-- **Paste / URL** — paste a page's HTML source, or a **public** URL Run.Dere fetches itself (SSRF-guarded: only public hosts; login-walled pages can't be fetched, so use the bookmarklet for those).
-- **Google Maps directions** — paste a directions link (`maps.app.goo.gl`, `/maps/dir/…`, or `?api=1&origin=…&destination=…`) and set a **Travel date** (a route has no date of its own — RULE-31). Run.Dere routes it to the road-trip extractor automatically.
+- **Bookmarklet** (primary, for web pages) — the `/capture` page offers a bookmarklet to drag to your bookmarks bar. Click it on any booking page — including one behind a login — and it POSTs the page's rendered HTML to Run·dere. This is the reliable path: your browser has already loaded and authenticated the page. If a strict-CSP page blocks the direct send, it copies the HTML to your clipboard to paste instead.
+- **Paste / URL** — paste a page's HTML source, or a **public** URL Run·dere fetches itself (SSRF-guarded: only public hosts; login-walled pages can't be fetched, so use the bookmarklet for those).
+- **Google Maps directions** — paste a directions link (`maps.app.goo.gl`, `/maps/dir/…`, or `?api=1&origin=…&destination=…`) and set a **Travel date** (a route has no date of its own — RULE-31). Run·dere routes it to the road-trip extractor automatically.
 
 Extraction reuses the JSON-LD reader for web pages (most booking pages embed schema.org), falling back to the LLM for pages without markup. Keep the `/capture` route on the **private** router only — never expose it publicly.
 
@@ -330,7 +335,7 @@ deployment stack.
 | `TX_LLM_TIMEOUT_SECONDS` | `600` | LLM call timeout |
 | `TX_ADVENTURELOG_URL` | `http://adventurelog-server:80` | AdventureLog base URL (internal, container-to-container) |
 | `TX_ADVENTURELOG_API_KEY` | `""` | AdventureLog API token |
-| `TX_ADVENTURELOG_PUBLIC_URL` | `""` | AdventureLog's browser-facing base URL, used to link directly to a trip's collection from the Run.Dere UI. Empty = no link rendered |
+| `TX_ADVENTURELOG_PUBLIC_URL` | `""` | AdventureLog's browser-facing base URL, used to link directly to a trip's collection from the Run·dere UI. Empty = no link rendered |
 | `TX_AIRTRAIL_URL` | `http://airtrail:3000` | AirTrail base URL |
 | `TX_AIRTRAIL_TOKEN` | `""` | AirTrail API token |
 | `TX_AIRTRAIL_DB_URL` | `""` | AirTrail Postgres, read-only (D-50) |
@@ -372,9 +377,9 @@ TX_OIDC_FORCE_HOSTS=yonder.example.net
 
 ---
 
-## Use Run.Dere from Claude (remote MCP)
+## Use Run·dere from Claude (remote MCP)
 
-Run.Dere serves an MCP endpoint at `/mcp` and is its own OAuth server. Add
+Run·dere serves an MCP endpoint at `/mcp` and is its own OAuth server. Add
 `https://<yonder-host>/mcp` as a custom connector in claude.ai to read and edit
 your trips, timeline, packing and journal, capture links, and save Claude's
 research to your Discover tab. Everything runs as you and is scoped like the web
@@ -404,7 +409,7 @@ app/            FastAPI service
   dashboard.py    the root ("/") dashboard — next trip, pipeline snapshot,
                   capture activity, quick links (v3.8.1)
   review/         the review queue (HTMX + Jinja), Home Profiles editor
-  trips/          Run.Dere's own trips: timeline, travellers, Discovery,
+  trips/          Run·dere's own trips: timeline, travellers, Discovery,
                   Planning, AdventureLog managed sync
   main.py         router wiring: /health, /ingest, /capture, /admin (SQLAdmin)
   cli.py          operational CLI: create-key, process, resolve, commit, ...
@@ -422,6 +427,8 @@ schemas/        travel-item (canonical) + travel-extraction (derived, D-09)
 alembic/        migrations (baseline 0001)
 capture/        gmail-addon/, gcal-addon/ (Apps Script); maps-n8n/ (deprecated,
                 superseded by the built-in /capture page in v1.2)
+design/         brand + design system: logos, icons, tokens (read design/README.md
+                before UI work); logos/icons are served at /brand/*
 tests/          pytest suite + samples.json regression corpus
 docs/           A5/A6 specs, shared-capabilities guideline (D-96),
                 home-profiles.example.json, the setup/usage guide
@@ -446,6 +453,6 @@ author's local working notes (not part of this repo).
 
 ## License
 
-[GNU Affero General Public License v3.0](LICENSE). Run.Dere talks to AdventureLog
+[GNU Affero General Public License v3.0](LICENSE). Run·dere talks to AdventureLog
 and AirTrail over their APIs — it does not bundle their code — but AGPL keeps
-Run.Dere and any network-hosted derivative open.
+Run·dere and any network-hosted derivative open.
