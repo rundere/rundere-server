@@ -12,6 +12,7 @@ OIDC endpoints arrive in Phase 1b behind the same router.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -73,27 +74,43 @@ def _user_public(u: User) -> dict:
 @router.get("/login", response_class=HTMLResponse)
 def login_form(request: Request, next: str = "/", error: str | None = None,
                msg: str | None = None, session: Session = Depends(get_session)):
-    from app.config import settings
     if authn.resolve_user(session, request) is not None:
         return RedirectResponse(_safe_next(next), status_code=303)
     from app import oidc
+    forced = oidc.forced_on(request)
+    # SSO-only host (YONDER-164): straight to the IdP. After a failed attempt
+    # (error set) show the page instead, with just a retry, so it can't loop.
+    if forced and not error:
+        return RedirectResponse(f"/oidc/login?next={quote(_safe_next(next), safe='')}",
+                                status_code=303)
     return templates.TemplateResponse(request, "login.html",
                                       {"next": _safe_next(next), "error": error,
-                                       "msg": msg,
-                                       "registration_open": settings.auth_registration_open,
-                                       "oidc_enabled": oidc.enabled(),
-                                       "oidc_name": settings.oidc_display_name})
+                                       "msg": msg, **_login_options(request)})
+
+
+def _login_options(request: Request) -> dict:
+    from app import oidc
+    from app.config import settings
+    forced = oidc.forced_on(request)
+    return {"password_allowed": not forced,
+            "registration_open": settings.auth_registration_open and not forced,
+            "oidc_enabled": oidc.offered_on(request),
+            "oidc_name": settings.oidc_display_name}
 
 
 @router.post("/login")
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...),
                  next: str = Form("/"), session: Session = Depends(get_session)):
+    from app import oidc
+    if oidc.forced_on(request):
+        return RedirectResponse(f"/oidc/login?next={quote(_safe_next(next), safe='')}",
+                                status_code=303)
     user = authn.authenticate_local(session, username, password)
     if user is None:
         return templates.TemplateResponse(
             request, "login.html",
             {"next": _safe_next(next), "error": "Incorrect username or password.",
-             "username": username}, status_code=401)
+             "username": username, **_login_options(request)}, status_code=401)
     from datetime import datetime, timezone
     user.last_login_at = datetime.now(timezone.utc)
     session.commit()
@@ -121,6 +138,11 @@ class RefreshBody(BaseModel):
 
 @router.post("/api/v1/auth/login", response_model=TokenOut)
 def api_login(body: LoginBody, request: Request, session: Session = Depends(get_session)):
+    from app import oidc
+    from app.config import settings
+    if settings.oidc_force_api_login and oidc.forced_on(request):
+        return JSONResponse({"detail": "password sign-in is disabled on this address; "
+                                       "use single sign-on"}, status_code=403)
     user = authn.authenticate_local(session, body.username, body.password)
     if user is None:
         return JSONResponse({"detail": "invalid credentials"}, status_code=401)

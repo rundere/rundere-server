@@ -31,6 +31,32 @@ def enabled() -> bool:
     return bool(settings.oidc_enabled and settings.oidc_issuer and settings.oidc_client_id)
 
 
+def _host_list(csv: str) -> set[str]:
+    return {h.strip().lower() for h in csv.split(",") if h.strip()}
+
+
+def request_host(request) -> str:
+    return (request.url.hostname or "").lower()
+
+
+def listed_host(request) -> bool:
+    """The request came in on a host named in TX_OIDC_HOSTS / TX_OIDC_FORCE_HOSTS."""
+    host = request_host(request)
+    return host in _host_list(settings.oidc_hosts) | _host_list(settings.oidc_force_hosts)
+
+
+def forced_on(request) -> bool:
+    """SSO is the only way to sign in on this host (YONDER-164)."""
+    return enabled() and request_host(request) in _host_list(settings.oidc_force_hosts)
+
+
+def offered_on(request) -> bool:
+    """Show / allow "Sign in with SSO" on this host. No TX_OIDC_HOSTS = everywhere."""
+    if not enabled():
+        return False
+    return not _host_list(settings.oidc_hosts) or listed_host(request)
+
+
 def _b64u(b: bytes) -> str:
     return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
 

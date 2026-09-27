@@ -92,6 +92,17 @@ def _claim_traveler(session: Session, user: User, traveler_id: str,
     return ""
 
 
+def _sso_only(request: Request):
+    """On an SSO-only host (YONDER-164) nobody signs up or asks for a password
+    reset — those bounce to the SSO sign-in. A reset LINK (/reset/<token>) still
+    works there: reset emails are built from TX_PUBLIC_BASE_URL, often that same
+    public host, and the new password is then used on a non-forced host."""
+    from app import oidc
+    if oidc.forced_on(request):
+        return RedirectResponse("/login", status_code=303)
+    return None
+
+
 def _base_url(request: Request) -> str:
     return (settings.public_base_url or str(request.base_url)).rstrip("/")
 
@@ -173,6 +184,8 @@ def setup_submit(request: Request, username: str = Form(...), password: str = Fo
 # --------------------------------------------------------------------------- self-service register
 @router.get("/register", response_class=HTMLResponse)
 def register_form(request: Request, session: Session = Depends(get_session)):
+    if (blocked := _sso_only(request)) is not None:
+        return blocked
     if not settings.auth_registration_open:
         return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse(request, "register.html",
@@ -183,6 +196,8 @@ def register_form(request: Request, session: Session = Depends(get_session)):
 def register_submit(request: Request, username: str = Form(...), password: str = Form(...),
                     email: str = Form(""), traveler_id: str = Form("none"),
                     new_traveler: str = Form(""), session: Session = Depends(get_session)):
+    if (blocked := _sso_only(request)) is not None:
+        return blocked
     if not settings.auth_registration_open:
         return RedirectResponse("/login", status_code=303)
     if session.query(User).filter_by(username=username.strip()).one_or_none():
@@ -206,6 +221,8 @@ def register_submit(request: Request, username: str = Form(...), password: str =
 # --------------------------------------------------------------------------- forgot / reset
 @router.get("/forgot", response_class=HTMLResponse)
 def forgot_form(request: Request):
+    if (blocked := _sso_only(request)) is not None:
+        return blocked
     return templates.TemplateResponse(request, "forgot.html",
                                       {"smtp": email_configured()})
 
@@ -213,6 +230,8 @@ def forgot_form(request: Request):
 @router.post("/forgot", response_class=HTMLResponse)
 def forgot_submit(request: Request, identifier: str = Form(...),
                   session: Session = Depends(get_session)):
+    if (blocked := _sso_only(request)) is not None:
+        return blocked
     ident = identifier.strip()
     user = (session.query(User).filter_by(username=ident).one_or_none()
             or session.query(User).filter(

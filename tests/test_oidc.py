@@ -266,3 +266,71 @@ if DEPS:
         finally:
             settings.auth_required = False
             _cleanup(["t145b", "t145c"], ["T145 New", "T145 Later"])
+
+    # ------------------------------------------------------------------ YONDER-164
+    _PUBLIC, _LAN = "yonder.example.net", "yonder.home.example"
+
+    def _per_host(monkeypatch, hosts="yonder.example.net", force="yonder.example.net"):
+        _enable_oidc()
+        monkeypatch.setattr(oidc, "discovery", lambda: _DISCO)
+        monkeypatch.setattr(settings, "oidc_hosts", hosts)
+        monkeypatch.setattr(settings, "oidc_force_hosts", force)
+        monkeypatch.setattr(settings, "oidc_redirect_url", "")
+
+    def test_forced_host_sends_login_straight_to_sso(monkeypatch):
+        _per_host(monkeypatch)
+        c = TestClient(app, base_url=f"https://{_PUBLIC}")
+        r = c.get("/login?next=/trips", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/oidc/login?next=%2Ftrips"
+        r = c.get("/oidc/login?next=/trips", follow_redirects=False)
+        q = parse_qs(urlparse(r.headers["location"]).query)
+        # the callback follows the host the user came in on
+        assert q["redirect_uri"] == [f"https://{_PUBLIC}/oidc/callback"]
+
+    def test_forced_host_after_sso_error_shows_retry_without_password_form(monkeypatch):
+        _per_host(monkeypatch)
+        page = TestClient(app, base_url=f"https://{_PUBLIC}").get(
+            "/login?error=SSO+sign-in+failed").text
+        assert "Sign in with" in page and 'name="password"' not in page
+        assert "/forgot" not in page
+
+    def test_forced_host_refuses_password_paths(monkeypatch):
+        _per_host(monkeypatch)
+        monkeypatch.setattr(settings, "auth_registration_open", True)
+        c = TestClient(app, base_url=f"https://{_PUBLIC}")
+        r = c.post("/login", data={"username": "x", "password": "y", "next": "/"},
+                   follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/oidc/login")
+        for path in ("/register", "/forgot"):
+            r = c.get(path, follow_redirects=False)
+            assert r.status_code == 303 and r.headers["location"] == "/login", path
+        r = c.post("/forgot", data={"identifier": "x"}, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/login"
+        # an emailed reset link still opens (it's built from TX_PUBLIC_BASE_URL)
+        assert c.get("/reset/not-a-real-token").status_code == 200
+
+    def test_api_password_login_blocked_only_when_opted_in(monkeypatch):
+        _per_host(monkeypatch)
+        c = TestClient(app, base_url=f"https://{_PUBLIC}")
+        body = {"username": "nobody-164", "password": "wrong"}
+        assert c.post("/api/v1/auth/login", json=body).status_code == 401   # still tried
+        monkeypatch.setattr(settings, "oidc_force_api_login", True)
+        assert c.post("/api/v1/auth/login", json=body).status_code == 403
+        # the LAN host is unaffected either way
+        lan = TestClient(app, base_url=f"http://{_LAN}")
+        assert lan.post("/api/v1/auth/login", json=body).status_code == 401
+
+    def test_lan_host_is_password_only_when_not_listed(monkeypatch):
+        _per_host(monkeypatch)
+        c = TestClient(app, base_url=f"http://{_LAN}")
+        page = c.get("/login").text
+        assert 'name="password"' in page and "Sign in with" not in page
+        r = c.get("/oidc/login", follow_redirects=False)
+        assert "/login?error" in r.headers["location"]
+
+    def test_sso_offered_on_both_hosts_but_forced_on_one(monkeypatch):
+        _per_host(monkeypatch, hosts="", force=_PUBLIC)
+        page = TestClient(app, base_url=f"http://{_LAN}").get("/login").text
+        assert 'name="password"' in page and "Sign in with" in page
+        r = TestClient(app, base_url=f"http://{_LAN}").get("/oidc/login", follow_redirects=False)
+        assert urlparse(r.headers["location"]).netloc == "idp.test"
