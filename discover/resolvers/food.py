@@ -36,10 +36,10 @@ _DRINK_QUERIES = {
 _BUDGET_LABELS = {0: "no limit", 1: "$ (budget / street food)",
                   2: "$$ (casual to mid-range)", 3: "$$$ (mid to upscale)",
                   4: "$$$$ (fine dining)"}
-_PLACE_TYPES = ["restaurant", "cafe", "bar", "brewery", "distillery", "market",
+_PLACE_TYPES = ["restaurant", "cafe", "bar", "pub", "brewery", "distillery", "market",
                 "street_food"]
 _TYPE_HEADINGS = {"street_food": "Street food", "restaurant": "Restaurants",
-                  "cafe": "Cafés", "bar": "Bars", "brewery": "Breweries",
+                  "cafe": "Cafés", "bar": "Bars", "pub": "Pubs", "brewery": "Breweries",
                   "distillery": "Distilleries", "market": "Markets"}
 
 _SYSTEM = (
@@ -51,7 +51,11 @@ _SYSTEM = (
     "that may involve a listed allergen. Prefer local specialties over chains. "
     "Return a MIX: not only restaurants — include the notable bars, breweries, "
     "distilleries, cafés, and markets the results surface (a well-known local "
-    "distillery or brewery belongs on the list). Type each place accurately.")
+    "distillery or brewery belongs on the list). Type each place accurately. "
+    "For each place, set what_to_get to the specific dish or drink it is known "
+    "for when the results say so (else null). Also write `summary`: two or three "
+    "sentences on this city's food & drink scene for this traveller and what you "
+    "would prioritise.")
 
 _SCHEMA = {
     "type": "object",
@@ -68,6 +72,7 @@ _SCHEMA = {
                     "price_tier": {"type": "integer", "minimum": 1, "maximum": 4},
                     "why": {"type": "string"},
                     "local_specialty": {"type": "boolean"},
+                    "what_to_get": {"type": ["string", "null"]},
                     "source_url": {"type": "string"},
                 },
                 "required": ["name", "type", "price_tier", "why",
@@ -76,6 +81,7 @@ _SCHEMA = {
         },
         "local_dishes": {"type": "array", "items": {"type": "string"}},
         "allergy_warnings": {"type": "array", "items": {"type": "string"}},
+        "summary": {"type": "string"},
     },
     "required": ["places", "local_dishes", "allergy_warnings"],
 }
@@ -181,6 +187,7 @@ class FoodResolver:
         grounded = self._apply_budget(grounded,
                                       (profile.get("food") or {}).get("budget_ceiling") or 0)
         dishes = [d for d in (out.get("local_dishes") or []) if isinstance(d, str) and d.strip()]
+        summary = out.get("summary").strip() if isinstance(out.get("summary"), str) else ""
         warnings = [w for w in (out.get("allergy_warnings") or [])
                     if isinstance(w, str) and w.strip()]
         if not grounded and not dishes:
@@ -197,8 +204,8 @@ class FoodResolver:
             ttl_seconds=1_209_600,               # 14 days
             sources=sources,
             data={"places": grounded, "local_dishes": dishes,
-                  "allergy_warnings": warnings},
-            body_md=self._render(place, grounded, dishes, warnings))
+                  "allergy_warnings": warnings, "summary": summary},
+            body_md=self._render(place, grounded, dishes, warnings, summary))
 
     @staticmethod
     def _map_url(p: dict, city: str | None) -> str:
@@ -233,8 +240,10 @@ class FoodResolver:
         return out
 
     def _render(self, place: DerivedPlace, places: list[dict],
-                dishes: list[str], warnings: list[str]) -> str:
+                dishes: list[str], warnings: list[str], summary: str = "") -> str:
         out = [f"**{place.label}** — food & drink", ""]
+        if summary:
+            out += [summary, ""]
         if dishes:
             out.append("**Local specialties to try:** " + ", ".join(dishes))
             out.append("")
@@ -253,8 +262,10 @@ class FoodResolver:
                 star = " ⭐" if p.get("local_specialty") else ""
                 addr = (p.get("address") or "").strip()
                 addr_part = f" · {addr}" if addr else ""
+                get = f" · get: {p['what_to_get'].strip()}" \
+                    if isinstance(p.get("what_to_get"), str) and p["what_to_get"].strip() else ""
                 out.append(f"- **{p.get('name', '?')}**{star} ({tier}{hood}) — "
-                           f"{p.get('why', '').strip()}{addr_part} "
+                           f"{p.get('why', '').strip()}{get}{addr_part} "
                            f"[map ↗]({self._map_url(p, place.city)})")
             out.append("")
         if warnings:

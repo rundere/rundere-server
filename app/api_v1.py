@@ -99,6 +99,39 @@ class FindingOut(BaseModel):
     agent: str | None = None    # which one (its OAuth app / API token name)
 
 
+class DiscoveryItemOut(BaseModel):
+    """A place, event or activity inside a Food & Drink or Events & Activities
+    finding (4.5, YONDER-147). `finding_id` ties it to its city's write-up."""
+    id: str
+    finding_id: str
+    topic: str
+    place_key: str
+    kind: str
+    name: str
+    neighbourhood: str | None = None
+    address: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    website: str | None = None
+    what_to_get: str | None = None
+    price_tier: int | None = None
+    starts_on: str | None = None
+    ends_on: str | None = None
+    when_text: str | None = None
+    venue: str | None = None
+    details: str | None = None
+    duration: str | None = None
+    booking: bool | None = None
+    sources: Any = None
+    extra: Any = None
+    origin: str = "local"
+    agent: str | None = None
+    hidden: bool = False
+    hidden_reason: str | None = None        # not_my_thing | closed | been_there
+    edited: bool = False
+    activity_id: str | None = None
+
+
 class PackingItemOut(BaseModel):
     id: str
     item_key: str
@@ -131,6 +164,8 @@ class TripSnapshot(BaseModel):
     travelers: list[TravelerOut] = []
     places: list[PlaceOut] = []
     discovery: list[FindingOut] = []
+    discovery_items: list[DiscoveryItemOut] = []
+    discovery_profile: Any = None          # the caller's own preferences (4.5)
     packing: PackingOut | None = None
     captures: list[CaptureLite] = []
 
@@ -316,13 +351,84 @@ class SourceIn(BaseModel):
     url: str
 
 
+class ItemIn(BaseModel):
+    """A place, event or activity an agent adds to a Food & Drink or Events &
+    Activities finding (4.5, YONDER-148). Only `kind` and `name` are required."""
+    kind: str                              # food: restaurant|cafe|bar|pub|brewery|distillery|winery|market|bakery|dessert|street_food; events: event|activity
+    name: str
+    neighbourhood: str | None = None
+    address: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    website: str | None = None
+    what_to_get: str | None = None         # food: the dish or drink to order there
+    price_tier: int | None = None          # food: 1 (cheap) – 4 (splurge)
+    starts_on: str | None = None           # event: YYYY-MM-DD or YYYY-MM-DDTHH:MM
+    ends_on: str | None = None
+    when_text: str | None = None           # free wording, e.g. "Fridays in October"
+    venue: str | None = None
+    details: str | None = None             # what it is / why go
+    duration: str | None = None            # activity, e.g. "3 h"
+    booking: bool | None = None            # needs booking ahead
+    heads_up: bool = False                 # event that affects travel (strike, holiday closures)
+    source_url: str | None = None
+    sources: list[SourceIn] = []
+
+
+class PhraseIn(BaseModel):
+    phrase: str
+    meaning: str = ""
+    pronunciation: str | None = None
+    note: str | None = None                # when/with whom to use it (register)
+
+
+class PhrasesIn(BaseModel):
+    """Local phrases & register for one city (topic `language_local`)."""
+    register_summary: str = ""             # how formal/informal locals are, in a paragraph
+    greetings: list[PhraseIn] = []
+    expressions: list[PhraseIn] = []
+    etiquette: list[str] = []
+
+
+class AdvisoryIn(BaseModel):
+    text: str
+    source_url: str                        # every safety claim carries its source
+
+
+class SafetyIn(BaseModel):
+    summary: str = ""                      # brief, factual, non-alarmist
+    advisories: list[AdvisoryIn] = []
+    scams: list[str] = []
+
+
+class TransportIn(BaseModel):
+    summary: str = ""                      # getting around, in a paragraph
+    public_transit: str = ""
+    from_airport: str = ""
+    ride_hailing: list[str] = []           # apps that actually work here
+    apps: list[str] = []
+    tips: list[str] = []
+
+
+class SafetyTransportIn(BaseModel):
+    """Safety & Transport for one city (topic `safety`, 4.5) — the same
+    structure the local resolver stores, so it renders as headed subsections."""
+    safety: SafetyIn | None = None
+    transport: TransportIn | None = None
+
+
 class FindingIn(BaseModel):
-    """A finding from an external agent for the caller's Discover tab (YONDER-108)."""
-    topic: str | None = None               # research (default) | food | events | safety | visa | plugs | packing
+    """A finding from an external agent for the caller's Discover tab (YONDER-108).
+    Food/events may carry `items` (4.5); language_local carries `phrases`."""
+    topic: str | None = None               # research (default) | food | events | safety | visa | plugs | packing | language_local
     title: str                             # short heading, e.g. "Hikes near Banff"
-    body_md: str                           # markdown: **bold**, ### headings, - bullets, [text](url)
+    body_md: str = ""                      # markdown; for food/events the city summary + recommendation
     place_key: str | None = None           # "CA" / "CA:Banff"; research may omit it (= whole trip)
     sources: list[SourceIn] = []
+    items: list[ItemIn] | None = None      # food/events rows (replace the list unless replace_items=False)
+    replace_items: bool = True
+    phrases: PhrasesIn | None = None       # language_local only
+    safety_transport: SafetyTransportIn | None = None   # safety only (structured)
 
 
 class PackingItemIn(BaseModel):
@@ -432,6 +538,18 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
                  .filter(DiscoveryFinding.trip_id == trip.id,
                          DiscoveryFinding.user_id == user.id).all()]
 
+    from app.models import DiscoveryItem
+    from discover.items import item_dict
+    discovery_items = [DiscoveryItemOut(**item_dict(i))
+                       for i in session.query(DiscoveryItem)
+                       .filter(DiscoveryItem.trip_id == trip.id,
+                               DiscoveryItem.user_id == user.id)
+                       .order_by(DiscoveryItem.place_key, DiscoveryItem.topic,
+                                 DiscoveryItem.kind, DiscoveryItem.name).all()]
+
+    # the caller's own discovery profile, so an agent researches with it (4.5)
+    discovery_profile = my_discovery_profile(session, user)
+
     # packing — PER-USER (D-123)
     packing = _packing_out(session, trip.id, user.id)
 
@@ -446,7 +564,9 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
 
     return TripSnapshot(trip=_trip_summary(session, trip), activities=activities,
                         travelers=travelers, places=places, discovery=discovery,
-                        packing=packing, captures=captures)
+                        discovery_items=discovery_items,
+                        discovery_profile=discovery_profile, packing=packing,
+                        captures=captures)
 
 
 def _review_item(v: dict) -> ReviewItemOut:
@@ -898,6 +1018,55 @@ def api_add_activity(trip_id: str, body: ActivityIn,
     return _activity_out(a, tagged)
 
 
+class ItemToTimelineIn(BaseModel):
+    """Add a Discover item to the timeline (4.5). The activity is built from the
+    item (name, address, map link, website, what to get); give the time."""
+    starts_at: str | None = None           # YYYY-MM-DDTHH:MM local; defaults to the event's date
+    traveler_ids: list[int] | None = None  # None/[] = everyone on the trip
+    notes: str | None = None               # replaces the notes built from the item
+
+
+def add_item_to_timeline(session: Session, user, trip_id: str, item_id: str,
+                         body: ItemToTimelineIn) -> ActivityOut:
+    """Create the timeline activity a Discover item describes and link the two."""
+    from app.models import DiscoveryItem
+    from discover import items as discovery_items
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    item = session.get(DiscoveryItem, item_id)
+    if item is None or item.trip_id != trip.id or item.user_id != user.id:
+        raise HTTPException(404, "no such Discover item on this trip")
+    if item.activity_id and session.get(TripActivity, item.activity_id) is not None:
+        raise HTTPException(409, "this item is already on the timeline "
+                                 f"(activity {item.activity_id})")
+    atype, values = discovery_items.activity_for(item)
+    if body.starts_at:
+        values["when"] = body.starts_at
+    if body.notes is not None:
+        values["notes"] = body.notes
+    t = _activity_type_or_400(atype)
+    from app.trips.enrich import prepare_activity
+    values, geo = prepare_activity(t.key, {k: v for k, v in values.items() if v},
+                                   session=session, trip_id=trip.id)
+    a = TripActivity(trip_id=trip.id, type=t.key, values=values, geo=geo,
+                     starts_at=values.get("when") or "")
+    session.add(a)
+    session.flush()
+    tagged = _set_activity_travelers(session, a, body.traveler_ids or [])
+    item.activity_id = a.id
+    session.commit()
+    session.refresh(a)
+    return _activity_out(a, tagged)
+
+
+@router.post("/trips/{trip_id}/discovery-items/{item_id}/timeline",
+             response_model=ActivityOut, status_code=201)
+def api_item_to_timeline(trip_id: str, item_id: str, body: ItemToTimelineIn,
+                         user=Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """Put a Discover place/event/activity on the timeline, filled in from the item."""
+    return add_item_to_timeline(session, user, trip_id, item_id, body)
+
+
 @router.patch("/trips/{trip_id}/activities/{activity_id}", response_model=ActivityOut)
 def api_update_activity(trip_id: str, activity_id: str, body: ActivityPatch,
                         user=Depends(authn.current_user), session: Session = Depends(get_session)):
@@ -935,6 +1104,8 @@ def api_delete_activity(trip_id: str, activity_id: str,
     if a is not None and a.trip_id == trip_id:
         from app.trips import who
         who.clear_activity(session, a.id)
+        from discover import items as discovery_items
+        discovery_items.unlink_activity(session, a.id)
         session.delete(a)
         session.commit()
     return None
@@ -1011,6 +1182,8 @@ def api_activity_types(user=Depends(authn.current_user)):
 
 # --------------------------------------------------------------------------- Discover: saved research (YONDER-108)
 RESEARCH_TOPIC = "research"
+PHRASES_TOPIC = "language_local"
+MAX_ITEMS = 200
 
 
 def _finding_out(f: DiscoveryFinding) -> FindingOut:
@@ -1032,18 +1205,48 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
     `data["history"]`. The result is a draft marked `resolver="agent"` with
     `data["agent"]` = `agent` (the connecting credential's name, supplied by
     the caller — never by the agent's own input), which a local whole-trip run
-    then never overwrites. Never touches anyone else's Discover."""
+    then never overwrites. Never touches anyone else's Discover.
+
+    4.5: food/events may carry `items` (synced as that finding's rows: they
+    replace the list, keeping rows the person hid, edited or put on the
+    timeline; `replace_items=False` only adds/updates), with `body_md` as the
+    city summary. language_local carries structured `phrases`."""
     from datetime import timezone
 
+    from discover import items as discovery_items
     from discover import policy
+    from discover.resolvers.language_local import render_phrases
 
     trip = scope.require_trip(session, user, trip_id, edit=True)
     topic = (body.topic or RESEARCH_TOPIC).strip()
     if topic not in policy.EXTERNAL_TOPICS:
         raise HTTPException(400, f"topic must be one of {', '.join(policy.EXTERNAL_TOPICS)}")
+    if body.items is not None and topic not in discovery_items.ITEM_TOPICS:
+        raise HTTPException(400, "items are only for the food and events topics")
+    if (body.phrases is not None) != (topic == PHRASES_TOPIC):
+        raise HTTPException(400, "phrases go with topic language_local, and that topic "
+                                 "needs phrases")
+    rows = []
+    try:
+        rows = [discovery_items.row_from_input(topic, i.model_dump())
+                for i in (body.items or [])[:MAX_ITEMS]]
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     title = (body.title or "").strip()[:200]
     text = (body.body_md or "").strip()
-    if not title or not text:
+    if topic == PHRASES_TOPIC:
+        ph = body.phrases.model_dump()
+        if not (ph["register_summary"].strip() or ph["greetings"] or ph["expressions"]):
+            raise HTTPException(400, "phrases need a register_summary, greetings or expressions")
+    st = None
+    if body.safety_transport is not None:
+        if topic != "safety":
+            raise HTTPException(400, "safety_transport goes with topic safety")
+        st = _safety_data(body.safety_transport)
+        if st is None:
+            raise HTTPException(400, "safety_transport needs a safety summary, advisories "
+                                     "or scams, or a transport summary")
+    if not title or not (text or rows or st or topic == PHRASES_TOPIC):
         raise HTTPException(400, "title and body_md are required")
     place_key = (body.place_key or "").strip()[:128]
     if not place_key:
@@ -1051,9 +1254,28 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
             raise HTTPException(400, "place_key is required for this topic (a country code "
                                      "like \"CA\" or a city key like \"CA:Banff\")")
         place_key = "trip"
-    md = f"**{title}**\n\n{text}"[:100_000]
+    if topic == PHRASES_TOPIC:
+        md = render_phrases(title, ph["register_summary"].strip(), ph["greetings"],
+                            ph["expressions"], [e for e in ph["etiquette"] if e.strip()])
+    elif st is not None:
+        from discover.grounding import corroborate
+        from discover.resolvers.safety import render_safety
+        sd = st["safety"] or {}
+        md = render_safety(title, sd, sd.get("advisories") or [], sd.get("scams") or [],
+                           corroborate([a["source_url"] for a in sd.get("advisories") or []]),
+                           st["transport"])
+        if text:
+            md += "\n\n" + text
+    else:
+        md = f"**{title}**\n\n{text}"[:100_000]
     sources = [{"title": (s.title or s.url)[:300], "url": s.url[:2000]}
                for s in body.sources[:50] if s.url.startswith(("http://", "https://"))]
+    if st is not None:          # every advisory's source is a source of the finding
+        seen = {s["url"] for s in sources}
+        for a in (st["safety"] or {}).get("advisories") or []:
+            if a["source_url"] not in seen:
+                seen.add(a["source_url"])
+                sources.append({"title": a["source_url"], "url": a["source_url"]})
     f = (session.query(DiscoveryFinding)
          .filter(DiscoveryFinding.trip_id == trip.id, DiscoveryFinding.user_id == user.id,
                  DiscoveryFinding.topic == topic,
@@ -1074,12 +1296,109 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
     f.sources = sources
     f.resolver = policy.EXTERNAL_RESOLVER
     f.confidence = None
-    f.data = {"title": title, "agent": (agent or policy.DEFAULT_AGENT)[:128],
-              "history": history}
+    agent_name = (agent or policy.DEFAULT_AGENT)[:128]
+    f.data = {"title": title, "agent": agent_name, "history": history}
+    if topic in discovery_items.ITEM_TOPICS and text:
+        f.data["summary"] = text                      # the city write-up (4.5)
+    if st is not None:
+        f.data.update(st)                              # renders as subsections (4.5)
+    if topic == PHRASES_TOPIC:
+        f.data.update({"register_summary": ph["register_summary"].strip(),
+                       "greetings": ph["greetings"], "expressions": ph["expressions"],
+                       "etiquette": [e for e in ph["etiquette"] if e.strip()]})
     f.generated_at = datetime.now(timezone.utc)
+    if body.items is not None:
+        session.flush()
+        discovery_items.sync_items(session, f, rows, origin="agent", agent=agent_name,
+                                   prune=body.replace_items)
     session.commit()
     session.refresh(f)
     return _finding_out(f)
+
+
+def _safety_data(body: SafetyTransportIn) -> dict | None:
+    """Clean an agent's Safety & Transport into the resolver's stored shape.
+    Advisories need an http(s) source; empty parts are dropped."""
+    from discover.grounding import corroborate
+
+    def strs(xs, n=20):
+        return [x.strip()[:500] for x in (xs or [])[:n] if x and x.strip()]
+
+    safety = transport = None
+    if body.safety:
+        adv = [{"text": a.text.strip()[:1000], "source_url": a.source_url.strip()[:2000]}
+               for a in body.safety.advisories[:20]
+               if a.text.strip() and a.source_url.strip().startswith(("http://", "https://"))]
+        summary = body.safety.summary.strip()[:3000]
+        scams = strs(body.safety.scams)
+        if summary or adv or scams:
+            safety = {"summary": summary, "advisories": adv, "scams": scams,
+                      "corroborated": corroborate([a["source_url"] for a in adv]).corroborated}
+    if body.transport and body.transport.summary.strip():
+        t = body.transport
+        transport = {"summary": t.summary.strip()[:3000],
+                     "public_transit": t.public_transit.strip()[:2000],
+                     "from_airport": t.from_airport.strip()[:2000],
+                     "ride_hailing": strs(t.ride_hailing), "apps": strs(t.apps),
+                     "tips": strs(t.tips)}
+    if not (safety or transport):
+        return None
+    return {"safety": safety, "transport": transport}
+
+
+def my_discovery_profile(session: Session, user) -> dict:
+    """The caller's own discovery profile (dietary, cuisines to avoid, budget,
+    drink/activity interests, mobility), labelled, with how to apply it."""
+    from app.trips.routes import discovery_profile_public
+    trav = session.get(TravelerIdentity, user.traveler_id) if user.traveler_id else None
+    return discovery_profile_public(session, trav, user_id=user.id)
+
+
+@router.get("/me/discovery-profile")
+def api_my_discovery_profile(user=Depends(authn.current_user),
+                             session: Session = Depends(get_session)):
+    """Your discovery profile — what Discover (and your agents) research with."""
+    return my_discovery_profile(session, user)
+
+
+# --------------------------------------------------------------------------- research kits (4.5)
+def _kit_out(kit, full: bool = False) -> dict:
+    out = {"slug": kit.slug, "name": kit.name, "title": kit.title,
+           "description": kit.description,
+           "mcp_prompt": "research_" + kit.slug.replace("-", "_"),
+           "download": f"/api/v1/research-kits/{kit.slug}.zip"}
+    if full:
+        out["skill_md"] = kit.text
+    return out
+
+
+@router.get("/research-kits")
+def api_research_kits(user=Depends(authn.current_user)):
+    """Reusable agent instructions that research part of a trip and save it
+    to Discover over MCP (also served as MCP prompts)."""
+    from app import research_kits
+    return [_kit_out(k) for k in research_kits.all_kits()]
+
+
+@router.get("/research-kits/{slug}.zip")
+def api_research_kit_zip(slug: str, user=Depends(authn.current_user)):
+    """The kit as a skill zip, to add to an agent that takes skills."""
+    from fastapi import Response
+    from app import research_kits
+    kit = research_kits.get(slug)
+    if not kit:
+        raise HTTPException(404, "No such research kit")
+    return Response(research_kits.zip_bytes(kit), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{kit.name}.zip"'})
+
+
+@router.get("/research-kits/{slug}")
+def api_research_kit(slug: str, user=Depends(authn.current_user)):
+    from app import research_kits
+    kit = research_kits.get(slug)
+    if not kit:
+        raise HTTPException(404, "No such research kit")
+    return _kit_out(kit, full=True)
 
 
 @router.post("/trips/{trip_id}/findings", response_model=FindingOut, status_code=201)

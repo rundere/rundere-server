@@ -317,3 +317,18 @@ def test_brand_assets_are_public():
         finally:
             settings.auth_required = prev
     _route_or_skip(run)
+
+
+def test_name_recording_is_public_and_wired():
+    """The About page plays design/audio/rundere.m4a; it loads without signing in."""
+    def run():
+        from app.config import settings
+        prev, settings.auth_required = settings.auth_required, True
+        try:
+            r = _client.get("/brand/audio/rundere.m4a")
+            assert r.status_code == 200 and r.content[4:8] == b"ftyp"
+        finally:
+            settings.auth_required = prev
+        page = _client.get("/about").text
+        assert "/brand/audio/rundere.m4a" in page and "/brand/audio/rundere.webm" in page
+    _route_or_skip(run)

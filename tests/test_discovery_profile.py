@@ -32,7 +32,9 @@ def test_form_is_structured_not_json():
         return
     r = _client.get("/trips/settings/discovery-profile")
     assert r.status_code == 200
-    assert "<select" in r.text and "textarea" not in r.text
+    # structured fields, not a JSON blob — the one textarea is the free-text notes (4.5)
+    assert "<select" in r.text and r.text.count("<textarea") == 1
+    assert 'name="notes"' in r.text
     for name in ("dietary_restrictions", "cuisine_dislikes", "allergies",
                  "budget_ceiling", "drink_interests", "activity_interests",
                  "mobility"):

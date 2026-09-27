@@ -15,6 +15,7 @@ as-is, and don't invent new colours, fonts or logo variants.
 design/
 ├── logo/     mark, wordmark, lockups (SVG; outlined — no font needed)
 ├── icons/    favicons, PWA icons, iOS app icon master, Android adaptive layers
+├── audio/    rundere.m4a + rundere.webm — the name, spoken (pronunciation button)
 └── tokens/   tokens.json · tokens.css · RundereTheme.swift · RundereTheme.kt
 ```
 
@@ -48,6 +49,16 @@ for dark grounds) and `-night` (#0F2135, for light grounds).
 - Clear space = 2× fuselage width on every side. Minimum sizes: 16px (use `-16`), lockup 96px wide.
 - Switch files by size (don't just scale down the full mark): ≥ 64px full · 24–63px `-32` · 16px `-16`.
 - Don't typeset the wordmark: use the outlined SVG. Never swap the dot for a hyphen or period.
+
+## 1a. Pronunciation
+
+Say it **/ run-THAIR /** — like "run there". `audio/` holds the owner's own recording
+of the name, trimmed to 1.5 s and normalised to −1.5 dBFS peak, in two encodings:
+`rundere.m4a` (AAC, ~13 KB: iOS, Safari, Chrome, Edge, Android) and `rundere.webm`
+(Opus, ~9 KB: browsers without AAC). Use these for every "hear it" control on web, iOS
+and Android; don't use a TTS voice. Web serves them at `/brand/audio/*` and lists both as
+`<source>`s, falling back to the browser's speech voice only if neither plays. To replace
+it: record a new take, trim to the word, normalise, export both formats, keep the names.
 
 ## 2. Icons
 

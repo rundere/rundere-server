@@ -792,6 +792,8 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 if not dry_run:
                     from app.trips import who
                     who.clear_activity(session, existing.id)
+                    from discover import items as discovery_items
+                    discovery_items.unlink_activity(session, existing.id)
                     session.delete(existing)
                 _record(target, "cancel", {"trip_id": tid},
                         None if dry_run else (200, {}, ""), extra=extra)

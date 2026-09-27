@@ -30,6 +30,10 @@
                                                       # trip route lines) for timeline
                                                       # activities saved before 4.2.x;
                                                       # --redo re-locates every one
+    python -m app.cli purge-orphans [--execute]         # remove data left behind by
+                                                      # trips deleted before 4.5 (Discover,
+                                                      # packing, timeline); unlink captures
+                                                      # and journal entries. DRY-RUN by default.
     python -m app.cli commit [--limit N] [--execute]   # write APPROVED items to
                                                       # AirTrail + AdventureLog.
                                                       # DRY-RUN by default; shows
@@ -377,6 +381,19 @@ def main(argv: list[str]) -> int:
                     if r.get("error"):
                         line += f" — {r['error']}"
                     print(line)
+        elif cmd == "purge-orphans":
+            from app.trips.purge import purge_orphans
+            execute = "--execute" in args
+            counts = purge_orphans(session, execute=execute)
+            if execute:
+                session.commit()
+            mode = "EXECUTED" if execute else "DRY-RUN — nothing changed; pass --execute"
+            print(f"purge-orphans [{mode}]")
+            for table, n in counts.items():
+                if n:
+                    print(f"  {table}: {n}")
+            if not any(counts.values()):
+                print("  nothing left behind by deleted trips")
         else:
             print(__doc__)
             return 2

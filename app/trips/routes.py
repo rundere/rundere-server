@@ -15,6 +15,8 @@ import re
 import uuid
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
@@ -501,6 +503,15 @@ def _redirect(url: str) -> HTMLResponse:
     return resp
 
 
+def _refresh() -> HTMLResponse:
+    """Reload the page the action came from, keeping its #section (4.5: a
+    Discover action returns to the same section and city — a redirect that only
+    changed the #fragment wouldn't reload at all)."""
+    resp = HTMLResponse("")
+    resp.headers["HX-Refresh"] = "true"
+    return resp
+
+
 # ----------------------------------------------------------------- list / detail
 
 @router.get("", response_class=HTMLResponse)
@@ -669,6 +680,8 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
                           DiscoveryFinding.user_id == uid,
                           DiscoveryFinding.place_key == place_key,
                           DiscoveryFinding.status == "draft").all()):
+            from discover import items as discovery_items
+            discovery_items.delete_for_finding(session, f.id)
             session.delete(f)
     session.commit()
     return templates.TemplateResponse(request, "_derived_locations.html",
@@ -752,6 +765,13 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         "scope": f.scope, "status": f.status, "confidence": f.confidence,
         "body": _render_md(f.body_md), "sources": f.sources or [],
         "is_currency": f.topic == "currency",
+        # 4.5 Food/Events: the city write-up shown above the tables.
+        "summary": _render_md(data.get("summary")) if data.get("summary") else None,
+        "dishes": [d for d in (data.get("local_dishes") or []) if isinstance(d, str)],
+        "warnings": [w for w in (data.get("allergy_warnings") or []) if isinstance(w, str)],
+        "currency": data.get("currency") or "",
+        "rates_date": data.get("date") or "",
+        "parts": _safety_parts(data) if f.topic == "safety" else None,
         "is_language": f.topic == "language",
         # Language findings aren't per-finding re-runnable: national detection is
         # a pure function of country (re-run can only clobber a manual Languages
@@ -772,6 +792,144 @@ def _finding_view(f: DiscoveryFinding) -> dict:
     }
 
 
+_KIND_LABELS = {
+    "restaurant": "Restaurants", "cafe": "Cafés", "bar": "Bars", "pub": "Pubs",
+    "brewery": "Breweries", "distillery": "Distilleries", "winery": "Wineries",
+    "market": "Markets", "bakery": "Bakeries", "dessert": "Desserts",
+    "street_food": "Street food",
+}
+
+
+def _when_label(i) -> str:
+    """"Oct 14" / "Oct 14 – 16" / the source's own wording."""
+    def fmt(v):
+        try:
+            d = datetime.strptime(v[:10], "%Y-%m-%d")
+        except (TypeError, ValueError):
+            return None
+        out = d.strftime("%b %-d")
+        return out + (f", {v[11:16]}" if len(v) > 10 else "")
+    start, end = fmt(i.starts_on), fmt(i.ends_on)
+    if start and end and end != start:
+        return f"{start} – {end}"
+    return start or (i.when_text or "")
+
+
+def _item_view(i, on_timeline: dict) -> dict:
+    from discover import items as disc_items
+    src = next((s.get("url") for s in (i.sources or []) if s.get("url")), None)
+    act = on_timeline.get(i.activity_id) if i.activity_id else None
+    extra = i.extra or {}
+    return {
+        "id": i.id, "name": i.name, "kind": i.kind,
+        "kind_label": _KIND_LABELS.get(i.kind, i.kind.replace("_", " ").title()),
+        "neighbourhood": i.neighbourhood, "address": i.address,
+        "what_to_get": i.what_to_get,
+        "price": "$" * i.price_tier if i.price_tier else "",
+        "when": _when_label(i), "sort_when": i.starts_on or "9999",
+        "venue": i.venue, "details": i.details, "duration": i.duration,
+        "booking": i.booking, "website": i.website, "source_url": src,
+        "map_url": disc_items.map_url(i), "hidden": bool(i.hidden),
+        "hidden_reason": (i.hidden_reason or disc_items.DEFAULT_HIDE_REASON) if i.hidden else None,
+        "heads_up": bool(extra.get("heads_up")), "local_specialty": bool(extra.get("local_specialty")),
+        "agent": i.agent if i.origin == "agent" else None,
+        "on_timeline": act,   # {"when": "Oct 14"} or None
+    }
+
+
+def _item_cities(session: Session, trip_id: str, uid: str | None,
+                 views: dict[str, list]) -> dict[str, list]:
+    """Food & Drink / Events & Activities as cities (4.5): each city's finding
+    (summary, status) plus its items grouped into tables. Keyed by section."""
+    from app.models import DiscoveryItem
+    rows = (session.query(DiscoveryItem)
+            .filter(DiscoveryItem.trip_id == trip_id, DiscoveryItem.user_id == uid)
+            .order_by(DiscoveryItem.name).all())
+    act_ids = [r.activity_id for r in rows if r.activity_id]
+    on_tl = {}
+    for a in (session.query(TripActivity).filter(TripActivity.id.in_(act_ids)).all()
+              if act_ids else []):
+        on_tl[a.id] = {"when": _when_label(SimpleNamespace(starts_on=a.starts_at or None,
+                                                           ends_on=None, when_text=""))}
+    by_finding: dict[str, list] = {}
+    for r in rows:
+        by_finding.setdefault(r.finding_id, []).append(_item_view(r, on_tl))
+    out: dict[str, list] = {}
+    for topic in ("food", "events"):
+        cities = []
+        for f in views.get(topic, []):
+            its = by_finding.get(f["id"], [])
+            shown = [i for i in its if not i["hidden"]]
+            if topic == "food":
+                order = list(_KIND_LABELS)
+                groups = [{"label": _KIND_LABELS[k], "kind": k,
+                           "rows": [i for i in its if i["kind"] == k]} for k in order]
+                groups += [{"label": "Other", "kind": "other",
+                            "rows": [i for i in its if i["kind"] not in _KIND_LABELS]}]
+            else:
+                dated = sorted([i for i in its if i["kind"] == "event" and not i["heads_up"]],
+                               key=lambda i: i["sort_when"])
+                groups = [
+                    {"label": "Heads-up while you're there", "kind": "heads_up",
+                     "rows": [i for i in its if i["heads_up"]]},
+                    {"label": "Events", "kind": "event", "rows": dated},
+                    {"label": "Activities", "kind": "activity",
+                     "rows": [i for i in its if i["kind"] == "activity"]},
+                ]
+            groups = [g for g in groups if g["rows"]]
+            srcs, seen = [], set()
+            for s in (f["sources"] or []) + [{"url": i["source_url"], "title": i["name"]}
+                                             for i in its if i["source_url"]]:
+                u = (s or {}).get("url")
+                if u and u not in seen:
+                    seen.add(u)
+                    srcs.append({"url": u, "title": s.get("title") or u,
+                                 "domain": urlparse(u).netloc.removeprefix("www.")})
+            srcs.sort(key=lambda s: s["domain"])
+            cities.append({"finding": f, "key": f["place_key"],
+                           "label": f["place_key"].split(":", 1)[-1],
+                           "groups": groups, "count": len(shown),
+                           "hidden": len(its) - len(shown), "sources": srcs})
+        out[topic] = cities
+    return out
+
+
+def _safety_parts(data: dict) -> dict | None:
+    """Safety & Transport as headed subsections (4.5, YONDER-168) from the
+    structured data the local resolver stores. None for a finding without it
+    (e.g. an agent's markdown) — that one renders its text as before."""
+    safety = data.get("safety") if isinstance(data.get("safety"), dict) else None
+    transport = data.get("transport") if isinstance(data.get("transport"), dict) else None
+    if not (safety or transport):
+        return None
+
+    def strs(xs):
+        return [x.strip() for x in (xs or []) if isinstance(x, str) and x.strip()]
+
+    out = {"safety": [], "transport": [], "single_source": False}
+    if safety:
+        if (safety.get("summary") or "").strip():
+            out["safety"].append({"h": "Summary", "text": safety["summary"].strip()})
+        adv = [{"text": a.get("text", "").strip(), "url": a.get("source_url")}
+               for a in (safety.get("advisories") or [])
+               if isinstance(a, dict) and (a.get("text") or "").strip()]
+        if adv:
+            out["safety"].append({"h": "Advisories", "links": adv})
+        if strs(safety.get("scams")):
+            out["safety"].append({"h": "Scams to know", "list": strs(safety.get("scams"))})
+        out["single_source"] = safety.get("corroborated") is False
+    if transport:
+        for key, h in (("summary", "Getting around"), ("public_transit", "Public transit"),
+                       ("from_airport", "From the airport")):
+            if isinstance(transport.get(key), str) and transport[key].strip():
+                out["transport"].append({"h": h, "text": transport[key].strip()})
+        for key, h in (("ride_hailing", "Ride-hailing that works here"),
+                       ("apps", "Apps to install"), ("tips", "Tips")):
+            if strs(transport.get(key)):
+                out["transport"].append({"h": h, "list": strs(transport.get(key))})
+    return out if (out["safety"] or out["transport"]) else None
+
+
 def _run_view(run: DiscoveryRun) -> dict:
     return {"status": run.status, "phase": run.phase, "done": run.done,
             "total": run.total,
@@ -784,17 +942,23 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
     findings = (session.query(DiscoveryFinding)
                 .filter(DiscoveryFinding.trip_id == trip_id,
                         DiscoveryFinding.user_id == uid).all())
+    from discover import sections as disc_sections
     grouped: dict[str, list] = {}
     for f in findings:
         grouped.setdefault(f.topic, []).append(f)
+    views: dict[str, list] = {}
     topic_groups = []
     for topic in TOPIC_ORDER:
         fs = grouped.get(topic)
         if fs:
             fs.sort(key=lambda x: x.place_key or "")
+            views[topic] = [_finding_view(f) for f in fs]
             topic_groups.append({"topic": topic,
                                  "label": TOPIC_LABELS.get(topic, topic),
-                                 "findings": [_finding_view(f) for f in fs]})
+                                 "findings": views[topic]})
+    # 4.5: the currency calculator lives in the trip header (YONDER-166).
+    currencies = [{"id": v["id"], "code": v["currency"], "place_key": v["place_key"]}
+                  for v in views.get("currency", []) if v["has_rates"]]
     last = (session.query(DiscoveryRun)
             .filter(DiscoveryRun.trip_id == trip_id, DiscoveryRun.user_id == uid)
             .order_by(DiscoveryRun.started_at.desc()).first())
@@ -804,11 +968,30 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
         pct = int(100 * last.done / last.total) if last.total else 0
         run_progress = {"phase": last.phase or "starting", "done": last.done,
                         "total": last.total, "pct": pct}
+    secs = disc_sections.build(views)
+    cities = _item_cities(session, trip_id, uid, views)
+    from discover.weather_summary import summarize as weather_summary
+    weather = weather_summary([((f.place_key or "").split(":", 1)[-1], f.data)
+                               for f in grouped.get("weather", [])])
+    for s in secs:
+        if s["key"] in cities:
+            s["cities"] = cities[s["key"]]
+        if s["key"] == "weather":
+            s["summary"] = weather
     return {"discovery_topics": topic_groups,
+            "discovery_sections": secs,
+            "discovery_default_section": disc_sections.DEFAULT_SECTION,
+            "trip_currencies": currencies,
             "discovery_has_findings": bool(findings),
             "discovery_last": _run_view(last) if last else None,
             "discovery_running": running,
-            "discovery_run": run_progress}
+            "discovery_run": run_progress,
+            "hide_reasons": _hide_reasons()}
+
+
+def _hide_reasons():
+    from discover.items import HIDE_REASONS
+    return HIDE_REASONS
 
 
 def _resolvers():
@@ -907,6 +1090,54 @@ def _finding_or_404(session: Session, request: Request, trip_id: str,
     return f
 
 
+def _item_or_none(session: Session, request: Request, trip_id: str, item_id: str):
+    """A Discover item on a trip the viewer can access, and only their OWN."""
+    from app.models import DiscoveryItem
+    if not item_id:
+        return None
+    i = session.get(DiscoveryItem, item_id)
+    if i is None or i.trip_id != trip_id or i.user_id != _viewer_uid(request):
+        return None
+    if scope.trip_or_none(session, request, trip_id) is None:
+        return None
+    return i
+
+
+@router.get("/{trip_id}/discovery-item/{item_id}/to-timeline", response_class=HTMLResponse)
+def item_to_timeline_form(trip_id: str, item_id: str, request: Request,
+                          session: Session = Depends(get_session)):
+    """The activity form, filled in from a Discover item (4.5): Restaurant for
+    food, Event on its date, Tour / activity otherwise. The person sets the time."""
+    from discover import items as disc_items
+    i = _item_or_none(session, request, trip_id, item_id)
+    if i is None:
+        return HTMLResponse("", status_code=404)
+    atype, values = disc_items.activity_for(i)
+    ctx = _activity_modal_ctx(request, trip_id, mode="create",
+                              action=f"/trips/{trip_id}/activity", atype=atype,
+                              values=values, session=session)
+    ctx.update(title=f"Add to timeline — {i.name}", discovery_item_id=i.id)
+    return templates.TemplateResponse(request, "_activity_modal.html", ctx)
+
+
+@router.post("/{trip_id}/discovery-item/{item_id}/hide", response_class=HTMLResponse)
+def item_hide(trip_id: str, item_id: str, request: Request, hidden: str = Form("1"),
+              reason: str = Form(""), session: Session = Depends(get_session)):
+    """Hide (or bring back) a Discover row. Hidden rows stay hidden when Discover
+    or an agent refreshes the city. The reason defaults to "not my thing" (what
+    agents read as a dislike); "closed" and "been there" say nothing about taste."""
+    from discover import items as disc_items
+    i = _item_or_none(session, request, trip_id, item_id)
+    if i is None:
+        return HTMLResponse("", status_code=404)
+    if hidden == "1":
+        disc_items.hide(i, reason or None)
+    else:
+        disc_items.unhide(i)
+    session.commit()
+    return _discovery_section(request, session, scope.trip_or_none(session, request, trip_id))
+
+
 @router.post("/{trip_id}/finding/{fid}/rerun", response_class=HTMLResponse)
 def rerun_finding_route(trip_id: str, fid: str, request: Request,
                         session: Session = Depends(get_session)):
@@ -919,11 +1150,11 @@ def rerun_finding_route(trip_id: str, fid: str, request: Request,
     # Language findings aren't re-runnable (see _finding_view) — never let a
     # stale/forged POST overwrite a manual Languages pick.
     if f.topic.startswith("language") or f.topic == "research":
-        return _redirect(f"/trips/{trip_id}")
+        return _refresh()
     rerun_finding(session, f, resolve_airport=_airport_resolver(),
                   geocoder=_photon(), resolvers=_resolvers(),
                   base_currencies=_base_currencies(_viewer_traveler(session, request)))
-    return _redirect(f"/trips/{trip_id}")
+    return _refresh()
 
 
 @router.get("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
@@ -956,10 +1187,15 @@ def edit_finding(trip_id: str, fid: str, request: Request,
         return templates.TemplateResponse(request, "_currency_edit.html", {
             "request": request, "trip_id": trip_id, "fid": fid,
             "code": code, "place_key": f.place_key, "rows": rows})
+    # Food/Events (4.5): the text you edit is the city summary above the tables;
+    # the rows are edited in place, so the old generated list isn't offered.
+    item_topic = f.topic in ("food", "events")
     return templates.TemplateResponse(request, "_finding_edit.html", {
         "request": request, "trip_id": trip_id, "fid": fid,
-        "topic_label": TOPIC_LABELS.get(f.topic, f.topic),
-        "place_key": f.place_key, "body": f.body_md or ""})
+        "topic_label": ("City summary · " if item_topic else "")
+                       + TOPIC_LABELS.get(f.topic, f.topic),
+        "place_key": f.place_key,
+        "body": (data.get("summary") or "") if item_topic else (f.body_md or "")})
 
 
 @router.post("/{trip_id}/finding/{fid}/edit", response_class=HTMLResponse)
@@ -1011,13 +1247,16 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
             data.get("currency_name") or code, bases, per_base, as_of,
             bool(data.get("usd_useful")), source_note="manually edited")
         f.confidence = "high" if per_base else "flagged"
+    elif f.topic in ("food", "events"):
+        f.data = {**(f.data or {}), "summary": body.strip()}
+        f.body_md = f"**{_bold_label(f.body_md) or f.place_key}**\n\n{body.strip()}"
     else:
         f.body_md = body
     if kept_history and not (f.data or {}).get("history"):
         f.data = {**(f.data or {}), "history": kept_history}   # an edit keeps earlier versions
     f.status = "edited"          # on a lockable topic this also LOCKS it (discover/policy.py)
     session.commit()
-    return _redirect(f"/trips/{trip_id}")
+    return _refresh()
 
 
 @router.post("/{trip_id}/finding/{fid}/lock", response_class=HTMLResponse)
@@ -1035,7 +1274,7 @@ def lock_finding(trip_id: str, fid: str, request: Request, lock: str = Form("1")
                             status_code=400)
     f.status = "approved" if lock == "1" else "draft"
     session.commit()
-    return _redirect(f"/trips/{trip_id}")
+    return _refresh()
 
 
 @router.get("/{trip_id}/finding/{fid}/calculator", response_class=HTMLResponse)
@@ -1158,6 +1397,9 @@ DISCOVERY_MOBILITY = [("no_limits", "No limits"),
                       ("moderate", "Moderate — some walking is fine"),
                       ("limited", "Limited — minimal walking or stairs"),
                       ("wheelchair", "Wheelchair accessible only")]
+
+
+DISCOVERY_NOTES_MAX = 2000
 
 
 def _discovery_default() -> dict:
@@ -1683,6 +1925,64 @@ def _discovery_profile_row(session: Session, traveler: TravelerIdentity | None,
             .order_by(DiscoveryProfile.created_at).first())
 
 
+def discovery_profile_public(session: Session, traveler: TravelerIdentity | None,
+                             owner: bool = False, user_id: str | None = None) -> dict:
+    """ONE person's discovery profile for an AI agent (4.5, MCP/API): the same
+    preferences the local Discover run shapes its research with, each value
+    with its label, their free-text notes for agents, the rows they hid as
+    "not my thing" (`user_id`'s, across trips), and how to apply it all. Only
+    ever the caller's own."""
+    from discover.items import dislikes as hidden_dislikes
+    row = _discovery_profile_row(session, traveler, owner)
+    d = _discovery_default()
+    v = {**d, **((row.values if row else None) or {})}
+    food = {**d["food"], **(v.get("food") or {})}
+    drink = {**d["drink"], **(v.get("drink") or {})}
+    activity = {**d["activity"], **(v.get("activity") or {})}
+    practical = {**d["practical"], **(v.get("practical") or {})}
+    diet_l, drink_l, act_l = (dict(DISCOVERY_DIETARY), dict(DISCOVERY_DRINKS),
+                              dict(DISCOVERY_ACTIVITIES))
+    budget = food.get("budget_ceiling") or 0
+    mob = practical.get("mobility") or "no_limits"
+
+    def tagged(keys, labels):
+        return [{"key": k, "label": labels.get(k, k)} for k in keys or []]
+
+    out = {
+        "food": {
+            "dietary_restrictions": tagged(food.get("dietary_restrictions"), diet_l),
+            "avoid_cuisines": list(food.get("cuisine_dislikes") or []),
+            "allergies": food.get("allergies") or "",
+            "budget_ceiling": {"tier": budget,
+                               "label": dict(DISCOVERY_BUDGET).get(budget, "No limit")},
+        },
+        "drink": {"interests": tagged(drink.get("interests"), drink_l)},
+        "activity": {"interests": tagged(activity.get("interests"), act_l)},
+        "practical": {"mobility": {"key": mob,
+                                   "label": dict(DISCOVERY_MOBILITY).get(mob, mob)}},
+        "travel": {"nationality": traveler.nationality if traveler else None,
+                   "base_currency": traveler.base_currency if traveler else None},
+        "notes": (v.get("notes") or "").strip(),
+        "not_my_thing": hidden_dislikes(session, user_id),
+    }
+    out["blank"] = row is None or not any([
+        food.get("dietary_restrictions"), food.get("cuisine_dislikes"),
+        food.get("allergies"), budget, drink.get("interests"),
+        activity.get("interests"), mob != "no_limits", out["notes"]])
+    out["how_to_use"] = (
+        "Constraint-first: every recommendation must fit the dietary restrictions; "
+        "never recommend the avoided cuisines; stay at or under the budget ceiling "
+        "(1–4, $–$$$$; 0 = no limit); flag — don't exclude — anything that may "
+        "involve a listed allergen. Interests ADD places (breweries, museums, …) on "
+        "top of the usual mix; they never narrow it. Respect mobility for activities. "
+        "`notes` is the person in their own words — likes, dislikes, past "
+        "favourites; follow it like the rest. `not_my_thing` lists places and "
+        "events they hid as not their thing: don't suggest those again, and steer "
+        "away from similar ones. If `blank` is true, ask the person what they like "
+        "and want to avoid before researching. Never infer tastes from nationality.")
+    return out
+
+
 def _discovery_form_ctx(request: Request, session: Session,
                         saved: bool = False) -> dict:
     from app.acting import acting_for
@@ -1715,6 +2015,7 @@ def _discovery_form_ctx(request: Request, session: Session,
                        for k, t in DISCOVERY_ACTIVITIES],
         "mobility_opts": [{"value": k, "label": t, "selected": k == mob}
                           for k, t in DISCOVERY_MOBILITY],
+        "notes": v.get("notes") or "",
     }
 
 
@@ -1737,6 +2038,7 @@ def save_discovery_profile(request: Request,
                            drink_interests: list[str] = Form(default=[]),
                            activity_interests: list[str] = Form(default=[]),
                            mobility: str = Form("no_limits"),
+                           notes: str = Form(""),
                            session: Session = Depends(get_session)):
     try:
         budget = int(budget_ceiling)
@@ -1761,6 +2063,7 @@ def save_discovery_profile(request: Request,
         "drink": {"interests": [x for x in drink_interests if x in drinks_ok]},
         "activity": {"interests": [x for x in activity_interests if x in acts_ok]},
         "practical": {"mobility": mobility if mobility in mob_ok else "no_limits"},
+        "notes": notes.strip()[:DISCOVERY_NOTES_MAX],   # for agents (4.5); free text
     }
     from app.acting import acting_for, audit_if_other
     acting = acting_for(session, request)
@@ -1858,22 +2161,10 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
 def delete_trip(trip_id: str, request: Request, session: Session = Depends(get_session)):
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is not None:
-        # Explicit child delete: SQLite in tests does not enforce ON DELETE
-        # CASCADE unless PRAGMA foreign_keys is on, so never rely on the DB to
-        # sweep the activities.
-        who.clear_activities(session, [a.id for a in session.query(TripActivity.id)
-                                       .filter(TripActivity.trip_id == trip_id).all()])
-        session.query(TripActivity).filter(
-            TripActivity.trip_id == trip_id).delete(synchronize_session=False)
-        session.query(TripTraveler).filter(
-            TripTraveler.trip_id == trip_id).delete(synchronize_session=False)
-        # Clear the soft link from any captured items filed into this trip
-        # (2.1.2) — there's no DB FK to null it for us (migration 0008).
-        from app.models import TravelItem
-        session.query(TravelItem).filter(
-            TravelItem.trip_id == trip_id).update({"trip_id": None},
-                                                  synchronize_session=False)
-        session.delete(trip)
+        # Everything that only exists for this trip goes with it; captures and
+        # journal entries are kept and unlinked (app/trips/purge.py).
+        from app.trips.purge import purge_trip
+        purge_trip(session, trip)
         session.commit()
     return _redirect("/trips")
 
@@ -2589,7 +2880,12 @@ async def create_activity(trip_id: str, request: Request,
     session.flush()
     if "travelers_shown" in form:
         who.set_travelers(session, a.id, trip_id, form.getlist("traveler_ids"))
+    item = _item_or_none(session, request, trip_id, form.get("discovery_item_id") or "")
+    if item is not None:
+        item.activity_id = a.id          # the Discover row now shows "On timeline"
     session.commit()
+    if item is not None:
+        return _refresh()            # stay on the Discover section + city it came from
     return _redirect(f"/trips/{trip_id}")
 
 
@@ -2624,6 +2920,8 @@ def delete_activity(trip_id: str, activity_id: str, request: Request,
     if (a is not None and a.trip_id == trip_id
             and scope.trip_or_none(session, request, trip_id) is not None):
         who.clear_activity(session, a.id)
+        from discover import items as discovery_items
+        discovery_items.unlink_activity(session, a.id)
         session.delete(a)
         session.commit()
     return _redirect(f"/trips/{trip_id}")

@@ -191,35 +191,40 @@ class SafetyResolver:
         return out
 
     def _render(self, place, safety, advisories, scams, corr, transport) -> str:
-        out = [f"**{place.label}** — safety & transport", ""]
-        # Transport first (the priority).
-        if transport:
-            out.append("### Getting around")
-            if transport.get("summary"):
-                out.append(transport["summary"].strip())
-            if transport.get("public_transit"):
-                out.append(f"- **Public transit:** {transport['public_transit'].strip()}")
-            if transport.get("ride_hailing"):
-                out.append(f"- **Ride-hailing:** {', '.join(transport['ride_hailing'])}")
-            if transport.get("apps"):
-                out.append(f"- **Apps to get:** {', '.join(transport['apps'])}")
-            if transport.get("from_airport"):
-                out.append(f"- **From the airport:** {transport['from_airport'].strip()}")
-            for t in (transport.get("tips") or []):
-                out.append(f"- {t}")
+        return render_safety(place.label, safety, advisories, scams, corr, transport)
+
+
+def render_safety(label, safety, advisories, scams, corr, transport) -> str:
+    """Safety & Transport as markdown — shared by the local resolver and agents' save_safety (4.5)."""
+    out = [f"**{label}** — safety & transport", ""]
+    # Transport first (the priority).
+    if transport:
+        out.append("### Getting around")
+        if transport.get("summary"):
+            out.append(transport["summary"].strip())
+        if transport.get("public_transit"):
+            out.append(f"- **Public transit:** {transport['public_transit'].strip()}")
+        if transport.get("ride_hailing"):
+            out.append(f"- **Ride-hailing:** {', '.join(transport['ride_hailing'])}")
+        if transport.get("apps"):
+            out.append(f"- **Apps to get:** {', '.join(transport['apps'])}")
+        if transport.get("from_airport"):
+            out.append(f"- **From the airport:** {transport['from_airport'].strip()}")
+        for t in (transport.get("tips") or []):
+            out.append(f"- {t}")
+        out.append("")
+    if advisories or scams or (safety.get("summary") or "").strip():
+        out.append("### Safety")
+        banner = verify_banner(corr)
+        if banner:
+            out.append(banner)
+        if safety.get("summary"):
+            out.append(safety["summary"].strip())
+        for a in advisories:
+            out.append(f"- {a.get('text', '').strip()}")
+        if scams:
             out.append("")
-        if advisories or scams or (safety.get("summary") or "").strip():
-            out.append("### Safety")
-            banner = verify_banner(corr)
-            if banner:
-                out.append(banner)
-            if safety.get("summary"):
-                out.append(safety["summary"].strip())
-            for a in advisories:
-                out.append(f"- {a.get('text', '').strip()}")
-            if scams:
-                out.append("")
-                out.append("**Common scams:**")
-                for s in scams:
-                    out.append(f"- {s}")
-        return "\n".join(out).rstrip()
+            out.append("**Common scams:**")
+            for s in scams:
+                out.append(f"- {s}")
+    return "\n".join(out).rstrip()
