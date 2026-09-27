@@ -230,3 +230,12 @@ if DEPS:
             names = {r[0] for r in c.execute(sa.text(
                 "SELECT name FROM discovery_items WHERE finding_id = 'f1'"))}
         assert names == {"Café Meskel", "Nomad", "Weird"}
+
+
+def test_event_kind_from_the_model_wins_for_notable_items():
+    rows = {r["name"]: r for r in items.rows_from_finding("events", {
+        "impacts": [{"name": "Strike", "kind": "activity", "source_url": "https://e.x/1"}],
+        "notable": [{"name": "Souk tour", "date_range": "2026-10-14", "kind": "activity",
+                     "venue": "Medina", "why": "x", "source_url": "https://e.x/2"}]})}
+    assert rows["Strike"]["kind"] == "event"            # a heads-up is always an event
+    assert rows["Souk tour"]["kind"] == "activity" and rows["Souk tour"]["venue"] == "Medina"

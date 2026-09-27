@@ -349,13 +349,55 @@ class SourceIn(BaseModel):
     url: str
 
 
+class ItemIn(BaseModel):
+    """A place, event or activity an agent adds to a Food & Drink or Events &
+    Activities finding (4.5, YONDER-148). Only `kind` and `name` are required."""
+    kind: str                              # food: restaurant|cafe|bar|pub|brewery|distillery|winery|market|bakery|dessert|street_food; events: event|activity
+    name: str
+    neighbourhood: str | None = None
+    address: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    website: str | None = None
+    what_to_get: str | None = None         # food: the dish or drink to order there
+    price_tier: int | None = None          # food: 1 (cheap) – 4 (splurge)
+    starts_on: str | None = None           # event: YYYY-MM-DD or YYYY-MM-DDTHH:MM
+    ends_on: str | None = None
+    when_text: str | None = None           # free wording, e.g. "Fridays in October"
+    venue: str | None = None
+    details: str | None = None             # what it is / why go
+    duration: str | None = None            # activity, e.g. "3 h"
+    booking: bool | None = None            # needs booking ahead
+    source_url: str | None = None
+    sources: list[SourceIn] = []
+
+
+class PhraseIn(BaseModel):
+    phrase: str
+    meaning: str = ""
+    pronunciation: str | None = None
+    note: str | None = None                # when/with whom to use it (register)
+
+
+class PhrasesIn(BaseModel):
+    """Local phrases & register for one city (topic `language_local`)."""
+    register_summary: str = ""             # how formal/informal locals are, in a paragraph
+    greetings: list[PhraseIn] = []
+    expressions: list[PhraseIn] = []
+    etiquette: list[str] = []
+
+
 class FindingIn(BaseModel):
-    """A finding from an external agent for the caller's Discover tab (YONDER-108)."""
-    topic: str | None = None               # research (default) | food | events | safety | visa | plugs | packing
+    """A finding from an external agent for the caller's Discover tab (YONDER-108).
+    Food/events may carry `items` (4.5); language_local carries `phrases`."""
+    topic: str | None = None               # research (default) | food | events | safety | visa | plugs | packing | language_local
     title: str                             # short heading, e.g. "Hikes near Banff"
-    body_md: str                           # markdown: **bold**, ### headings, - bullets, [text](url)
+    body_md: str = ""                      # markdown; for food/events the city summary + recommendation
     place_key: str | None = None           # "CA" / "CA:Banff"; research may omit it (= whole trip)
     sources: list[SourceIn] = []
+    items: list[ItemIn] | None = None      # food/events rows (replace the list unless replace_items=False)
+    replace_items: bool = True
+    phrases: PhrasesIn | None = None       # language_local only
 
 
 class PackingItemIn(BaseModel):
@@ -941,6 +983,55 @@ def api_add_activity(trip_id: str, body: ActivityIn,
     return _activity_out(a, tagged)
 
 
+class ItemToTimelineIn(BaseModel):
+    """Add a Discover item to the timeline (4.5). The activity is built from the
+    item (name, address, map link, website, what to get); give the time."""
+    starts_at: str | None = None           # YYYY-MM-DDTHH:MM local; defaults to the event's date
+    traveler_ids: list[int] | None = None  # None/[] = everyone on the trip
+    notes: str | None = None               # replaces the notes built from the item
+
+
+def add_item_to_timeline(session: Session, user, trip_id: str, item_id: str,
+                         body: ItemToTimelineIn) -> ActivityOut:
+    """Create the timeline activity a Discover item describes and link the two."""
+    from app.models import DiscoveryItem
+    from discover import items as discovery_items
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    item = session.get(DiscoveryItem, item_id)
+    if item is None or item.trip_id != trip.id or item.user_id != user.id:
+        raise HTTPException(404, "no such Discover item on this trip")
+    if item.activity_id and session.get(TripActivity, item.activity_id) is not None:
+        raise HTTPException(409, "this item is already on the timeline "
+                                 f"(activity {item.activity_id})")
+    atype, values = discovery_items.activity_for(item)
+    if body.starts_at:
+        values["when"] = body.starts_at
+    if body.notes is not None:
+        values["notes"] = body.notes
+    t = _activity_type_or_400(atype)
+    from app.trips.enrich import prepare_activity
+    values, geo = prepare_activity(t.key, {k: v for k, v in values.items() if v},
+                                   session=session, trip_id=trip.id)
+    a = TripActivity(trip_id=trip.id, type=t.key, values=values, geo=geo,
+                     starts_at=values.get("when") or "")
+    session.add(a)
+    session.flush()
+    tagged = _set_activity_travelers(session, a, body.traveler_ids or [])
+    item.activity_id = a.id
+    session.commit()
+    session.refresh(a)
+    return _activity_out(a, tagged)
+
+
+@router.post("/trips/{trip_id}/discovery-items/{item_id}/timeline",
+             response_model=ActivityOut, status_code=201)
+def api_item_to_timeline(trip_id: str, item_id: str, body: ItemToTimelineIn,
+                         user=Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """Put a Discover place/event/activity on the timeline, filled in from the item."""
+    return add_item_to_timeline(session, user, trip_id, item_id, body)
+
+
 @router.patch("/trips/{trip_id}/activities/{activity_id}", response_model=ActivityOut)
 def api_update_activity(trip_id: str, activity_id: str, body: ActivityPatch,
                         user=Depends(authn.current_user), session: Session = Depends(get_session)):
@@ -1056,6 +1147,8 @@ def api_activity_types(user=Depends(authn.current_user)):
 
 # --------------------------------------------------------------------------- Discover: saved research (YONDER-108)
 RESEARCH_TOPIC = "research"
+PHRASES_TOPIC = "language_local"
+MAX_ITEMS = 200
 
 
 def _finding_out(f: DiscoveryFinding) -> FindingOut:
@@ -1077,18 +1170,40 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
     `data["history"]`. The result is a draft marked `resolver="agent"` with
     `data["agent"]` = `agent` (the connecting credential's name, supplied by
     the caller — never by the agent's own input), which a local whole-trip run
-    then never overwrites. Never touches anyone else's Discover."""
+    then never overwrites. Never touches anyone else's Discover.
+
+    4.5: food/events may carry `items` (synced as that finding's rows: they
+    replace the list, keeping rows the person hid, edited or put on the
+    timeline; `replace_items=False` only adds/updates), with `body_md` as the
+    city summary. language_local carries structured `phrases`."""
     from datetime import timezone
 
+    from discover import items as discovery_items
     from discover import policy
+    from discover.resolvers.language_local import render_phrases
 
     trip = scope.require_trip(session, user, trip_id, edit=True)
     topic = (body.topic or RESEARCH_TOPIC).strip()
     if topic not in policy.EXTERNAL_TOPICS:
         raise HTTPException(400, f"topic must be one of {', '.join(policy.EXTERNAL_TOPICS)}")
+    if body.items is not None and topic not in discovery_items.ITEM_TOPICS:
+        raise HTTPException(400, "items are only for the food and events topics")
+    if (body.phrases is not None) != (topic == PHRASES_TOPIC):
+        raise HTTPException(400, "phrases go with topic language_local, and that topic "
+                                 "needs phrases")
+    rows = []
+    try:
+        rows = [discovery_items.row_from_input(topic, i.model_dump())
+                for i in (body.items or [])[:MAX_ITEMS]]
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     title = (body.title or "").strip()[:200]
     text = (body.body_md or "").strip()
-    if not title or not text:
+    if topic == PHRASES_TOPIC:
+        ph = body.phrases.model_dump()
+        if not (ph["register_summary"].strip() or ph["greetings"] or ph["expressions"]):
+            raise HTTPException(400, "phrases need a register_summary, greetings or expressions")
+    if not title or not (text or rows or topic == PHRASES_TOPIC):
         raise HTTPException(400, "title and body_md are required")
     place_key = (body.place_key or "").strip()[:128]
     if not place_key:
@@ -1096,7 +1211,11 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
             raise HTTPException(400, "place_key is required for this topic (a country code "
                                      "like \"CA\" or a city key like \"CA:Banff\")")
         place_key = "trip"
-    md = f"**{title}**\n\n{text}"[:100_000]
+    if topic == PHRASES_TOPIC:
+        md = render_phrases(title, ph["register_summary"].strip(), ph["greetings"],
+                            ph["expressions"], [e for e in ph["etiquette"] if e.strip()])
+    else:
+        md = f"**{title}**\n\n{text}"[:100_000]
     sources = [{"title": (s.title or s.url)[:300], "url": s.url[:2000]}
                for s in body.sources[:50] if s.url.startswith(("http://", "https://"))]
     f = (session.query(DiscoveryFinding)
@@ -1119,9 +1238,19 @@ def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
     f.sources = sources
     f.resolver = policy.EXTERNAL_RESOLVER
     f.confidence = None
-    f.data = {"title": title, "agent": (agent or policy.DEFAULT_AGENT)[:128],
-              "history": history}
+    agent_name = (agent or policy.DEFAULT_AGENT)[:128]
+    f.data = {"title": title, "agent": agent_name, "history": history}
+    if topic in discovery_items.ITEM_TOPICS and text:
+        f.data["summary"] = text                      # the city write-up (4.5)
+    if topic == PHRASES_TOPIC:
+        f.data.update({"register_summary": ph["register_summary"].strip(),
+                       "greetings": ph["greetings"], "expressions": ph["expressions"],
+                       "etiquette": [e for e in ph["etiquette"] if e.strip()]})
     f.generated_at = datetime.now(timezone.utc)
+    if body.items is not None:
+        session.flush()
+        discovery_items.sync_items(session, f, rows, origin="agent", agent=agent_name,
+                                   prune=body.replace_items)
     session.commit()
     session.refresh(f)
     return _finding_out(f)

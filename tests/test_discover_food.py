@@ -227,3 +227,20 @@ def test_none_when_all_hallucinated_and_no_dishes(monkeypatch):
         "local_dishes": [], "allergy_warnings": [],
     })
     assert _resolver().resolve(_place(), _ctx()) is None
+
+
+def test_summary_and_what_to_get_flow_into_the_finding(monkeypatch):
+    _stub_search(monkeypatch, [SearchResult("https://a.ex/t", "Tasca", "x")])
+    _stub_synth(monkeypatch, {
+        "places": [{"name": "Tasca do Bairro", "type": "pub", "price_tier": 2,
+                    "why": "petiscos", "local_specialty": True,
+                    "what_to_get": "Bifana", "source_url": "https://a.ex/t"}],
+        "local_dishes": [], "allergy_warnings": [],
+        "summary": "Lisbon eats late; go for petiscos."})
+    f = _resolver().resolve(_place(), _ctx({}))
+    assert f.data["summary"] == "Lisbon eats late; go for petiscos."
+    assert "Lisbon eats late" in f.body_md and "get: Bifana" in f.body_md
+    assert "### Pubs" in f.body_md
+    from discover.items import rows_from_finding
+    row = rows_from_finding("food", f.data)[0]
+    assert row["kind"] == "pub" and row["what_to_get"] == "Bifana"

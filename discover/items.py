@@ -102,8 +102,10 @@ def _event_rows(data: dict) -> list[dict]:
             if _clean(e.get("matched_interest")):
                 extra["interest"] = e["matched_interest"].strip()
             rows.append({
-                # A dated item is an event; an undated one is something to do.
-                "kind": "event" if (when or is_impact) else "activity",
+                # The model's own call when it made one; else a dated item is an
+                # event and an undated one is something to do.
+                "kind": (e["kind"] if e.get("kind") in EVENT_KINDS and not is_impact
+                         else "event" if (when or is_impact) else "activity"),
                 "name": _clean(e["name"], 300),
                 "when_text": when,
                 "starts_on": start,
@@ -139,8 +141,9 @@ def _dedupe(rows: list[dict]) -> list[dict]:
 
 
 def sync_items(session, finding, rows: list[dict], *, origin: str = "local",
-               agent: str | None = None) -> None:
-    """Make `finding`'s items match `rows`, keeping what the person did."""
+               agent: str | None = None, prune: bool = True) -> None:
+    """Make `finding`'s items match `rows`, keeping what the person did.
+    `prune=False` only adds/updates (an agent adding to an existing list)."""
     from app.models import DiscoveryItem
 
     now = datetime.now(timezone.utc)
@@ -162,9 +165,96 @@ def sync_items(session, finding, rows: list[dict], *, origin: str = "local",
             item.origin, item.agent = origin, agent
             item.updated_at = now
         keep.add(k)
+    if not prune:
+        return
     for k, item in existing.items():
         if k not in keep and not (item.activity_id or item.edited):
             session.delete(item)
+
+
+_ISO_WHEN = re.compile(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$")
+
+
+def row_from_input(topic: str, raw: dict) -> dict:
+    """An agent's item (API/MCP) → a row dict. Raises ValueError with a message
+    fit to return to the agent."""
+    name = _clean(raw.get("name"), 300)
+    if not name:
+        raise ValueError("every item needs a name")
+    kind = (raw.get("kind") or "").strip().lower()
+    allowed = FOOD_KINDS if topic == "food" else EVENT_KINDS
+    if kind not in allowed:
+        raise ValueError(f"item {name!r}: kind must be one of {', '.join(allowed)}")
+    tier = raw.get("price_tier")
+    if tier is not None and not (isinstance(tier, int) and 1 <= tier <= 4):
+        raise ValueError(f"item {name!r}: price_tier must be 1–4")
+    when_text = _clean(raw.get("when_text"), 200)
+    starts, ends = _clean(raw.get("starts_on"), 16), _clean(raw.get("ends_on"), 16)
+    for label, v in (("starts_on", starts), ("ends_on", ends)):
+        if v and not _ISO_WHEN.match(v):
+            raise ValueError(f"item {name!r}: {label} must be YYYY-MM-DD or "
+                             "YYYY-MM-DDTHH:MM (put free wording in when_text)")
+    sources = []
+    for s in raw.get("sources") or []:
+        url = _clean((s or {}).get("url"), 2000)
+        if url and url.startswith(("http://", "https://")):
+            sources.append({"url": url, **({"title": _clean(s.get("title"), 300)}
+                                           if _clean(s.get("title")) else {})})
+    sources = sources or _source(raw.get("source_url")) or None
+    lat, lon = raw.get("lat"), raw.get("lon")
+    booking = raw.get("booking")
+    return {
+        "kind": kind, "name": name,
+        "neighbourhood": _clean(raw.get("neighbourhood"), 200),
+        "address": _clean(raw.get("address"), 500),
+        "lat": float(lat) if isinstance(lat, (int, float)) else None,
+        "lon": float(lon) if isinstance(lon, (int, float)) else None,
+        "website": _clean(raw.get("website"), 2000),
+        "what_to_get": _clean(raw.get("what_to_get")),
+        "price_tier": tier, "starts_on": starts, "ends_on": ends, "when_text": when_text,
+        "venue": _clean(raw.get("venue"), 300), "details": _clean(raw.get("details")),
+        "duration": _clean(raw.get("duration"), 100),
+        "booking": booking if isinstance(booking, bool) else None,
+        "sources": sources, "extra": None,
+    }
+
+
+def city_of(place_key: str | None) -> str:
+    """"MA:Harar" → "Harar" (a country key stays as is)."""
+    return (place_key or "").split(":", 1)[-1]
+
+
+def map_url(item) -> str:
+    """A Google Maps search link for the item (no API call)."""
+    from urllib.parse import quote_plus
+    q = ", ".join(x for x in (item.name, item.address or item.venue, city_of(item.place_key))
+                  if x)
+    return f"https://www.google.com/maps/search/?api=1&query={quote_plus(q)}"
+
+
+def activity_for(item) -> tuple[str, dict]:
+    """The timeline activity (type, values) an item becomes: Restaurant for food,
+    Event for events, Tour / activity for activities. Only the date is filled;
+    the person (or agent) adds the time."""
+    link = item.website or ((item.sources or [{}])[0] or {}).get("url") or ""
+    notes = []
+    if item.what_to_get:
+        notes.append(f"What to get: {item.what_to_get}")
+    if item.details:
+        notes.append(item.details)
+    if item.when_text and item.kind != "restaurant":
+        notes.append(f"When: {item.when_text}")
+    base = {"name": item.name, "mapLink": map_url(item), "sourceLink": link,
+            "notes": "\n\n".join(notes)}
+    if item.topic == "food":
+        return "dining", {**base, "address": item.address or ""}
+    if item.kind == "event":
+        when = item.starts_on or ""
+        if when and "T" not in when:
+            when += "T09:00"
+        return "event", {**base, "venue": item.venue or item.address or "", "when": when}
+    return "tour", {**base, "location": item.address or item.venue or "",
+                    "duration": item.duration or ""}
 
 
 def sync_from_finding(session, finding) -> None:

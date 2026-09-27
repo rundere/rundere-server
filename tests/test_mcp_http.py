@@ -25,7 +25,7 @@ if DEPS:
     from app.config import settings
     from app.db import SessionLocal, engine
     from app.main import app
-    from app.models import (AccountEvent, Base, DiscoveryFinding, IngestBatch,
+    from app.models import (AccountEvent, Base, DiscoveryFinding, DiscoveryItem, IngestBatch,
                             JournalEntry, OAuthGrant, PackingItem, PackingPlan,
                             PersonalApiToken, TravelerIdentity, TravelItem, Trip,
                             TripActivity, TripTraveler, User)
@@ -39,7 +39,8 @@ if DEPS:
                  "add_packing_item", "create_journal_entry", "list_journal_entries",
                  "get_journal_entry", "update_journal_entry", "attach_journal_entry",
                  "capture_url", "list_review", "get_review_item",
-                 "assign_review_item_to_trip", "save_research"}
+                 "assign_review_item_to_trip", "save_research", "save_city_guide",
+                 "save_phrases", "add_item_to_timeline"}
 
     @pytest.fixture(scope="module")
     def client():
@@ -48,7 +49,8 @@ if DEPS:
 
     def _teardown(s):
         tids = [t.id for t in s.query(Trip).filter(Trip.name.like("MX %")).all()]
-        for model in (TripTraveler, TripActivity, DiscoveryFinding, PackingItem, PackingPlan):
+        for model in (TripTraveler, TripActivity, DiscoveryItem, DiscoveryFinding,
+                      PackingItem, PackingPlan):
             s.query(model).filter(model.trip_id.in_(tids)).delete(synchronize_session=False)
         s.query(Trip).filter(Trip.id.in_(tids)).delete(synchronize_session=False)
         uids = [u.id for u in s.query(User).filter(User.username.like("mx-%")).all()]
@@ -516,3 +518,115 @@ if DEPS:
         with SessionLocal() as s:
             f = s.get(DiscoveryFinding, fid)
             assert f.status == "edited" and f.data["history"][0]["body_md"] == "older"
+
+    # ------------------------------------------------------------------ Discovery 2.0 (4.5)
+    _GUIDE = [
+        {"kind": "restaurant", "name": "Dar Yacout", "address": "79 Sidi Ahmed Soussi",
+         "what_to_get": "Pastilla", "price_tier": 4, "source_url": "https://ex.com/yacout"},
+        {"kind": "cafe", "name": "Café Meskel", "what_to_get": "Camel burger",
+         "sources": [{"title": "Clock", "url": "https://ex.com/clock"}]},
+    ]
+
+    def _items(trip_id, uid):
+        with SessionLocal() as s:
+            return {i.name: (i.origin, i.agent, i.hidden, i.activity_id, i.what_to_get)
+                    for i in s.query(DiscoveryItem).filter_by(trip_id=trip_id, user_id=uid)}
+
+    def test_city_guide_saves_summary_and_rows(client, w):
+        tok = _tok(w["alice"])
+        f = ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
+               place_key="MA:Harar", summary_md="Eat in the medina.", items=_GUIDE)
+        assert f["external"] and f["data"]["summary"] == "Eat in the medina."
+        assert f["body_md"].startswith("**Harar — food & drink**")
+        rows = _items(w["shared"], w["alice"])
+        assert rows["Dar Yacout"] == ("agent", "mcp test", False, None, "Pastilla")
+        snap = ok(client, tok, "get_trip", trip_id=w["shared"])
+        assert {i["name"] for i in snap["discovery_items"]} == {"Dar Yacout", "Café Meskel"}
+
+    def test_city_guide_replace_keeps_touched_rows_and_add_mode(client, w):
+        tok = _tok(w["alice"])
+        ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
+           place_key="MA:Harar", summary_md="v1", items=_GUIDE)
+        with SessionLocal() as s:
+            s.query(DiscoveryItem).filter_by(name="Café Meskel").update({"hidden": True})
+            s.commit()
+        # replace: Dar Yacout (untouched) drops, hidden Café Meskel stays hidden
+        ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
+           place_key="MA:Harar", summary_md="v2",
+           items=[{"kind": "bar", "name": "Kabana"}, {"kind": "cafe", "name": "Cafe Meskel"}])
+        rows = _items(w["shared"], w["alice"])
+        assert set(rows) == {"Kabana", "Cafe Meskel"} and rows["Cafe Meskel"][2] is True
+        # add mode keeps what's there
+        ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
+           place_key="MA:Harar", summary_md="v3", replace_items=False,
+           items=[{"kind": "pub", "name": "Le Salama"}])
+        assert set(_items(w["shared"], w["alice"])) == {"Kabana", "Cafe Meskel", "Le Salama"}
+
+    def test_city_guide_validation(client, w):
+        tok = _tok(w["alice"])
+        good, err = call(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
+                         place_key="MA:Gondar", summary_md="x", items=[{"kind": "event", "name": "X"}])
+        assert not good and "kind must be one of" in err
+        good, err = call(client, tok, "save_city_guide", trip_id=w["shared"], topic="events",
+                         place_key="MA:Gondar", summary_md="x",
+                         items=[{"kind": "event", "name": "Fest", "starts_on": "next Friday"}])
+        assert not good and "starts_on must be" in err
+        r = client.post(f"/api/v1/trips/{w['shared']}/findings",
+                        headers={"Authorization": f"Bearer {tok}"},
+                        json={"topic": "safety", "place_key": "MA", "title": "x", "body_md": "y",
+                              "items": [{"kind": "event", "name": "x"}]})
+        assert r.status_code == 400 and "only for the food and events" in r.text
+
+    def test_add_item_to_timeline(client, w):
+        tok = _tok(w["alice"])
+        ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="events",
+           place_key="MA:Harar", summary_md="What's on",
+           items=[{"kind": "event", "name": "Film festival", "starts_on": "2026-10-14",
+                   "venue": "Jemaa el-Fnaa"},
+                  {"kind": "activity", "name": "Hammam", "duration": "2 h",
+                   "address": "Rue Riad Yasmina"}])
+        ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
+           place_key="MA:Harar", summary_md="Eat", items=_GUIDE)
+        snap = ok(client, tok, "get_trip", trip_id=w["shared"])
+        ids = {i["name"]: i["id"] for i in snap["discovery_items"]}
+        fest = ok(client, tok, "add_item_to_timeline", trip_id=w["shared"],
+                  item_id=ids["Film festival"])
+        assert fest["type"] == "event" and fest["starts_at"] == "2026-10-14T09:00"
+        assert fest["values"]["venue"] == "Jemaa el-Fnaa"
+        food = ok(client, tok, "add_item_to_timeline", trip_id=w["shared"],
+                  item_id=ids["Dar Yacout"], starts_at="2026-10-15T20:00")
+        assert food["type"] == "dining" and "What to get: Pastilla" in food["values"]["notes"]
+        assert food["values"]["mapLink"].startswith("https://www.google.com/maps/search/")
+        hammam = ok(client, tok, "add_item_to_timeline", trip_id=w["shared"],
+                    item_id=ids["Hammam"], starts_at="2026-10-16T10:00")
+        assert hammam["type"] == "tour" and hammam["values"]["duration"] == "2 h"
+        assert _items(w["shared"], w["alice"])["Dar Yacout"][3] == food["id"]
+        good, err = call(client, tok, "add_item_to_timeline", trip_id=w["shared"],
+                         item_id=ids["Dar Yacout"])
+        assert not good and "already on the timeline" in err
+        # someone else's item is not theirs to schedule
+        bob_tok = _tok(w["bob"])
+        good, _ = call(client, bob_tok, "add_item_to_timeline", trip_id=w["shared"],
+                       item_id=ids["Hammam"])
+        assert not good
+
+    def test_save_phrases(client, w):
+        tok = _tok(w["alice"])
+        f = ok(client, tok, "save_phrases", trip_id=w["shared"], place_key="MA:Harar",
+               register_summary="Warm and formal with elders.",
+               greetings=[{"phrase": "Salam", "meaning": "Hello", "pronunciation": "sa-LAAM",
+                           "note": "everyone"}],
+               expressions=[{"phrase": "La, shukran", "meaning": "No, thank you"}],
+               etiquette=["Use your right hand"])
+        assert f["topic"] == "language_local" and f["external"]
+        assert f["data"]["greetings"][0]["phrase"] == "Salam"
+        assert "### How locals greet" in f["body_md"] and "sa-LAAM" in f["body_md"]
+        with SessionLocal() as s:
+            s.get(DiscoveryFinding, f["id"]).status = "approved"      # locks it
+            s.commit()
+        good, err = call(client, tok, "save_phrases", trip_id=w["shared"],
+                         place_key="MA:Harar", register_summary="changed")
+        assert not good and "locked" in err
+        good, _ = call(client, tok, "save_research", trip_id=w["shared"], topic="language",
+                       place_key="MA", title="x", body_md="y")
+        assert not good                     # the national language stays local
