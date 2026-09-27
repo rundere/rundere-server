@@ -1860,25 +1860,10 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
 def delete_trip(trip_id: str, request: Request, session: Session = Depends(get_session)):
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is not None:
-        # Explicit child delete: SQLite in tests does not enforce ON DELETE
-        # CASCADE unless PRAGMA foreign_keys is on, so never rely on the DB to
-        # sweep the activities.
-        who.clear_activities(session, [a.id for a in session.query(TripActivity.id)
-                                       .filter(TripActivity.trip_id == trip_id).all()])
-        session.query(TripActivity).filter(
-            TripActivity.trip_id == trip_id).delete(synchronize_session=False)
-        session.query(TripTraveler).filter(
-            TripTraveler.trip_id == trip_id).delete(synchronize_session=False)
-        from app.models import DiscoveryItem
-        session.query(DiscoveryItem).filter(
-            DiscoveryItem.trip_id == trip_id).delete(synchronize_session=False)
-        # Clear the soft link from any captured items filed into this trip
-        # (2.1.2) — there's no DB FK to null it for us (migration 0008).
-        from app.models import TravelItem
-        session.query(TravelItem).filter(
-            TravelItem.trip_id == trip_id).update({"trip_id": None},
-                                                  synchronize_session=False)
-        session.delete(trip)
+        # Everything that only exists for this trip goes with it; captures and
+        # journal entries are kept and unlinked (app/trips/purge.py).
+        from app.trips.purge import purge_trip
+        purge_trip(session, trip)
         session.commit()
     return _redirect("/trips")
 
