@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app import auth
 from app.config import settings
@@ -55,12 +56,18 @@ def store_batch(session: Session, body: bytes, payload: dict,
 @router.post("/ingest", status_code=202)
 async def ingest(request: Request, session: Session = Depends(get_session)):
     body = await request.body()
+    # Everything after the body read is blocking DB work: keep it off the
+    # event loop (YONDER-178).
+    return await run_in_threadpool(_ingest, session, request.headers, body)
+
+
+def _ingest(session: Session, headers, body: bytes):
     if len(body) > settings.ingest_max_body_bytes:
         return _reject(413, "body too large")
 
-    presented = request.headers.get("X-Api-Key", "")
-    timestamp = request.headers.get("X-Timestamp", "")
-    signature = request.headers.get("X-Signature", "")
+    presented = headers.get("X-Api-Key", "")
+    timestamp = headers.get("X-Timestamp", "")
+    signature = headers.get("X-Signature", "")
 
     key_row = auth.lookup_key(session, presented) if presented else None
     if key_row is None:
@@ -71,6 +78,13 @@ async def ingest(request: Request, session: Session = Depends(get_session)):
     if not auth.check_signature(presented, timestamp, body, signature):
         log.warning("bad signature from key_id=%s (body_len=%d)", key_row.id, len(body))
         return _reject(401, "bad signature")
+    # YONDER-165: with sign-in on, every capture needs an owner. A key not tied
+    # to a user would mint ownerless captures (and trips); refuse it.
+    if settings.auth_required and key_row.user_id is None:
+        log.warning("ingest refused: key %r (id=%s) has no user",
+                    key_row.client_name, key_row.id)
+        return _reject(403, "this api key isn't linked to a user; re-create it with "
+                            "`python -m app.cli create-key <name> --user <username>`")
     if not auth.rate_limiter.allow(key_row.id):
         return _reject(429, "rate limit exceeded")
 

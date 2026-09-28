@@ -200,8 +200,16 @@
 <section class="yn-sec" id="sec-sharing">
   <h2 class="bp-h2">Sharing</h2>
   <p class="bp-muted">
-    {% if sharing.is_open %}Open — visible to every Run·dere user.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
+    {% if sharing.is_open %}No owner — only admins and travellers on this trip can see it.{% else %}Owner: <strong>{{ sharing.owner or "—" }}</strong>.{% endif %}
   </p>
+  {% if sharing.owner_choices %}
+  <form method="post" action="/trips/{{ trip.id }}/owner" style="display:flex;gap:8px;margin-top:8px">
+    <select name="user_id" class="input" style="flex:1" aria-label="New owner">
+      {% for u in sharing.owner_choices %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Assign owner</button>
+  </form>
+  {% endif %}
 
   <h3 class="bp-h3" style="margin-top:10px">Travellers with access</h3>
   {% if sharing.travellers %}

@@ -82,6 +82,18 @@ def _is_public(path: str) -> bool:
     return path in _PUBLIC_EXACT or path.startswith(_PUBLIC_PREFIX)
 
 
+def _resolve_for_gate(request):
+    """(user or None, no users exist yet) for the auth gate. Sync: call it off
+    the event loop."""
+    from app import authn
+    with SessionLocal() as session:
+        user = authn.resolve_user(session, request)
+        if user is not None:
+            session.expunge(user)
+        no_users = user is None and authn.user_count(session) == 0
+    return user, no_users
+
+
 @app.middleware("http")
 async def auth_gate(request, call_next):
     from urllib.parse import quote
@@ -94,12 +106,13 @@ async def auth_gate(request, call_next):
     if _is_public(path):
         return await call_next(request)
 
-    from app import authn
-    with SessionLocal() as session:
-        user = authn.resolve_user(session, request)
-        if user is not None:
-            session.expunge(user)
-        no_users = user is None and authn.user_count(session) == 0
+    from starlette.concurrency import run_in_threadpool
+
+    # YONDER-178: the lookup is blocking DB I/O — run it in a worker thread.
+    # Done on the event loop, a drained pool froze the loop for the whole
+    # checkout timeout, which also stopped finished requests from returning
+    # their connections: the server never recovered, /health included.
+    user, no_users = await run_in_threadpool(_resolve_for_gate, request)
     is_api = path.startswith("/api/")
     if user is None:
         # First-run: nobody exists yet → send humans to create the first admin.
@@ -119,6 +132,33 @@ async def auth_gate(request, call_next):
         return RedirectResponse(f"/account/sharing?next={quote(path)}", status_code=303)
     request.state.user = user
     return await call_next(request)
+
+# Requests currently inside the app (YONDER-178). Only touched on the event
+# loop, so a plain int needs no lock.
+_inflight = 0
+_SHED_EXEMPT_PREFIX = ("/review/static", "/trips/static", "/brand/")
+
+
+@app.middleware("http")
+async def shed_load(request, call_next):
+    """Answer 503 straight away once too many requests are in flight, rather
+    than queueing work nobody may be waiting for. /health and static files are
+    exempt. Registered after auth_gate, so it runs first (outermost)."""
+    global _inflight
+    limit = settings.max_inflight_requests
+    path = request.url.path
+    if not limit or path == "/health" or path.startswith(_SHED_EXEMPT_PREFIX):
+        return await call_next(request)
+    if _inflight >= limit:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "server busy, retry shortly"}, status_code=503,
+                            headers={"Retry-After": "2"})
+    _inflight += 1
+    try:
+        return await call_next(request)
+    finally:
+        _inflight -= 1
+
 
 # Review queue (D-18 / OQ-07): server-rendered, reached only via the internal
 # Traefik router — the public router exposes /ingest and nothing else.
@@ -197,9 +237,29 @@ def load_enablement(session) -> dict[str, str]:
             if r.rule_id in rules_module.RULES}
 
 
+def ownerless_counts(session) -> dict[str, int]:
+    """Rows with no owner, per table. With sign-in on these are drift (only
+    admins can see them — YONDER-186); with it off they're normal."""
+    from app.models import IngestBatch, JournalEntry, TravelItem, Trip
+    return {name: n for name, n in (
+        ("trips", session.query(Trip).filter(Trip.owner_id.is_(None)).count()),
+        ("captures", session.query(TravelItem).filter(TravelItem.owner_id.is_(None)).count()),
+        ("batches", session.query(IngestBatch).filter(IngestBatch.user_id.is_(None)).count()),
+        ("journal", session.query(JournalEntry).filter(JournalEntry.owner_id.is_(None)).count()),
+    ) if n}
+
+
 def startup() -> None:
     with SessionLocal() as session:
         seed_rule_settings(session)
+        if settings.auth_required:
+            try:
+                drift = ownerless_counts(session)
+                if drift:
+                    log.warning("ownerless rows with sign-in on (visible to admins only; "
+                                "assign an owner): %s", drift)
+            except Exception:               # pragma: no cover
+                log.exception("ownerless-row check failed")
         try:
             from planning.catalog import seed_catalog
             seed_catalog(session)
@@ -219,6 +279,8 @@ def startup() -> None:
 
 
 @app.get("/health")
-def health():
+async def health():
+    # async + no DB on purpose (YONDER-178): answers on the event loop, so it
+    # stays up even when every worker thread and pooled connection is busy.
     return {"status": "ok", "version": settings.app_version,
             "rules_registered": len(rules_module.RULES)}

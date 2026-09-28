@@ -7,6 +7,20 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = "sqlite:///./yonder_dev.sqlite3"
+    # Connection pool (Postgres only; SQLite keeps SQLAlchemy's defaults).
+    # YONDER-178: a short checkout timeout makes an exhausted pool fail fast
+    # with a 500 instead of stalling request threads for 30 s each.
+    # Size + overflow = 40 matches the worker-thread pool that runs sync routes,
+    # so a request thread never queues for a connection behind its siblings.
+    db_pool_size: int = 20
+    db_max_overflow: int = 20
+    db_pool_timeout_seconds: int = 10
+    db_pool_recycle_seconds: int = 1800
+    # Load shedding (YONDER-178): past this many requests in flight, answer 503
+    # + Retry-After at once instead of queueing. The server doesn't cancel work
+    # for a client that hung up, so a client stuck in a retry loop would
+    # otherwise build a backlog that takes minutes to drain. 0 = off.
+    max_inflight_requests: int = 64
     artifacts_dir: str = "/data/artifacts"
 
     # /ingest hardening (HANDOFF: the security-critical surface)

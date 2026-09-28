@@ -831,8 +831,8 @@ def _start_or_busy(user, kind: str, work):
 @router.post("/review/process", response_model=JobOut, status_code=202)
 def api_review_process(user=Depends(authn.current_user)):
     """Extract + resolve the caller's captures waiting in the pipeline (the web
-    "Process new captures"): their own and open ones — an admin's run also
-    covers users who share. Returns a job to poll at GET /api/v1/jobs/{id}."""
+    "Process new captures"): their own — an admin's run also covers
+    ownerless captures and users who share. Returns a job to poll at GET /api/v1/jobs/{id}."""
     from app.db import SessionLocal
     from app.review.routes import _process_toast, _run_extract_resolve
 
@@ -840,7 +840,7 @@ def api_review_process(user=Depends(authn.current_user)):
 
     def work(progress):
         with SessionLocal() as s:
-            # only the caller's own (and open) captures — YONDER-113
+            # only the caller's own captures (admin: + ownerless/sharing) — YONDER-113
             summary, resolved, error = _run_extract_resolve(s, progress, user=mine)
             return _process_toast(summary, resolved, error), error
 
@@ -952,8 +952,8 @@ def assign_capture_to_trip(session: Session, user, item_id: str, trip_id: str) -
                 .filter(Trip.id == trip.id, scope.filing_trip_filter(session, user))
                 .first())
     if fileable is None:
-        raise HTTPException(403, "you can only file captures into your own trips, "
-                                 "open trips, or trips you travel on")
+        raise HTTPException(403, "you can only file captures into your own trips "
+                                 "or trips you travel on")
     item.trip_id = trip.id
     item.review = {**(item.review or {}), "trip_pinned": True}
     flag_modified(item, "review")

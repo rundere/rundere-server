@@ -174,7 +174,8 @@ class ApiKey(Base):
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     # 4.0 Phase 2 (D-120): scope this ingest key to a user, so captures it
     # submits are owned by them (each household member runs their own Apps Script
-    # with their own key). NULL = unscoped/legacy/system key → open captures.
+    # with their own key). NULL = unscoped/legacy key: refused by /ingest while
+    # sign-in is on (YONDER-165); with it off, captures are ownerless as before.
     user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

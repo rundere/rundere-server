@@ -76,8 +76,10 @@ if DEPS:
 
         names_owner = {t["name"] for t in client.get("/api/v1/trips", headers=_bearer(owner)).json()}
         names_stranger = {t["name"] for t in client.get("/api/v1/trips", headers=_bearer(stranger)).json()}
-        assert "api-priv" in names_owner and "api-open" in names_owner
-        assert "api-priv" not in names_stranger and "api-open" in names_stranger
+        # YONDER-186: an ownerless trip is visible to admins only
+        assert "api-priv" in names_owner and "api-open" not in names_owner
+        assert "api-priv" not in names_stranger and "api-open" not in names_stranger
+        assert client.get(f"/api/v1/trips/{oid}", headers=_bearer(stranger)).status_code == 404
 
         # snapshot: 404 for a hidden trip, 200 for the owner
         assert client.get(f"/api/v1/trips/{pid}", headers=_bearer(stranger)).status_code == 404

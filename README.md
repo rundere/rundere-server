@@ -325,6 +325,10 @@ deployment stack.
 | Variable | Default | Purpose |
 |---|---|---|
 | `TX_DATABASE_URL` | `sqlite:///./yonder_dev.sqlite3` | App DB (Postgres in prod) |
+| `TX_DB_POOL_SIZE` / `TX_DB_MAX_OVERFLOW` | `20` / `20` | Postgres connection pool (40 total matches the worker threads) |
+| `TX_DB_POOL_TIMEOUT_SECONDS` | `10` | How long a request waits for a pooled connection before failing |
+| `TX_DB_POOL_RECYCLE_SECONDS` | `1800` | Replace pooled connections older than this |
+| `TX_MAX_INFLIGHT_REQUESTS` | `64` | Past this many requests in flight, answer `503` + `Retry-After` instead of queueing (`/health` and static files exempt). `0` = off |
 | `TX_ARTIFACTS_DIR` | `/data/artifacts` | Immutable captured originals (D-15) |
 | `TX_INGEST_MAX_SKEW_SECONDS` | `300` | Signed-timestamp replay window |
 | `TX_INGEST_RATE_LIMIT` | `30` | Requests per key per window |

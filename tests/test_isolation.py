@@ -55,21 +55,30 @@ if DEPS:
             s.commit()
 
             assert scope.can_access_trip(s, owner, priv)          # own
-            assert scope.can_access_trip(s, stranger, opn)        # open
+            # YONDER-186: ownerless is closed — admins only, never everyone
+            assert not scope.can_access_trip(s, stranger, opn)
+            assert not scope.can_edit_trip(s, stranger, opn)
+            assert scope.can_access_trip(s, admin, opn)
+            assert scope.can_edit_trip(s, admin, opn)
             assert not scope.can_access_trip(s, stranger, priv)   # not shared
             assert scope.can_access_trip(s, stranger, shared)     # shared
             assert scope.can_access_trip(s, admin, priv)          # admin
             assert scope.can_access_trip(s, None, priv)           # auth off
 
             own_ids = scope.visible_trip_ids(s, owner)
-            assert priv.id in own_ids and opn.id in own_ids
+            assert priv.id in own_ids and opn.id not in own_ids
+            assert opn.id in scope.visible_trip_ids(s, admin)
+            # …and never offered as a filing target to a non-admin
+            filing = {t.id for t in s.query(Trip).filter(scope.filing_trip_filter(s, stranger))}
+            assert opn.id not in filing
+            assert opn.id in {t.id for t in s.query(Trip).filter(scope.filing_trip_filter(s, admin))}
             # 4.1: an admin sees a sharing owner's trips (owners share by default)
             assert priv.id in scope.visible_trip_ids(s, admin)
             assert priv.id not in scope.visible_trip_ids(s, stranger)
             assert shared.id in scope.visible_trip_ids(s, stranger)
 
     def test_capture_access_matrix():
-        owner, stranger = _user("iso-co"), _user("iso-cs")
+        owner, stranger, admin = _user("iso-co"), _user("iso-cs"), _user("iso-ca", admin=True)
         with SessionLocal() as s:
             mine = TravelItem(owner_id=owner.id, source={}, status={})
             opn = TravelItem(owner_id=None, source={}, status={})
@@ -77,7 +86,11 @@ if DEPS:
             s.add_all([mine, opn, theirs])
             s.commit()
             ids = {i.id for i in s.query(TravelItem).filter(scope.capture_filter(owner)).all()}
-            assert mine.id in ids and opn.id in ids and theirs.id not in ids
+            assert mine.id in ids and opn.id not in ids and theirs.id not in ids
+            assert not scope.can_access_capture(owner, opn)       # YONDER-186
+            admin_ids = {i.id for i in s.query(TravelItem).filter(scope.capture_filter(admin))}
+            assert opn.id in admin_ids
+            assert scope.can_access_capture(admin, opn)
             assert scope.can_access_capture(None, theirs)         # auth off
             assert not scope.can_access_capture(owner, theirs)
 
