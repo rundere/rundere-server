@@ -417,7 +417,7 @@ def _to_process(session: Session, user=None) -> int:
     """How much the "Process new captures" button has to do for this user:
     captured emails not extracted yet (batches still `received`) plus extracted
     items not resolved yet (resolve `pending`, which sit in no funnel stage).
-    Scoped like the queue: own + open captures (everything for admin/auth-off)."""
+    Scoped like the queue: own captures (admin: + ownerless and sharing users'; auth-off: all)."""
     from app.models import IngestBatch
     q = session.query(IngestBatch).filter(IngestBatch.status == "received")
     if not scope.unrestricted(user):
@@ -1030,8 +1030,8 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
 
     execute = confirm == "1"
     b = bucket if bucket in BUCKETS else "staged"
-    # Only the captures this person may log — their own and open ones (an admin
-    # also those of users who share). Never someone else's approvals (YONDER-105).
+    # Only the captures this person may log — their own (an admin also
+    # ownerless ones and those of users who share). Never someone else's approvals (YONDER-105).
     mine = scope.capture_filter(scope.user_of(request))
 
     if not execute:

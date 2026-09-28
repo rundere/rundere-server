@@ -246,6 +246,12 @@ def _sharing_context(session: Session, trip: Trip, user=None) -> dict:
         "members": [{"id": u.id, "username": u.username} for u in members],
         "can_share": can_share,
         "add_choices": [{"id": u.id, "username": u.username} for u in add_choices],
+        # YONDER-186/165: an ownerless trip is admin-only until an admin gives
+        # it an owner.
+        "owner_choices": ([{"id": u.id, "username": u.username}
+                           for u in session.query(User).filter(User.is_active.is_(True))
+                           .order_by(User.username).all()]
+                          if trip.owner_id is None and user.is_admin else []),
     }}
 
 
@@ -585,6 +591,29 @@ def share_trip(trip_id: str, request: Request, user_id: str = Form(""),
             .filter_by(trip_id=trip.id, user_id=target.id).count() == 0):
         session.add(TripMember(trip_id=trip.id, user_id=target.id))
         session.commit()
+    return _redirect(f"/trips/{trip.id}")
+
+
+@router.post("/{trip_id}/owner", response_class=HTMLResponse)
+def assign_owner(trip_id: str, request: Request, user_id: str = Form(""),
+                 session: Session = Depends(get_session)):
+    """Give an ownerless trip an owner (admin only, YONDER-165). Only for trips
+    with NO owner — changing an existing owner isn't offered."""
+    trip = scope.trip_or_none(session, request, trip_id)
+    me = scope.user_of(request)
+    if trip is None or me is None:
+        return HTMLResponse("", status_code=404)
+    if not me.is_admin:
+        return HTMLResponse("<p>Only an admin can assign a trip's owner.</p>", status_code=403)
+    if trip.owner_id is not None:
+        return HTMLResponse("<p>This trip already has an owner.</p>", status_code=409)
+    from app.models import User
+    target = session.get(User, user_id) if user_id else None
+    if target is None or not target.is_active:
+        return HTMLResponse("<p>Pick an active user.</p>", status_code=400)
+    trip.owner_id = target.id
+    session.commit()
+    log.info("trip %s assigned to owner %s by admin %s", trip.id, target.username, me.username)
     return _redirect(f"/trips/{trip.id}")
 
 

@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from pydantic import Field
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
 from mcp.server.mcpserver import MCPServer
@@ -114,7 +115,7 @@ def update_trip(trip_id: TripId,
                 notes: Annotated[str | None, Field(description="Trip notes (replaces them)")] = None,
                 ) -> dict[str, Any]:
     """Rename a trip or change its dates/notes. Only the fields you pass change.
-    Needs edit access (owner, traveller on it, or open trip)."""
+    Needs edit access (owner or traveller on it)."""
     body = api_v1.TripPatch(name=name, start_date=start_date, end_date=end_date, notes=notes)
     return _run(api_v1.api_update_trip, trip_id=trip_id, body=body)
 
@@ -297,8 +298,8 @@ def get_review_item(item_id: Annotated[str, Field(description="Review item id")]
 @mcp.tool()
 def assign_review_item_to_trip(item_id: Annotated[str, Field(description="Review item id")],
                                trip_id: TripId) -> dict[str, Any]:
-    """File a capture into a trip: the user's own trips, open trips, or trips
-    they travel on (not someone else's trip just because it's visible)."""
+    """File a capture into a trip: the user's own trips or trips they travel on
+    (not someone else's trip just because it's visible)."""
     return _run(lambda session, user: api_v1.assign_capture_to_trip(
         session, user, item_id, trip_id))
 
@@ -546,6 +547,15 @@ def _unauthorized(request: Request, invalid: bool) -> tuple[int, list, bytes]:
     return 401, headers, body
 
 
+def _bearer_caller(token: str, request: Request) -> tuple[Any, Any]:
+    """(user id, agent label) for a bearer token, or (None, None). Sync."""
+    with SessionLocal() as session:
+        user = authn.user_from_bearer(session, token, request)
+        uid = user.id if user is not None else None
+        agent = oauth.credential_label(session, token) if uid else None
+    return uid, agent
+
+
 class MCPEndpoint:
     """ASGI app for `/mcp`: bearer auth → caller context → the MCP SDK."""
 
@@ -555,11 +565,9 @@ class MCPEndpoint:
         token = authz[7:].strip() if authz[:7].lower() == "bearer " else ""
         uid = agent = None
         if token:
-            with SessionLocal() as session:
-                user = authn.user_from_bearer(session, token, request)
-                uid = user.id if user is not None else None
-                if uid:
-                    agent = oauth.credential_label(session, token)
+            # Off the event loop (YONDER-178): blocking DB I/O here would stall
+            # every request while the pool is drained.
+            uid, agent = await run_in_threadpool(_bearer_caller, token, request)
         if uid is None:
             status, headers, body = _unauthorized(request, invalid=bool(token))
             await send({"type": "http.response.start", "status": status, "headers": headers})
