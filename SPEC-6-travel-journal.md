@@ -59,9 +59,12 @@ JournalEntry (per-user)
 - created_at, updated_at
 ```
 
-Media (photos) ride as `Artifact` rows (the existing content-addressed store),
-referenced from `values.media[]` — no bytes in the entry row. Media is a v1.1
-concern; text-first for v1.
+~~Media (photos) ride as `Artifact` rows (the existing content-addressed store),
+referenced from `values.media[]` — no bytes in the entry row.~~ **Superseded by
+SPEC-8 D-154 (2026-09-28):** Rundere stores no photo bytes. An entry carries
+photo *references* (time, place and checksum, resolved against the user's own
+photo library), which are verified at trip close-out. See YONDER-189. Media
+remains a v1.1 concern; text-first for v1.
 
 ## 2. `entry_date` vs `captured_at` — the day it is ABOUT (D-132)
 
@@ -211,7 +214,8 @@ iOS app so automatic geo (D-142) is available from first launch.
 ## Open questions (for the design phase)
 
 - **Media in v1 or v1.1?** Text-first is cheaper and the mobile outbox stays
-  trivial; photos add Artifact plumbing and larger offline payloads. Lean v1.1.
+  trivial. Lean v1.1. Photos are references, not files (SPEC-8 D-154), so there's
+  no Artifact plumbing and offline payloads stay small.
 - **One entry per day, or many?** Many (a stream), grouped by `entry_date` — the
   "push ten quick things" case. A "day summary" is a post-mortem synthesis
   concern, not a storage constraint.
