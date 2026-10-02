@@ -98,6 +98,44 @@ def _next_up(session: Session, trips: list[Trip], today: str) -> dict | None:
             "trip_name": featured["name"], "start": featured["start"], "end": featured["end"]}
 
 
+def _greeting(user, now=None) -> str:
+    """"Good evening, ada" — the Home header's opening line. Server-local time; the
+    page is a daily glance, not a clock, so no client-side hour lookup."""
+    from datetime import datetime
+    hour = (now or datetime.now()).hour
+    part = "morning" if hour < 12 else "afternoon" if hour < 18 else "evening"
+    name = getattr(user, "username", "") or ""
+    return f"Good {part}, {name}" if name else f"Good {part}"
+
+
+def _queue_preview(session: Session, user=None, limit: int = 4) -> list[dict]:
+    """The Home review-queue panel: what needs you first, then what is ready to approve.
+    Same views as /review (scoped to the caller), so the panel and the queue agree."""
+    from app.review.routes import _all_views
+    views = _all_views(session, user)
+    order = {"attention": 0, "ready": 1}
+    rows = sorted((v for v in views if v["bucket"] in order), key=lambda v: order[v["bucket"]])
+    return [{"id": v["id"], "bucket": v["bucket"], "kind": v["kind"], "headline": v["headline"],
+             "subline": v["subline"]} for v in rows[:limit]]
+
+
+def _trip_cards(session: Session, trips: list[Trip], today: str, limit: int = 4, user=None) -> list[dict]:
+    """Upcoming-trips grid: trips under way first, then the soonest upcoming ones, with
+    the same display fields as the Trips list cards (codes, when, item count)."""
+    from app.models import TripActivity
+    from app.trips.routes import _trip_display, packing_progress
+    rank = {"inprogress": 0, "upcoming": 1}
+    live = sorted((t for t in trips if t.start_date and _trip_status(t, today) in rank),
+                  key=lambda t: (rank[_trip_status(t, today)], t.start_date))[:limit]
+    acts: dict[str, list] = {t.id: [] for t in live}
+    if live:
+        for a in session.query(TripActivity).filter(TripActivity.trip_id.in_(list(acts))).all():
+            acts[a.trip_id].append(a)
+    pack = packing_progress(session, [t.id for t in live], user)
+    return [_trip_display(t, sorted(acts[t.id], key=lambda a: a.starts_at or ""), today, pack.get(t.id))
+            for t in live]
+
+
 def _pipeline_counts(session: Session, user=None) -> dict:
     # Reuse the review queue's own bucket logic — a fresh reimplementation here
     # would inevitably drift from what "Needs you: 3" means on /review. Scoped to
@@ -130,6 +168,9 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
     return templates.TemplateResponse(request, "dashboard.html", {
         "next_trip": _next_trip(trips, today),
         "next_up": _next_up(session, trips, today),
+        "greeting": _greeting(user),
+        "queue": _queue_preview(session, user),
+        "trip_cards": _trip_cards(session, trips, today, user=user),
         "counts": _pipeline_counts(session, user),
         "capture": _capture_activity(session, today, user),
         "trip_count": len(trips),

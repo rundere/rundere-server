@@ -149,7 +149,28 @@ def trip_when(t: Trip, today: str) -> str:
     return f"in {days} {unit}" if st == "upcoming" else f"ended {days} {unit} ago"
 
 
-def _trip_display(t: Trip, activities=(), today: str | None = None) -> dict:
+def packing_progress(session: Session, trip_ids, user=None) -> dict[str, dict]:
+    """{trip_id: {packed, total, pct}} for the viewer's own packing lists (D-123: packing
+    is per-user, so a shared trip never shows someone else's progress). Trips with no
+    packing items are absent. `omitted` and `removed` lines don't count toward total."""
+    ids = list(trip_ids)
+    if not ids:
+        return {}
+    uid = user.id if user else None
+    rows = (session.query(PackingItem.trip_id, PackingItem.status)
+            .filter(PackingItem.trip_id.in_(ids), PackingItem.user_id == uid,
+                    PackingItem.status.in_(("draft", "packed"))).all())
+    out: dict[str, dict] = {}
+    for tid, status in rows:
+        d = out.setdefault(tid, {"packed": 0, "total": 0, "pct": 0})
+        d["total"] += 1
+        d["packed"] += status == "packed"
+    for d in out.values():
+        d["pct"] = round(100 * d["packed"] / d["total"])
+    return out
+
+
+def _trip_display(t: Trip, activities=(), today: str | None = None, packing=None) -> dict:
     notes = (t.notes or "").strip()
     today = today or date.today().isoformat()
     return {
@@ -160,6 +181,7 @@ def _trip_display(t: Trip, activities=(), today: str | None = None) -> dict:
         "codes": trip_route_codes(activities),
         "when": trip_when(t, today),
         "item_count": len(activities),
+        "packing": packing,
         "range_short": " – ".join(x for x in (fmt_date_short(t.start_date),
                                               fmt_date_short(t.end_date)) if x),
     }
@@ -185,8 +207,10 @@ def _list_context(session: Session, q: str, status: str, user=None) -> dict:
                   .filter(TripActivity.trip_id.in_([t.id for t in trips])).all()):
             acts_by_trip.setdefault(a.trip_id, []).append(a)
 
+    pack = packing_progress(session, [t.id for t in trips], user)
+
     def disp(t):
-        return _trip_display(t, acts_by_trip.get(t.id, ()), today)
+        return _trip_display(t, acts_by_trip.get(t.id, ()), today, pack.get(t.id))
 
     groups = []
     if tab == "upcoming":

@@ -27,6 +27,10 @@
           <span>{{ trip.range_short or 'No dates' }}</span>
           <span>{{ trip.item_count }} item{{ '' if trip.item_count == 1 else 's' }}</span>
         </div>
+        {% if trip.packing %}
+        <div class="yn-tcard-pack" title="{{ trip.packing.packed }} of {{ trip.packing.total }} packed">
+          <span>Packing</span><span class="yn-tcard-bar"><span style="width:{{ trip.packing.pct }}%"></span></span><span class="mono">{{ trip.packing.packed }}/{{ trip.packing.total }}</span>
+        </div>{% endif %}
         {% if trip.notes_preview != '—' %}<p class="yn-tcard-notes">{{ trip.notes_preview }}</p>{% endif %}
         <div class="yn-tcard-acts">
           <button class="btn btn-ghost bp-sm"
