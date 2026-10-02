@@ -253,3 +253,11 @@ request forgery (SSRF) risk.
   (proposed)
 - **D-155 — No transaction imports and no receipt OCR.** Expenses are entered by
   hand or pre-filled from bookings. (proposed)
+- **D-156 — Server-wide AirTrail/AdventureLog credentials are admin-only until
+  per-user connections ship (D-151).** Commit, create-collection and the
+  AdventureLog sync page/push/pull, the in-review trip picker and the
+  process/reprocess resolve stage's target lookups refuse or skip for non-admins;
+  auth-off and the operator CLI are unaffected. Interim for YONDER-191; lifted by
+  YONDER-192. Still open: the single-capture re-resolve (`app/review/routes.py`
+  `_reresolve`, per-item edit path) and the Discover airport lookups read the owner's
+  accounts without this gate. (proposed)

@@ -28,6 +28,7 @@ if DEPS:
     from app.main import app
     from app.models import (Base, CommitAttempt, TravelerIdentity, TravelItem, Trip,
                             TripTraveler, User)
+    from app import scope
     from app.review import jobs
 
     Base.metadata.create_all(engine)
@@ -240,7 +241,13 @@ if DEPS:
             time.sleep(0.02)
         raise AssertionError("job never finished")
 
-    def test_commit_dry_run_only_covers_callers_items(w):
+    @pytest.fixture()
+    def admins_write(monkeypatch):
+        """The job-scoping tests below are about WHOSE items are logged, not who
+        may use the server-wide targets (YONDER-191, tested separately)."""
+        monkeypatch.setattr(scope, "external_writes_allowed", lambda user: True)
+
+    def test_commit_dry_run_only_covers_callers_items(w, admins_write):
         with SessionLocal() as s:
             s.get(TravelItem, w["flight"]).review = {"required": False, "action_taken": "approved"}
             s.commit()
@@ -253,7 +260,7 @@ if DEPS:
         with SessionLocal() as s:
             assert s.query(CommitAttempt).count() == before       # nothing written
 
-    def test_commit_execute_is_a_job_scoped_to_caller(w):
+    def test_commit_execute_is_a_job_scoped_to_caller(w, admins_write):
         with SessionLocal() as s:
             s.get(TravelItem, w["flight"]).review = {"required": False, "action_taken": "approved"}
             s.commit()
@@ -386,3 +393,62 @@ if DEPS:
         assert not jobs.visible_to({"owner": "u1"}, None)
         assert jobs.visible_to({"owner": "u1"}, type("U", (), {"id": "u1"})())
         assert not jobs.visible_to(None, None)
+
+
+    # ------------------------------------------------------------------ YONDER-191
+    def test_commit_refused_for_non_admin(w):
+        """The targets are the server owner's accounts: a non-admin can neither
+        preview nor execute a commit, and no job or attempt is created."""
+        with SessionLocal() as s:
+            s.get(TravelItem, w["flight"]).review = {"required": False, "action_taken": "approved"}
+            s.commit()
+            before = s.query(CommitAttempt).count()
+        for body in ({}, {"dry_run": False}):
+            r = client.post("/api/v1/review/commit", headers=H(w["alice"]), json=body)
+            assert r.status_code == 403, body
+        with SessionLocal() as s:
+            assert s.query(CommitAttempt).count() == before
+            assert s.get(TravelItem, w["flight"]).commit in (None, {})
+
+    def test_commit_allowed_for_admin(w):
+        with SessionLocal() as s:
+            s.get(User, w["alice"]).is_admin = True
+            s.commit()
+        r = client.post("/api/v1/review/commit", headers=H(w["alice"]), json={})
+        assert r.status_code == 200 and r.json()["dry_run"] is True
+
+    def test_target_clients_withheld_from_non_admin(w, monkeypatch):
+        from app.review import routes
+        monkeypatch.setattr(settings, "adventurelog_api_key", "k")
+        monkeypatch.setattr(settings, "airtrail_token", "t")
+        with SessionLocal() as s:
+            alice, admin = s.get(User, w["alice"]), s.get(User, w["bob"])
+            admin.is_admin = True
+            assert routes._target_clients(alice) == (None, None)
+            assert all(c is not None for c in routes._target_clients(admin))
+            assert all(c is not None for c in routes._target_clients(None))   # auth off / CLI
+
+    def test_web_external_routes_refuse_non_admin(w, monkeypatch):
+        """Same gate on the web side: commit, create-collection and the sync
+        page/push/pull never touch the server-wide targets for a non-admin."""
+        from app.trips import routes as trip_routes
+        monkeypatch.setattr(settings, "auth_required", True)     # web routes resolve a user
+        monkeypatch.setattr(settings, "adventurelog_api_key", "k")
+        monkeypatch.setattr(settings, "airtrail_token", "t")
+        monkeypatch.setattr(trip_routes, "_adventurelog",
+                            lambda: pytest.fail("AdventureLog client built for a non-admin"))
+        with SessionLocal() as s:
+            tok = authn.issue_access_token(s.get(User, w["alice"]))
+            s.get(Trip, w["trip"]).adventurelog_collection_id = "col-1"
+            s.commit()
+        ck = {settings.auth_cookie_name: tok}
+        t = w["trip"]
+        r = client.post("/review/commit", data={"confirm": "1"}, cookies=ck)
+        assert r.status_code == 200 and "limited to admins" in r.text
+        assert "limited to admins" in client.post(f"/trips/{t}/adventurelog/push", cookies=ck).text
+        assert "limited to admins" in client.post(f"/trips/{t}/adventurelog/pull", cookies=ck).text
+        assert client.get(f"/trips/{t}/adventurelog", cookies=ck).status_code == 403
+        with SessionLocal() as s:
+            s.get(Trip, t).adventurelog_collection_id = None
+            s.commit()
+        assert "limited to admins" in client.post(f"/trips/{t}/push-adventurelog", cookies=ck).text

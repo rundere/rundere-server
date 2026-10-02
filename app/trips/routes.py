@@ -2271,6 +2271,10 @@ def remove_traveler(trip_id: str, traveler_id: int, request: Request,
     return _travelers_section(request, session, trip_id)
 
 
+_EXTERNAL_DENIED = ("AdventureLog sync is limited to admins until per-user "
+                    "connections are available (YONDER-191).")
+
+
 def _push_msg(text: str) -> HTMLResponse:
     """Inline failure notice swapped next to the Push button (a success answers
     with an HX-Redirect that reloads the detail showing the new link)."""
@@ -2479,6 +2483,8 @@ def push_adventurelog(trip_id: str, request: Request, session: Session = Depends
         return HTMLResponse("", status_code=404)
     if trip.adventurelog_collection_id:
         return _redirect(f"/trips/{trip_id}")           # already linked
+    if not scope.external_writes_allowed(scope.user_of(request)):
+        return _push_msg(_EXTERNAL_DENIED)
     client = _adventurelog()
     if client is None:
         return _push_msg("AdventureLog isn't configured on this server.")
@@ -2682,6 +2688,8 @@ def adventurelog_sync_page(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return _redirect(f"/trips/{trip_id}")
+    if not scope.external_writes_allowed(scope.user_of(request)):
+        return HTMLResponse(_EXTERNAL_DENIED, status_code=403)
     client = _adventurelog()
     if client is None:
         return HTMLResponse("AdventureLog isn't configured on this server.",
@@ -2730,6 +2738,8 @@ def adventurelog_push(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
+    if not scope.external_writes_allowed(scope.user_of(request)):
+        return _push_msg(_EXTERNAL_DENIED)
     client = _adventurelog()
     if client is None:
         return _push_msg("AdventureLog isn't configured on this server.")
@@ -2786,6 +2796,8 @@ def adventurelog_pull(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
+    if not scope.external_writes_allowed(scope.user_of(request)):
+        return _push_msg(_EXTERNAL_DENIED)
     client = _adventurelog()
     if client is None:
         return _push_msg("AdventureLog isn't configured on this server.")

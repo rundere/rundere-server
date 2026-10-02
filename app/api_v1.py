@@ -859,7 +859,9 @@ def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
     from app.committing import commit_pending
     from app.db import SessionLocal
     from app.resolving import load_identities
-    from app.review.routes import _target_clients
+    from app.review.routes import EXTERNAL_WRITES_DENIED, _target_clients
+    if not scope.external_writes_allowed(user):
+        raise HTTPException(status_code=403, detail=EXTERNAL_WRITES_DENIED)   # YONDER-191
     mine = scope.capture_filter(user)
     if body.dry_run:
         adventurelog, airtrail = _target_clients()
