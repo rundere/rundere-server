@@ -5,6 +5,7 @@ DiscoveryRun state machine, restart-orphan detection, and the self-polling panel
 are all covered without network or real threads (_execute is called directly).
 """
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -71,10 +72,13 @@ def _fresh_trip():
         s.query(TripActivity).delete()
         s.query(Trip).delete()
         s.commit()
-        t = Trip(name="Alpine trip", start_date="2026-09-01", end_date="2026-09-10")
+        # Always upcoming: a past trip can't be researched (D-157, YONDER-196).
+        start = date.today() + timedelta(days=30)
+        t = Trip(name="Alpine trip", start_date=start.isoformat(),
+                 end_date=(start + timedelta(days=9)).isoformat())
         s.add(t)
         s.commit()
-        s.add(TripActivity(trip_id=t.id, type="flight", starts_at="2026-09-01T09:00",
+        s.add(TripActivity(trip_id=t.id, type="flight", starts_at=f"{start.isoformat()}T09:00",
                            values={"from": "YYZ", "to": "GVA"}))
         s.commit()
         return t.id
@@ -225,3 +229,65 @@ def test_render_md_renders_safe_links():
     # a javascript: url is NOT linkified (regex only matches http/https)
     raw = str(_render_md("[x](javascript:alert(1))"))
     assert "<a" not in raw and "javascript:alert(1)" in raw
+
+
+# ---------------------------------------------------------------- YONDER-196 / D-157
+def _set_trip_dates(tid, start, end):
+    with SessionLocal() as s:
+        t = s.get(Trip, tid)
+        t.start_date, t.end_date = start, end
+        s.commit()
+
+
+def _launches(monkeypatch):
+    calls = []
+    monkeypatch.setattr(dj, "launch", lambda *a, **k: calls.append(a))
+    return calls
+
+
+def test_trip_has_ended_rules():
+    from types import SimpleNamespace as T
+    from discover.runner import trip_has_ended
+    assert trip_has_ended(T(start_date="2026-01-01", end_date="2026-01-05"), "2026-10-02")
+    assert not trip_has_ended(T(start_date="2026-09-30", end_date="2026-10-02"), "2026-10-02")
+    assert not trip_has_ended(T(start_date="2027-01-01", end_date="2027-01-05"), "2026-10-02")
+    assert trip_has_ended(T(start_date="2026-09-01", end_date=None), "2026-10-02")   # start stands in
+    assert not trip_has_ended(T(start_date=None, end_date=None), "2026-10-02")       # undated = planning
+
+
+def test_run_is_blocked_for_a_past_trip_but_allowed_for_current_and_future(monkeypatch):
+    if not DEPS:
+        return
+    calls = _launches(monkeypatch)
+    tid = _fresh_trip()
+    today = date.today()
+    fmt = lambda d: d.isoformat()          # noqa: E731
+    _set_trip_dates(tid, fmt(today - timedelta(days=20)), fmt(today - timedelta(days=10)))
+    r = _client.post(f"/trips/{tid}/discover")
+    assert r.status_code == 200 and "This trip has ended" in r.text
+    assert f'hx-post="/trips/{tid}/discover"' not in r.text and not calls   # no button; nothing launched
+    _set_trip_dates(tid, fmt(today - timedelta(days=2)), fmt(today + timedelta(days=2)))
+    assert "This trip has ended" not in _client.post(f"/trips/{tid}/discover").text
+    _set_trip_dates(tid, fmt(today + timedelta(days=30)), fmt(today + timedelta(days=40)))
+    assert "This trip has ended" not in _client.post(f"/trips/{tid}/discover").text
+    assert len(calls) == 2
+
+
+def test_rerun_is_blocked_for_a_past_trip_and_findings_stay_readable(monkeypatch):
+    if not DEPS:
+        return
+    tid = _fresh_trip()
+    rid = _new_run(tid)
+    _execute(tid, rid)
+    with SessionLocal() as s:
+        fid = s.query(DiscoveryFinding).filter(DiscoveryFinding.trip_id == tid).first().id
+    ran = []
+    monkeypatch.setattr("discover.runner.rerun_finding", lambda *a, **k: ran.append(1))
+    today = date.today()
+    _set_trip_dates(tid, (today - timedelta(days=20)).isoformat(),
+                    (today - timedelta(days=10)).isoformat())
+    r = _client.post(f"/trips/{tid}/finding/{fid}/rerun")
+    assert r.status_code == 200 and not ran
+    section = _client.get(f"/trips/{tid}/discover/status").text
+    assert "This trip has ended" in section and "Food &amp; Drink" in section   # still readable
+    assert "/rerun" not in section and "Refresh rates" not in section           # no buttons offered
