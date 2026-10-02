@@ -13,8 +13,9 @@
   --warn:var(--rd-highlight); --warn-bg:color-mix(in srgb, var(--rd-highlight) 14%, transparent);
   --wait:var(--rd-text-muted); --wait-bg:color-mix(in srgb, var(--rd-text-muted) 14%, transparent);
   --crit:var(--rd-danger); --crit-bg:color-mix(in srgb, var(--rd-danger) 14%, transparent);
-  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
-  --ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:var(--rd-font-mono),ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --ui:var(--rd-font-body),system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --display:var(--rd-font-display),system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --r:var(--rd-radius-control);
 }
 

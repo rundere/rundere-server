@@ -14,6 +14,7 @@ COPY design/logo/ design/logo/
 COPY design/icons/ design/icons/
 COPY design/audio/ design/audio/
 COPY design/tokens/ design/tokens/
+COPY design/fonts/ design/fonts/
 COPY resolve/ resolve/
 COPY extract/ extract/
 COPY adapters/ adapters/

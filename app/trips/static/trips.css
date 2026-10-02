@@ -42,8 +42,9 @@
   --color-accent-800: color-mix(in srgb, var(--rd-accent) 55%, var(--rd-text));
   --color-accent-900: color-mix(in srgb, var(--rd-accent) 30%, var(--rd-text));
 
-  --font-heading: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Outfit is for headings of 20px and up only (design/README §4). */
+  --font-heading: var(--rd-font-display), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: var(--rd-font-body), system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
   --radius-md: var(--rd-radius-xs); --radius-lg: var(--rd-radius-control);
   --shadow-lg: var(--rd-shadow-raised);
@@ -74,7 +75,7 @@
 
 /* ---- buttons ---- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  cursor: pointer; text-decoration: none; font-family: var(--font-heading);
+  cursor: pointer; text-decoration: none; font-family: var(--font-body);
   font-weight: 600; font-size: 14px; line-height: 1.2; color: var(--color-text);
   background: transparent; border: 1px solid var(--color-divider);
   padding: 6.8px 12.2px; border-radius: 0; }
@@ -129,7 +130,7 @@ textarea.input { min-height: 72px; resize: vertical; }
   padding: 18px; border: 1px solid var(--color-divider); border-radius: 0;
   background: var(--color-bg); box-shadow: var(--shadow-lg); }
 .bp-dialog-tall { max-height: 82vh; overflow-y: auto; width: min(480px, 100%); }
-.dialog-title { font-family: var(--font-heading); font-weight: 600; font-size: 20px; }
+.dialog-title { font-family: var(--font-heading); font-weight: 500; font-size: 20px; }
 .dialog-body { display: flex; flex-direction: column; gap: 14px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .bp-error { padding: 8px 10px; font-size: 13px; color: var(--rd-on-accent);
@@ -140,8 +141,8 @@ textarea.input { min-height: 72px; resize: vertical; }
 /* ---- page: headings & links ---- */
 .bp-head { display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 20px; gap: 16px; }
-.bp-h1 { font-family: var(--font-heading); font-weight: 700; font-size: 28px; margin: 0; }
-.bp-h2 { font-family: var(--font-heading); font-weight: 700; font-size: 19px; margin: 0;
+.bp-h1 { font-family: var(--font-heading); font-weight: 400; font-size: 28px; line-height: 36px; margin: 0; }
+.bp-h2 { font-family: var(--font-heading); font-weight: 500; font-size: 20px; margin: 0;
   letter-spacing: .01em; text-transform: uppercase; color: var(--color-text); }
 .bp-back { display: inline-block; font-size: 13px; margin-bottom: 16px;
   color: var(--color-accent-700); text-decoration: none; }
@@ -152,7 +153,7 @@ textarea.input { min-height: 72px; resize: vertical; }
   flex-wrap: wrap; }
 .bp-search { flex: 1; min-width: 200px; max-width: 320px; }
 .bp-group { margin-bottom: 28px; }
-.bp-group-label { font-family: var(--font-heading); font-size: 13px; letter-spacing: .06em;
+.bp-group-label { font-family: var(--font-body); font-size: 13px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--color-neutral-800); font-weight: 600;
   margin-bottom: 8px; }
 /* When bp-group is a <details>, its label is a <summary> (collapsible group). */
@@ -474,7 +475,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
   border-bottom: 1px solid var(--color-divider); vertical-align: top;
 }
 .yn-table th {
-  font-family: var(--font-heading); font-weight: 600; font-size: 0.8rem;
+  font-family: var(--font-body); font-weight: 600; font-size: 0.8rem;
   text-transform: uppercase; letter-spacing: 0.03em; color: var(--color-text);
   opacity: 0.7;
 }

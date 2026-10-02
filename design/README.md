@@ -15,6 +15,7 @@ as-is, and don't invent new colours, fonts or logo variants.
 design/
 ├── logo/     mark, wordmark, lockups (SVG; outlined — no font needed)
 ├── icons/    favicons, PWA icons, iOS app icon master, Android adaptive layers
+├── fonts/    self-hosted Outfit, Figtree, JetBrains Mono (woff2, Latin + Latin-ext) + fonts.css
 ├── audio/    rundere.m4a + rundere.webm — the name, spoken (pronunciation button)
 └── tokens/   tokens.json · tokens.css · RundereTheme.swift · RundereTheme.kt
 ```
@@ -111,6 +112,9 @@ Status badges: a capsule with the colour at 14% alpha as the fill, full colour f
 | **Outfit** (300/400/500) | Display and headings. It matches the wordmark. Never below 20px. |
 | **Figtree** (400/500/600) | UI and body on web and Android. On iOS/iPadOS use **SF Pro** instead. |
 | **JetBrains Mono** (400/500) | IATA codes, flight numbers, confirmation refs, times in tables. SF Mono on iOS. |
+
+**Web:** the app serves these from `design/fonts/` (`/brand/fonts/fonts.css`, linked after `tokens.css`),
+so no page calls a font CDN. Outfit is used only for headings of 20px and up.
 
 **Web scale** (size/line, weight): display 56/64 300 · h1 40/48 300 · h2 28/36 400 · h3 20/28 500 ·
 body-lg 17/26 · body 15/22 · label 14/20 600 · caption 13/18 500 ·
