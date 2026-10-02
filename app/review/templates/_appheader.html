@@ -20,7 +20,7 @@
   </nav>
   <span class="grow"></span>
   <nav class="appnav" aria-label="Settings">
-    <a href="/settings" class="{{ 'on' if in_settings else '' }}" title="Profiles and administration" aria-label="Settings"><span class="lbl-long">Settings</span><span class="lbl-short" aria-hidden="true">⚙</span></a>
+    <a href="/settings" class="{{ 'on' if in_settings else '' }}" title="Profiles and administration" aria-label="Settings"><span class="lbl-long">Settings</span><span class="lbl-short" aria-hidden="true">{{ icon('settings', 18) }}</span></a>
   </nav>
   {% if cu %}<form class="signout" method="post" action="/logout" style="margin:0">
     <button class="theme" type="submit" title="Sign out {{ cu.username }}"

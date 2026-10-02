@@ -40,6 +40,8 @@ def _theme(admin) -> None:
     overrides = Path(__file__).parent / "review" / "admin_templates"
     shared = Path(__file__).parent / "review" / "templates"
     env = admin.templates.env
+    from app.icons import icon
+    env.globals["icon"] = icon           # the shared header uses it
     env.loader = ChoiceLoader([
         FileSystemLoader(str(overrides)),
         PrefixLoader({"_sqladmin": PackageLoader("sqladmin", "templates")}),

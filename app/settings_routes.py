@@ -15,6 +15,8 @@ from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
+from app.icons import install as _install_icons  # noqa: E402
+_install_icons(templates)
 
 # The menu itself (entries, names, who sees which group) lives in ONE place,
 # review/templates/_settings_menu.html, shared with the Settings sidebar that

@@ -30,6 +30,8 @@ from app.review import summary as sm
 log = logging.getLogger("yonder.review")
 router = APIRouter(prefix="/review")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+from app.icons import install as _install_icons  # noqa: E402
+_install_icons(templates)
 
 
 def _fields(payload: dict) -> list[dict]:

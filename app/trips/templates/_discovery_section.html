@@ -24,7 +24,6 @@
 
 {% if discovery_running %}
 <div class="card blueprint yn-run-card">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <div class="yn-run-phase">{{ discovery_run.phase }}</div>
   {% if discovery_run.total %}
   <div class="yn-run-bar"><span style="width: {{ discovery_run.pct }}%"></span></div>
@@ -76,13 +75,11 @@
         {% for g in s.groups %}
         {% if s.groups | length > 1 or g.label != s.label %}<h4 class="yn-dsec-sub">{{ g.label }}</h4>{% endif %}
         <div class="card blueprint bp-daycard yn-findings">
-          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           {% for f in g.findings %}{{ fc.card(f, trip) }}{% endfor %}
         </div>
         {% endfor %}
       {% else %}
         <div class="card blueprint bp-empty-card">
-          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="bp-empty-msg">Nothing here yet.{% if s.key in ('food', 'events', 'research', 'safety') %}
             Run discovery, or ask a connected AI agent to research it.{% elif s.key == 'language' %}
             Run discovery for the language; a connected AI agent can add local phrases.{% else %}
@@ -95,7 +92,6 @@
 </div>
 {% elif not discovery_running %}
   <div class="card blueprint bp-empty-card">
-    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
     <div class="bp-empty-msg">No research yet. Run discovery to generate weather,
       currency, plugs, food and more for this trip's destinations.</div>
   </div>

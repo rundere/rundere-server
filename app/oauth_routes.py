@@ -32,6 +32,8 @@ from app.models import OAuthClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
+from app.icons import install as _install_icons  # noqa: E402
+_install_icons(templates)
 
 _CONSENT_TTL = 600            # seconds to decide on the consent page
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}

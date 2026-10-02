@@ -3,7 +3,6 @@
 {% block content %}
 
 <div class="card blueprint bp-trip-header">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <h1 class="bp-h1">Discovery profile</h1>
   <p class="bp-trip-notes">Your own preferences — they shape what <em>your</em> Discover
     tab searches for on every trip; fellow travellers have their own.
@@ -16,7 +15,6 @@
 
 {% if no_traveller %}
 <div class="card blueprint yn-note-card yn-todo">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <p class="bp-trip-notes">Your account isn't linked to a traveller yet, so there's nowhere to
     keep your preferences. <a href="/account/traveller">Link it now</a>, or ask an admin (Settings → Users).</p>
 </div>
@@ -24,7 +22,6 @@
 
 {% if saved %}
 <div class="card blueprint yn-note-card yn-todo yn-profile-saved">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <div class="bp-group-label">Saved ✓</div>
   <p class="bp-trip-notes">Preferences saved. Re-run a trip's discovery to apply them.</p>
 </div>
@@ -32,7 +29,6 @@
 
 <form method="post" action="/trips/settings/discovery-profile{{ acting.qs if acting else '' }}"
       class="card blueprint yn-profile-card">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
 
   <div class="field"><label>Dietary restrictions <span class="yn-help">— results must accommodate these</span></label>
     <div class="yn-checkrow">

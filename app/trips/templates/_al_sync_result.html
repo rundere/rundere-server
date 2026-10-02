@@ -1,5 +1,4 @@
 <div class="card blueprint yn-note-card {% if failed %}yn-warn{% else %}yn-todo{% endif %}">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <div class="bp-group-label">{{ action }} {% if not failed %}done ✓{% else %}finished with issues{% endif %}</div>
   <p class="bp-trip-notes">
     {% if action == 'Pull' %}

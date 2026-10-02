@@ -40,6 +40,8 @@ from extract import apple_maps_url, maps_url
 log = logging.getLogger("yonder.capture")
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
+from app.icons import install as _install_icons  # noqa: E402
+_install_icons(templates)
 
 _WEB_CLIENT = "web-capture"
 # Proxy identity headers, in the order we trust them. Best-effort: the feature

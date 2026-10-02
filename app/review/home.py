@@ -35,6 +35,8 @@ from app.resolving import OWNER_HOMES, home_rows_query, self_traveler_id
 log = logging.getLogger("yonder.home")
 router = APIRouter(prefix="/review/home")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+from app.icons import install as _install_icons  # noqa: E402
+_install_icons(templates)
 
 KINDS = [
     ("home_airport", "Home airport — an airport you fly from"),
