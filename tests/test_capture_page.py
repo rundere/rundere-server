@@ -61,7 +61,8 @@ if DEPS:
 
     def test_gmail_guide_has_no_label_steps_and_no_modify_scope():
         html = client.get("/capture/setup?tab=gmail").text
-        assert "Trip Planning" not in html and "trip-planning" not in html and "gmail.modify" not in html.split("If it doesn")[0]
+        assert "LABEL_TRACKED" not in html and "getUserLabelByName" not in html   # the shipped Code.gs
+        assert "gmail.modify" not in html.split("If it doesn")[0]
 
     def test_bookmarklet_hands_over_with_postmessage_not_fetch():
         from app.capture import _bookmarklet

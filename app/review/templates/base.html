@@ -309,7 +309,11 @@ a{color:var(--accent)}
 .cap-recent{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:10px}
 .cap-recent li{display:flex;flex-direction:column;gap:4px;padding-bottom:10px;border-bottom:1px solid var(--line)}
 .cap-recent-main{font-weight:600}.cap-recent-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.cap-guide{max-width:900px}
+.cap-wrap.cap-guide{display:block;max-width:900px}
+.cap-fields[hidden]{display:none}
+.cap-guide>.why{padding:0 16px;margin:12px 0 0}
+.cap-guide .cap-tabs{margin-left:16px}
+.cap-guide .cap-panel{margin:0 16px}
 .cap-tabs{display:flex;gap:4px;flex-wrap:wrap;padding:4px;margin:12px 0;background:var(--surface-sunk);
   border-radius:var(--rd-radius-control);width:fit-content;max-width:100%}
 .cap-tab{display:inline-flex;align-items:center;gap:8px;min-height:var(--rd-control-sm);padding:0 14px;
