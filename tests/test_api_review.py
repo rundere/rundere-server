@@ -396,19 +396,36 @@ if DEPS:
 
 
     # ------------------------------------------------------------------ YONDER-191
-    def test_commit_refused_for_non_admin(w):
-        """The targets are the server owner's accounts: a non-admin can neither
-        preview nor execute a commit, and no job or attempt is created."""
+    def test_non_admin_commit_writes_runder_only(w, monkeypatch):
+        """YONDER-191: a non-admin's commit still lands on their Run·dere trip
+        (first-party, no AirTrail/AdventureLog needed); the external targets are
+        skipped — never attempted, even with server-wide credentials set."""
+        from app.models import TripActivity
+        monkeypatch.setattr(settings, "adventurelog_api_key", "k")
+        monkeypatch.setattr(settings, "airtrail_token", "t")
         with SessionLocal() as s:
-            s.get(TravelItem, w["flight"]).review = {"required": False, "action_taken": "approved"}
+            ev = s.get(TravelItem, w["event"])
+            ev.canonical_key = "rv57-event"
+            ev.resolution = {"outcome": "resolved",
+                             "targets": ["adventurelog.note", "yonder.activity"]}
+            ev.review = {"required": False, "action_taken": "approved"}
             s.commit()
-            before = s.query(CommitAttempt).count()
-        for body in ({}, {"dry_run": False}):
-            r = client.post("/api/v1/review/commit", headers=H(w["alice"]), json=body)
-            assert r.status_code == 403, body
+        h = H(w["alice"])
+        r = client.post("/api/v1/review/commit", headers=h, json={})
+        assert r.status_code == 200
+        res = {x["target"]: x for p in r.json()["summary"]["plans"] for x in p["results"]}
+        assert res["adventurelog.note"]["skipped"].startswith("no external connection")
+        r = client.post("/api/v1/review/commit", headers=h, json={"dry_run": False})
+        assert r.status_code == 202
+        j = _wait(r.json()["id"], h)
+        assert "skipped (admins only" in (j["toast"] or "") and not j.get("error")
         with SessionLocal() as s:
-            assert s.query(CommitAttempt).count() == before
-            assert s.get(TravelItem, w["flight"]).commit in (None, {})
+            acts = s.query(TripActivity).filter(TripActivity.trip_id == w["trip"],
+                                                TripActivity.source_item_key == "rv57-event").all()
+            assert len(acts) == 1                              # first-party write landed
+            attempts = s.query(CommitAttempt).filter(CommitAttempt.item_id == w["event"],
+                                                     CommitAttempt.target.like("adventurelog%")).count()
+            assert attempts == 0                               # nothing sent to AdventureLog
 
     def test_commit_allowed_for_admin(w):
         with SessionLocal() as s:
@@ -443,8 +460,6 @@ if DEPS:
             s.commit()
         ck = {settings.auth_cookie_name: tok}
         t = w["trip"]
-        r = client.post("/review/commit", data={"confirm": "1"}, cookies=ck)
-        assert r.status_code == 200 and "limited to admins" in r.text
         assert "limited to admins" in client.post(f"/trips/{t}/adventurelog/push", cookies=ck).text
         assert "limited to admins" in client.post(f"/trips/{t}/adventurelog/pull", cookies=ck).text
         assert client.get(f"/trips/{t}/adventurelog", cookies=ck).status_code == 403

@@ -859,28 +859,33 @@ def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
     from app.committing import commit_pending
     from app.db import SessionLocal
     from app.resolving import load_identities
-    from app.review.routes import EXTERNAL_WRITES_DENIED, _target_clients
-    if not scope.external_writes_allowed(user):
-        raise HTTPException(status_code=403, detail=EXTERNAL_WRITES_DENIED)   # YONDER-191
+    from app.review.routes import _target_clients
     mine = scope.capture_filter(user)
+    # YONDER-191/D-156: non-admins commit to Run·dere only; external targets skipped.
+    external = scope.external_writes_allowed(user)
+    juser = scope.snapshot(user)
     if body.dry_run:
-        adventurelog, airtrail = _target_clients()
+        adventurelog, airtrail = _target_clients(user)
         summary = commit_pending(session, adventurelog, airtrail,
                                  identities=load_identities(session), dry_run=True,
-                                 item_filter=mine)
+                                 item_filter=mine, external=external)
         return {"dry_run": True, "summary": summary}
 
     def work(progress):
         with SessionLocal() as s:
-            adventurelog, airtrail = _target_clients()
+            adventurelog, airtrail = _target_clients(juser)
             summary = commit_pending(s, adventurelog, airtrail,
                                      identities=load_identities(s), dry_run=False,
-                                     progress=progress, item_filter=mine)
+                                     progress=progress, item_filter=mine,
+                                     external=external)
             parts = [f"logged {summary['writes_ok']} write(s) across {summary['items']} item(s)"]
             if summary["writes_failed"]:
                 parts.append(f"{summary['writes_failed']} failed")
             if summary["skipped"]:
                 parts.append(f"{summary['skipped']} already present")
+            if summary.get("external_skipped"):
+                parts.append(f"{summary['external_skipped']} AirTrail/AdventureLog "
+                             "write(s) skipped (admins only for now)")
             details = [f"{plan['headline']} · {r['target']}: {r['error']}"
                        for plan in summary["plans"] for r in plan["results"]
                        if not r.get("ok") and r.get("error")]

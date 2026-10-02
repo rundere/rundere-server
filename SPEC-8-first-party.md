@@ -254,10 +254,15 @@ request forgery (SSRF) risk.
 - **D-155 — No transaction imports and no receipt OCR.** Expenses are entered by
   hand or pre-filled from bookings. (proposed)
 - **D-156 — Server-wide AirTrail/AdventureLog credentials are admin-only until
-  per-user connections ship (D-151).** Commit, create-collection and the
-  AdventureLog sync page/push/pull, the in-review trip picker and the
-  process/reprocess resolve stage's target lookups refuse or skip for non-admins;
-  auth-off and the operator CLI are unaffected. Interim for YONDER-191; lifted by
-  YONDER-192. Still open: the single-capture re-resolve (`app/review/routes.py`
-  `_reresolve`, per-item edit path) and the Discover airport lookups read the owner's
-  accounts without this gate. (proposed)
+  per-user connections ship (D-151).** Run·dere is the first-party write path for
+  everyone: a non-admin's commit still files onto their Run·dere trip
+  (`yonder.activity`); only the AirTrail/AdventureLog targets are skipped (marked
+  `no external connection`, never attempted) and counted separately in the toast.
+  The AdventureLog create-collection / sync page / push / pull routes, the
+  in-review AdventureLog trip picker and the process/reprocess resolve stage's
+  target lookups refuse or skip for non-admins. Auth-off and the operator CLI are
+  unaffected. Interim for YONDER-191; lifted by YONDER-192. Skipped targets count
+  as settled for the item's Logged state, so after 192 an old item needs a
+  reprocess to push externally. Still open: the single-capture re-resolve
+  (`_reresolve`, per-item edit path) and the Discover airport lookups read the
+  owner's accounts without this gate. (proposed)

@@ -1002,10 +1002,6 @@ def reprocess(request: Request, bucket: str = "attention",
     return _job_panel(request, jobs.get(jobs.start("reprocess", work, owner=_owner_id(request))), bucket)
 
 
-EXTERNAL_WRITES_DENIED = ("Logging to AirTrail / AdventureLog is limited to admins "
-                          "until per-user connections are available (YONDER-191).")
-
-
 def _owner_id(request) -> str | None:
     user = scope.user_of(request)
     return user.id if user is not None else None
@@ -1046,13 +1042,9 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
     execute = confirm == "1"
     b = bucket if bucket in BUCKETS else "staged"
     user = scope.user_of(request)
-    if not scope.external_writes_allowed(user):
-        # YONDER-191: the targets are the server owner's accounts; refuse
-        # outright (preview too — it reads them) until per-user connections.
-        return templates.TemplateResponse(request, "_commit_preview.html", {
-            "summary": {"items": 0, "writes_ok": 0, "writes_failed": 0,
-                        "skipped": 0, "plans": []},
-            "error": EXTERNAL_WRITES_DENIED, "bucket": b})
+    # YONDER-191/D-156: a non-admin commits to Run·dere only; the AirTrail /
+    # AdventureLog targets are the server owner's accounts and are skipped.
+    external = scope.external_writes_allowed(user)
     # Only the captures this person may log — their own (an admin also
     # ownerless ones and those of users who share). Never someone else's approvals (YONDER-105).
     mine = scope.capture_filter(scope.user_of(request))
@@ -1060,14 +1052,14 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
     if not execute:
         # PREVIEW stays synchronous — it only reads (target refs + dedup) and is
         # quick; the operator needs the plan back immediately to decide.
-        adventurelog, airtrail = _target_clients()
+        adventurelog, airtrail = _target_clients(user)
         error = None
         summary = {"items": 0, "writes_ok": 0, "writes_failed": 0,
                    "skipped": 0, "plans": []}
         try:
             summary = commit_pending(session, adventurelog, airtrail,
                                      identities=load_identities(session), dry_run=True,
-                                     item_filter=mine)
+                                     item_filter=mine, external=external)
         except Exception as ex:
             log.exception("commit preview failed")
             error = str(ex)
@@ -1078,19 +1070,24 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
     if jobs.current_running():
         return _job_panel(request, jobs.current_running(), b)
 
+    juser = scope.snapshot(user)
+
     def work(progress):
         with SessionLocal() as s:
-            adventurelog, airtrail = _target_clients()
+            adventurelog, airtrail = _target_clients(juser)
             summary = commit_pending(s, adventurelog, airtrail,
                                      identities=load_identities(s),
                                      dry_run=False, progress=progress,
-                                     item_filter=mine)
+                                     item_filter=mine, external=external)
             n = summary["items"]
             parts = [f"logged {summary['writes_ok']} write(s) across {n} item(s)"]
             if summary["writes_failed"]:
                 parts.append(f"{summary['writes_failed']} failed")
             if summary["skipped"]:
                 parts.append(f"{summary['skipped']} already present")
+            if summary.get("external_skipped"):
+                parts.append(f"{summary['external_skipped']} AirTrail/AdventureLog "
+                             "write(s) skipped (admins only for now)")
             toast = "Done — " + ", ".join(parts) + "."
             # Surface the exact reason each write failed, so the operator sees it
             # in the job panel instead of having to open the CommitAttempts log.
