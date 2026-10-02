@@ -622,3 +622,25 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 
 /* Why a row is hidden (4.5) — sits beside Show on a hidden row. */
 .yn-hide-reason { width: auto; padding: 2px 6px; font-size: .8rem; min-height: 0; }
+
+/* ---- trip cards (design Web board: upcoming-trips grid) ---- */
+.yn-tcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px; }
+.yn-tcard { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 20px;
+  background: var(--rd-surface); border: 1px solid var(--rd-border-subtle);
+  border-radius: var(--rd-radius-card); transition: border-color var(--rd-dur-quick) var(--rd-ease-standard); }
+.yn-tcard:hover { border-color: var(--rd-border); }
+.yn-tcard-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 18px; }
+.yn-tcard-codes { font-family: var(--rd-font-mono), ui-monospace, monospace; font-size: 12px;
+  color: var(--rd-accent); letter-spacing: .04em; }
+.yn-tcard-when { font-size: 12px; color: var(--rd-text-muted); white-space: nowrap; }
+.yn-tcard-name { margin: 0; font-family: var(--font-heading); font-size: 22px; font-weight: 400; line-height: 28px; }
+.yn-tcard-link { color: var(--rd-text); text-decoration: none; }
+.yn-tcard-link::after { content: ""; position: absolute; inset: 0; border-radius: var(--rd-radius-card); }
+.yn-tcard-link:focus-visible { outline: none; }
+.yn-tcard-link:focus-visible::after { box-shadow: 0 0 0 2px var(--rd-surface), 0 0 0 4px var(--rd-focus-ring); }
+.yn-tcard-meta { display: flex; justify-content: space-between; gap: 12px; font-size: 13px;
+  color: var(--rd-text-secondary); }
+.yn-tcard-notes { margin: 0; font-size: 13px; color: var(--rd-text-muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.yn-tcard-acts { position: relative; z-index: 1; display: flex; gap: 8px; margin-top: auto;
+  padding-top: 8px; border-top: 1px solid var(--rd-border-subtle); }

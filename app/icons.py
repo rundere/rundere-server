@@ -17,6 +17,9 @@ _PATHS = {
     "send": '<path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
     "pin": '<path d="M12 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>',
     "lock": '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    "home": '<path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/>',
+    # Plane, nose pointing right (rotated by the caller where needed)
+    "plane": '<path d="M12 3v7l8 4v2l-8-2v4l2 2v1l-2-.5L10 21v-1l2-2v-4l-8 2v-2l8-4"/>',
     "alert": '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.01"/>',
 }
 

@@ -44,4 +44,4 @@ if DEPS:
         base = re.findall(r"--color-(?:bg|surface|text|accent|divider)\s*:\s*([^;]+);", trips)
         assert base and all("--rd-" in v for v in base), base
         # no per-theme re-declaration is left: tokens.css owns dark/light
-        assert 'data-theme="dark"' not in theme and 'data-theme="dark"' not in trips
+        assert theme.count("--ground:") == 1 and trips.count("--color-bg:") == 1

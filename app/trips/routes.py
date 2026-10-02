@@ -118,13 +118,50 @@ def trip_status(t: Trip, today: str) -> str:
     return "inprogress"
 
 
-def _trip_display(t: Trip) -> dict:
+_IATA = re.compile(r"^[A-Z]{3}$")
+
+
+def trip_route_codes(activities, limit: int = 4) -> list[str]:
+    """The airport codes a trip's flights visit, in flight order and without repeats
+    (LHR, NRT, KIX) — what the design's trip card shows as mono codes. Only real
+    3-letter codes; a free-text place never becomes a code."""
+    codes: list[str] = []
+    for a in sorted((a for a in activities if a.type == "flight"),
+                    key=lambda a: a.starts_at or ""):
+        for key in ("from", "to"):
+            c = str((a.values or {}).get(key) or "").strip().upper()
+            if _IATA.match(c) and c not in codes:
+                codes.append(c)
+    return codes[:limit]
+
+
+def trip_when(t: Trip, today: str) -> str:
+    """Relative timing for a trip card: "In progress", "in 12 days", "ended 3 days ago"."""
+    st = trip_status(t, today)
+    if st == "inprogress":
+        return "In progress" if t.start_date else "No dates"
+    ref = t.start_date if st == "upcoming" else (t.end_date or t.start_date)
+    try:
+        days = abs((date.fromisoformat(ref[:10]) - date.fromisoformat(today)).days)
+    except (TypeError, ValueError):
+        return ""
+    unit = "day" if days == 1 else "days"
+    return f"in {days} {unit}" if st == "upcoming" else f"ended {days} {unit} ago"
+
+
+def _trip_display(t: Trip, activities=(), today: str | None = None) -> dict:
     notes = (t.notes or "").strip()
+    today = today or date.today().isoformat()
     return {
         "id": t.id, "name": t.name,
         "start_display": fmt_date(t.start_date) or "—",
         "end_display": fmt_date(t.end_date) or "—",
         "notes_preview": notes or "—",
+        "codes": trip_route_codes(activities),
+        "when": trip_when(t, today),
+        "item_count": len(activities),
+        "range_short": " – ".join(x for x in (fmt_date_short(t.start_date),
+                                              fmt_date_short(t.end_date)) if x),
     }
 
 
@@ -142,6 +179,15 @@ def _list_context(session: Session, q: str, status: str, user=None) -> dict:
     in_tab = {k: [(t, st) for (t, st) in annotated if (st == "past") == (k == "past")]
               for k, _ in TRIP_TABS}
 
+    acts_by_trip: dict[str, list] = {}
+    if trips:
+        for a in (session.query(TripActivity)
+                  .filter(TripActivity.trip_id.in_([t.id for t in trips])).all()):
+            acts_by_trip.setdefault(a.trip_id, []).append(a)
+
+    def disp(t):
+        return _trip_display(t, acts_by_trip.get(t.id, ()), today)
+
     groups = []
     if tab == "upcoming":
         for key, label in STATUS_LABELS:
@@ -152,7 +198,7 @@ def _list_context(session: Session, q: str, status: str, user=None) -> dict:
                              key=lambda t: t.start_date or "")
             if members:
                 groups.append({"label": label,
-                               "trips": [_trip_display(t) for t in members]})
+                               "trips": [disp(t) for t in members]})
     else:
         # Most recent first, one group per year.
         members = sorted((t for (t, _) in in_tab[tab]),
@@ -161,7 +207,7 @@ def _list_context(session: Session, q: str, status: str, user=None) -> dict:
             year = (t.start_date or t.end_date or "")[:4] or "Undated"
             if not groups or groups[-1]["label"] != year:
                 groups.append({"label": year, "trips": []})
-            groups[-1]["trips"].append(_trip_display(t))
+            groups[-1]["trips"].append(disp(t))
 
     other = "past" if tab == "upcoming" else "upcoming"
     return {

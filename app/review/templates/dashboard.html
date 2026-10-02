@@ -20,19 +20,30 @@
 
     <div class="dash-section">
       <h2>What's next</h2>
-      {% if next_trip %}
-      <a class="dash-trip" href="/trips/{{ next_trip.id }}">
-        {% if next_trip.in_progress %}
-        <span class="pill ok">In progress</span>
-        {% else %}
-        <span class="pill">{{ next_trip.days_until }} day{{ 's' if next_trip.days_until != 1 else '' }}</span>
-        {% endif %}
-        <div>
-          <div class="t-name">{{ next_trip.name }}</div>
-          <div class="t-dates">{{ next_trip.start }}{% if next_trip.end %} → {{ next_trip.end }}{% endif %}</div>
+      {% if next_up %}
+      <section class="nextup" aria-label="Next up">
+        <div class="nextup-top"><span class="nextup-over">{{ next_up.overline }}</span></div>
+        {% if next_up.kind == 'flight' %}
+        <div class="nextup-route">
+          <div><div class="nextup-code">{{ next_up.from }}</div></div>
+          <div class="nextup-line" aria-hidden="true"><span class="nextup-dash"></span><span class="nextup-plane">{{ icon('plane', 24) }}</span><span class="nextup-dash"></span><span class="nextup-dot"></span></div>
+          <div class="nextup-right"><div class="nextup-code">{{ next_up.to }}</div></div>
         </div>
-        <span class="t-count">{{ upcoming_count }} more upcoming · {{ trip_count }} total →</span>
-      </a>
+        <div class="nextup-facts">
+          {% if next_up.flight_number %}<div><div class="nextup-k">Flight</div><div class="nextup-v mono">{{ next_up.flight_number }}</div></div>{% endif %}
+          <div><div class="nextup-k">Departs</div><div class="nextup-v mono">{{ next_up.departs }}</div></div>
+          <div><div class="nextup-k">Trip</div><div class="nextup-v">{{ next_up.trip_name }}</div></div>
+          <a class="nextup-open" href="/trips/{{ next_up.trip_id }}">Open trip →</a>
+        </div>
+        {% else %}
+        <div class="nextup-trip">{{ next_up.trip_name }}</div>
+        <div class="nextup-facts">
+          <div><div class="nextup-k">Dates</div><div class="nextup-v mono">{{ next_up.start }}{% if next_up.end %} → {{ next_up.end }}{% endif %}</div></div>
+          <div><div class="nextup-k">Trips</div><div class="nextup-v">{{ upcoming_count }} more upcoming · {{ trip_count }} total</div></div>
+          <a class="nextup-open" href="/trips/{{ next_up.trip_id }}">Open trip →</a>
+        </div>
+        {% endif %}
+      </section>
       {% else %}
       <div class="dash-empty">
         <span>No trip coming up yet.</span>

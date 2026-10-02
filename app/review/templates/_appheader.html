@@ -1,5 +1,6 @@
 {# Global app header, rendered above every page so the three surfaces read as
-   ONE product. The bar holds only the daily surfaces (Home, Review, Capture, Trips, Journal); every profile and
+   ONE product. Wide screens show it as the design's 248px sidebar (theme.css);
+   narrow screens keep the top bar. The bar holds only the daily surfaces (Home, Review, Capture, Trips, Journal); every profile and
    administration page lives under Settings (/settings), which stays
    highlighted while you're on any of them. Active item is derived from the
    request path. #}
@@ -12,19 +13,19 @@
     <span class="rd-mark" aria-hidden="true"></span><span class="rd-wordmark" role="img" aria-label="Run·dere"></span>
     <span>self-hosted</span></a>
   <nav class="appnav" aria-label="Sections">
-    <a href="/" class="{{ 'on' if p == '/' else '' }}">Home</a>
-    <a href="/review" class="{{ 'on' if p in ('/review', '/review/') else '' }}">Review</a>
-    <a href="/capture" class="{{ 'on' if p.startswith('/capture') else '' }}">Capture</a>
-    <a href="/trips" class="{{ 'on' if p.startswith('/trips') and not in_settings else '' }}">Trips</a>
-    <a href="/journal" class="{{ 'on' if p.startswith('/journal') else '' }}">Journal</a>
+    <a href="/" class="{{ 'on' if p == '/' else '' }}"><span class="ni">{{ icon('home', 20) }}</span>Home</a>
+    <a href="/review" class="{{ 'on' if p in ('/review', '/review/') else '' }}"><span class="ni">{{ icon('review', 20) }}</span>Review</a>
+    <a href="/capture" class="{{ 'on' if p.startswith('/capture') else '' }}"><span class="ni">{{ icon('capture', 20) }}</span>Capture</a>
+    <a href="/trips" class="{{ 'on' if p.startswith('/trips') and not in_settings else '' }}"><span class="ni">{{ icon('trips', 20) }}</span>Trips</a>
+    <a href="/journal" class="{{ 'on' if p.startswith('/journal') else '' }}"><span class="ni">{{ icon('journal', 20) }}</span>Journal</a>
   </nav>
   <span class="grow"></span>
   <nav class="appnav" aria-label="Settings">
-    <a href="/settings" class="{{ 'on' if in_settings else '' }}" title="Profiles and administration" aria-label="Settings"><span class="lbl-long">Settings</span><span class="lbl-short" aria-hidden="true">{{ icon('settings', 18) }}</span></a>
+    <a href="/settings" class="{{ 'on' if in_settings else '' }}" title="Profiles and administration" aria-label="Settings"><span class="ni">{{ icon('settings', 20) }}</span><span class="lbl-long">Settings</span><span class="lbl-short" aria-hidden="true">{{ icon('settings', 18) }}</span></a>
   </nav>
   {% if cu %}<form class="signout" method="post" action="/logout" style="margin:0">
-    <button class="theme" type="submit" title="Sign out {{ cu.username }}"
-            aria-label="Sign out" style="width:auto;padding:0 8px">{{ cu.username }} · sign out</button>
+    <button class="theme signout-btn" type="submit" title="Sign out {{ cu.username }}"
+            aria-label="Sign out">{{ cu.username }} · sign out</button>
   </form>{% endif %}
   <button class="theme" type="button" onclick="txToggleTheme()"
           title="Toggle light / dark" aria-label="Toggle theme">◐</button>

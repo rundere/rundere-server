@@ -57,6 +57,47 @@ def _next_trip(trips: list[Trip], today: str) -> dict | None:
             "in_progress": in_progress, "days_until": days_until}
 
 
+def _next_up(session: Session, trips: list[Trip], today: str) -> dict | None:
+    """The design's Next-up card (one per screen): the soonest flight on a visible
+    trip that hasn't left yet, with mono airport codes; with no flight, the featured
+    trip itself. `overline` is the Runway-coloured line ("NEXT UP · FLIGHT · IN 12
+    DAYS"). Only real 3-letter codes are shown as codes."""
+    import re
+
+    from app.models import TripActivity
+    featured = _next_trip(trips, today)
+    ids = [t.id for t in trips if t.start_date or t.end_date]
+    flights = []
+    if ids:
+        for a in (session.query(TripActivity).filter(
+                TripActivity.trip_id.in_(ids), TripActivity.type == "flight").all()):
+            day = (a.starts_at or "")[:10]
+            if day and day >= today:
+                flights.append(a)
+    flights.sort(key=lambda a: a.starts_at or "")
+    code = re.compile(r"^[A-Z]{3}$")
+    for a in flights:
+        v = a.values or {}
+        frm, to = str(v.get("from") or "").strip().upper(), str(v.get("to") or "").strip().upper()
+        if code.match(frm) and code.match(to):
+            days = (date.fromisoformat(a.starts_at[:10]) - date.fromisoformat(today)).days
+            when = "TODAY" if days == 0 else f"IN {days} DAY{'S' if days != 1 else ''}"
+            trip = next((t for t in trips if t.id == a.trip_id), None)
+            return {"kind": "flight", "overline": f"NEXT UP · FLIGHT · {when}",
+                    "from": frm, "to": to, "flight_number": v.get("flight_number") or "",
+                    "departs": a.starts_at.replace("T", " ")[:16], "trip_id": a.trip_id,
+                    "trip_name": trip.name if trip else ""}
+    if featured is None:
+        return None
+    if featured["in_progress"]:
+        overline = "NOW · TRIP IN PROGRESS"
+    else:
+        d = featured["days_until"]
+        overline = f"NEXT UP · TRIP · IN {d} DAY{'S' if d != 1 else ''}"
+    return {"kind": "trip", "overline": overline, "trip_id": featured["id"],
+            "trip_name": featured["name"], "start": featured["start"], "end": featured["end"]}
+
+
 def _pipeline_counts(session: Session, user=None) -> dict:
     # Reuse the review queue's own bucket logic — a fresh reimplementation here
     # would inevitably drift from what "Needs you: 3" means on /review. Scoped to
@@ -88,6 +129,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
                          if t.start_date and _trip_status(t, today) == "upcoming")
     return templates.TemplateResponse(request, "dashboard.html", {
         "next_trip": _next_trip(trips, today),
+        "next_up": _next_up(session, trips, today),
         "counts": _pipeline_counts(session, user),
         "capture": _capture_activity(session, today, user),
         "trip_count": len(trips),
