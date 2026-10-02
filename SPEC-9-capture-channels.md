@@ -1,7 +1,7 @@
 # SPEC-9 — Capture channels and the one-step capture flow
 
-**Status: PLANNING (2026-10-02), revised after owner review.** Decisions D-158–D-160, D-162
-and D-163 are **proposed** (D-161 is the design-token decision in SPEC-8). Nothing here is
+**Status: PLANNING (2026-10-02), revised after owner review.** Decisions D-158–D-160, D-162,
+D-163 and D-164 are **proposed** (D-161 is the design-token decision in SPEC-8). Nothing here is
 built yet; section 2 documents what exists today (read from the code), sections 3–7 are
 the proposal. Related Plane items: YONDER-159–163 (capture page redesign), YONDER-199
 (email forward), YONDER-54 (iOS Share Extension), YONDER-179 (file capture API),
@@ -51,9 +51,10 @@ capture** (5) and the **MCP `capture_url` tool** (6), plus the paste form's two 
 ### 2.1 Channel notes
 
 1. **Gmail add-on.** Capture-only; it runs only when you click the button (D-02, no
-   polling). Moves the thread between `trip-planning/untracked`, `tracked` and `toreview`
-   labels (D-26). Needs the labels to exist, one install per Google account, and an API key
-   created with `python -m app.cli create-key`. Can pin a trip via `collection_id` (D-05).
+   polling). It only reads the open email: the old `trip-planning` label moves (D-26) were a
+   personal organisation method and are dropped, with the `gmail.modify` scope (D-164). One
+   install per Google account and an API key created with `python -m app.cli create-key`. Can
+   pin a trip via `collection_id` (D-05).
 2. **Calendar add-on.** Same install and key; sends one event. Gmail `.ics` invites and
    calendar events resolve to the same shape, so they dedupe.
 3. **Bookmarklet — why it has never worked.** It does a cross-origin
@@ -102,7 +103,7 @@ header carries that channel's status (connected or not, last capture), which is 
 
 | Tab | What the steps cover |
 |---|---|
-| **Gmail** | Create the Apps Script project at script.google.com; replace `appsscript.json` and `Code.gs` (copy buttons for both); create the three labels; Deploy → Test deployments → Install add-on; get past Google's "unverified app" screen; paste the Ingest URL and the user's key on the add-on home card (the key is generated inline, YONDER-161); open an email and capture it |
+| **Gmail** | Create the Apps Script project at script.google.com; replace `appsscript.json` and `Code.gs` (copy buttons for both); Deploy → Test deployments → Install add-on; get past Google's "unverified app" screen; paste the Ingest URL and the user's key on the add-on home card (the key is generated inline, YONDER-161); open an email and capture it |
 | **Calendar** | Same project steps with the Calendar add-on files; same key; open an event and capture it |
 | **Bookmarklet** | Show the bookmarks bar; drag the button there; open a booking page and click it; a Run·dere tab opens with the page (D-159); what to do if the pop-up is blocked |
 | **Email forward** | The user's own address (D-162) with a copy button; how to set a forwarding rule in Gmail and in Outlook; what happens to a forwarded email; regenerate the address if it leaks |
@@ -184,6 +185,8 @@ The page's own capture box is not a tab, because it needs no setup.
   tab per channel; each tab is an instruction manual with status.
 - **D-162** — Email forward uses a server-generated per-user plus address.
 - **D-163** — The iOS Share Extension confirms receipt with a notification at minimum.
+- **D-164** — The Gmail add-on no longer moves labels and no longer asks for `gmail.modify`;
+  it only reads the open email. Supersedes D-26.
 
 ## 8. Open questions
 
