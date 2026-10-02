@@ -203,6 +203,8 @@ if (_DESIGN / "logo").is_dir():
     app.mount("/brand/icons", StaticFiles(directory=str(_DESIGN / "icons")), name="brand-icons")
 if (_DESIGN / "tokens").is_dir():     # D-161: the design tokens are the palette's source
     app.mount("/brand/tokens", StaticFiles(directory=str(_DESIGN / "tokens")), name="brand-tokens")
+if (_DESIGN / "fonts").is_dir():      # self-hosted brand fonts (no third-party CDN)
+    app.mount("/brand/fonts", StaticFiles(directory=str(_DESIGN / "fonts")), name="brand-fonts")
 if (_DESIGN / "audio").is_dir():
     app.mount("/brand/audio", StaticFiles(directory=str(_DESIGN / "audio")), name="brand-audio")
 

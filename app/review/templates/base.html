@@ -10,6 +10,7 @@
 <link rel="apple-touch-icon" href="/brand/icons/apple-touch-icon.png">
 <link rel="manifest" href="/brand/icons/site.webmanifest">
 <link rel="stylesheet" href="/brand/tokens/tokens.css">
+<link rel="stylesheet" href="/brand/fonts/fonts.css">
 <link rel="stylesheet" href="/review/static/theme.css">
 <script>
 // Apply the saved theme BEFORE first paint so there is no light/dark flash.
@@ -31,7 +32,7 @@ a{color:var(--accent)}
 /* Operations strip: controls + status, a distinct plane above the work area. */
 .ops{background:var(--surface-sunk);border-bottom:1px solid var(--line-strong)}
 .ops-row{display:flex;align-items:center;gap:16px;padding:10px 16px;flex-wrap:wrap}
-.pagetitle{font-size:15px;letter-spacing:-.01em;font-weight:600}
+.pagetitle{font-family:var(--display);font-size:20px;line-height:28px;font-weight:400;letter-spacing:-.01em}
 .opsbtns{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;
   padding:12px 16px;border-bottom:1px solid var(--line);
@@ -314,7 +315,7 @@ a{color:var(--accent)}
 .dash{padding:20px;display:flex;flex-direction:column;gap:18px}
 .dash-hero{display:flex;align-items:center;justify-content:space-between;
   gap:16px;flex-wrap:wrap}
-.dash-hero h1{font-size:19px;letter-spacing:-.01em}
+.dash-hero h1{font-family:var(--display);font-size:20px;font-weight:400;letter-spacing:-.01em}
 .dash-hero p{margin:4px 0 0;color:var(--ink-2);font-size:13.5px}
 .dash-hero-actions{display:flex;gap:8px;flex-wrap:wrap}
 .dash-section h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;
