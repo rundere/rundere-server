@@ -1,64 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Capture a web page{% endblock %}
+{% block title %}Capture{% endblock %}
 {% block content %}
 <div class="app">
   <div class="ops">
     <div class="ops-row">
-      <h1 class="pagetitle">Capture a web page</h1>
+      <h1 class="pagetitle">Capture</h1>
     </div>
   </div>
 
-  <div class="cap-wrap">
-    {# --- Primary path: the bookmarklet --- #}
+  <div class="cap-wrap cap-main">
+    {# The one reusable interface (SPEC-9 D-160): used every time, so it is the only thing here. #}
     <section class="cap-card">
-      <h3>Bookmarklet — one click on any booking page</h3>
+      <h2 class="cap-h">Capture something</h2>
       <p class="why">
-        Drag this to your bookmarks bar. When you’re looking at a confirmation
-        page (even one behind a login), click it — Run·dere captures the page
-        you’re viewing and queues it. This is the reliable path: your browser has
-        already loaded and authenticated the page.
+        Paste a link, a page's source, or a Google or Apple Maps directions link. Run·dere reads it
+        and puts it in your review queue to approve.
       </p>
-      <p class="why">
-        If a page blocks the direct send (some heavy or strict-CSP sites do),
-        Run·dere copies the page’s HTML to your clipboard instead — just paste it
-        into the box on the right.
-      </p>
-      <p>
-        <a class="act primary bm" href="{{ bookmarklet|safe }}"
-           onclick="return false">➤ Capture to Run·dere</a>
-      </p>
-      <label class="cap-lbl" for="bm">…or copy the bookmarklet source</label>
-      <input id="bm" class="cap-input mono" type="text" readonly
-             value="{{ bookmarklet }}" onclick="this.select()">
-    </section>
-
-    {# --- Fallback path: paste source or a public URL --- #}
-    <section class="cap-card">
-      <h3>Or paste something — pick what it is</h3>
-      <p class="why">
-        Choose what you’re capturing, then paste it. Directions links need a
-        Travel date and a travel mode (a route carries neither). Login-walled
-        pages can’t be fetched from a URL — use the bookmarklet or paste the
-        source for those. Travellers come from the trip/collection you attach it
-        to, not this form.
-      </p>
-      <form hx-post="/capture/web" hx-target="#cap-result" hx-swap="innerHTML"
+      <form id="cap-form" hx-post="/capture/web" hx-target="#cap-result" hx-swap="innerHTML"
             hx-disabled-elt="button[type=submit]">
-        <fieldset class="cap-paths" onchange="yonderPath(this)">
-          <label><input type="radio" name="path" value="page" checked> Web page</label>
-          <label><input type="radio" name="path" value="google"> Google Maps directions</label>
-          <label><input type="radio" name="path" value="apple"> Apple Maps directions</label>
-        </fieldset>
-        <textarea name="content" class="cap-area mono" rows="7"
-                  data-ph-page="Paste page source (<!doctype html>…) or a URL (https://…)"
-                  data-ph-google="Paste a Google Maps directions link (https://www.google.com/maps/dir/…)"
-                  data-ph-apple="Paste an Apple Maps directions link (https://maps.apple.com/?saddr=…&daddr=…)"
-                  placeholder="Paste page source (<!doctype html>…) or a URL (https://…)"></textarea>
-        <div class="cap-fields">
-          <div class="field">
-            <label for="title">Title (optional)</label>
-            <input id="title" name="title" type="text" placeholder="override the page title">
-          </div>
+        <label class="cap-lbl" for="content">Link or page source</label>
+        <textarea id="content" name="content" class="cap-area mono" rows="5" required
+                  placeholder="https://… or <!doctype html>…"></textarea>
+
+        <div id="dir-fields" class="cap-fields" hidden>
+          <p class="why">This looks like a directions link. A route has no date of its own, so add one.</p>
           <div class="field">
             <label for="travel_date">Travel date</label>
             <input id="travel_date" name="travel_date" type="date">
@@ -67,17 +32,11 @@
             <label for="travel_time">Travel time (optional)</label>
             <input id="travel_time" name="travel_time" type="time">
           </div>
-          <div class="field dir-only" hidden>
-            <label for="end_date">End date (optional, multi-day trip)</label>
+          <div class="field">
+            <label for="end_date">End date (optional, multi-day)</label>
             <input id="end_date" name="end_date" type="date">
           </div>
-          <div class="field dir-only" hidden>
-            <label for="timezone">Timezone (optional)</label>
-            <input id="timezone" name="timezone" type="text" placeholder="America/Toronto"
-                   list="tz-list" autocomplete="off">
-            <datalist id="tz-list"></datalist>
-          </div>
-          <div class="field dir-only" hidden>
+          <div class="field">
             <label for="mode">Travel mode</label>
             <select id="mode" name="mode">
               <option value="">Car (default)</option>
@@ -87,82 +46,115 @@
             </select>
           </div>
           <div class="field">
-            <label for="trip_id">Trip (optional)</label>
-            <select id="trip_id" name="trip_id">
-              <option value="">Match by date</option>
-              {% for t in trips %}
-              <option value="{{ t.id }}">{{ t.name }}{% if t.start_date %} · {{ t.start_date }}{% if t.end_date and t.end_date != t.start_date %} → {{ t.end_date }}{% endif %}{% endif %}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field">
-            <label for="notes">Notes (optional)</label>
-            <input id="notes" name="notes" type="text" placeholder="anything to remember">
+            <label for="timezone">Timezone (optional)</label>
+            <input id="timezone" name="timezone" type="text" placeholder="America/Toronto"
+                   list="tz-list" autocomplete="off">
+            <datalist id="tz-list"></datalist>
           </div>
         </div>
+
         <details class="cap-advanced">
-          <summary>AdventureLog (advanced)</summary>
-          <div class="field">
-            <label for="collection_id">AdventureLog collection id</label>
-            <input id="collection_id" name="collection_id" type="text"
-                   placeholder="only to force a specific AdventureLog collection">
+          <summary>More options</summary>
+          <div class="cap-fields">
+            <div class="field">
+              <label for="trip_id">Trip</label>
+              <select id="trip_id" name="trip_id">
+                <option value="">Match by date</option>
+                {% for t in trips %}
+                <option value="{{ t.id }}">{{ t.name }}{% if t.start_date %} · {{ t.start_date }}{% if t.end_date and t.end_date != t.start_date %} → {{ t.end_date }}{% endif %}{% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label for="title">Title</label>
+              <input id="title" name="title" type="text" placeholder="override the page title">
+            </div>
+            <div class="field">
+              <label for="notes">Notes</label>
+              <input id="notes" name="notes" type="text" placeholder="anything to remember">
+            </div>
+            <div class="field">
+              <label for="collection_id">AdventureLog collection</label>
+              <input id="collection_id" name="collection_id" type="text"
+                     placeholder="advanced: force a specific AdventureLog collection">
+            </div>
           </div>
         </details>
-        <p class="why cap-hint">
-          Date/time are only used to fill gaps the page itself doesn’t state
-          (e.g. an event with no listed time) — a date or time on the page always
-          wins, and you can also just fix it later in the review queue.
-        </p>
         <div class="cap-actions">
           <button class="act primary" type="submit">Capture</button>
         </div>
       </form>
-      <div id="cap-result"></div>
+      <div id="cap-result" aria-live="polite"></div>
     </section>
+
+    <aside class="cap-side">
+      <section class="cap-card">
+        <h2 class="cap-h">Other ways to capture</h2>
+        <p class="why">Set up once, then bookings come in without opening this page: Gmail,
+          Calendar, a bookmark, email forwarding, your phone, an AI assistant.</p>
+        <a class="act" href="/capture/setup">See the guides →</a>
+      </section>
+
+      <section class="cap-card">
+        <h2 class="cap-h">Recent captures</h2>
+        {% if recent %}
+        <ul class="cap-recent">
+          {% for r in recent %}
+          <li>
+            <div class="cap-recent-main">{{ r.headline or 'Page waiting to be read' }}{% if r.count > 1 %} <span class="age">+{{ r.count - 1 }} more</span>{% endif %}</div>
+            <div class="cap-recent-meta">
+              <span class="pill {{ 'warn' if r.bucket == 'attention' else ('ok' if r.bucket == 'ready' else '') }}">{{ r.state }}</span>
+              <span class="age">{{ r.channel }} · {{ r.when.strftime('%b %d %H:%M') if r.when else '' }}</span>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        <a class="cap-go" href="/review?bucket=all">Open the review queue →</a>
+        {% else %}
+        <p class="why">Nothing captured yet.</p>
+        {% endif %}
+      </section>
+    </aside>
   </div>
 </div>
 <script>
-  // Show the directions-only fields and swap the paste placeholder to match the
-  // selected capture path. Progressive enhancement only — the backend validates
-  // the path/URL regardless of whether this runs.
-  function yonderPath(form) {
-    var path = (form.querySelector('input[name=path]:checked') || {}).value || 'page';
-    var isDir = path === 'google' || path === 'apple';
-    form.querySelectorAll('.dir-only').forEach(function (el) { el.hidden = !isDir; });
-    var date = form.querySelector('#travel_date');
-    if (date) { date.required = isDir; }
-    var area = form.querySelector('textarea[name=content]');
-    if (area) { area.placeholder = area.getAttribute('data-ph-' + path) || area.placeholder; }
-  }
-  document.querySelectorAll('form .cap-paths').forEach(function (fs) { yonderPath(fs.form); });
-
-  // Timezone: default to this browser's own zone and offer the full list.
+  // A directions link needs a travel date (a route carries none): show those fields and require
+  // the date while the box holds one. Progressive enhancement only — the backend validates.
   (function () {
-    var tz = document.getElementById('timezone');
-    if (!tz) return;
+    var box = document.getElementById('content'), dir = document.getElementById('dir-fields'),
+        date = document.getElementById('travel_date');
+    var isDirections = function (v) {
+      v = (v || '').trim();
+      return /^https?:\/\/(www\.)?google\.[a-z.]+\/maps\/dir\//i.test(v) ||
+             /^https?:\/\/maps\.app\.goo\.gl\//i.test(v) || /^https?:\/\/goo\.gl\/maps\//i.test(v) ||
+             /^https?:\/\/maps\.apple\.com\/.*(saddr|daddr)=/i.test(v);
+    };
+    function sync() {
+      var on = isDirections(box.value);
+      dir.hidden = !on; date.required = on;
+    }
+    box.addEventListener('input', sync); sync();
+
+    // Timezone: default to this browser's own zone and offer the full list.
     try {
+      var tz = document.getElementById('timezone');
       tz.value = tz.value || Intl.DateTimeFormat().resolvedOptions().timeZone || '';
       var list = document.getElementById('tz-list');
       (Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : []).forEach(function (z) {
         var o = document.createElement('option'); o.value = z; list.appendChild(o);
       });
-    } catch (e) { /* older browser: a plain text box still works */ }
-  })();
+    } catch (e) { /* a plain text box still works */ }
 
-  // Picking a trip pre-fills an empty travel date with the trip's start.
-  (function () {
-    var trip = document.getElementById('trip_id'), date = document.getElementById('travel_date');
-    if (!trip || !date) return;
+    // Picking a trip pre-fills an empty travel date with the trip's start.
+    var trip = document.getElementById('trip_id');
     var starts = {{ trips | map(attribute='start_date') | list | tojson }};
     trip.addEventListener('change', function () {
       var s = starts[trip.selectedIndex - 1];
       if (s && !date.value) date.value = s;
-      if (date.value) date.dispatchEvent(new Event('change'));
     });
-    // An end date never starts before the travel date.
     date.addEventListener('change', function () {
       var end = document.getElementById('end_date');
-      if (end) { end.min = date.value; if (end.value && end.value < date.value) end.value = date.value; }
+      end.min = date.value; if (end.value && end.value < date.value) end.value = date.value;
     });
   })();
 </script>

@@ -12,6 +12,9 @@ import tempfile
 _TMP = tempfile.mkdtemp(prefix="tx-tests-")
 os.environ.setdefault("TX_DATABASE_URL", f"sqlite:///{_TMP}/tests.sqlite3")
 os.environ.setdefault("TX_INGEST_RATE_LIMIT", "5")
+# Captures must not start background extraction in unrelated tests; the auto-process
+# tests turn it on themselves (D-158).
+os.environ.setdefault("TX_AUTO_PROCESS", "false")
 # No live road routing in tests (resolve/routing.py); tests stub it.
 os.environ.setdefault("TX_OSRM_URL", "")
 # …nor live map tiles (app/trips/maps.py draws a schematic background instead).

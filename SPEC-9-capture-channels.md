@@ -37,7 +37,7 @@ user (D-120). Nothing is extracted until something runs `process_pending` + `res
 | 3 | **Capture page → bookmarklet** | A browser bookmark on any booking page | `POST /capture/web`, session cookie | `web`: page `outerHTML` | JSON-LD, then LLM on the page text |
 | 4 | **Capture page → paste form** | `/capture` | `POST /capture/web`, session cookie | `web` (pasted HTML, or a URL the server fetches under the SSRF policy), `maps_url` or `apple_maps_url` (a directions link plus a travel date) | as above; directions: `extract/maps_url.py`, `apple_maps_url.py` |
 | 5 | **App / API** | iOS in-app capture and share-to-app | `POST /api/v1/capture`, bearer token | `url` or `html`, same routing as the page | as above |
-| 6 | **MCP `capture_url`** | A Claude connector on `/mcp` | OAuth bearer | a URL or directions link | as above |
+| 6 | **MCP `capture_url`** | Any MCP-capable assistant or client on `/mcp` (Claude is one) | OAuth bearer | a URL or directions link | as above |
 | 7 | **Operator** | `python -m app.cli process`, `create-key` | shell on the server | n/a | n/a |
 
 Two more are not channels: the n8n Maps form (`capture/maps-n8n`) is deprecated and
@@ -108,7 +108,7 @@ header carries that channel's status (connected or not, last capture), which is 
 | **Bookmarklet** | Show the bookmarks bar; drag the button there; open a booking page and click it; a Run·dere tab opens with the page (D-159); what to do if the pop-up is blocked |
 | **Email forward** | The user's own address (D-162) with a copy button; how to set a forwarding rule in Gmail and in Outlook; what happens to a forwarded email; regenerate the address if it leaks |
 | **iPhone and iPad** | When built: install the app, sign in, Share → Run·dere from Safari or Mail; the confirmation notification (D-163) |
-| **Claude** | Add the Run·dere connector from `/mcp`; ask Claude to capture a link |
+| **AI assistants (MCP)** | Add Run·dere as a remote MCP server by URL; sign in and allow; ask the assistant to capture a link. Generic to the MCP standard, with Claude and Claude Code as examples |
 
 The page's own capture box is not a tab, because it needs no setup.
 

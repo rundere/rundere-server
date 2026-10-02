@@ -15,6 +15,9 @@ COPY design/icons/ design/icons/
 COPY design/audio/ design/audio/
 COPY design/tokens/ design/tokens/
 COPY design/fonts/ design/fonts/
+# The capture guide shows these add-on files for the person to copy (SPEC-9 D-160).
+COPY capture/gmail-addon/ capture/gmail-addon/
+COPY capture/gcal-addon/ capture/gcal-addon/
 COPY resolve/ resolve/
 COPY extract/ extract/
 COPY adapters/ adapters/

@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Other ways to capture{% endblock %}
+{% macro copyblock(id, text) %}
+<div class="cap-copy"><pre id="{{ id }}">{{ text }}</pre>
+  <button class="act tiny" type="button" data-copy="{{ id }}">Copy</button></div>
+{% endmacro %}
+{% macro keystep(channel) %}
+<div id="key-slot-{{ channel }}">
+  {% if signed_in %}
+  <button class="act" type="button" hx-post="/capture/setup/key" hx-vals='{"channel": "{{ channel }}"}'
+          hx-target="#key-slot-{{ channel }}" hx-swap="innerHTML">Make my key</button>
+  {% else %}<p class="why"><a href="/login?next=/capture/setup%3Ftab%3D{{ 'calendar' if channel == 'calendar' else 'gmail' }}">Sign in</a> to make your key.</p>{% endif %}
+</div>
+{% endmacro %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <h1 class="pagetitle">Other ways to capture</h1>
+    <span class="spacer"></span>
+    <a class="act" href="/capture">← Back to Capture</a>
+  </div></div>
+
+  <div class="cap-wrap cap-guide">
+    <p class="why">The capture box is the everyday way in. These are set up once; after that, bookings
+      reach your review queue from where you already are. Pick one.</p>
+
+    <nav class="cap-tabs" role="tablist" aria-label="Capture channels">
+      {% for t in tabs %}
+      <a role="tab" class="cap-tab{% if t.on %} on{% endif %}" aria-selected="{{ 'true' if t.on else 'false' }}"
+         href="/capture/setup?tab={{ t.key }}">{{ t.label }}{% if t.status %}<span class="cap-tab-st">{{ t.status }}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+
+    <section class="cap-card cap-panel" role="tabpanel">
+    {% if tab == 'gmail' %}
+      <h2 class="cap-h">Gmail</h2>
+      <p class="why">Open a booking email, press one button, and it is captured. You build a small
+        Google Apps Script add-on once, in your own Google account. It only reads the email you have
+        open and never moves or labels it.</p>
+      <ol class="cap-steps">
+        <li>Go to <b>script.google.com</b> and choose <b>New project</b>. Name it "Run·dere Capture".</li>
+        <li>Open <b>Project Settings</b> (the gear) and tick <b>Show "appsscript.json" manifest file in editor</b>.
+          Back in the editor, open <code>appsscript.json</code> and replace everything in it with:
+          {% if gmail_manifest %}{{ copyblock('gmail-manifest', gmail_manifest) }}{% else %}<br>the file
+          <a href="https://github.com/jeeves5454/rundere-server/blob/main/capture/gmail-addon/appsscript.json">capture/gmail-addon/appsscript.json</a>.{% endif %}</li>
+        <li>Open <code>Code.gs</code> and replace everything in it with:
+          {% if gmail_code %}{{ copyblock('gmail-code', gmail_code) }}{% else %}<br>the file
+          <a href="https://github.com/jeeves5454/rundere-server/blob/main/capture/gmail-addon/Code.gs">capture/gmail-addon/Code.gs</a>.{% endif %}</li>
+        <li>Make your own key. It is yours alone, so what the add-on sends lands in your queue.
+          {{ keystep('gmail') }}</li>
+        <li>Choose <b>Deploy → Test deployments → Install add-on</b>. This installs it for your Google
+          account only. The first time, Google says <b>"this app isn't verified"</b>: choose <b>Advanced</b>,
+          then <b>Go to … (unsafe)</b>. It is your own script, so this is expected.</li>
+        <li>Open Gmail and refresh. Open any email, then the Run·dere icon in the side panel. On the home
+          card paste your key and the Ingest URL{% if ingest_is_public %} (<code>{{ ingest_url }}</code>){% endif %},
+          then <b>Save</b>.</li>
+        <li><b>Check it works:</b> open an email, press <b>Capture to Run·dere</b>. A message says
+          <i>Captured. batch_id=…</i>. The email then shows in your review queue after it has been read.</li>
+      </ol>
+      <details class="cap-trouble"><summary>If it doesn't work</summary>
+        <ul>
+          <li><b>401 bad signature:</b> the key was pasted with a space or from an older key. Make a new key and paste it again.</li>
+          <li><b>"Expired access token":</b> re-copy <code>Code.gs</code>; older copies kept a stale token.</li>
+          <li><b>Still asks for Gmail "modify" access:</b> you installed an older copy. Re-copy both files, then Deploy →
+            Test deployments, remove the install and install it again.</li>
+          <li>The full guide is <code>capture/gmail-addon/README.md</code> in the repository.</li>
+        </ul></details>
+
+    {% elif tab == 'calendar' %}
+      <h2 class="cap-h">Calendar</h2>
+      <p class="why">Open a calendar event, press one button, and it is captured. Same idea as Gmail, with
+        its own small add-on.</p>
+      <ol class="cap-steps">
+        <li>Go to <b>script.google.com</b> and choose <b>New project</b>. Name it "Run·dere Calendar".</li>
+        <li>Open <b>Project Settings</b> and tick <b>Show "appsscript.json" manifest file in editor</b>. Replace the
+          contents of <code>appsscript.json</code> with:
+          {% if gcal_manifest %}{{ copyblock('gcal-manifest', gcal_manifest) }}{% else %}<br>the file
+          <a href="https://github.com/jeeves5454/rundere-server/blob/main/capture/gcal-addon/appsscript.json">capture/gcal-addon/appsscript.json</a>.{% endif %}
+          It turns on the Calendar service the script needs.</li>
+        <li>Replace the contents of <code>Code.gs</code> with:
+          {% if gcal_code %}{{ copyblock('gcal-code', gcal_code) }}{% else %}<br>the file
+          <a href="https://github.com/jeeves5454/rundere-server/blob/main/capture/gcal-addon/Code.gs">capture/gcal-addon/Code.gs</a>.{% endif %}</li>
+        <li>Make your own key. {{ keystep('calendar') }}</li>
+        <li><b>Deploy → Test deployments → Install add-on</b>, and get past the "this app isn't verified" screen
+          (<b>Advanced → Go to … (unsafe)</b>).</li>
+        <li>Open Google Calendar and refresh. Open an event, then the Run·dere icon in the side panel. Paste your key and
+          the Ingest URL{% if ingest_is_public %} (<code>{{ ingest_url }}</code>){% endif %} on the home card and <b>Save</b>.</li>
+        <li><b>Check it works:</b> open an event and press <b>Capture to Run·dere</b>. You should see <i>Captured.</i></li>
+      </ol>
+      <details class="cap-trouble"><summary>If it doesn't work</summary>
+        <ul>
+          <li><b>"does not have permission … calendar.addons.execute":</b> re-copy <code>appsscript.json</code>, save, reload Calendar.</li>
+          <li><b>"Calendar is not defined":</b> the manifest's Calendar service entry is missing. Re-copy it and reinstall.</li>
+          <li>The full guide is <code>capture/gcal-addon/README.md</code>.</li>
+        </ul></details>
+
+    {% elif tab == 'bookmarklet' %}
+      <h2 class="cap-h">Bookmarklet</h2>
+      <p class="why">A bookmark that captures whatever page you are looking at, even one behind a login. Best on a
+        computer; phones use the app instead.</p>
+      <ol class="cap-steps">
+        <li>Show your browser's bookmarks bar (Chrome, Edge, Firefox: <b>Ctrl/⌘ + Shift + B</b>).</li>
+        <li>Drag this button onto the bar:
+          <p><a class="act primary bm" href="{{ bookmarklet|safe }}" onclick="return false">Capture to Run·dere</a></p></li>
+        <li>Open a booking confirmation page and click the bookmark. A Run·dere tab opens, you may be asked to sign in,
+          and the page is captured and read.</li>
+        <li><b>Check it works:</b> that tab ends with a card for what was found, with <b>Open in review</b>.</li>
+      </ol>
+      <details class="cap-trouble"><summary>If it doesn't work</summary>
+        <ul>
+          <li><b>Nothing opens:</b> your browser blocked the pop-up. Allow pop-ups for the booking site, then click again.</li>
+          <li><b>Pop-ups are not allowed:</b> the page's HTML is copied to your clipboard instead. Paste it into the box on
+            <a href="/capture">Capture</a>.</li>
+        </ul></details>
+
+    {% elif tab == 'email' %}
+      <h2 class="cap-h">Email forward</h2>
+      <p class="why"><b>Not available yet.</b> You will get your own address, like <code>captures+yourcode@your-server</code>.
+        Forward any confirmation email to it, from any of your accounts, and it is read and waits in your review
+        queue. It needs the server's mail inbox set up by an admin first.</p>
+      <ol class="cap-steps">
+        <li>Copy your address (it will appear here).</li>
+        <li>In Gmail or Outlook, add a forwarding rule for the senders you care about, or forward a message by hand.</li>
+        <li>Check it works: the email shows in your review queue after it has been read.</li>
+      </ol>
+
+    {% elif tab == 'ios' %}
+      <h2 class="cap-h">iPhone and iPad</h2>
+      <p class="why"><b>Not available yet.</b> The Run·dere app will add a share-sheet action: from Safari or Mail choose
+        Share, then Run·dere, and you get a notification that the capture was received.</p>
+      <ol class="cap-steps">
+        <li>Install the Run·dere app and sign in.</li>
+        <li>In Safari or Mail choose <b>Share → Run·dere</b>.</li>
+        <li>Check it works: a notification says it was captured.</li>
+      </ol>
+
+    {% elif tab == 'mcp' %}
+      <h2 class="cap-h">AI assistants (MCP)</h2>
+      <p class="why">Run·dere has a standard remote <b>MCP</b> (Model Context Protocol) server. Any assistant or tool that
+        speaks MCP can connect to it, then capture a link for you when you ask. It acts as you: it only sees and changes
+        what you can in Run·dere.</p>
+      <ol class="cap-steps">
+        <li>In your assistant or MCP client, add a <b>remote MCP server</b> (some call it a custom connector) with this URL:
+          {{ copyblock('mcp-url', mcp_url) }}
+          Leave any client id or secret empty: the assistant registers itself.</li>
+        <li>Connect. Run·dere opens its own sign-in page, then asks <b>Allow access to your Run·dere data?</b> Choose <b>Allow</b>.</li>
+        <li><b>Check it works:</b> ask the assistant <i>"Capture this page for me: https://…"</i>. It uses the
+          <code>capture_url</code> tool, and the item appears in your review queue.</li>
+      </ol>
+      <details class="cap-trouble"><summary>Examples and other ways to connect</summary>
+        <ul>
+          <li><b>Claude (claude.ai, Desktop, mobile):</b> Settings → Connectors → Add custom connector, name it Run·dere, paste the URL.</li>
+          <li><b>Claude Code:</b> <code>claude mcp add --transport http rundere {{ mcp_url }}</code>, then <code>/mcp</code> to sign in.</li>
+          <li><b>A client without browser sign-in:</b> make a personal API token under Account and send it as
+            <code>Authorization: Bearer …</code>.</li>
+          <li>The server needs to be reachable from the assistant (a hosted assistant connects from its own cloud). Admin
+            details are in <code>docs/claude-connector.md</code>.</li>
+        </ul></details>
+    {% endif %}
+    </section>
+  </div>
+</div>
+<script>
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-copy]'); if (!b) return;
+    var el = document.getElementById(b.getAttribute('data-copy')); if (!el) return;
+    var done = function () { var t = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = t; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(el.textContent).then(done, function () {});
+    }
+  });
+</script>
+{% endblock %}
