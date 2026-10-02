@@ -192,6 +192,65 @@ def _filing_trips(session: Session, user) -> list:
     return ahead + past
 
 
+# --------------------------------------------------------------- after a capture (D-158)
+_POLL_MS = 1500
+_POLL_MAX = 80                       # ~2 minutes, then "still working — it will appear"
+_BUCKET_LABELS = {"attention": "Needs you", "waiting": "Waiting for a trip",
+                  "ready": "Ready to approve", "staged": "Approved", "logged": "Logged",
+                  "ignored": "Ignored"}
+
+
+def _captured(request: Request, batch_id: str, user):
+    """The capture succeeded: start processing (D-158) and return the self-polling result
+    panel. Processing is best-effort, so a failure here never fails the capture."""
+    from app.review import autoprocess
+    try:
+        autoprocess.kick(user)
+    except Exception:
+        log.exception("auto-process could not start; the batch stays received")
+    return templates.TemplateResponse(request, "_capture_progress.html", {
+        "batch_id": batch_id, "n": 0, "poll_ms": _POLL_MS,
+        "enabled": settings.auto_process})
+
+
+@router.get("/capture/batch/{batch_id}", response_class=HTMLResponse)
+def capture_batch(batch_id: str, request: Request, n: int = 0,
+                  session: Session = Depends(get_session)):
+    """Poll target for the result panel: still working, or what landed in the queue. Only the
+    capturing person's own batch is visible (same scope as the review queue)."""
+    from app import authn, scope
+    from app.models import IngestBatch, TravelItem
+    user = authn.resolve_user(session, request)
+    if user is None and settings.auth_required:
+        return HTMLResponse("", status_code=404)
+    q = session.query(IngestBatch).filter(IngestBatch.id == batch_id)
+    if not scope.unrestricted(user):
+        q = q.filter(scope.batch_filter(user))
+    batch = q.first()
+    if batch is None:
+        return HTMLResponse("", status_code=404)
+    items = (session.query(TravelItem).filter(TravelItem.batch_id == batch.id)
+             .order_by(TravelItem.segment_index).all())
+    settled = batch.status != "received" and all(
+        (i.status or {}).get("resolve") != "pending" for i in items)
+    if not settled:
+        if not settings.auto_process or n >= _POLL_MAX:
+            return templates.TemplateResponse(request, "_capture_cards.html", {
+                "cards": [], "state": "waiting"})
+        return templates.TemplateResponse(request, "_capture_progress.html", {
+            "batch_id": batch_id, "n": n + 1, "poll_ms": _POLL_MS, "enabled": True})
+    from app.review.routes import _view
+    cards = []
+    for it in items:
+        v = _view(it)
+        cards.append({"id": v["id"], "kind": v["kind"],
+                      "headline": v["headline"], "subline": v["subline"],
+                      "note": v["note"], "bucket": v["bucket"],
+                      "bucket_label": _BUCKET_LABELS.get(v["bucket"], v["bucket"])})
+    return templates.TemplateResponse(request, "_capture_cards.html", {
+        "cards": cards, "state": "done" if cards else "empty"})
+
+
 @router.get("/capture", response_class=HTMLResponse)
 def capture_page(request: Request, session: Session = Depends(get_session)):
     # The bookmarklet POSTs the current tab's rendered HTML back to THIS host —
@@ -288,8 +347,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
                                title=title, notes=notes, collection_id=collection_id,
                                trip_id=trip_id,
                                owner_user_id=owner_user_id, provider=provider)
-        return _msg(True, "Captured the trip. Run “Process new captures” in the "
-                          "review queue to extract it.", batch_id)
+        return _captured(request, batch_id, _owner)
 
     # Explicit directions paths: the selection is authoritative, so looks_like_*
     # validates the pasted URL against the chosen provider (SPEC-4 §2.1).
@@ -337,9 +395,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
                           travel_date=travel_date, travel_time=travel_time, title=title,
                           notes=notes, collection_id=collection_id, owner_user_id=owner_user_id,
                           trip_id=trip_id)
-    return templates.TemplateResponse(request, "_capture_result.html", {
-        "ok": True, "batch_id": batch_id,
-        "message": "Captured. Run “Process new captures” in the review queue to extract it."})
+    return _captured(request, batch_id, _owner)
 
 
 @router.get("/about", response_class=HTMLResponse)

@@ -204,7 +204,7 @@ def test_capture_maps_url_routes_to_maps_channel():
             "content": "https://www.google.com/maps/dir/Harar/Casablanca",
             "travel_date": "2026-09-23", "travel_time": "15:35"})
         assert r.status_code == 200
-        assert "trip" in r.text.lower()
+        assert "captured" in r.text.lower()
         after = _maps_batches()
         assert len(after) == before + 1
         assert after[-1].payload["url"].endswith("Casablanca")
