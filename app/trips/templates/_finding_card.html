@@ -10,8 +10,8 @@
   <span class="yn-finding-btns">
     {% if f.has_rates %}<button class="btn btn-secondary bp-sm"
       hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/calculator" hx-target="#modal-root">Calculator</button>{% endif %}
-    <button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun"
-            hx-disabled-elt="this">Refresh rates</button>
+    {% if not f.ended %}<button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun"
+            hx-disabled-elt="this">Refresh rates</button>{% endif %}
   </span>
   <details class="yn-finding-more"><summary class="yn-run-meta">Details</summary>
     <div class="yn-finding-body">{{ f.body }}</div></details>

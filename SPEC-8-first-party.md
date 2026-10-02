@@ -266,3 +266,12 @@ request forgery (SSRF) risk.
   reprocess to push externally. Still open: the single-capture re-resolve
   (`_reresolve`, per-item edit path) and the Discover airport lookups read the
   owner's accounts without this gate. (proposed)
+- **D-157 — Discovery does not run on a past trip.** A trip is past when its end
+  date (its start date when it has no end) is before today; undated trips are
+  still planning. `discover.runner.trip_has_ended` is the one check; the web full
+  run and per-finding re-run enforce it server-side, and the UI shows "This trip
+  has ended" instead of the buttons. Existing findings stay readable. Open
+  (YONDER-196): agent-written `save_research` / `save_city_guide` /
+  `save_phrases` / `save_safety` are NOT blocked (post-trip notes are
+  legitimate), `/api/v1` and MCP have no resolver-run endpoints today, and there
+  is no owner override. (proposed)
