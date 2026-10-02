@@ -6,17 +6,20 @@
 
     <div class="dash-hero">
       <div>
-        <h1><span class="rd-mark" aria-hidden="true"></span> <span class="rd-wordmark" role="img" aria-label="Run·dere"></span></h1>
-        <p>Travel documents in, clean trip records out — capture, review, and
-          your trips, all in one place.</p>
+        <h1>{{ greeting }}</h1>
+        <p>Capture a booking, review what Run·dere found, then watch your trips fill in.</p>
       </div>
       <div class="dash-hero-actions">
-        <a class="act tiny" href="/capture">＋ Capture something</a>
-        <a class="act tiny" href="/journal">＋ Journal note</a>
-        <a class="act tiny" href="/trips/new?next=/trips">＋ New trip</a>
-        <a class="act tiny primary" href="/review">Open review queue</a>
+        <a class="act primary" href="/capture">{{ icon('capture', 18) }} Capture</a>
+        <a class="act" href="/journal">＋ Journal note</a>
+        <a class="act" href="/trips/new?next=/trips">＋ New trip</a>
       </div>
     </div>
+
+    <form class="hm-search" action="/trips" method="get" role="search">
+      <span class="hm-search-ico" aria-hidden="true">{{ icon('search', 18) }}</span>
+      <input class="input" type="search" name="q" placeholder="Search your trips" aria-label="Search your trips">
+    </form>
 
     <div class="dash-section">
       <h2>What's next</h2>
@@ -52,69 +55,48 @@
       {% endif %}
     </div>
 
-    <div class="dash-section">
-      <h2>Review pipeline</h2>
-      <div class="dash-stages">
-        <a class="dash-stage {{ 'blocked' if counts.attention else 'muted' }}" href="/review?bucket=attention">
-          <b>{{ counts.attention }}</b><span>need you</span>
-        </a>
-        <a class="dash-stage {{ '' if counts.waiting else 'muted' }}" href="/review?bucket=waiting">
-          <b>{{ counts.waiting }}</b><span>waiting for a trip</span>
-        </a>
-        <a class="dash-stage" href="/review?bucket=ready">
-          <b>{{ counts.ready }}</b><span>ready to approve</span>
-        </a>
-        <a class="dash-stage {{ '' if counts.staged else 'muted' }}" href="/review?bucket=staged">
-          <b>{{ counts.staged }}</b><span>approved</span>
-        </a>
-        <a class="dash-stage muted" href="/review?bucket=logged">
-          <b>{{ counts.logged }}</b><span>logged</span>
-        </a>
-        <a class="dash-stage muted" href="/review?bucket=all">
-          <b>{{ counts.all }}</b><span>total</span>
-        </a>
-      </div>
-    </div>
+    <div class="hm-cols">
+      <section class="hm-panel" aria-label="Review queue">
+        <div class="hm-panel-head">
+          <h2>Review queue</h2>
+          <a href="/review">{{ counts.attention }} need you · {{ counts.ready }} ready →</a>
+        </div>
+        {% if queue %}
+        <ul class="hm-list">
+          {% for q in queue %}
+          <li><a href="/review?bucket={{ q.bucket }}">
+            <span class="hm-kind">{{ q.kind }}</span>
+            <span class="hm-main"><b>{{ q.headline }}</b>{% if q.subline %}<small>{{ q.subline }}</small>{% endif %}</span>
+            <span class="pill {{ 'warn' if q.bucket == 'attention' else 'ok' }}">{{ 'Needs you' if q.bucket == 'attention' else 'Ready' }}</span>
+          </a></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="hm-empty">Nothing waiting on you.{% if counts.waiting %} {{ counts.waiting }} waiting for a trip.{% endif %}</p>
+        {% endif %}
+        <p class="hm-foot"><a href="/capture">{{ capture.today }} captured today</a>{% if capture.awaiting %} · {{ capture.awaiting }} awaiting processing{% endif %}{% if capture.needs_review %} · {{ capture.needs_review }} couldn't be read{% endif %}</p>
+      </section>
 
-    <div class="dash-section">
-      <h2>Capture activity</h2>
-      <div class="dash-row">
-        <div class="dash-stat"><b>{{ capture.today }}</b><span>captured today</span></div>
-        <div class="dash-stat"><b>{{ capture.awaiting }}</b><span>awaiting processing</span></div>
-        <div class="dash-stat"><b>{{ capture.needs_review }}</b><span>couldn't be read</span></div>
-        <div class="dash-stat"><b>{{ capture.total }}</b><span>captured all-time</span></div>
-      </div>
-    </div>
-
-    <div class="dash-section">
-      <h2>Go to</h2>
-      <div class="dash-links">
-        <a class="dash-card" href="/capture">
-          <div class="ico">{{ icon('capture', 22) }}</div>
-          <div class="name">Capture</div>
-          <div class="desc">Bookmarklet, paste a page, or a Maps drive</div>
-        </a>
-        <a class="dash-card" href="/review">
-          <div class="ico">{{ icon('review', 22) }}</div>
-          <div class="name">Review</div>
-          <div class="desc">Check, correct, and approve captured items</div>
-        </a>
-        <a class="dash-card" href="/trips">
-          <div class="ico">{{ icon('trips', 22) }}</div>
-          <div class="name">Trips</div>
-          <div class="desc">Timelines, discovery briefings, packing plans</div>
-        </a>
-        <a class="dash-card" href="/journal">
-          <div class="ico">{{ icon('journal', 22) }}</div>
-          <div class="name">Journal</div>
-          <div class="desc">Quick daily notes, attached to a trip later</div>
-        </a>
-        <a class="dash-card admin" href="/settings">
-          <div class="ico">{{ icon('settings', 22) }}</div>
-          <div class="name">Settings</div>
-          <div class="desc">Your profiles, plus administration</div>
-        </a>
-      </div>
+      <section class="hm-panel" aria-label="Upcoming trips">
+        <div class="hm-panel-head">
+          <h2>Upcoming trips</h2>
+          <a href="/trips">All trips ({{ trip_count }}) →</a>
+        </div>
+        {% if trip_cards %}
+        <div class="hm-trips">
+          {% for t in trip_cards %}
+          <a class="hm-trip" href="/trips/{{ t.id }}">
+            <span class="hm-trip-top"><span class="hm-codes">{{ t.codes | join(' · ') if t.codes else '' }}</span><span class="hm-when">{{ t.when }}</span></span>
+            <b>{{ t.name }}</b>
+            <small>{{ t.range_short or 'No dates' }} · {{ t.item_count }} item{{ '' if t.item_count == 1 else 's' }}</small>
+            {% if t.packing %}<span class="hm-pack" title="{{ t.packing.packed }} of {{ t.packing.total }} packed"><span class="hm-bar"><span style="width:{{ t.packing.pct }}%"></span></span>{{ t.packing.packed }}/{{ t.packing.total }}</span>{% endif %}
+          </a>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="hm-empty">No trips coming up. <a href="/trips/new?next=/trips">Plan one</a>.</p>
+        {% endif %}
+      </section>
     </div>
 
     <p style="color:var(--ink-3);font-size:12px;margin:0">Run·dere v{{ version }} · <a href="/about">About</a></p>

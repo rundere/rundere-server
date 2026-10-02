@@ -22,12 +22,14 @@
 /* Controls (design/README §5-6): 44 tall, 32 for the small size. Several independent
    forms on one page (Account) use secondary buttons: one Beacon primary per screen. */
 .act,.btn,.cap-input,.field input:not([type=checkbox]):not([type=radio]),.field select,.input,
-.lookup-row input,.dash-card{min-height:var(--rd-control-md)}
+.lookup-row input{min-height:var(--rd-control-md)}
 .act,.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .act.tiny,.bp-sm,.btn-sm,.cap-input.sm{min-height:var(--rd-control-sm)}
-.dash-card{min-height:0}
+/* 32px floor (D-165): dense screens may use the system's small size, never less. */
+.appbar .theme,select,summary,.yn-tab{min-height:var(--rd-control-sm)}
+summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
 /* Destructive: danger text on an 8% danger fill with a 50% danger border */
-.btn.btn-danger,.act.danger{color:var(--rd-danger);
+.btn.btn-danger,.act.danger{color:color-mix(in srgb,var(--rd-danger) 80%,var(--rd-text));
   background:color-mix(in srgb, var(--rd-danger) 8%, transparent);
   border:1px solid color-mix(in srgb, var(--rd-danger) 50%, transparent)}
 .btn.btn-danger:hover,.act.danger:hover{background:color-mix(in srgb, var(--rd-danger) 16%, transparent)}
@@ -57,6 +59,8 @@
   line-height:1;padding:5px 9px;cursor:pointer}
 .appbar .theme:hover{color:var(--ink);border-color:var(--line-strong)}
 .appnav .lbl-short{display:none}
+.navbadge{margin-left:8px;min-width:20px;height:20px;padding:0 6px;border-radius:var(--rd-radius-pill);
+  background:var(--warn-bg);color:var(--warn);font:600 12px/20px var(--mono);text-align:center}
 .appnav .ni{display:none}
 @media (max-width:720px){.appnav .grouplbl{display:none}.appbar{gap:10px;padding:0 10px}}
 /* Phones: the bar must fit Home…Trips + Settings without scrolling sideways. */
@@ -182,6 +186,7 @@
   .appnav a.on{background:var(--rd-surface-raised);box-shadow:inset 2px 0 0 var(--accent);font-weight:600}
   .appnav .ni{display:inline-flex;color:var(--ink-3)}
   .appnav a.on .ni{color:var(--accent)}
+  .navbadge{margin-left:auto}
   .appnav .lbl-short{display:none}
   .appbar .signout-btn{width:100%;text-align:left;min-height:var(--rd-control-md);padding:0 12px}
   .appbar .theme{border-radius:var(--rd-radius-control)}

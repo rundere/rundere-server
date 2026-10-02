@@ -284,3 +284,7 @@ request forgery (SSRF) risk.
   `trips.css` use `--rd-danger`, `--rd-success` and `--rd-highlight`. Type (brand fonts),
   components (44px controls, icons, one primary action) and layouts are separate steps under
   YONDER-202. (proposed)
+- **D-165 — Dense screens may use the 32px control size.** Owner decision 2026-10-02: the
+  design README's 44px touch target stays the default; every interactive control is at least
+  the system's small size (`--rd-control-sm`, 32px). The theme toggle, selects, disclosure
+  summaries and tab buttons use the floor rather than 44. Nothing goes below 32. (proposed)

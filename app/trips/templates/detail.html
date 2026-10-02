@@ -109,7 +109,7 @@
       {% for act in day.activities %}
       <details class="bp-act">
         <summary class="yn-actrow">
-          <span class="tag tag-outline bp-typetag">{{ act.type_label }}</span>
+          <span class="tag tag-chip bp-typetag">{{ icon('plane' if act.type == 'flight' else 'home' if act.type == 'lodging' else 'pin', 14) }}{{ act.type_label }}</span>
           <div class="bp-act-main">
             <div class="bp-act-title">{{ act.title }}</div>
             {% if act.subtitle %}<div class="bp-act-sub">{{ act.subtitle }}</div>{% endif %}
@@ -183,7 +183,7 @@
   <div class="card blueprint bp-daycard">
     {% for c in linked_captures %}
     <div class="yn-actrow yn-filterable">
-      <span class="tag tag-outline bp-typetag">{{ c.kind }}</span>
+      <span class="tag tag-chip bp-typetag">{{ icon('capture', 14) }}{{ c.kind }}</span>
       <div class="bp-act-main">
         <div class="bp-act-title">{{ c.headline }}</div>
         {% if c.subline %}<div class="bp-act-sub">{{ c.subline }}</div>{% endif %}

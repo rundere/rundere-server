@@ -20,6 +20,7 @@ _PATHS = {
     "home": '<path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/>',
     # Plane, nose pointing right (rotated by the caller where needed)
     "plane": '<path d="M12 3v7l8 4v2l-8-2v4l2 2v1l-2-.5L10 21v-1l2-2v-4l-8 2v-2l8-4"/>',
+    "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>',
     "alert": '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.01"/>',
 }
 
@@ -32,5 +33,28 @@ def icon(name: str, size: int = 20) -> Markup:
         f'stroke-linejoin="round" aria-hidden="true">{body}</svg>')
 
 
+def review_badge(request) -> int:
+    """How many review items need the viewer (the sidebar's Review badge). Same bucket
+    logic and per-user scope as /review; cached on the request; 0 on any failure so a
+    broken queue never takes the page chrome down with it."""
+    state = getattr(request, "state", None)
+    if state is None:
+        return 0
+    if hasattr(state, "_review_badge"):
+        return state._review_badge
+    n = 0
+    try:
+        from app import scope
+        from app.db import SessionLocal
+        from app.review.routes import _all_views
+        with SessionLocal() as session:
+            n = sum(1 for v in _all_views(session, scope.user_of(request)) if v["bucket"] == "attention")
+    except Exception:  # noqa: BLE001 - chrome must render even if the queue can't
+        n = 0
+    state._review_badge = n
+    return n
+
+
 def install(templates) -> None:
     templates.env.globals["icon"] = icon
+    templates.env.globals["review_badge"] = review_badge

@@ -135,3 +135,22 @@ uncovered.
 Email forward (D-162, YONDER-199) and the iOS share-extension notification (D-163,
 YONDER-54) are unbuilt. Auto-process covers the capture page only. The narrowed Gmail
 add-on scope and the bookmarklet hand-off are untested against real Gmail and browsers.
+
+### Implementation pass (YONDER-202, D-165)
+
+Re-audited with the same script after the change (33 pages × dark/light 1280 + dark 390):
+
+| Measure | Before | After |
+|---|---|---|
+| Controls under 32px | 171 | 0 |
+| Contrast failures | 42 | 0 |
+| Overflow / emoji | 0 / 0 | 0 / 0 |
+
+Applied: the 32px floor (D-165), the 6px capsule dot, the Home layout (greeting, search,
+Capture as the one primary, Next-up card, review-queue panel, upcoming-trips grid; stat
+tiles and "Go to" cards removed), the sidebar Review badge, packing progress on trip cards
+(the viewer's own list, D-123), filled trip-item chips with icons, and the contrast fixes.
+
+Still open: stacked login lockup, residual px radii and sub-12px font sizes, Outfit on admin
+headings, per-page owner sign-off, and a toggle switch (not built: the board's
+"Auto-commit trusted senders" example conflicts with D-31).

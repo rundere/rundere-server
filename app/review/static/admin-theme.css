@@ -52,3 +52,5 @@ a:focus-visible,button:focus-visible,.btn:focus-visible{
 .dropdown-item:hover{background:var(--surface-sunk)}
 .card,.card-footer{border-radius:var(--rd-radius-card)}
 .btn{border-radius:var(--rd-radius-control)}
+
+.text-muted{color:var(--ink-2)!important}
