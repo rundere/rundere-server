@@ -15,29 +15,28 @@
   {% for grp in groups %}
   <section class="bp-group">
     <div class="bp-group-label">{{ grp.label }}</div>
-    <div class="card blueprint bp-tablewrap">
-      <table class="table bp-triptable">
-        <thead>
-          <tr><th>Trip</th><th>Start</th><th>End</th><th>Notes</th><th class="bp-actcol"></th></tr>
-        </thead>
-        <tbody>
-          {% for trip in grp.trips %}
-          <tr class="yn-row" onclick="window.location='/trips/{{ trip.id }}'">
-            <td class="bp-name">{{ trip.name }}</td>
-            <td>{{ trip.start_display }}</td>
-            <td>{{ trip.end_display }}</td>
-            <td class="bp-notes">{{ trip.notes_preview }}</td>
-            <td class="bp-actcol">
-              <button class="btn btn-ghost bp-sm" onclick="event.stopPropagation()"
-                      hx-get="/trips/{{ trip.id }}/edit?next=/trips" hx-target="#modal-root">Edit</button>
-              <button class="btn btn-danger bp-sm" onclick="event.stopPropagation()"
-                      hx-post="/trips/{{ trip.id }}/delete"
-                      hx-confirm="Delete “{{ trip.name }}” and its activities?">Delete</button>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="yn-tcards">
+      {% for trip in grp.trips %}
+      <article class="yn-tcard">
+        <div class="yn-tcard-top">
+          <span class="yn-tcard-codes">{% if trip.codes %}{{ trip.codes | join(' · ') }}{% else %}&nbsp;{% endif %}</span>
+          <span class="yn-tcard-when">{{ trip.when }}</span>
+        </div>
+        <h3 class="yn-tcard-name"><a class="yn-tcard-link" href="/trips/{{ trip.id }}">{{ trip.name }}</a></h3>
+        <div class="yn-tcard-meta">
+          <span>{{ trip.range_short or 'No dates' }}</span>
+          <span>{{ trip.item_count }} item{{ '' if trip.item_count == 1 else 's' }}</span>
+        </div>
+        {% if trip.notes_preview != '—' %}<p class="yn-tcard-notes">{{ trip.notes_preview }}</p>{% endif %}
+        <div class="yn-tcard-acts">
+          <button class="btn btn-ghost bp-sm"
+                  hx-get="/trips/{{ trip.id }}/edit?next=/trips" hx-target="#modal-root">Edit</button>
+          <button class="btn btn-danger bp-sm"
+                  hx-post="/trips/{{ trip.id }}/delete"
+                  hx-confirm="Delete “{{ trip.name }}” and its activities?">Delete</button>
+        </div>
+      </article>
+      {% endfor %}
     </div>
   </section>
   {% endfor %}

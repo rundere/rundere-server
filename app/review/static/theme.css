@@ -57,6 +57,7 @@
   line-height:1;padding:5px 9px;cursor:pointer}
 .appbar .theme:hover{color:var(--ink);border-color:var(--line-strong)}
 .appnav .lbl-short{display:none}
+.appnav .ni{display:none}
 @media (max-width:720px){.appnav .grouplbl{display:none}.appbar{gap:10px;padding:0 10px}}
 /* Phones: the bar must fit Home…Trips + Settings without scrolling sideways. */
 @media (max-width:520px){.appbar{gap:2px;padding:0 6px}
@@ -139,3 +140,52 @@
 .rd-dict-pos{font-style:italic;color:var(--ink-3);font-size:13px;margin-top:2px}
 .rd-dict-def{margin:8px 0 0;color:var(--ink-2)}
 .rd-dict-note{color:var(--ink-3)}
+
+/* ---- Next-up card (design Web board; one per screen) ---- */
+.nextup{border-radius:var(--rd-radius-card);padding:28px;display:flex;flex-direction:column;gap:22px;
+  background:radial-gradient(circle at 85% 30%, var(--rd-night-600) 0%, var(--rd-night-700) 40%, var(--rd-surface) 100%);
+  box-shadow:inset 0 0 0 1px rgba(230,234,240,.08)}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .nextup{background:var(--rd-surface);
+  box-shadow:inset 0 0 0 1px var(--rd-border-subtle)}}
+:root[data-theme="light"] .nextup{background:var(--rd-surface);box-shadow:inset 0 0 0 1px var(--rd-border-subtle)}
+.nextup-over{font-size:12px;font-weight:600;letter-spacing:.12em;color:var(--rd-highlight)}
+.nextup-route{display:flex;align-items:center;gap:24px}
+.nextup-code{font-family:var(--mono);font-size:48px;font-weight:500;line-height:1;color:var(--ink)}
+.nextup-right{text-align:right}
+.nextup-line{flex:1;display:flex;align-items:center;color:var(--accent)}
+.nextup-dash{flex:1;border-top:1px dashed var(--rd-night-400)}
+.nextup-plane{transform:rotate(90deg);margin:0 8px;display:inline-flex;filter:var(--rd-glow)}
+.nextup-dot{width:8px;height:8px;border-radius:50%;background:var(--ink)}
+.nextup-trip{font-family:var(--display);font-size:32px;line-height:40px;font-weight:400;color:var(--ink)}
+.nextup-facts{display:flex;gap:32px;flex-wrap:wrap;align-items:flex-end;padding-top:18px;
+  border-top:1px solid var(--rd-border-subtle)}
+.nextup-k{font-size:12px;color:var(--ink-3)}
+.nextup-v{font-size:15px;color:var(--ink)}
+.nextup-v.mono{font-family:var(--mono)}
+.nextup-open{margin-left:auto;font-size:14px;font-weight:600;text-decoration:none;color:var(--accent)}
+@media (max-width:520px){.nextup{padding:20px}.nextup-code{font-size:34px}.nextup-route{gap:12px}
+  .nextup-trip{font-size:26px;line-height:32px}.nextup-open{margin-left:0}}
+
+/* ---- Sidebar shell (design Web board: 248px sidebar, lockup on top, active row with a
+   Beacon inset bar). Wide screens only; below 1024px the header stays a top bar. ---- */
+@media (min-width:1024px){
+  body:has(header.appbar){padding-left:248px}
+  .appbar{position:fixed;left:0;top:0;bottom:0;width:248px;height:auto;flex-direction:column;
+    align-items:stretch;gap:24px;padding:24px 16px;overflow-y:auto;
+    background:var(--surface-sunk);border-bottom:0;border-right:1px solid var(--line)}
+  .appbar .wordmark{flex-direction:column;align-items:flex-start;gap:4px;padding:0 8px}
+  .appbar .wordmark span:last-child{font-size:10px}
+  .appnav{flex-direction:column;height:auto;gap:2px}
+  .appnav a{min-height:var(--rd-control-md);padding:0 12px;gap:12px;font-size:15px;font-weight:500;
+    border-bottom:0;border-radius:var(--rd-radius-control)}
+  .appnav a:hover{background:color-mix(in srgb, var(--ink) 6%, transparent)}
+  .appnav a.on{background:var(--rd-surface-raised);box-shadow:inset 2px 0 0 var(--accent);font-weight:600}
+  .appnav .ni{display:inline-flex;color:var(--ink-3)}
+  .appnav a.on .ni{color:var(--accent)}
+  .appnav .lbl-short{display:none}
+  .appbar .signout-btn{width:100%;text-align:left;min-height:var(--rd-control-md);padding:0 12px}
+  .appbar .theme{border-radius:var(--rd-radius-control)}
+  .yn-set-shell{min-height:100vh}
+  .yn-set-nav{top:0;max-height:100vh}
+}
+@media (max-width:1023px){.appbar .signout-btn{width:auto;padding:0 8px}}
