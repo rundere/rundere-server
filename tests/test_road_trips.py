@@ -312,7 +312,7 @@ def test_capture_form_offers_yonder_trips_and_pins_the_pick():
     assert page.status_code == 200
     assert f'value="{tid}"' in page.text and "Capture pick test" in page.text
     assert 'type="date"' in page.text and 'type="time"' in page.text
-    assert "AdventureLog (advanced)" in page.text
+    assert "AdventureLog collection" in page.text
 
     r = client.post("/capture/web", data={
         "path": "google", "content": GMAPS, "travel_date": "2026-10-03", "trip_id": tid})

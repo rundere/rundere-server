@@ -192,6 +192,45 @@ def _filing_trips(session: Session, user) -> list:
     return ahead + past
 
 
+def _origin(request: Request) -> str:
+    """scheme://host[:port] this request came in on: where the bookmarklet's tab opens."""
+    u = request.base_url
+    return f"{u.scheme}://{u.netloc}"
+
+
+def _bookmarklet(origin: str) -> str:
+    """The bookmarklet source (SPEC-9 D-159). It hands the page to Run·dere by opening
+    `/capture/handoff` and posting the HTML to that tab with `postMessage`: the Run·dere tab is
+    same-origin (cookie attached, no CORS) and unaffected by the booking site's CSP, which is why
+    the old cross-origin `fetch` never worked. If pop-ups are blocked it copies the page HTML to
+    the clipboard so it can be pasted into /capture."""
+    return (
+        "javascript:(function(){"
+        "var O='%s',h=document.documentElement.outerHTML,u=location.href;"
+        "var cp=function(){var t=document.createElement('textarea');t.value=h;"
+        "t.style.position='fixed';t.style.top='-9999px';document.body.appendChild(t);"
+        "t.focus();t.select();var k=false;try{k=document.execCommand('copy')}catch(e){}"
+        "document.body.removeChild(t);return k};"
+        "var fb=function(){var say=function(k){alert(k?"
+        "'Run·dere could not open its tab (pop-ups may be blocked). The page HTML is now on your "
+        "clipboard. Open Run·dere Capture and paste it into the box.':"
+        "'Run·dere could not open its tab or copy this page. Open Run·dere Capture and paste the "
+        "page source manually.')};"
+        "if(navigator.clipboard&&navigator.clipboard.writeText){"
+        "navigator.clipboard.writeText(h).then(function(){say(true)},function(){say(cp())})}"
+        "else{say(cp())}};"
+        "var w=window.open(O+'/capture/handoff','rundere_capture');"
+        "if(!w){fb();return}"
+        "var done=false;"
+        "function on(e){if(e.origin!==O||!e.data||e.data.type!=='rundere-ready')return;"
+        "w.postMessage({type:'rundere-page',html:h,url:u},O);done=true;"
+        "window.removeEventListener('message',on)}"
+        "window.addEventListener('message',on);"
+        "setTimeout(function(){if(!done)window.removeEventListener('message',on)},300000)"
+        "})()" % origin
+    )
+
+
 # --------------------------------------------------------------- after a capture (D-158)
 _POLL_MS = 1500
 _POLL_MAX = 80                       # ~2 minutes, then "still working — it will appear"
@@ -253,39 +292,171 @@ def capture_batch(batch_id: str, request: Request, n: int = 0,
 
 @router.get("/capture", response_class=HTMLResponse)
 def capture_page(request: Request, session: Session = Depends(get_session)):
-    # The bookmarklet POSTs the current tab's rendered HTML back to THIS host —
-    # request.base_url is the private host the operator loaded /capture on, which
-    # is exactly where /capture/web lives.
-    endpoint = str(request.base_url).rstrip("/") + "/capture/web"
-    # If the direct POST is blocked (a strict Content-Security-Policy on the
-    # page can forbid a bookmarklet's fetch to another origin) or otherwise
-    # fails, fall back to copying the page HTML to the clipboard so the operator
-    # can paste it into /capture in one step — the reliable escape hatch for
-    # heavy/locked-down sites.
-    bookmarklet = (
-        "javascript:(function(){"
-        "var h=document.documentElement.outerHTML;"
-        "var cp=function(){var t=document.createElement('textarea');t.value=h;"
-        "t.style.position='fixed';t.style.top='-9999px';document.body.appendChild(t);"
-        "t.focus();t.select();var k=false;try{k=document.execCommand('copy')}catch(e){}"
-        "document.body.removeChild(t);return k};"
-        "var fb=function(){var say=function(k){alert(k?"
-        "'Run·dere could not post to the server (this page may block it). The page "
-        "HTML is now on your clipboard. Open Run·dere /capture and paste it into the box.':"
-        "'Run·dere could not post or auto-copy on this page. Open Run·dere /capture and "
-        "paste the page source manually.')};"
-        "if(navigator.clipboard&&navigator.clipboard.writeText){"
-        "navigator.clipboard.writeText(h).then(function(){say(true)},function(){say(cp())})}"
-        "else{say(cp())}};"
-        "fetch('%s',{method:'POST',credentials:'include',"
-        "headers:{'Content-Type':'text/html'},body:h})"
-        ".then(function(r){return r.text()}).then(function(t){alert(t)})"
-        ".catch(function(){fb()})})()" % endpoint
-    )
     from app import authn
-    trips = _filing_trips(session, authn.resolve_user(session, request))
+    user = authn.resolve_user(session, request)
+    trips = _filing_trips(session, user)
     return templates.TemplateResponse(request, "capture.html", {
-        "bookmarklet": bookmarklet, "endpoint": endpoint, "trips": trips})
+        "trips": trips, "recent": _recent_captures(session, user)})
+
+
+def _own_batches(session: Session, user, limit: int):
+    """The person's own recent batches (same scope as the review queue), newest first."""
+    from app import scope
+    from app.models import IngestBatch
+    q = session.query(IngestBatch)
+    if not scope.unrestricted(user):
+        q = q.filter(scope.batch_filter(user))
+    elif settings.auth_required:
+        return []
+    return q.order_by(IngestBatch.received_at.desc()).limit(limit).all()
+
+
+def _recent_captures(session: Session, user, limit: int = 6) -> list[dict]:
+    """Recent captures with what became of them, so a capture is never 'lost between pages'."""
+    from app.models import TravelItem
+    batches = _own_batches(session, user, limit)
+    if not batches:
+        return []
+    from app.review.routes import _view
+    by_batch: dict[str, list] = {}
+    for it in session.query(TravelItem).filter(
+            TravelItem.batch_id.in_([b.id for b in batches])).all():
+        by_batch.setdefault(it.batch_id, []).append(it)
+    out = []
+    for b in batches:
+        items = by_batch.get(b.id, [])
+        v = _view(items[0]) if items else None
+        out.append({
+            "when": b.received_at, "channel": (b.payload or {}).get("capture_channel") or "gmail",
+            "headline": v["headline"] if v else None,
+            "count": len(items),
+            "state": _BUCKET_LABELS.get(v["bucket"], v["bucket"]) if v else (
+                "Waiting to be read" if b.status == "received" else "Nothing read"),
+            "bucket": v["bucket"] if v else None,
+        })
+    return out
+
+
+# --------------------------------------------------------------- "Other ways to capture" (D-160)
+_CHANNELS = [  # (tab key, label, capture_channel values it produces)
+    ("gmail", "Gmail", ("gmail",)),
+    ("calendar", "Calendar", ("gcal",)),
+    ("bookmarklet", "Bookmarklet", ("web",)),
+    ("email", "Email forward", ()),
+    ("ios", "iPhone and iPad", ()),
+    ("claude", "Claude", ()),
+]
+_CAPTURE_DIR = Path(__file__).resolve().parent.parent / "capture"
+
+
+def _addon_file(addon: str, name: str) -> str | None:
+    """Text of an add-on file the guide asks the person to copy, or None when this install
+    does not carry it (the guide then links to the repository file instead)."""
+    f = _CAPTURE_DIR / addon / name
+    try:
+        return f.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _last_capture_by_channel(session: Session, user) -> dict[str, object]:
+    """Most recent capture time per capture_channel, for the status line on each tab."""
+    seen: dict[str, object] = {}
+    for b in _own_batches(session, user, 200):
+        ch = (b.payload or {}).get("capture_channel") or "gmail"
+        seen.setdefault(ch, b.received_at)
+    return seen
+
+
+def _ago(dt) -> str:
+    from datetime import datetime, timezone
+    if dt is None:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    secs = int((datetime.now(timezone.utc) - dt).total_seconds())
+    if secs < 90:
+        return "just now"
+    for size, unit in ((86400, "day"), (3600, "hour"), (60, "minute")):
+        if secs >= size:
+            n = secs // size
+            return f"{n} {unit}{'' if n == 1 else 's'} ago"
+    return "just now"
+
+
+@router.get("/capture/handoff", response_class=HTMLResponse)
+def capture_handoff(request: Request, session: Session = Depends(get_session)):
+    """The tab the bookmarklet opens (D-159). It tells the opener it is ready, receives the page
+    HTML by postMessage, and submits it through the normal capture path, so the result cards of
+    D-158 appear here. Signing in first when sign-in is required keeps the capture the person's."""
+    from fastapi.responses import RedirectResponse
+
+    from app import authn
+    if authn.resolve_user(session, request) is None and settings.auth_required:
+        return RedirectResponse("/login?next=/capture/handoff", status_code=303)
+    return templates.TemplateResponse(request, "capture_handoff.html", {
+        "max_bytes": settings.ingest_max_body_bytes})
+
+
+@router.get("/capture/setup", response_class=HTMLResponse)
+def capture_setup(request: Request, tab: str = "gmail", session: Session = Depends(get_session)):
+    """The click-through guide: one tab per channel that is set up once, each an instruction
+    manual (SPEC-9 D-160). The always-used capture box stays on /capture."""
+    from app import authn
+    user = authn.resolve_user(session, request)
+    keys = [k for k, _, _ in _CHANNELS]
+    tab = tab if tab in keys else "gmail"
+    last = _last_capture_by_channel(session, user)
+    status = {}
+    for key, _, chans in _CHANNELS:
+        times = [last[c] for c in chans if c in last]
+        status[key] = _ago(max(times)) if times else ""
+    base = (settings.public_base_url or str(request.base_url)).rstrip("/")
+    return templates.TemplateResponse(request, "capture_setup.html", {
+        "tab": tab, "tabs": [{"key": k, "label": lbl, "on": k == tab, "status": status[k]}
+                              for k, lbl, _ in _CHANNELS],
+        "ingest_url": base + "/ingest", "ingest_is_public": bool(settings.public_base_url),
+        "mcp_url": base + "/mcp",
+        "bookmarklet": _bookmarklet(_origin(request)),
+        "gmail_code": _addon_file("gmail-addon", "Code.gs"),
+        "gmail_manifest": _addon_file("gmail-addon", "appsscript.json"),
+        "gcal_code": _addon_file("gcal-addon", "Code.gs"),
+        "gcal_manifest": _addon_file("gcal-addon", "appsscript.json"),
+        "signed_in": user is not None or not settings.auth_required,
+    })
+
+
+@router.post("/capture/setup/key", response_class=HTMLResponse)
+def capture_setup_key(request: Request, channel: str = Form("gmail"),
+                      session: Session = Depends(get_session)):
+    """Make the person's own ingest key for an add-on (YONDER-161), shown once. It is scoped to
+    them (D-120), so what the add-on sends is theirs. Making another replaces the old one."""
+    from datetime import datetime, timezone
+
+    from app import auth, authn
+    from app.models import ApiKey
+    user = authn.resolve_user(session, request)
+    if user is None and settings.auth_required:
+        return HTMLResponse('<div class="cap-msg err">Sign in to make a key.</div>', status_code=401)
+    channel = "calendar" if channel == "calendar" else "gmail"
+    name = f"{channel}-addon-{user.username}" if user is not None else f"{channel}-addon"
+    key = auth.generate_key()
+    row = session.query(ApiKey).filter_by(client_name=name).one_or_none()
+    if row is None:
+        session.add(ApiKey(client_name=name, key_hash=auth.hash_key(key),
+                           user_id=user.id if user is not None else None))
+    else:                                    # rotation: the old key stops working
+        row.key_hash = auth.hash_key(key)
+        row.created_at = datetime.now(timezone.utc)
+        row.revoked_at = None
+        row.last_used_at = None
+        row.user_id = user.id if user is not None else None
+    session.commit()
+    resp = templates.TemplateResponse(request, "_capture_key.html", {
+        "key": key, "channel": channel,
+        "ingest_url": (settings.public_base_url or str(request.base_url)).rstrip("/") + "/ingest"})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @router.post("/capture/web")
@@ -367,6 +538,9 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
 
     source_url = None
     html = content
+    handed_url = (form.get("source_url") or "").strip()      # the bookmarklet hand-off (D-159)
+    if handed_url and _looks_like_url(handed_url) and not _looks_like_url(content):
+        source_url = handed_url
     if _looks_like_url(content):
         # No explicit provider path (bookmarklet / older clients): fall back to
         # sniffing so a pasted maps link still routes correctly. An explicit

@@ -147,8 +147,12 @@ def test_capture_page_serves_bookmarklet():
     def run():
         r = _client.get("/capture")
         assert r.status_code == 200
-        assert "/capture/web" in r.text            # bookmarklet targets the endpoint
-        assert "Capture a web page" in r.text
+        assert "/capture/web" in r.text            # the capture form posts here
+        assert "Capture something" in r.text and "/capture/setup" in r.text
+        g = _client.get("/capture/setup?tab=bookmarklet")
+        assert g.status_code == 200
+        assert "/capture/handoff" in g.text        # D-159: hands the page to a Run·dere tab
+        assert "fetch(" not in g.text              # no cross-origin POST from the booking page
     _route_or_skip(run)
 
 

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Capturing a page{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row"><h1 class="pagetitle">Capture a page</h1></div></div>
+  <div class="cap-wrap">
+    <section class="cap-card">
+      <p id="hand-status" class="why">Waiting for the page from your bookmark…</p>
+      {# Filled by the bookmarklet's postMessage, then submitted like any capture (SPEC-9 D-159). #}
+      <form id="hand-form" hx-post="/capture/web" hx-target="#cap-result" hx-swap="innerHTML">
+        <input type="hidden" name="path" value="page">
+        <input type="hidden" name="source_url" id="hand-url">
+        <textarea name="content" id="hand-html" hidden></textarea>
+      </form>
+      <div id="cap-result" aria-live="polite"></div>
+      <p id="hand-none" class="why" hidden>Nothing arrived. Use the bookmark from the booking page, or
+        paste the page into <a href="/capture">Capture</a>. <a href="/capture/setup?tab=bookmarklet">How it works</a>.</p>
+    </section>
+  </div>
+</div>
+<script>
+  (function () {
+    var MAX = {{ max_bytes }}, status = document.getElementById('hand-status'),
+        form = document.getElementById('hand-form'), got = false;
+    window.addEventListener('message', function (e) {
+      // Only the tab that opened this one, and only our message shape. The page HTML is untrusted
+      // data: it is put in a hidden field and posted, never inserted into this page.
+      if (e.source !== window.opener || got) return;
+      var d = e.data;
+      if (!d || d.type !== 'rundere-page' || typeof d.html !== 'string') return;
+      if (d.html.length > MAX) { status.textContent = 'That page is too large to capture.'; got = true; return; }
+      got = true;
+      document.getElementById('hand-html').value = d.html;
+      document.getElementById('hand-url').value = typeof d.url === 'string' ? d.url.slice(0, 2000) : '';
+      status.textContent = 'Got the page. Capturing…';
+      htmx.trigger(form, 'submit');
+    });
+    if (window.opener) { window.opener.postMessage({ type: 'rundere-ready' }, '*'); }
+    setTimeout(function () {
+      if (!got) { status.hidden = true; document.getElementById('hand-none').hidden = false; }
+    }, 15000);
+  })();
+</script>
+{% endblock %}

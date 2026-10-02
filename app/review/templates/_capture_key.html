@@ -1,0 +1,9 @@
+{# The person's new ingest key, shown once (YONDER-161). Never cached. #}
+<div class="cap-keybox" role="status">
+  <p class="why"><b>Your key — shown once.</b> Copy it now; making another replaces this one.</p>
+  <div class="cap-copy"><pre id="key-{{ channel }}">{{ key }}</pre>
+    <button class="act tiny" type="button" data-copy="key-{{ channel }}">Copy</button></div>
+  <p class="why">Ingest URL for the add-on's home card:</p>
+  <div class="cap-copy"><pre id="ingest-{{ channel }}">{{ ingest_url }}</pre>
+    <button class="act tiny" type="button" data-copy="ingest-{{ channel }}">Copy</button></div>
+</div>
