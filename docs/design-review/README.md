@@ -97,3 +97,41 @@ styled page.
 5. **Decided by the owner (2026-10-02):** the blueprint crosses go (G8); admin pages get the full
    theme (G9). **Still open:** dense data screens (rules, packing, catalog) may justify a 32px
    "small" control, which the README allows.
+
+## Completion check (2026-10-02, merged `main` 79662a8)
+
+**Verdict: not complete.** Foundations are in and verified on every page; the Web board's
+layouts and several component specs are only partly applied; no page has owner sign-off.
+
+Method: the same 33 pages re-rendered (dark 1280, light 1280, dark 390) with a measuring
+script (`audit2.py`), plus static greps of the CSS. I re-viewed home, trip detail (light),
+journal and admin rules by eye; other pages are metrics only. Fragments, modals, Discovery
+and Packing tabs with real findings, `/setup`, `/reset`, `/oauth/authorize` are still
+uncovered.
+
+### Done and measured
+- G1/G2/G4 tokens: `tokens.css` loaded; 0 hard-coded hex in `theme.css`, `trips.css`,
+  `admin-theme.css`, `base.html`.
+- G3 type: Outfit, Figtree and JetBrains Mono self-hosted and applied.
+- G6 sidebar (248px at ≥1024px), G7 no emoji, G8 crosses gone, G9 admin themed (dark rules
+  table now readable), G10 Next-up card on Home. No horizontal overflow at 390px.
+
+### Remaining gaps
+| Area | Gap |
+|---|---|
+| Home | Layout still differs from the board: no greeting/search header, Capture is not the single primary, no review-queue panel or upcoming-trips grid. Old stat tiles and the "Go to" cards (duplicating the sidebar) remain. |
+| Sidebar | No review-count badge. |
+| Trips | Cards lack the packing progress bar. Trip detail item chips are outline boxes, not filled pills with icons. |
+| Status capsule | `.pill` has the 14% fill but not the 6px dot. |
+| Controls | 57 controls under 32px: the `◐` theme toggle (28px, on ~30 pages), native selects, `<summary>` disclosures, trip `yn-tab` buttons. 44px is not met on dense screens; the 32px "small" decision is still open. |
+| Contrast | 17 failures dark, 8 light: admin `text-muted` (3.63 dark), `cap-tab-st` (4.36), light `bp-field-label` (~3.37), light Delete button. |
+| Tokens | Residual px radii (theme 2, trips 16, base 5) and font-size under 12px (theme 5, trips 13, base 32). |
+| Admin | Headings are not Outfit. |
+| Login | Uses the horizontal lockup, not the stacked one. |
+| Components | No toggle-switch. The board's "Auto-commit trusted senders" example conflicts with D-31 and must not be built. |
+| Sign-off | Every owner box above is still ☐. |
+
+### Not design, but open from the capture work
+Email forward (D-162, YONDER-199) and the iOS share-extension notification (D-163,
+YONDER-54) are unbuilt. Auto-process covers the capture page only. The narrowed Gmail
+add-on scope and the bookmarklet hand-off are untested against real Gmail and browsers.
