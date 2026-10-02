@@ -27,7 +27,7 @@ if DEPS:
     from app.db import SessionLocal, engine
     from app.main import app
     from app.models import (Base, CommitAttempt, TravelerIdentity, TravelItem, Trip,
-                            TripTraveler, User)
+                            TripActivity, TripTraveler, User)
     from app import scope
     from app.review import jobs
 
@@ -106,6 +106,7 @@ if DEPS:
         s.query(CommitAttempt).filter(CommitAttempt.item_id.in_(iids)).delete(synchronize_session=False)
         s.query(TravelItem).filter(TravelItem.id.in_(iids)).delete(synchronize_session=False)
         tids = [t.id for t in s.query(Trip).filter(Trip.name.like("RV %")).all()]
+        s.query(TripActivity).filter(TripActivity.trip_id.in_(tids)).delete(synchronize_session=False)
         s.query(TripTraveler).filter(TripTraveler.trip_id.in_(tids)).delete(synchronize_session=False)
         s.query(Trip).filter(Trip.id.in_(tids)).delete(synchronize_session=False)
         s.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
@@ -400,7 +401,6 @@ if DEPS:
         """YONDER-191: a non-admin's commit still lands on their Run·dere trip
         (first-party, no AirTrail/AdventureLog needed); the external targets are
         skipped — never attempted, even with server-wide credentials set."""
-        from app.models import TripActivity
         monkeypatch.setattr(settings, "adventurelog_api_key", "k")
         monkeypatch.setattr(settings, "airtrail_token", "t")
         with SessionLocal() as s:
