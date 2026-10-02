@@ -134,3 +134,22 @@ if DEPS:
             assert "Page waiting to be read" not in client.get("/capture", cookies=b).text
         finally:
             _cleanup("cp-a", "cp-b")
+
+    def test_tab_status_separates_the_bookmarklet_from_the_capture_box(monkeypatch):
+        monkeypatch.setattr(settings, "auth_required", True)
+        monkeypatch.setattr(settings, "auto_process", False)
+        u_id, ck = _user("cp-via")
+        try:
+            with SessionLocal() as s:
+                s.add(IngestBatch(api_key_id="x", user_id=u_id, status="received",
+                                  payload={"capture_channel": "web", "html": PAGE}))
+                s.commit()
+            html = client.get("/capture/setup?tab=bookmarklet", cookies=ck).text
+            assert "Bookmarklet<span" not in html          # a capture-box paste is not a bookmarklet capture
+            r = client.post("/capture/web", data={"path": "page", "content": PAGE, "via": "bookmarklet"}, cookies=ck)
+            assert r.status_code == 200
+            html = client.get("/capture/setup?tab=bookmarklet", cookies=ck).text
+            assert 'Bookmarklet<span class="cap-tab-st">just now' in html
+            assert "when your last capture came in through that channel" in html
+        finally:
+            _cleanup("cp-via")

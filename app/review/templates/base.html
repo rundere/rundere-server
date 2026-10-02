@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Review Queue{% endblock %} · Run·dere</title>
-<script src="/review/static/htmx.min.js" defer></script>
+<script src="{{ asset('/review/static/htmx.min.js') }}" defer></script>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/brand/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/brand/icons/apple-touch-icon.png">
 <link rel="manifest" href="/brand/icons/site.webmanifest">
-<link rel="stylesheet" href="/brand/tokens/tokens.css">
-<link rel="stylesheet" href="/brand/fonts/fonts.css">
-<link rel="stylesheet" href="/review/static/theme.css">
+<link rel="stylesheet" href="{{ asset('/brand/tokens/tokens.css') }}">
+<link rel="stylesheet" href="{{ asset('/brand/fonts/fonts.css') }}">
+<link rel="stylesheet" href="{{ asset('/review/static/theme.css') }}">
 <script>
 // Apply the saved theme BEFORE first paint so there is no light/dark flash.
 (function(){try{var t=localStorage.getItem('tx-theme');
@@ -310,8 +310,10 @@ a{color:var(--accent)}
 .cap-recent{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:10px}
 .cap-recent li{display:flex;flex-direction:column;gap:4px;padding-bottom:10px;border-bottom:1px solid var(--line)}
 .cap-recent-main{font-weight:600}.cap-recent-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.cap-wrap.cap-guide{display:block;max-width:900px}
+.cap-wrap.cap-guide{display:block}
+.cap-guide .cap-panel{max-width:820px}   /* prose measure; the tab row and card use the full width */
 .cap-fields[hidden]{display:none}
+.cap-legend{font-size:12.5px;color:var(--ink-2)}
 .cap-guide>.why{padding:0 16px;margin:12px 0 0}
 .cap-guide .cap-tabs{margin-left:16px}
 .cap-guide .cap-panel{margin:0 16px}

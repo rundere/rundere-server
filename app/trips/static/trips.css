@@ -605,9 +605,9 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
   .yn-items th:last-child { width: auto; }
   .yn-items td:empty { display: none; }
 }
-/* Discovery tables need the room: while the Discovery tab is open the page
-   uses up to 1440px instead of the 1000px reading width. */
-.bp-wrap:has(.yn-tabpanel.active[data-tab="discovery"]) { max-width: 1440px; }
+/* One width for the whole trip page. It used to widen to 1440px while Discovery was
+   open, so the header and tab bar jumped size on every tab switch. */
+.bp-wrap:has(.yn-tabs) { max-width: 1200px; }
 
 /* ---- Weather summary + Safety subsections (4.5, YONDER-167/168) ---- */
 .yn-weather-sum { margin: 0 0 14px; padding: 12px 14px; border-radius: 8px;

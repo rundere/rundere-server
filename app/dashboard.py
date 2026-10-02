@@ -57,11 +57,16 @@ def _next_trip(trips: list[Trip], today: str) -> dict | None:
             "in_progress": in_progress, "days_until": days_until}
 
 
-def _next_up(session: Session, trips: list[Trip], today: str) -> dict | None:
+def _next_up(session: Session, trips: list[Trip], today: str, user=None) -> dict | None:
     """The design's Next-up card (one per screen): the soonest flight on a visible
     trip that hasn't left yet, with mono airport codes; with no flight, the featured
     trip itself. `overline` is the Runway-coloured line ("NEXT UP · FLIGHT · IN 12
-    DAYS"). Only real 3-letter codes are shown as codes."""
+    DAYS"). Only real 3-letter codes are shown as codes.
+
+    The flight is the VIEWER'S: an activity tagged to other travellers on a shared trip
+    is never their "next up" (app/trips/who.py: no tags = everyone, so an untagged flight
+    counts for all). A signed-in user not linked to a traveller identity sees only the
+    untagged ones. `user=None` (auth off) filters nothing."""
     import re
 
     from app.models import TripActivity
@@ -74,6 +79,11 @@ def _next_up(session: Session, trips: list[Trip], today: str) -> dict | None:
             day = (a.starts_at or "")[:10]
             if day and day >= today:
                 flights.append(a)
+    if user is not None and flights:
+        from app.trips import who
+        tags = who.activity_map(session, [a.id for a in flights])
+        me = getattr(user, "traveler_id", None)
+        flights = [a for a in flights if not tags.get(a.id) or (me is not None and me in tags[a.id])]
     flights.sort(key=lambda a: a.starts_at or "")
     code = re.compile(r"^[A-Z]{3}$")
     for a in flights:
@@ -167,7 +177,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
                          if t.start_date and _trip_status(t, today) == "upcoming")
     return templates.TemplateResponse(request, "dashboard.html", {
         "next_trip": _next_trip(trips, today),
-        "next_up": _next_up(session, trips, today),
+        "next_up": _next_up(session, trips, today, user),
         "greeting": _greeting(user),
         "queue": _queue_preview(session, user),
         "trip_cards": _trip_cards(session, trips, today, user=user),

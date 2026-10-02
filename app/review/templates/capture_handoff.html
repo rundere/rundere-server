@@ -9,6 +9,7 @@
       {# Filled by the bookmarklet's postMessage, then submitted like any capture (SPEC-9 D-159). #}
       <form id="hand-form" hx-post="/capture/web" hx-target="#cap-result" hx-swap="innerHTML">
         <input type="hidden" name="path" value="page">
+        <input type="hidden" name="via" value="bookmarklet">
         <input type="hidden" name="source_url" id="hand-url">
         <textarea name="content" id="hand-html" hidden></textarea>
       </form>

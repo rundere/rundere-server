@@ -43,6 +43,8 @@ def _theme(admin) -> None:
     from app.icons import icon, review_badge
     env.globals["icon"] = icon           # the shared header uses it
     env.globals["review_badge"] = review_badge
+    from app.assets import asset
+    env.globals["asset"] = asset
     env.loader = ChoiceLoader([
         FileSystemLoader(str(overrides)),
         PrefixLoader({"_sqladmin": PackageLoader("sqladmin", "templates")}),
