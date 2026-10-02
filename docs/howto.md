@@ -1,6 +1,6 @@
 # Run·dere (formerly Yonder) — Setup & Usage Guide
 
-> Current for **v4.6.0**. Screenshots are being recaptured against the current
+> Current for **v4.6.1**. Screenshots are being recaptured against the current
 > UI; `_[screenshot: …]_` marks where each one belongs. The older
 > `docs/howto.html` predates the trip pickers and Run·dere's first-party writes —
 > treat it as historical, not current.
