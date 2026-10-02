@@ -1,42 +1,22 @@
-/* Shared palette — the ONE source of truth for the app's colours (D-52),
-   linked by the review/home base template AND the SQLAdmin override so all
-   three surfaces are one visual system. The header's theme toggle stamps
-   data-theme on <html>; it must beat the OS media query in BOTH directions, so
-   light is re-declared explicitly under [data-theme="light"]. */
+/* The palette is the design system's (D-161): every colour below is an alias of a
+   semantic --rd-* token from /brand/tokens/tokens.css (design/tokens/), which
+   owns dark, light and the data-theme override. Keep the aliases so existing
+   rules keep working; new CSS should use --rd-* directly. Status backgrounds
+   are the system's 14%-alpha capsule fill. */
 :root {
-  --ground:#eef1f5; --surface:#fff; --surface-sunk:#f7f9fb;
-  --ink:#0d1520; --ink-2:#43505f; --ink-3:#6b7889;
-  --line:#d5dce5; --line-strong:#b9c4d1;
-  --accent:#2b5cd9; --accent-ink:#fff;
-  --ok:#0f7b6c; --ok-bg:#e2f2ef;
-  --warn:#b45309; --warn-bg:#fdf0e3;
-  --wait:#5a6b7d; --wait-bg:#eceff3;
-  --crit:#b42318; --crit-bg:#fdecea;
+  --ground:var(--rd-bg); --surface:var(--rd-surface);
+  --surface-sunk:color-mix(in srgb, var(--rd-bg) 60%, var(--rd-surface));
+  --ink:var(--rd-text); --ink-2:var(--rd-text-secondary); --ink-3:var(--rd-text-muted);
+  --line:var(--rd-border-subtle); --line-strong:var(--rd-border);
+  --accent:var(--rd-accent); --accent-ink:var(--rd-on-accent);
+  --ok:var(--rd-success); --ok-bg:color-mix(in srgb, var(--rd-success) 14%, transparent);
+  --warn:var(--rd-highlight); --warn-bg:color-mix(in srgb, var(--rd-highlight) 14%, transparent);
+  --wait:var(--rd-text-muted); --wait-bg:color-mix(in srgb, var(--rd-text-muted) 14%, transparent);
+  --crit:var(--rd-danger); --crit-bg:color-mix(in srgb, var(--rd-danger) 14%, transparent);
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   --ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --r:3px;
+  --r:var(--rd-radius-control);
 }
-@media (prefers-color-scheme:dark){:root{
-  --ground:#0d1117;--surface:#161b22;--surface-sunk:#10151b;
-  --ink:#e6edf3;--ink-2:#a9b6c4;--ink-3:#7b8794;
-  --line:#262d36;--line-strong:#38414d;
-  --accent:#6b93ff;--accent-ink:#08111f;
-  --ok:#4ec9b0;--ok-bg:#10281f;--warn:#e0a458;--warn-bg:#2c2013;
-  --wait:#8b9bad;--wait-bg:#1a2029;--crit:#f0685c;--crit-bg:#2d1614;}}
-:root[data-theme="dark"]{
-  --ground:#0d1117;--surface:#161b22;--surface-sunk:#10151b;
-  --ink:#e6edf3;--ink-2:#a9b6c4;--ink-3:#7b8794;
-  --line:#262d36;--line-strong:#38414d;
-  --accent:#6b93ff;--accent-ink:#08111f;
-  --ok:#4ec9b0;--ok-bg:#10281f;--warn:#e0a458;--warn-bg:#2c2013;
-  --wait:#8b9bad;--wait-bg:#1a2029;--crit:#f0685c;--crit-bg:#2d1614;}
-:root[data-theme="light"]{
-  --ground:#eef1f5;--surface:#fff;--surface-sunk:#f7f9fb;
-  --ink:#0d1520;--ink-2:#43505f;--ink-3:#6b7889;
-  --line:#d5dce5;--line-strong:#b9c4d1;
-  --accent:#2b5cd9;--accent-ink:#fff;
-  --ok:#0f7b6c;--ok-bg:#e2f2ef;--warn:#b45309;--warn-bg:#fdf0e3;
-  --wait:#5a6b7d;--wait-bg:#eceff3;--crit:#b42318;--crit-bg:#fdecea;}
 
 /* ---- global app header (shared across Review / Home / Admin) ---- */
 .appbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;

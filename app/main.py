@@ -201,6 +201,8 @@ _DESIGN = Path(__file__).parent.parent / "design"
 if (_DESIGN / "logo").is_dir():
     app.mount("/brand/logo", StaticFiles(directory=str(_DESIGN / "logo")), name="brand-logo")
     app.mount("/brand/icons", StaticFiles(directory=str(_DESIGN / "icons")), name="brand-icons")
+if (_DESIGN / "tokens").is_dir():     # D-161: the design tokens are the palette's source
+    app.mount("/brand/tokens", StaticFiles(directory=str(_DESIGN / "tokens")), name="brand-tokens")
 if (_DESIGN / "audio").is_dir():
     app.mount("/brand/audio", StaticFiles(directory=str(_DESIGN / "audio")), name="brand-audio")
 

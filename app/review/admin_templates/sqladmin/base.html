@@ -6,6 +6,7 @@
 {% block head_tail %}
   {{ super() }}
   {# Shared palette FIRST (defines the vars), then the admin's Tabler mapping. #}
+  <link rel="stylesheet" href="/brand/tokens/tokens.css">
   <link rel="stylesheet" href="/review/static/theme.css">
   <link rel="stylesheet" href="/review/static/admin-theme.css">
   <script>
