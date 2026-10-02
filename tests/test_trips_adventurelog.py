@@ -330,3 +330,32 @@ def test_adapter_sends_is_public_only_when_asked():
     seen.clear()
     c.create_collection("N", "2026-01-01", "2026-01-02")
     assert "is_public" not in seen                                # default private
+
+
+def test_adventurelog_actions_sit_under_advanced(monkeypatch):
+    """Run·dere is first-party: the optional AdventureLog sync/View/Push live in
+    an Advanced menu, not as header buttons."""
+    if not DEPS:
+        return
+    import re
+    monkeypatch.setattr(settings, "adventurelog_public_url", "https://al.example.com")
+    tid = _mk_trip("Advanced linked", "2026-01-01", "2026-01-05", collection_id="col_adv")
+    html = client.get(f"/trips/{tid}").text
+    menu = re.search(r'<details class="yn-menu">\s*<summary[^>]*>Advanced</summary>(.*?)</details>',
+                     html, re.S)
+    assert menu and "AdventureLog sync" in menu.group(1) and "View in AdventureLog" in menu.group(1)
+    assert html.count("AdventureLog sync") == 1               # not also a header button
+    # Unlinked + configured: Push is under Advanced too.
+    monkeypatch.setattr(settings, "adventurelog_api_key", "k")
+    tid2 = _mk_trip("Advanced unlinked", "2026-01-01", "2026-01-05")
+    html2 = client.get(f"/trips/{tid2}").text
+    menu2 = re.search(r'<summary[^>]*>Advanced</summary>(.*?)</details>', html2, re.S)
+    assert menu2 and "Push to AdventureLog" in menu2.group(1)
+
+
+def test_no_advanced_menu_without_the_integration(monkeypatch):
+    if not DEPS:
+        return
+    monkeypatch.setattr(settings, "adventurelog_api_key", "")
+    tid = _mk_trip("Plain trip", "2026-01-01", "2026-01-05")
+    assert ">Advanced</summary>" not in client.get(f"/trips/{tid}").text
