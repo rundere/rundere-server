@@ -235,14 +235,8 @@ Full guide: [`capture/gmail-addon/README.md`](capture/gmail-addon/README.md).
 1. **script.google.com → New project.**
 2. Project Settings (⚙️) → check **"Show appsscript.json"** → paste [`capture/gmail-addon/appsscript.json`](capture/gmail-addon/appsscript.json).
 3. Replace `Code.gs` with [`capture/gmail-addon/Code.gs`](capture/gmail-addon/Code.gs).
-4. **Deploy → Test deployments → Install add-on** (installs for your account only; approve the "unverified app" screen — expected for your own script). Scopes: `gmail.addons.current.message.readonly` + `gmail.modify` (label moves).
+4. **Deploy → Test deployments → Install add-on** (installs for your account only; approve the "unverified app" screen — expected for your own script). Scope: `gmail.addons.current.message.readonly` (it only reads the open email; no labels are touched, D-164).
 5. In Gmail, open the add-on panel → paste the **`gmail-addon`** API key on the homepage card → **Save**.
-
-**Label prerequisite (D-26):** three nested Gmail labels must already exist —
-`trip-planning/untracked` (intake queue), `trip-planning/tracked` (success),
-`trip-planning/toreview` (failure). Gmail's internal name uses a **forward
-slash** for nesting. The add-on moves threads between them but never creates
-them.
 
 ### Google Calendar add-on (Apps Script)
 
