@@ -834,7 +834,7 @@ def _render_md(text: str | None) -> Markup:
     return Markup(joined)
 
 
-def _finding_view(f: DiscoveryFinding) -> dict:
+def _finding_view(f: DiscoveryFinding, ended: bool = False) -> dict:
     from discover import policy as _policy
     data = f.data or {}
     return {
@@ -855,7 +855,10 @@ def _finding_view(f: DiscoveryFinding) -> dict:
         # pick), and the regional/local overlays key on the trip's places. The
         # Languages picker is the tool for those; other topics keep Re-run.
         # Saved research (YONDER-108) has no resolver to re-run either.
-        "rerunnable": not f.topic.startswith("language") and f.topic != "research",
+        # A past trip runs nothing (D-157), so no finding offers a re-run either.
+        "rerunnable": (not f.topic.startswith("language") and f.topic != "research"
+                       and not ended),
+        "ended": ended,
         "has_rates": bool(data.get("rates")),
         "lockable": _policy.is_lockable(f.topic),
         "locked": _policy.is_locked(f),
@@ -1020,6 +1023,8 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
                 .filter(DiscoveryFinding.trip_id == trip_id,
                         DiscoveryFinding.user_id == uid).all())
     from discover import sections as disc_sections
+    from discover.runner import trip_has_ended
+    ended = trip_has_ended(session.get(Trip, trip_id))
     grouped: dict[str, list] = {}
     for f in findings:
         grouped.setdefault(f.topic, []).append(f)
@@ -1029,7 +1034,7 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
         fs = grouped.get(topic)
         if fs:
             fs.sort(key=lambda x: x.place_key or "")
-            views[topic] = [_finding_view(f) for f in fs]
+            views[topic] = [_finding_view(f, ended) for f in fs]
             topic_groups.append({"topic": topic,
                                  "label": TOPIC_LABELS.get(topic, topic),
                                  "findings": views[topic]})
@@ -1060,6 +1065,7 @@ def _discovery_context(session: Session, trip_id: str, uid: str | None) -> dict:
             "discovery_default_section": disc_sections.DEFAULT_SECTION,
             "trip_currencies": currencies,
             "discovery_has_findings": bool(findings),
+            "discovery_ended": ended,
             "discovery_last": _run_view(last) if last else None,
             "discovery_running": running,
             "discovery_run": run_progress,
@@ -1125,6 +1131,9 @@ def run_discovery_route(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
+    from discover.runner import trip_has_ended
+    if trip_has_ended(trip):                # D-157: server-side, not just a hidden button
+        return _discovery_section(request, session, trip)    # renders the reason
     uid = _viewer_uid(request)
     if dj.running_run(session, trip_id, uid) is None:
         ident = _viewer_traveler(session, request)
@@ -1220,10 +1229,12 @@ def rerun_finding_route(trip_id: str, fid: str, request: Request,
                         session: Session = Depends(get_session)):
     """Regenerate this one finding (the per-topic re-run). Re-fetches live topics
     (weather/currency) and overrides a manual edit — an explicit fresh copy."""
-    from discover.runner import rerun_finding
+    from discover.runner import rerun_finding, trip_has_ended
     f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
+    if trip_has_ended(session.get(Trip, trip_id)):         # D-157; reload shows the reason
+        return _refresh()
     # Language findings aren't re-runnable (see _finding_view) — never let a
     # stale/forged POST overwrite a manual Languages pick.
     if f.topic.startswith("language") or f.topic == "research":
@@ -2319,6 +2330,10 @@ def remove_traveler(trip_id: str, traveler_id: int, request: Request,
     return _travelers_section(request, session, trip_id)
 
 
+_EXTERNAL_DENIED = ("AdventureLog sync is limited to admins until per-user "
+                    "connections are available (YONDER-191).")
+
+
 def _push_msg(text: str) -> HTMLResponse:
     """Inline failure notice swapped next to the Push button (a success answers
     with an HX-Redirect that reloads the detail showing the new link)."""
@@ -2527,6 +2542,8 @@ def push_adventurelog(trip_id: str, request: Request, session: Session = Depends
         return HTMLResponse("", status_code=404)
     if trip.adventurelog_collection_id:
         return _redirect(f"/trips/{trip_id}")           # already linked
+    if not scope.external_writes_allowed(scope.user_of(request)):
+        return _push_msg(_EXTERNAL_DENIED)
     client = _adventurelog()
     if client is None:
         return _push_msg("AdventureLog isn't configured on this server.")
@@ -2730,6 +2747,8 @@ def adventurelog_sync_page(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return _redirect(f"/trips/{trip_id}")
+    if not scope.external_writes_allowed(scope.user_of(request)):
+        return HTMLResponse(_EXTERNAL_DENIED, status_code=403)
     client = _adventurelog()
     if client is None:
         return HTMLResponse("AdventureLog isn't configured on this server.",
@@ -2778,6 +2797,8 @@ def adventurelog_push(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
+    if not scope.external_writes_allowed(scope.user_of(request)):
+        return _push_msg(_EXTERNAL_DENIED)
     client = _adventurelog()
     if client is None:
         return _push_msg("AdventureLog isn't configured on this server.")
@@ -2834,6 +2855,8 @@ def adventurelog_pull(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
+    if not scope.external_writes_allowed(scope.user_of(request)):
+        return _push_msg(_EXTERNAL_DENIED)
     client = _adventurelog()
     if client is None:
         return _push_msg("AdventureLog isn't configured on this server.")

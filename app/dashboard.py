@@ -135,6 +135,4 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         "trip_count": len(trips),
         "upcoming_count": upcoming_count,
         "version": settings.app_version,
-        "have_adventurelog": bool(settings.adventurelog_api_key),
-        "have_airtrail": bool(settings.airtrail_token),
     })
