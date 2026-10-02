@@ -36,8 +36,8 @@ details. **Off** = conflicts with the system.
 | G5 | **Touch targets under 44px on every page.** Median small control is 16–40px tall (typically 25–27px); the system says 44 on web. | `audit.json` `small`, `smallMed` | Component pass, after G1 |
 | G6 | **Navigation is a top bar, not the 248px sidebar** the web spec describes (lockup on top, active row with a Beacon inset bar). Settings does have a sidebar. | every page | Layout pass |
 | G7 | **Emoji used as icons** (forbidden by README §8): Home "Go to" cards 📥🗂🧭📓⚙, Review "Log approved" 📤. | home, review | Replace with the outline icon set |
-| G8 | **Blueprint corner crosses** (`+` at card corners) on trip detail, packing and the other profile pages are not in the design system. | trip detail, packing profile | Owner call: keep as a brand flourish or drop |
-| G9 | **Admin (SQLAdmin) tables look unfinished in dark.** White header row, white checkboxes and a white Search button sit on a dark table; "Search" text is low contrast. | `shots/admin-rules-dark.png` | Admin theme pass (`admin-theme.css`) |
+| G8 | **Blueprint corner crosses** (owner decision 2026-10-02: not in `design/`, so drop them) (`+` at card corners) on trip detail, packing and the other profile pages are not in the design system. | trip detail, packing profile | Drop the `.blueprint` corner markup and CSS |
+| G9 | **Admin (SQLAdmin) tables look unfinished in dark** (owner decision 2026-10-02: admin pages get the theme). White header row, white checkboxes and a white Search button sit on a dark table; "Search" text is low contrast. | `shots/admin-rules-dark.png` | Admin theme pass (`admin-theme.css`) |
 | G10 | **Signature element missing.** The Web board's Next-up card (Runway overline, mono IATA codes, dashed route line) has no counterpart: Home shows a text row "In progress · Japan, October". | home | Layout pass |
 | G11 | **Primary action count.** The system wants one Beacon primary per screen. Account has 3, capture 2, past-trip detail 2. | `audit.json` `primary` | Per page, below |
 
@@ -94,6 +94,6 @@ styled page.
 3. **Components** (G5, G7, G9, G11): 44px controls, icon set instead of emoji, one primary
    per page, admin theme pass.
 4. **Layouts** (G6, G10): sidebar shell, Next-up card on Home, trip cards on the list.
-5. **Owner decisions needed:** keep or drop the blueprint crosses (G8); whether admin pages
-   get the full theme or stay SQLAdmin-default; dense data screens (rules, packing, catalog)
-   may justify a 32px "small" control, which the README allows.
+5. **Decided by the owner (2026-10-02):** the blueprint crosses go (G8); admin pages get the full
+   theme (G9). **Still open:** dense data screens (rules, packing, catalog) may justify a 32px
+   "small" control, which the README allows.
