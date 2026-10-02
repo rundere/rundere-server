@@ -31,39 +31,11 @@ one message you have open.
 the human-selected-collection short-circuit (D-05): the resolver will attach
 this item to that trip and never override your choice (RULE-35b).
 
-## Label workflow (D-26)
+## No label changes
 
-This matches the owner's existing manual triage setup — three Gmail labels
-that must **already exist** before you use the add-on (it never creates them):
-
-- **`trip-planning-untracked`** — your intake queue. You label candidate
-  emails into this yourself; the add-on doesn't touch how things get here.
-- **`trip-planning-tracked`** — where a thread "moves" to on a successful
-  capture.
-- **`trip-planning-toreview`** — where it "moves" to instead if the capture
-  fails.
-
-Gmail has no real folders, so a "move" is two operations: remove
-`trip-planning-untracked` (a no-op if it isn't actually on the thread) and add
-the outcome label. The email is never archived — this is purely a label swap,
-and it happens on **both** outcomes, not just success.
-
-If `trip-planning/tracked` or `trip-planning/to-review` doesn't exist in your
-Gmail, the add-on fails immediately with a clear message — including a full
-list of your actual label names — rather than silently creating a new one.
-
-**Nested labels:** these three live under a `trip-planning` parent. Gmail's
-internal name for a nested label is `Parent/Child` (forward slash) — the
-label sidebar's indentation hides this, so the code must use the slash form
-(`trip-planning/untracked`, not `trip-planning-untracked`) or the lookup
-silently fails to match a label you can plainly see. If the constants in
-`Code.gs` (`LABEL_UNTRACKED`/`LABEL_TRACKED`/`LABEL_TOREVIEW`) ever stop
-matching your actual setup, the "missing label" error message lists every
-label name Gmail actually has — copy the exact string from there.
-
-A label-move failure (e.g. a transient API hiccup) is reported as a side note
-and never rolls back the capture itself: the ingest result is already durably
-stored server-side by the time label-moving runs.
+Capture only reads the open email: it never relabels, archives or moves it, and it needs no
+labels set up. (The old `trip-planning` label workflow of D-26 was a personal organisation
+method and is dropped, D-164.)
 
 ## Setup (one time, per Google account)
 
@@ -75,11 +47,10 @@ stored server-side by the time label-moving runs.
    the file itself — a script.google.com project is your own copy; there is
    nothing to `clasp push` unless you set that up separately).
 4. **Deploy → Test deployments → Install add-on.** This installs it for your
-   own account only — no Google review, no public listing. Scopes:
-   `gmail.addons.current.message.readonly` (reading the open email) and
-   `gmail.modify` (moving labels — there's no narrower Gmail Add-on scope for
-   label mutation, see D-26). Both are *sensitive*, not *restricted*, so this
-   still matches D-03's approach — no CASA/verification needed for personal
+   own account only — no Google review, no public listing. The one data scope is
+   `gmail.addons.current.message.readonly` (reading the open email), which is
+   *sensitive*, not *restricted*, so this still matches D-03's approach — no
+   CASA/verification needed for personal
    use. You'll still see Google's "this app isn't verified" screen on first
    authorization since it's your own unpublished script — click
    **Advanced → Go to (unsafe)**; that screen is expected and does not mean
@@ -125,37 +96,12 @@ token had already expired. The fix reads `e.gmail.accessToken` /
 reissues both on every action event fired from a contextual card, so there's
 nothing left to go stale.
 
-**"Permission failure" on label move, even though reading the message
-works** — the Executions log (clock icon, left sidebar in the script editor —
-always check this, not the toast; toasts can vanish before you finish reading
-them) will show something exact like:
-
-> Required permissions: (https://mail.google.com/ || .../auth/gmail.modify)
-
-This means `gmail.modify` genuinely isn't authorized for the **installed
-add-on** yet — confirmed 2026-08-03. Running a function from the editor's
-**Run** button re-authorizes the editor's own execution context, but that is
-tracked SEPARATELY from the Test Deployment's (installed add-on's)
-authorization, and does not reliably refresh it. What actually works:
-
-1. In the script editor: **Deploy → Test deployments** → find the existing
-   install → **Uninstall** (or remove it).
-2. **Deploy → Test deployments → Install add-on** again, fresh.
-3. This should trigger a full new consent screen listing every scope
-   currently in `appsscript.json`, including `gmail.modify` — approve all of
-   them (with the expected "unverified app" click-through).
-4. If step 2 still doesn't prompt for anything new, go to
-   [myaccount.google.com/permissions](https://myaccount.google.com/permissions),
-   find "Yonder Capture," remove its access entirely, then repeat
-   steps 1–2 for a guaranteed clean consent flow.
-
-Separately (2026-08-03): the label-move calls now fetch the thread via
-`GmailApp.getThreadById()` rather than reusing the message object obtained
-through the narrow "current message" token, on the theory that token might
-only ever carry read permission regardless of what's granted at the script
-level. This is good hygiene either way, but the confirmed root cause above is
-the missing authorization — re-copy `Code.gs` and `appsscript.json` together,
-then do the uninstall/reinstall.
+**Still asked for Gmail "modify" permission after updating** — an install made before D-164
+asked for `gmail.modify` (it was only for the label moves). Re-copy `Code.gs` and
+`appsscript.json` together, then **Deploy → Test deployments**, uninstall and install the
+add-on again so the consent screen lists only the current scopes. If it still lists the old
+one, remove "Run·dere Capture" at
+[myaccount.google.com/permissions](https://myaccount.google.com/permissions) and install again.
 
 **"Capture FAILED (401): bad signature"** on a real capture, even with a valid
 key — fixed 2026-08-03; re-copy `Code.gs`. Root cause: the payload was signed
