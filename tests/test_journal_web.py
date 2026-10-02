@@ -93,3 +93,97 @@ if DEPS:
         r = client.get("/")
         assert r.status_code == 200
         assert "/journal" in r.text
+
+    # ------------------------------------------------------------------ YONDER-188
+    def _trips(*rows):
+        return [{"id": i, "name": n, "start_date": s, "end_date": e} for i, n, s, e in rows]
+
+    def test_default_trip_is_the_one_covering_the_date():
+        from app import journal as j
+        t = _trips(("a", "Past", "2026-01-01", "2026-01-10"),
+                   ("b", "Now", "2026-09-30", "2026-10-05"),
+                   ("c", "Future", "2027-03-01", "2027-03-09"))
+        assert j.default_trip_id(t, "2026-10-02") == "b"
+
+    def test_no_covering_trip_leaves_it_unattached():
+        from app import journal as j
+        t = _trips(("a", "Past", "2026-01-01", "2026-01-10"))
+        assert j.default_trip_id(t, "2026-10-02") is None
+        assert j.default_trip_id([], "2026-10-02") is None
+
+    def test_overlap_is_deterministic_latest_start_then_shortest():
+        from app import journal as j
+        t = _trips(("long", "Long", "2026-09-01", "2026-10-30"),
+                   ("late", "Late", "2026-10-01", "2026-10-20"),
+                   ("short", "Short", "2026-10-01", "2026-10-03"))
+        for order in (t, list(reversed(t))):
+            assert j.default_trip_id(order, "2026-10-02") == "short"
+            assert [x["id"] for x in j.rank_trips(order, "2026-10-02")] == ["short", "late", "long"]
+
+    def test_far_future_trip_sorts_below_current_and_recent():
+        from app import journal as j
+        t = _trips(("f", "Far", "2027-06-01", "2027-06-09"),
+                   ("n", "Now", "2026-10-01", "2026-10-09"),
+                   ("r", "Recent", "2026-09-01", "2026-09-20"),
+                   ("u", "Undated", None, None))
+        assert [x["id"] for x in j.rank_trips(t, "2026-10-02")] == ["n", "r", "f", "u"]
+
+    def test_trip_options_endpoint_preselects_and_respects_a_manual_pick():
+        with SessionLocal() as s:
+            s.add_all([Trip(name="Web Journal Trip", source="manual",
+                            start_date="2026-09-30", end_date="2026-10-05"),
+                       Trip(name="Web Journal Trip", source="manual",
+                            start_date="2027-03-01", end_date="2027-03-09")])
+            s.commit()
+            ids = {t.start_date: t.id for t in
+                   s.query(Trip).filter(Trip.name == "Web Journal Trip").all()}
+        try:
+            r = client.get("/journal/trip-options", params={"entry_date": "2026-10-02"})
+            assert f'value="{ids["2026-09-30"]}" selected' in r.text
+            assert f'value="{ids["2027-03-01"]}" selected' not in r.text
+            r = client.get("/journal/trip-options",
+                           params={"entry_date": "2026-10-02", "picked": ids["2027-03-01"]})
+            assert f'value="{ids["2027-03-01"]}" selected' in r.text      # hand pick wins
+            r = client.get("/journal/trip-options", params={"entry_date": "2026-12-25"})
+            assert "selected" not in r.text                                # nothing covers it
+        finally:
+            _cleanup()
+
+    def test_compose_form_preselects_todays_trip():
+        from datetime import date
+        today = date.today().isoformat()
+        with SessionLocal() as s:
+            t = Trip(name="Web Journal Trip", source="manual",
+                     start_date=today, end_date=today)
+            s.add(t); s.commit(); tid = t.id
+        try:
+            r = client.get("/journal")
+            assert f'value="{tid}" selected' in r.text
+        finally:
+            _cleanup()
+
+    def test_trip_options_only_list_trips_the_caller_can_see(monkeypatch):
+        from app import authn
+        from app.config import settings
+        from app.models import User
+        monkeypatch.setattr(settings, "auth_required", True)
+        with SessionLocal() as s:
+            alice, bob = User(username="jw-alice", auth_source="local"), \
+                User(username="jw-bob", auth_source="local")
+            s.add_all([alice, bob]); s.flush()
+            s.add(Trip(name="Web Journal Trip", source="manual", owner_id=alice.id,
+                       start_date="2026-09-30", end_date="2026-10-05"))
+            s.commit()
+            tok = {u.username: authn.issue_access_token(u) for u in (alice, bob)}
+        try:
+            mine = client.get("/journal/trip-options", params={"entry_date": "2026-10-02"},
+                              cookies={settings.auth_cookie_name: tok["jw-alice"]})
+            theirs = client.get("/journal/trip-options", params={"entry_date": "2026-10-02"},
+                                cookies={settings.auth_cookie_name: tok["jw-bob"]})
+            assert "Web Journal Trip" in mine.text and "selected" in mine.text
+            assert "Web Journal Trip" not in theirs.text and "selected" not in theirs.text
+        finally:
+            with SessionLocal() as s:
+                s.query(User).filter(User.username.like("jw-%")).delete(synchronize_session=False)
+                s.commit()
+            _cleanup()

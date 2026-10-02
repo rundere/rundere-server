@@ -541,7 +541,10 @@ def assign_trip(item_id: str, request: Request, collection_id: str = Form(""),
         return HTMLResponse("", status_code=404)
 
     cid = (collection_id or "").strip()
-    if cid and cid not in {t["id"] for t in _list_trips()}:
+    # YONDER-191: the picker lists the server owner's AdventureLog trips, so a
+    # non-admin can't pick one (nothing to confirm the id against).
+    if cid and (not scope.external_writes_allowed(scope.user_of(request))
+                or cid not in {t["id"] for t in _list_trips()}):
         # An id that names no known trip is ignored rather than trusted — never
         # file into a collection the resolver couldn't confirm exists.
         return _detail_response(request, session, item, bucket=bucket, saved=False)
@@ -589,13 +592,16 @@ def _list_trips() -> list[dict]:
         return []
 
 
-def _trip_context(session: Session, item: TravelItem, view: dict) -> dict | None:
+def _trip_context(session: Session, item: TravelItem, view: dict,
+                  user=None) -> dict | None:
     """Options for the in-review trip picker, or None when it shouldn't show.
 
     Only for items still being worked (not staged/logged/ignored) that aren't
     home-only. Candidates the resolver flagged sort first, then trips whose dates
     contain the item, then the rest newest-first."""
     if view["bucket"] not in ("attention", "waiting", "ready"):
+        return None
+    if not scope.external_writes_allowed(user):        # YONDER-191
         return None
     payload = view["payload"]
     if (item.resolution or {}).get("within_home_radius"):
@@ -806,7 +812,7 @@ def _detail_response(request: Request, session: Session, item: TravelItem,
            # item files into (drives the commit; only when AL is configured), and
            # the in-house Yonder trip it belongs to (association only). Either can
            # be absent and the template just omits that picker.
-           "trip_al": _trip_context(session, item, view),
+           "trip_al": _trip_context(session, item, view, scope.user_of(request)),
            "trip_yonder": _yonder_trip_context(session, item, view,
                                                scope.user_of(request))}
     if oob_counts:
@@ -860,7 +866,7 @@ def _run_extract_resolve(session: Session, progress=None, user=None
                                   batch_filter=batch_filter)
 
         from app.resolving import resolve_pending
-        adventurelog, airtrail = _target_clients()
+        adventurelog, airtrail = _target_clients(user)
         geocoder = None
         try:
             from resolve.geocode import PhotonGeocoder
@@ -962,7 +968,7 @@ def reprocess(request: Request, bucket: str = "attention",
             # AdventureLog even without a DB commit record (D-60): re-extracting
             # then re-logging them would duplicate. Best-effort — if the targets
             # can't be reached, fall back to the DB-only protection above.
-            adventurelog, airtrail = _target_clients()
+            adventurelog, airtrail = _target_clients(user)
             flights = []
             if airtrail is not None:
                 try:
@@ -1003,9 +1009,14 @@ def _owner_id(request) -> str | None:
     return user.id if user is not None else None
 
 
-def _target_clients():
+def _target_clients(user=None):
+    """The AdventureLog / AirTrail clients, or (None, None) for a user who may
+    not use the server-wide credentials (YONDER-191 — admins only until
+    per-user connections, YONDER-192). `user=None` is the operator/auth-off path."""
     from app.config import settings
     adventurelog = airtrail = None
+    if not scope.external_writes_allowed(user):
+        return adventurelog, airtrail
     if settings.adventurelog_api_key:
         from adapters.targets.adventurelog import AdventureLogClient
         adventurelog = AdventureLogClient(settings.adventurelog_url,
@@ -1032,6 +1043,10 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
 
     execute = confirm == "1"
     b = bucket if bucket in BUCKETS else "staged"
+    user = scope.user_of(request)
+    # YONDER-191/D-156: a non-admin commits to Run·dere only; the AirTrail /
+    # AdventureLog targets are the server owner's accounts and are skipped.
+    external = scope.external_writes_allowed(user)
     # Only the captures this person may log — their own (an admin also
     # ownerless ones and those of users who share). Never someone else's approvals (YONDER-105).
     mine = scope.capture_filter(scope.user_of(request))
@@ -1039,14 +1054,14 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
     if not execute:
         # PREVIEW stays synchronous — it only reads (target refs + dedup) and is
         # quick; the operator needs the plan back immediately to decide.
-        adventurelog, airtrail = _target_clients()
+        adventurelog, airtrail = _target_clients(user)
         error = None
         summary = {"items": 0, "writes_ok": 0, "writes_failed": 0,
                    "skipped": 0, "plans": []}
         try:
             summary = commit_pending(session, adventurelog, airtrail,
                                      identities=load_identities(session), dry_run=True,
-                                     item_filter=mine)
+                                     item_filter=mine, external=external)
         except Exception as ex:
             log.exception("commit preview failed")
             error = str(ex)
@@ -1057,19 +1072,24 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
     if jobs.current_running():
         return _job_panel(request, jobs.current_running(), b)
 
+    juser = scope.snapshot(user)
+
     def work(progress):
         with SessionLocal() as s:
-            adventurelog, airtrail = _target_clients()
+            adventurelog, airtrail = _target_clients(juser)
             summary = commit_pending(s, adventurelog, airtrail,
                                      identities=load_identities(s),
                                      dry_run=False, progress=progress,
-                                     item_filter=mine)
+                                     item_filter=mine, external=external)
             n = summary["items"]
             parts = [f"logged {summary['writes_ok']} write(s) across {n} item(s)"]
             if summary["writes_failed"]:
                 parts.append(f"{summary['writes_failed']} failed")
             if summary["skipped"]:
                 parts.append(f"{summary['skipped']} already present")
+            if summary.get("external_skipped"):
+                parts.append(f"{summary['external_skipped']} AirTrail/AdventureLog "
+                             "write(s) skipped (admins only for now)")
             toast = "Done — " + ", ".join(parts) + "."
             # Surface the exact reason each write failed, so the operator sees it
             # in the job panel instead of having to open the CommitAttempts log.

@@ -36,6 +36,7 @@ def _visible_trips(session: Session, user) -> list[dict]:
     rows = (session.query(Trip).filter(scope.trip_filter(session, user))
             .order_by(Trip.start_date.desc().nullslast(), Trip.name).all())
     return [{"id": t.id, "name": t.name,
+             "start_date": t.start_date, "end_date": t.end_date,
              "dates": (f"{t.start_date or ''}"
                        f"{' → ' + t.end_date if t.end_date else ''}").strip()}
             for t in rows]
@@ -63,9 +64,14 @@ def _panel_ctx(request: Request, session: Session) -> dict:
                 if e.place_lat is not None and e.place_lon is not None else ""),
             "duplicated_from": e.duplicated_from,
             "tags": (e.values or {}).get("tags") or [],
+            # Nearest-to-this-entry's-day first (YONDER-188); its own trip stays selected.
+            "trips": journal_svc.rank_trips(trips, e.entry_date),
         })
-    return {"request": request, "groups": groups, "trips": trips,
-            "today": date.today().isoformat(), "entry_count": len(entries)}
+    today = date.today().isoformat()
+    return {"request": request, "groups": groups, "today": today,
+            "trips": journal_svc.rank_trips(trips, today),
+            "default_trip": journal_svc.default_trip_id(trips, today),
+            "entry_count": len(entries)}
 
 
 def _panel(request: Request, session: Session) -> HTMLResponse:
@@ -76,6 +82,24 @@ def _panel(request: Request, session: Session) -> HTMLResponse:
 @router.get("/", response_class=HTMLResponse)
 def journal_page(request: Request, session: Session = Depends(get_session)):
     return templates.TemplateResponse(request, "journal.html", _panel_ctx(request, session))
+
+
+@router.get("/trip-options", response_class=HTMLResponse)
+def journal_trip_options(request: Request, entry_date: str = "", picked: str = "",
+                         session: Session = Depends(get_session)):
+    """The compose box's trip <option>s for a day (YONDER-188): re-ordered, with
+    the covering trip pre-selected — unless the person already picked one by hand
+    (`picked`), which stays. Called when "Day it's about" changes."""
+    trips = _visible_trips(session, scope.user_of(request))
+    try:
+        day = journal_svc.normalize_entry_date(entry_date or None)
+    except ValueError:
+        day = date.today().isoformat()
+    ids = {t["id"] for t in trips}
+    selected = picked if picked in ids else journal_svc.default_trip_id(trips, day)
+    return templates.TemplateResponse(request, "_journal_trip_options.html", {
+        "request": request, "trips": journal_svc.rank_trips(trips, day),
+        "selected": selected})
 
 
 @router.post("", response_class=HTMLResponse)

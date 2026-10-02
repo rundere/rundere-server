@@ -13,6 +13,8 @@
   <div class="bp-head-actions">
     {% if discovery_running %}
     <span class="yn-run-live">● Researching…</span>
+    {% elif discovery_ended %}
+    <span class="yn-run-meta">This trip has ended — Discovery runs are off; findings stay readable.</span>
     {% else %}
     <button class="btn btn-primary" hx-post="/trips/{{ trip.id }}/discover"
             hx-target="#discovery-section" hx-swap="outerHTML"
@@ -80,7 +82,7 @@
         {% endfor %}
       {% else %}
         <div class="card blueprint bp-empty-card">
-          <div class="bp-empty-msg">Nothing here yet.{% if s.key in ('food', 'events', 'research', 'safety') %}
+          <div class="bp-empty-msg">Nothing here yet.{% if discovery_ended %}{% elif s.key in ('food', 'events', 'research', 'safety') %}
             Run discovery, or ask a connected AI agent to research it.{% elif s.key == 'language' %}
             Run discovery for the language; a connected AI agent can add local phrases.{% else %}
             Run discovery to fill this in.{% endif %}</div>
@@ -92,8 +94,8 @@
 </div>
 {% elif not discovery_running %}
   <div class="card blueprint bp-empty-card">
-    <div class="bp-empty-msg">No research yet. Run discovery to generate weather,
-      currency, plugs, food and more for this trip's destinations.</div>
+    <div class="bp-empty-msg">No research yet.{% if not discovery_ended %} Run discovery to generate weather,
+      currency, plugs, food and more for this trip's destinations.{% endif %}</div>
   </div>
 {% endif %}
 </div>
