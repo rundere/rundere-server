@@ -12,13 +12,18 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
       <div>
         <label class="cap-lbl" for="jnl-date">Day it's about</label>
-        <input id="jnl-date" type="date" name="entry_date" value="{{ today }}" class="cap-input">
+        {# Changing the day re-ranks the trips and re-picks the covering one, unless
+           the person already chose a trip by hand (data-manual, YONDER-188). #}
+        <input id="jnl-date" type="date" name="entry_date" value="{{ today }}" class="cap-input"
+               hx-get="/journal/trip-options" hx-trigger="change" hx-target="#jnl-trip"
+               hx-swap="innerHTML" hx-include="#jnl-date"
+               hx-vals='js:{picked: document.getElementById("jnl-trip").dataset.manual ? document.getElementById("jnl-trip").value : ""}'>
       </div>
       <div style="flex:1;min-width:160px">
         <label class="cap-lbl" for="jnl-trip">Trip (optional)</label>
-        <select id="jnl-trip" name="trip_id" class="cap-input">
-          <option value="">— not attached —</option>
-          {% for t in trips %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+        <select id="jnl-trip" name="trip_id" class="cap-input"
+                onchange="this.dataset.manual='1'">
+          {% with selected=default_trip %}{% include "_journal_trip_options.html" %}{% endwith %}
         </select>
       </div>
       <button type="submit" class="act primary">Save note</button>
@@ -50,10 +55,7 @@
           <select name="trip_id" class="cap-input" style="width:auto;font-size:12px;padding:4px 8px"
                   hx-post="/journal/{{ e.id }}/attach" hx-target="#journal-panel"
                   hx-swap="outerHTML" hx-trigger="change" aria-label="Attach to trip">
-            <option value="">— not attached —</option>
-            {% for t in trips %}
-            <option value="{{ t.id }}" {% if t.id == e.trip_id %}selected{% endif %}>{{ t.name }}</option>
-            {% endfor %}
+            {% with trips=e.trips, selected=e.trip_id %}{% include "_journal_trip_options.html" %}{% endwith %}
           </select>
           <button class="act tiny" hx-post="/journal/{{ e.id }}/duplicate"
                   hx-target="#journal-panel" hx-swap="outerHTML"

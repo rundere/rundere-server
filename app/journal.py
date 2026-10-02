@@ -14,7 +14,7 @@ the rest of the API already uses.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -38,6 +38,48 @@ def normalize_entry_date(value: str | None) -> str:
     if not _ISO_DATE.match(v):
         raise ValueError("entry_date must be an ISO date (YYYY-MM-DD)")
     return v
+
+
+def _ord(iso: str | None) -> int | None:
+    try:
+        return date.fromisoformat((iso or "")[:10]).toordinal()
+    except ValueError:
+        return None
+
+
+def _trip_rank(trip, on_date: str) -> tuple:
+    """Sort key for a trip against an entry date (YONDER-188): distance in days
+    from the trip's range to the date (0 when it falls inside), then latest
+    start, then shortest span, then name/id so the order never wobbles. A trip
+    with no start date has no range to compare, so it sorts last. A trip with
+    no end date is treated as a single day (its start)."""
+    d = _ord(on_date)
+    start = _ord(trip.get("start_date"))
+    if d is None or start is None:
+        return (1, 0, 0, 0, trip.get("name") or "", trip.get("id") or "")
+    end = _ord(trip.get("end_date"))
+    end = start if end is None or end < start else end
+    dist = 0 if start <= d <= end else (start - d if d < start else d - end)
+    return (0, dist, -start, end - start, trip.get("name") or "", trip.get("id") or "")
+
+
+def rank_trips(trips: list[dict], on_date: str | None) -> list[dict]:
+    """`trips` (dicts with id/name/start_date/end_date) nearest-to-`on_date`
+    first; shared so web, API and MCP can use one rule."""
+    on = normalize_entry_date(on_date) if on_date else _now().date().isoformat()
+    return sorted(trips, key=lambda t: _trip_rank(t, on))
+
+
+def default_trip_id(trips: list[dict], on_date: str | None) -> str | None:
+    """The trip whose date range covers `on_date` (latest start, then shortest,
+    wins an overlap), or None when none does — a note about a day outside every
+    trip stays unattached."""
+    ranked = rank_trips(trips, on_date)
+    if not ranked:
+        return None
+    on = normalize_entry_date(on_date) if on_date else _now().date().isoformat()
+    top = ranked[0]
+    return top["id"] if _trip_rank(top, on)[:2] == (0, 0) else None
 
 
 def parse_captured_at(value) -> datetime:

@@ -1,0 +1,4 @@
+{# <option>s for a journal trip select, in the order journal_web.py ranks them
+   (YONDER-188). `selected` is a trip id or None (= not attached). #}
+<option value="">— not attached —</option>
+{% for t in trips %}<option value="{{ t.id }}" {% if t.id == selected %}selected{% endif %}>{{ t.name }}{% if t.dates %} · {{ t.dates }}{% endif %}</option>{% endfor %}
