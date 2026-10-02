@@ -12,15 +12,24 @@
       {% if trip.has_notes %}<p class="bp-trip-notes">{{ trip.notes }}</p>{% endif %}
     </div>
     <div class="bp-trip-actions">
-      {% if trip.adventurelog_collection_id %}
-        <a class="btn btn-secondary" href="/trips/{{ trip.id }}/adventurelog">⇄ AdventureLog sync</a>
-        {% if trip.adventurelog_url %}
-        <a class="btn btn-ghost" href="{{ trip.adventurelog_url }}" target="_blank" rel="noopener">↗ View</a>
-        {% endif %}
-      {% elif al_show_push %}
-        <button class="btn btn-secondary" {% if not al_can_push %}disabled title="{{ al_push_reason }}"{% endif %}
-                hx-post="/trips/{{ trip.id }}/push-adventurelog"
-                hx-target="#push-msg" hx-swap="innerHTML" hx-disabled-elt="this">Push to AdventureLog</button>
+      {% if trip.adventurelog_collection_id or al_show_push %}
+      {# Optional AdventureLog integration lives under Advanced — Run·dere is the
+         first-party system (SPEC-8 D-146). #}
+      <details class="yn-menu">
+        <summary class="btn btn-ghost">Advanced</summary>
+        <div class="yn-menu-list" role="menu" style="min-width:220px;white-space:nowrap">
+          {% if trip.adventurelog_collection_id %}
+          <a class="btn btn-ghost bp-sm" role="menuitem" href="/trips/{{ trip.id }}/adventurelog">⇄ AdventureLog sync</a>
+          {% if trip.adventurelog_url %}
+          <a class="btn btn-ghost bp-sm" role="menuitem" href="{{ trip.adventurelog_url }}" target="_blank" rel="noopener">↗ View in AdventureLog</a>
+          {% endif %}
+          {% else %}
+          <button class="btn btn-ghost bp-sm" role="menuitem" {% if not al_can_push %}disabled title="{{ al_push_reason }}"{% endif %}
+                  hx-post="/trips/{{ trip.id }}/push-adventurelog"
+                  hx-target="#push-msg" hx-swap="innerHTML" hx-disabled-elt="this">Push to AdventureLog</button>
+          {% endif %}
+        </div>
+      </details>
       {% endif %}
       {% if trip_currencies | length == 1 %}
       <button class="btn btn-secondary" title="Convert {{ trip_currencies[0].code }}"

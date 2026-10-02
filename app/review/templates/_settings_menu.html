@@ -18,6 +18,8 @@
    "desc": "What you always bring and how you pack."},
   {"title": "Discovery profile", "href": "/trips/settings/discovery-profile" ~ cur_q, "match": "/trips/settings/discovery-profile", "needs_user": false,
    "desc": "Food, activity and pace preferences for trip research."},
+  {"title": "Integrations", "href": "/settings/integrations", "match": "/settings/integrations", "needs_user": false,
+   "desc": "Optional connections: AirTrail and AdventureLog. Run·dere works without them."},
 ] %}
 {% set admin_all = [
   {"title": "Users", "href": "/users", "match": "/users", "needs_user": true,
@@ -46,4 +48,4 @@
 {% set ns = namespace(on=cur_path.startswith('/settings') or cur_path.startswith('/admin') or cur_path.startswith('/about')) %}
 {% for e in you_all + admin_all %}{% if cur_path.startswith(e.match) %}{% set ns.on = true %}{% endif %}{% endfor %}
 {% set in_settings = ns.on %}
-{% set is_hub = cur_path.startswith('/settings') %}
+{% set is_hub = cur_path in ('/settings', '/settings/') %}

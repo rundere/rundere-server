@@ -253,3 +253,25 @@ request forgery (SSRF) risk.
   (proposed)
 - **D-155 — No transaction imports and no receipt OCR.** Expenses are entered by
   hand or pre-filled from bookings. (proposed)
+- **D-156 — Server-wide AirTrail/AdventureLog credentials are admin-only until
+  per-user connections ship (D-151).** Run·dere is the first-party write path for
+  everyone: a non-admin's commit still files onto their Run·dere trip
+  (`yonder.activity`); only the AirTrail/AdventureLog targets are skipped (marked
+  `no external connection`, never attempted) and counted separately in the toast.
+  The AdventureLog create-collection / sync page / push / pull routes, the
+  in-review AdventureLog trip picker and the process/reprocess resolve stage's
+  target lookups refuse or skip for non-admins. Auth-off and the operator CLI are
+  unaffected. Interim for YONDER-191; lifted by YONDER-192. Skipped targets count
+  as settled for the item's Logged state, so after 192 an old item needs a
+  reprocess to push externally. Still open: the single-capture re-resolve
+  (`_reresolve`, per-item edit path) and the Discover airport lookups read the
+  owner's accounts without this gate. (proposed)
+- **D-157 — Discovery does not run on a past trip.** A trip is past when its end
+  date (its start date when it has no end) is before today; undated trips are
+  still planning. `discover.runner.trip_has_ended` is the one check; the web full
+  run and per-finding re-run enforce it server-side, and the UI shows "This trip
+  has ended" instead of the buttons. Existing findings stay readable. Open
+  (YONDER-196): agent-written `save_research` / `save_city_guide` /
+  `save_phrases` / `save_safety` are NOT blocked (post-trip notes are
+  legitimate), `/api/v1` and MCP have no resolver-run endpoints today, and there
+  is no owner override. (proposed)

@@ -144,11 +144,17 @@ def committable(item: TravelItem) -> bool:
             and not _fully_committed(item))
 
 
+# Marker on a result for an AirTrail/AdventureLog target a non-admin's commit
+# did not attempt (YONDER-191, D-156). It counts as settled for the item's
+# Logged state, but is NOT a real write, so `_done_targets` ignores it.
+EXTERNAL_SKIP = "no external connection (admins only until per-user connections)"
+
+
 def _done_targets(item: TravelItem) -> set[str]:
     """Targets a prior (non-dry) run already wrote, so a re-run skips them."""
     done = set()
     for r in ((item.commit or {}).get("results") or []):
-        if r.get("ok") and not r.get("dry_run"):
+        if r.get("ok") and not r.get("dry_run") and r.get("skipped") != EXTERNAL_SKIP:
             done.add(r.get("target"))
     return done
 
@@ -662,8 +668,10 @@ def _airtrail_db():
 
 def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 identities=None, airports: dict | None = None,
-                airlines: dict | None = None, dry_run: bool = True) -> dict:
-    """Execute (or, dry, plan) every target for one item. Returns a result
+                airlines: dict | None = None, dry_run: bool = True,
+                external: bool = True) -> dict:
+    """Execute (or, dry, plan) every target for one item. `external=False`
+    (a non-admin, YONDER-191) writes only the first-party Run·dere target. Returns a result
     envelope; also written to `item.commit` and reflected in `item.status`."""
     payload = (item.extraction or {}).get("payload") or {}
     resolution = item.resolution or {}
@@ -765,6 +773,10 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
         if target in already:
             results.append({"target": target, "operation": "skip",
                             "ok": True, "skipped": "already committed"})
+            continue
+        if not external and target != "yonder.activity":
+            results.append({"target": target, "operation": "skip",
+                            "ok": True, "skipped": EXTERNAL_SKIP})
             continue
 
         # ---- Yonder (first-party, 2.2.0): file the capture onto its linked
@@ -1295,14 +1307,17 @@ def _apply_status(item: TravelItem, results: list[dict]) -> None:
 
 def commit_pending(session: Session, adventurelog, airtrail, *,
                    identities=None, dry_run: bool = True, limit: int = 0,
-                   progress=None, item_filter=None) -> dict:
+                   progress=None, item_filter=None, external: bool = True) -> dict:
     """Commit every approved, resolved item. Sequential (one flight at a time,
     D-06); per-item commit so one failure never blocks the rest.
 
     `item_filter` (a TravelItem predicate, e.g. scope.capture_filter(user))
     limits it to the captures that person may log — the web "Log approved"
     button passes the pressing user's, so nobody logs someone else's approved
-    items (YONDER-105). None = every item (the operator CLI)."""
+    items (YONDER-105). None = every item (the operator CLI).
+
+    `external=False` (a non-admin, YONDER-191/D-156) commits to Run·dere only:
+    AirTrail/AdventureLog targets are skipped, never attempted."""
     flown_airports = flown_airlines = {}
     if airtrail is not None:
         try:
@@ -1312,7 +1327,7 @@ def commit_pending(session: Session, adventurelog, airtrail, *,
         except Exception as ex:
             log.warning("AirTrail reference load failed: %s", ex)
     # Flown reference first, AirTrail's own DB for never-flown airports (D-50).
-    db = _airtrail_db()
+    db = _airtrail_db() if external else None
     airports = _Resolver(flown_airports, db, "airport")
     airlines = _Resolver(flown_airlines, db, "airline")
 
@@ -1331,10 +1346,12 @@ def commit_pending(session: Session, adventurelog, airtrail, *,
             progress("logging", idx, total, str(item.canonical_key or item.id)[:70])
         env = commit_item(session, item, adventurelog, airtrail,
                           identities=identities, airports=airports,
-                          airlines=airlines, dry_run=dry_run)
+                          airlines=airlines, dry_run=dry_run, external=external)
         summary["items"] += 1
         for r in env["results"]:
-            if r.get("skipped"):
+            if r.get("skipped") == EXTERNAL_SKIP:
+                summary["external_skipped"] = summary.get("external_skipped", 0) + 1
+            elif r.get("skipped"):
                 summary["skipped"] += 1
             elif r.get("ok"):
                 summary["writes_ok"] += 1

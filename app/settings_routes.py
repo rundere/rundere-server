@@ -13,6 +13,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app import scope
+from app.config import settings
+
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
 
@@ -25,3 +28,17 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "te
 def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", {
         "me": getattr(request.state, "user", None)})
+
+
+@router.get("/settings/integrations", response_class=HTMLResponse)
+def integrations_page(request: Request):
+    """Optional integrations (SPEC-8 D-146): Run·dere is the first-party system and
+    works with neither connected. Today AirTrail / AdventureLog are server-wide and
+    admin-only (D-156); per-user connections (YONDER-192) will be set up here.
+    Booleans only — never a URL or credential."""
+    user = scope.user_of(request)
+    return templates.TemplateResponse(request, "integrations.html", {
+        "me": user,
+        "can_use": scope.external_writes_allowed(user),
+        "have_adventurelog": bool(settings.adventurelog_api_key),
+        "have_airtrail": bool(settings.airtrail_token)})

@@ -34,6 +34,17 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def trip_has_ended(trip, today: str | None = None) -> bool:
+    """A past trip (D-157, YONDER-196): its end date — or, with no end date, its
+    start date — is before today. No dates at all is not past (still being
+    planned). The ONE check every Discovery run entry point calls."""
+    day = ((getattr(trip, "end_date", None) or getattr(trip, "start_date", None)) or "")[:10]
+    return bool(day) and day < (today or date.today().isoformat())
+
+
+TRIP_ENDED_MESSAGE = "This trip has ended — Discovery runs are off; existing findings stay readable."
+
+
 def _country_reps(derived: DerivedLocations) -> list[DerivedPlace]:
     seen: dict[str, DerivedPlace] = {}
     for p in derived.places:
