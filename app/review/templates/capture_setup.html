@@ -27,9 +27,10 @@
     <nav class="cap-tabs" role="tablist" aria-label="Capture channels">
       {% for t in tabs %}
       <a role="tab" class="cap-tab{% if t.on %} on{% endif %}" aria-selected="{{ 'true' if t.on else 'false' }}"
-         href="/capture/setup?tab={{ t.key }}">{{ t.label }}{% if t.status %}<span class="cap-tab-st">{{ t.status }}</span>{% endif %}</a>
+         href="/capture/setup?tab={{ t.key }}"{% if t.status %} title="Your last capture through {{ t.label }}: {{ t.status }}"{% endif %}>{{ t.label }}{% if t.status %}<span class="cap-tab-st">{{ t.status }}</span>{% endif %}</a>
       {% endfor %}
     </nav>
+    <p class="why cap-legend">The time beside a tab is when your last capture came in through that channel, so you can see it is working. No time means nothing has arrived that way yet.</p>
 
     <section class="cap-card cap-panel" role="tabpanel">
     {% if tab == 'gmail' %}

@@ -195,6 +195,16 @@ app.mount("/trips/static",
           StaticFiles(directory=str(Path(__file__).parent / "trips" / "static")),
           name="trips-static")
 
+@app.middleware("http")
+async def _revalidate_static(request, call_next):
+    """Static files revalidate (ETag) on every load instead of living on heuristic
+    freshness, so a deploy reaches browsers even where a page links an unversioned URL."""
+    resp = await call_next(request)
+    if request.url.path.startswith(("/review/static/", "/trips/static/", "/brand/tokens/", "/brand/fonts/")):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 # Brand assets straight from the design system (design/, PR #77): logos and
 # icons are served as-is so the app never carries its own copies.
 _DESIGN = Path(__file__).parent.parent / "design"

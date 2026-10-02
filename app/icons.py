@@ -58,3 +58,5 @@ def review_badge(request) -> int:
 def install(templates) -> None:
     templates.env.globals["icon"] = icon
     templates.env.globals["review_badge"] = review_badge
+    from app.assets import asset
+    templates.env.globals["asset"] = asset

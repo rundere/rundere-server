@@ -115,7 +115,8 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
                submitted_by: str | None, travel_date: str | None = None,
                travel_time: str | None = None, title: str | None = None,
                notes: str | None = None, collection_id: str | None = None,
-               owner_user_id: str | None = None, trip_id: str | None = None) -> str:
+               owner_user_id: str | None = None, trip_id: str | None = None,
+               via: str | None = None) -> str:
     """Wrap a captured page into a `web`-channel batch and store it. Returns the
     batch id."""
     payload = {
@@ -130,6 +131,9 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
             "notes": notes or None,
             "collection_id": collection_id or None,
             "trip_id": trip_id or None,
+            # "bookmarklet" when the page came through the bookmarklet hand-off, so the
+            # setup guide's per-tab "last capture" doesn't count capture-box pastes.
+            "via": via or None,
         },
     }
     body = json.dumps(payload).encode("utf-8")
@@ -341,7 +345,7 @@ def _recent_captures(session: Session, user, limit: int = 6) -> list[dict]:
 _CHANNELS = [  # (tab key, label, capture_channel values it produces)
     ("gmail", "Gmail", ("gmail",)),
     ("calendar", "Calendar", ("gcal",)),
-    ("bookmarklet", "Bookmarklet", ("web",)),
+    ("bookmarklet", "Bookmarklet", ("bookmarklet",)),
     ("email", "Email forward", ()),
     ("ios", "iPhone and iPad", ()),
     ("mcp", "AI assistants (MCP)", ()),
@@ -364,6 +368,8 @@ def _last_capture_by_channel(session: Session, user) -> dict[str, object]:
     seen: dict[str, object] = {}
     for b in _own_batches(session, user, 200):
         ch = (b.payload or {}).get("capture_channel") or "gmail"
+        if ch == "web" and ((b.payload or {}).get("capture_context") or {}).get("via") == "bookmarklet":
+            ch = "bookmarklet"          # the capture box also uses the web channel
         seen.setdefault(ch, b.received_at)
     return seen
 
@@ -483,7 +489,8 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         if not raw.strip():
             return PlainTextResponse("Run·dere: empty page — nothing captured.", status_code=400)
         source_url = request.headers.get("X-Yonder-Source-Url") or request.headers.get("Referer")
-        batch_id = _queue_web(session, raw, source_url=source_url, submitted_by=submitted_by, owner_user_id=owner_user_id)
+        batch_id = _queue_web(session, raw, source_url=source_url, submitted_by=submitted_by, owner_user_id=owner_user_id,
+                                via="bookmarklet")      # the legacy header-based bookmarklet
         return PlainTextResponse(
             f"Run·dere captured this page ✓ (batch {batch_id[:8]}). "
             f"Run “Process new captures” in the review queue to extract it.")
@@ -569,7 +576,8 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     batch_id = _queue_web(session, html, source_url=source_url, submitted_by=submitted_by,
                           travel_date=travel_date, travel_time=travel_time, title=title,
                           notes=notes, collection_id=collection_id, owner_user_id=owner_user_id,
-                          trip_id=trip_id)
+                          trip_id=trip_id,
+                          via=("bookmarklet" if form.get("via") == "bookmarklet" else None))
     return _captured(request, batch_id, _owner)
 
 
