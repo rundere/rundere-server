@@ -27,7 +27,8 @@ if DEPS:
     from app.db import SessionLocal, engine
     from app.main import app
     from app.models import (Base, CommitAttempt, TravelerIdentity, TravelItem, Trip,
-                            TripTraveler, User)
+                            TripActivity, TripTraveler, User)
+    from app import scope
     from app.review import jobs
 
     Base.metadata.create_all(engine)
@@ -105,6 +106,7 @@ if DEPS:
         s.query(CommitAttempt).filter(CommitAttempt.item_id.in_(iids)).delete(synchronize_session=False)
         s.query(TravelItem).filter(TravelItem.id.in_(iids)).delete(synchronize_session=False)
         tids = [t.id for t in s.query(Trip).filter(Trip.name.like("RV %")).all()]
+        s.query(TripActivity).filter(TripActivity.trip_id.in_(tids)).delete(synchronize_session=False)
         s.query(TripTraveler).filter(TripTraveler.trip_id.in_(tids)).delete(synchronize_session=False)
         s.query(Trip).filter(Trip.id.in_(tids)).delete(synchronize_session=False)
         s.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
@@ -240,7 +242,13 @@ if DEPS:
             time.sleep(0.02)
         raise AssertionError("job never finished")
 
-    def test_commit_dry_run_only_covers_callers_items(w):
+    @pytest.fixture()
+    def admins_write(monkeypatch):
+        """The job-scoping tests below are about WHOSE items are logged, not who
+        may use the server-wide targets (YONDER-191, tested separately)."""
+        monkeypatch.setattr(scope, "external_writes_allowed", lambda user: True)
+
+    def test_commit_dry_run_only_covers_callers_items(w, admins_write):
         with SessionLocal() as s:
             s.get(TravelItem, w["flight"]).review = {"required": False, "action_taken": "approved"}
             s.commit()
@@ -253,7 +261,7 @@ if DEPS:
         with SessionLocal() as s:
             assert s.query(CommitAttempt).count() == before       # nothing written
 
-    def test_commit_execute_is_a_job_scoped_to_caller(w):
+    def test_commit_execute_is_a_job_scoped_to_caller(w, admins_write):
         with SessionLocal() as s:
             s.get(TravelItem, w["flight"]).review = {"required": False, "action_taken": "approved"}
             s.commit()
@@ -386,3 +394,76 @@ if DEPS:
         assert not jobs.visible_to({"owner": "u1"}, None)
         assert jobs.visible_to({"owner": "u1"}, type("U", (), {"id": "u1"})())
         assert not jobs.visible_to(None, None)
+
+
+    # ------------------------------------------------------------------ YONDER-191
+    def test_non_admin_commit_writes_runder_only(w, monkeypatch):
+        """YONDER-191: a non-admin's commit still lands on their Run·dere trip
+        (first-party, no AirTrail/AdventureLog needed); the external targets are
+        skipped — never attempted, even with server-wide credentials set."""
+        monkeypatch.setattr(settings, "adventurelog_api_key", "k")
+        monkeypatch.setattr(settings, "airtrail_token", "t")
+        with SessionLocal() as s:
+            ev = s.get(TravelItem, w["event"])
+            ev.canonical_key = "rv57-event"
+            ev.resolution = {"outcome": "resolved",
+                             "targets": ["adventurelog.note", "yonder.activity"]}
+            ev.review = {"required": False, "action_taken": "approved"}
+            s.commit()
+        h = H(w["alice"])
+        r = client.post("/api/v1/review/commit", headers=h, json={})
+        assert r.status_code == 200
+        res = {x["target"]: x for p in r.json()["summary"]["plans"] for x in p["results"]}
+        assert res["adventurelog.note"]["skipped"].startswith("no external connection")
+        r = client.post("/api/v1/review/commit", headers=h, json={"dry_run": False})
+        assert r.status_code == 202
+        j = _wait(r.json()["id"], h)
+        assert "skipped (admins only" in (j["toast"] or "") and not j.get("error")
+        with SessionLocal() as s:
+            acts = s.query(TripActivity).filter(TripActivity.trip_id == w["trip"],
+                                                TripActivity.source_item_key == "rv57-event").all()
+            assert len(acts) == 1                              # first-party write landed
+            attempts = s.query(CommitAttempt).filter(CommitAttempt.item_id == w["event"],
+                                                     CommitAttempt.target.like("adventurelog%")).count()
+            assert attempts == 0                               # nothing sent to AdventureLog
+
+    def test_commit_allowed_for_admin(w):
+        with SessionLocal() as s:
+            s.get(User, w["alice"]).is_admin = True
+            s.commit()
+        r = client.post("/api/v1/review/commit", headers=H(w["alice"]), json={})
+        assert r.status_code == 200 and r.json()["dry_run"] is True
+
+    def test_target_clients_withheld_from_non_admin(w, monkeypatch):
+        from app.review import routes
+        monkeypatch.setattr(settings, "adventurelog_api_key", "k")
+        monkeypatch.setattr(settings, "airtrail_token", "t")
+        with SessionLocal() as s:
+            alice, admin = s.get(User, w["alice"]), s.get(User, w["bob"])
+            admin.is_admin = True
+            assert routes._target_clients(alice) == (None, None)
+            assert all(c is not None for c in routes._target_clients(admin))
+            assert all(c is not None for c in routes._target_clients(None))   # auth off / CLI
+
+    def test_web_external_routes_refuse_non_admin(w, monkeypatch):
+        """Same gate on the web side: commit, create-collection and the sync
+        page/push/pull never touch the server-wide targets for a non-admin."""
+        from app.trips import routes as trip_routes
+        monkeypatch.setattr(settings, "auth_required", True)     # web routes resolve a user
+        monkeypatch.setattr(settings, "adventurelog_api_key", "k")
+        monkeypatch.setattr(settings, "airtrail_token", "t")
+        monkeypatch.setattr(trip_routes, "_adventurelog",
+                            lambda: pytest.fail("AdventureLog client built for a non-admin"))
+        with SessionLocal() as s:
+            tok = authn.issue_access_token(s.get(User, w["alice"]))
+            s.get(Trip, w["trip"]).adventurelog_collection_id = "col-1"
+            s.commit()
+        ck = {settings.auth_cookie_name: tok}
+        t = w["trip"]
+        assert "limited to admins" in client.post(f"/trips/{t}/adventurelog/push", cookies=ck).text
+        assert "limited to admins" in client.post(f"/trips/{t}/adventurelog/pull", cookies=ck).text
+        assert client.get(f"/trips/{t}/adventurelog", cookies=ck).status_code == 403
+        with SessionLocal() as s:
+            s.get(Trip, t).adventurelog_collection_id = None
+            s.commit()
+        assert "limited to admins" in client.post(f"/trips/{t}/push-adventurelog", cookies=ck).text

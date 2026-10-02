@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Integrations{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <h1 class="pagetitle">Integrations</h1>
+  </div></div>
+
+  <div class="settings-hub">
+    <section>
+      <h2 class="settings-h">Run·dere</h2>
+      <div class="settings-card" style="cursor:default">
+        <span class="settings-title">Trips, timeline, journal, packing and Discover
+          <span class="pill ok">Built in · always on</span></span>
+        <span class="settings-desc">Everything you capture and plan is saved in Run·dere. You
+          don't need to connect anything else.</span>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="settings-h">Optional connections</h2>
+      <p class="why" style="margin:-4px 0 10px">Advanced: log bookings to other apps as well.
+        These are set up once for the whole server and only admins use them for now.
+        Per-user connections will be set up on this page.</p>
+      <div class="settings-grid">
+        {% for name, on, what in [
+          ("AdventureLog", have_adventurelog, "Collections and the trip sync page."),
+          ("AirTrail", have_airtrail, "Flights, and its airport and airline data.")] %}
+        <div class="settings-card" style="cursor:default">
+          <span class="settings-title">{{ name }}
+            {% if not can_use %}<span class="pill">Admin-managed</span>
+            {% elif on %}<span class="pill ok">Connected</span>
+            {% else %}<span class="pill">Not connected</span>{% endif %}</span>
+          <span class="settings-desc">{{ what }}
+            {% if not can_use %}Not used for your account.{% endif %}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
