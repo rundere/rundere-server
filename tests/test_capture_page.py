@@ -51,13 +51,15 @@ if DEPS:
                  "bookmarklet": ["bookmarks bar", "/capture/handoff", "Check it works"],
                  "email": ["Not available yet", "captures+"],
                  "ios": ["Not available yet", "Share"],
-                 "claude": ["/mcp", "Add custom connector", "Check it works"]}
+                 "mcp": ["Model Context Protocol", "/mcp", "capture_url", "Check it works"]}
         for tab, needles in marks.items():
             html = client.get(f"/capture/setup?tab={tab}").text
             for n in needles:
                 assert n in html, (tab, n)
             assert html.count('class="cap-tab') >= 6
         assert 'aria-selected="true"' in client.get("/capture/setup?tab=nope").text   # falls back to Gmail
+        old = client.get("/capture/setup?tab=claude").text                            # the old tab name
+        assert "Model Context Protocol" in old
 
     def test_gmail_guide_has_no_label_steps_and_no_modify_scope():
         html = client.get("/capture/setup?tab=gmail").text

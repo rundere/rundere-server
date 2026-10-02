@@ -344,7 +344,7 @@ _CHANNELS = [  # (tab key, label, capture_channel values it produces)
     ("bookmarklet", "Bookmarklet", ("web",)),
     ("email", "Email forward", ()),
     ("ios", "iPhone and iPad", ()),
-    ("claude", "Claude", ()),
+    ("mcp", "AI assistants (MCP)", ()),
 ]
 _CAPTURE_DIR = Path(__file__).resolve().parent.parent / "capture"
 
@@ -405,6 +405,7 @@ def capture_setup(request: Request, tab: str = "gmail", session: Session = Depen
     from app import authn
     user = authn.resolve_user(session, request)
     keys = [k for k, _, _ in _CHANNELS]
+    tab = "mcp" if tab == "claude" else tab            # the tab was called Claude before it was generic
     tab = tab if tab in keys else "gmail"
     last = _last_capture_by_channel(session, user)
     status = {}

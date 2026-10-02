@@ -134,18 +134,28 @@
         <li>Check it works: a notification says it was captured.</li>
       </ol>
 
-    {% elif tab == 'claude' %}
-      <h2 class="cap-h">Claude</h2>
-      <p class="why">Connect Run·dere to Claude once, then ask Claude to capture a link for you. Claude only sees and
-        changes what you can.</p>
+    {% elif tab == 'mcp' %}
+      <h2 class="cap-h">AI assistants (MCP)</h2>
+      <p class="why">Run·dere has a standard remote <b>MCP</b> (Model Context Protocol) server. Any assistant or tool that
+        speaks MCP can connect to it, then capture a link for you when you ask. It acts as you: it only sees and changes
+        what you can in Run·dere.</p>
       <ol class="cap-steps">
-        <li>In claude.ai open <b>Settings → Connectors → Add custom connector</b>.</li>
-        <li>Name it <b>Run·dere</b> and paste this URL; leave the advanced settings empty:
-          {{ copyblock('mcp-url', mcp_url) }}</li>
-        <li>Choose <b>Connect</b>, sign in to Run·dere, and choose <b>Allow</b>.</li>
-        <li><b>Check it works:</b> ask Claude <i>"Capture this page for me: https://…"</i>. It appears in your review queue.</li>
+        <li>In your assistant or MCP client, add a <b>remote MCP server</b> (some call it a custom connector) with this URL:
+          {{ copyblock('mcp-url', mcp_url) }}
+          Leave any client id or secret empty: the assistant registers itself.</li>
+        <li>Connect. Run·dere opens its own sign-in page, then asks <b>Allow access to your Run·dere data?</b> Choose <b>Allow</b>.</li>
+        <li><b>Check it works:</b> ask the assistant <i>"Capture this page for me: https://…"</i>. It uses the
+          <code>capture_url</code> tool, and the item appears in your review queue.</li>
       </ol>
-      <p class="why">More detail for admins is in <code>docs/claude-connector.md</code>.</p>
+      <details class="cap-trouble"><summary>Examples and other ways to connect</summary>
+        <ul>
+          <li><b>Claude (claude.ai, Desktop, mobile):</b> Settings → Connectors → Add custom connector, name it Run·dere, paste the URL.</li>
+          <li><b>Claude Code:</b> <code>claude mcp add --transport http rundere {{ mcp_url }}</code>, then <code>/mcp</code> to sign in.</li>
+          <li><b>A client without browser sign-in:</b> make a personal API token under Account and send it as
+            <code>Authorization: Bearer …</code>.</li>
+          <li>The server needs to be reachable from the assistant (a hosted assistant connects from its own cloud). Admin
+            details are in <code>docs/claude-connector.md</code>.</li>
+        </ul></details>
     {% endif %}
     </section>
   </div>
