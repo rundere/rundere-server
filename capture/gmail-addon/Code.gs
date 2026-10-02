@@ -92,23 +92,6 @@ function buildContextualCard(e) {
   return CardService.newCardBuilder().addSection(section).build();
 }
 
-// Owner's existing manual triage workflow (2026-08-03, corrects the earlier
-// "just add a label" design — D-26 revised): emails to consider live under
-// LABEL_UNTRACKED. Capture "moves" the thread out of it — Gmail has no real
-// folders, so a move is remove-old-label + add-new-label — to LABEL_TRACKED
-// on success or LABEL_TOREVIEW on failure. ALL THREE ARE PRE-EXISTING LABELS
-// THE OWNER MANAGES. This add-on must NEVER create any of them; a missing
-// destination label is a setup problem to surface, not paper over.
-//
-// These are NESTED labels — Gmail's internal name for a nested label is
-// "Parent/Child" (forward slash), not the flat hyphenated string the label
-// list appears to show. If these three still don't resolve, the diagnostic
-// below lists every actual label name so the real spelling is visible
-// immediately instead of another guess-and-check round.
-const LABEL_UNTRACKED = 'Trip Planning/Untracked';
-const LABEL_TRACKED = 'Trip Planning/Tracked';
-const LABEL_TOREVIEW = 'Trip Planning/To Review';
-
 function captureMessage(e) {
   const props = PropertiesService.getUserProperties();
   const apiKey = props.getProperty(PROP_API_KEY);
@@ -116,19 +99,6 @@ function captureMessage(e) {
   if (!apiKey) {
     return notify_('Not configured — open the add-on homepage, paste your '
       + 'API key, and Save first.');
-  }
-
-  // Fail fast, before any network call: both possible destination labels
-  // must already exist. Never auto-create.
-  const trackedLabel = GmailApp.getUserLabelByName(LABEL_TRACKED);
-  const toReviewLabel = GmailApp.getUserLabelByName(LABEL_TOREVIEW);
-  const missing = [!trackedLabel && LABEL_TRACKED, !toReviewLabel && LABEL_TOREVIEW]
-    .filter(Boolean);
-  if (missing.length) {
-    const existing = GmailApp.getUserLabels()
-      .map(function (l) { return l.getName(); }).join(' | ');
-    return notify_('Missing Gmail label(s): ' + missing.join(', ')
-      + '. Your actual label names: ' + existing);
   }
 
   const messageId = e.gmail.messageId;
@@ -168,40 +138,13 @@ function captureMessage(e) {
     return notify_('Capture failed: ' + err);
   }
 
-  // Move (remove untracked, add the outcome label) on BOTH outcomes — a
-  // labeling failure is reported as a side note, never as a capture failure:
-  // the ingest result (success or not) is already durably recorded server-side
-  // by this point regardless of what happens to the label.
-  const destLabel = result.ok ? trackedLabel : toReviewLabel;
-  let moveNote = '';
-  try {
-    moveLabel_(message.getThread().getId(), destLabel);
-  } catch (moveErr) {
-    // Full detail goes to the Executions log (View > Executions in the script
-    // editor) since the toast can vanish before it's readable — 2026-08-03.
-    console.error('Label move failed: ' + moveErr);
-    moveNote = ' (label move failed — see Executions log for detail)';
-  }
-
+  // The email is never relabelled or moved: capture only reads it (D-164 drops the
+  // old Trip Planning label workflow of D-26). The ingest result is already durably
+  // recorded server-side by this point.
   return notify_(result.ok
-    ? 'Captured. batch_id=' + (result.body && result.body.batch_id) + moveNote
+    ? 'Captured. batch_id=' + (result.body && result.body.batch_id)
     : 'Capture FAILED (' + result.status + '): '
-      + (result.body && result.body.error || result.text) + moveNote);
-}
-
-function moveLabel_(threadId, destLabel) {
-  // Fetch the thread via GmailApp's own standard authorization (gmail.modify)
-  // rather than reusing the message object obtained through
-  // setCurrentMessageAccessToken — that narrow "current message" token may
-  // only ever carry read permission, regardless of what the manifest
-  // separately grants at the script level (suspected 2026-08-03 after a
-  // "permission failure" persisted even with gmail.modify declared).
-  const thread = GmailApp.getThreadById(threadId);
-  const untracked = GmailApp.getUserLabelByName(LABEL_UNTRACKED);
-  if (untracked) {
-    untracked.removeFromThread(thread);   // no-op if not actually applied
-  }
-  destLabel.addToThread(thread);
+      + (result.body && result.body.error || result.text));
 }
 
 // ------------------------------------------------------------ ingest client
