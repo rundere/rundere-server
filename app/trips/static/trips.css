@@ -1,70 +1,52 @@
-/* Trips (Yonder 2.0) — the blueprint aesthetic, ported from the Trips design's
-   design-system tokens. Loaded ONLY on /trips pages; its --color-* variables
-   are namespaced so they never collide with theme.css's --accent/--surface/--ink
-   (which still style the shared app header). The header's light/dark toggle
-   stamps data-theme on <html>; we re-declare both themes so it wins over the OS
-   media query in both directions, exactly as theme.css does. */
+/* Trips (Yonder 2.0) — loaded ONLY on /trips pages; its --color-* variables are
+   namespaced so they never collide with theme.css's --accent/--surface/--ink
+   (which still style the shared app header). Both palettes now alias the design
+   tokens (D-161); the header's light/dark toggle stamps data-theme on <html>,
+   which tokens.css honours. */
 /* Fonts: use the system UI stack (crisp at any size, no external request — a
    self-hosted homelab shouldn't reach out to Google Fonts, and the imported
    Barlow read too thin/light). The blueprint feel comes from the uppercase +
    letter-spacing on labels, not the typeface. */
 
 :root {
-  --color-bg: #eeeef0;
-  --color-surface: #e4e4e6;
-  --color-text: #17181a;
-  --color-accent: #365f86;
-  --color-divider: color-mix(in srgb, #17181a 22%, transparent);
+  /* D-161: the palette is the design system's. These --color-* names alias the
+     semantic --rd-* tokens (/brand/tokens/tokens.css, which owns dark, light and
+     the data-theme override). The neutral and accent ramps are mixes between the
+     ground and the text (neutral) or the accent: 100 sits next to the ground and
+     900 next to the text in both themes, as the old per-theme ramps did. */
+  --color-bg: var(--rd-bg);
+  --color-surface: var(--rd-surface);
+  --color-text: var(--rd-text);
+  --color-accent: var(--rd-accent);
+  --color-divider: var(--rd-border-subtle);
 
-  /* Darker secondary-text + border ramp — the old ramp washed out (neutral-500
-     was #98989b, near-invisible on the light ground). */
-  --color-neutral-100: #f3f3f5; --color-neutral-200: #d9d9de;
-  --color-neutral-300: #c2c2c8; --color-neutral-400: #9a9aa0;
-  --color-neutral-500: #6a6a6f; --color-neutral-600: #545459;
-  --color-neutral-700: #3d3d42; --color-neutral-800: #2a2a2d;
-  --color-neutral-900: #1a1a1c;
-  --yn-tab-track: color-mix(in srgb, var(--color-neutral-200) 70%, transparent);
-  --yn-tab-on: #ffffff;
+  --color-neutral-100: color-mix(in srgb, var(--rd-text) 6%, var(--rd-bg));
+  --color-neutral-200: color-mix(in srgb, var(--rd-text) 13%, var(--rd-bg));
+  --color-neutral-300: color-mix(in srgb, var(--rd-text) 22%, var(--rd-bg));
+  --color-neutral-400: color-mix(in srgb, var(--rd-text) 40%, var(--rd-bg));
+  --color-neutral-500: color-mix(in srgb, var(--rd-text) 58%, var(--rd-bg));
+  --color-neutral-600: color-mix(in srgb, var(--rd-text) 70%, var(--rd-bg));
+  --color-neutral-700: color-mix(in srgb, var(--rd-text) 82%, var(--rd-bg));
+  --color-neutral-800: color-mix(in srgb, var(--rd-text) 92%, var(--rd-bg));
+  --color-neutral-900: var(--rd-text);
+  --yn-tab-track: var(--color-neutral-100);
+  --yn-tab-on: var(--rd-surface-raised);
 
-  --color-accent-100: #e7f0fb; --color-accent-200: #cfe2f6;
-  --color-accent-300: #a9c9ec; --color-accent-400: #7ba6d8;
-  --color-accent-500: #5285bd; --color-accent-600: #365f86;
-  --color-accent-700: #2a4c6c; --color-accent-800: #1f3852;
-  --color-accent-900: #16283b;
+  --color-accent-100: color-mix(in srgb, var(--rd-accent) 12%, var(--rd-bg));
+  --color-accent-200: color-mix(in srgb, var(--rd-accent) 22%, var(--rd-bg));
+  --color-accent-300: color-mix(in srgb, var(--rd-accent) 40%, var(--rd-bg));
+  --color-accent-400: color-mix(in srgb, var(--rd-accent) 62%, var(--rd-bg));
+  --color-accent-500: color-mix(in srgb, var(--rd-accent) 80%, var(--rd-bg));
+  --color-accent-600: var(--rd-accent);
+  --color-accent-700: color-mix(in srgb, var(--rd-accent) 80%, var(--rd-text));
+  --color-accent-800: color-mix(in srgb, var(--rd-accent) 55%, var(--rd-text));
+  --color-accent-900: color-mix(in srgb, var(--rd-accent) 30%, var(--rd-text));
 
   --font-heading: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
-  --radius-md: 4px; --radius-lg: 7px;
-  --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
-}
-
-/* Dark blueprint — a drafting table under lamplight: ink ground, pale marks. */
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --color-bg: #14181d; --color-surface: #1b2128; --color-text: #e7ebef;
-  --color-divider: color-mix(in srgb, #e7ebef 18%, transparent);
-  --color-neutral-100: #232a31; --color-neutral-200: #2b333b;
-  --color-neutral-300: #38424c; --color-neutral-400: #55606b;
-  --color-neutral-500: #7c8792; --color-neutral-600: #97a1ab;
-  --color-neutral-700: #b6bfc8; --color-neutral-800: #d2d9df; --color-neutral-900: #eef1f4;
-  --yn-tab-track: var(--color-neutral-100); --yn-tab-on: var(--color-neutral-300);
-  --color-accent: #7ea6cd;
-  --color-accent-100: #1e2731; --color-accent-200: #24313d;
-  --color-accent-300: #33475a; --color-accent-600: #7ea6cd;
-  --color-accent-700: #9cbde0; --color-accent-800: #bcd4ef; --color-accent-900: #d9e6f5;
-} }
-:root[data-theme="dark"] {
-  --color-bg: #14181d; --color-surface: #1b2128; --color-text: #e7ebef;
-  --color-divider: color-mix(in srgb, #e7ebef 18%, transparent);
-  --color-neutral-100: #232a31; --color-neutral-200: #2b333b;
-  --color-neutral-300: #38424c; --color-neutral-400: #55606b;
-  --color-neutral-500: #7c8792; --color-neutral-600: #97a1ab;
-  --color-neutral-700: #b6bfc8; --color-neutral-800: #d2d9df; --color-neutral-900: #eef1f4;
-  --yn-tab-track: var(--color-neutral-100); --yn-tab-on: var(--color-neutral-300);
-  --color-accent: #7ea6cd;
-  --color-accent-100: #1e2731; --color-accent-200: #24313d;
-  --color-accent-300: #33475a; --color-accent-600: #7ea6cd;
-  --color-accent-700: #9cbde0; --color-accent-800: #bcd4ef; --color-accent-900: #d9e6f5;
+  --radius-md: var(--rd-radius-xs); --radius-lg: var(--rd-radius-control);
+  --shadow-lg: var(--rd-shadow-raised);
 }
 
 /* ---- base ---- */
@@ -150,8 +132,8 @@ textarea.input { min-height: 72px; resize: vertical; }
 .dialog-title { font-family: var(--font-heading); font-weight: 600; font-size: 20px; }
 .dialog-body { display: flex; flex-direction: column; gap: 14px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.bp-error { padding: 8px 10px; font-size: 13px; color: #fff;
-  background: color-mix(in srgb, #b42318 82%, transparent); }
+.bp-error { padding: 8px 10px; font-size: 13px; color: var(--rd-on-accent);
+  background: color-mix(in srgb, var(--rd-danger) 82%, transparent); }
 .bp-row2 { display: flex; gap: 12px; }
 .bp-row2 > .field { flex: 1; }
 
@@ -215,7 +197,7 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .bp-trip-notes { margin: 12px 0 0; color: var(--color-neutral-700); font-size: 14px; max-width: 560px; }
 .bp-trip-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .bp-push-err { display: inline-block; margin-top: 8px; font-size: 13px;
-  color: #fff; background: color-mix(in srgb, #b42318 82%, transparent); padding: 6px 10px; }
+  color: var(--rd-on-accent); background: color-mix(in srgb, var(--rd-danger) 82%, transparent); padding: 6px 10px; }
 .bp-timeline-head { display: flex; align-items: center; justify-content: space-between;
   margin: 52px 0 16px; gap: 16px; }
 
@@ -286,9 +268,9 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-finding-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .yn-conf { font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
   padding: 2px 6px; border-radius: 2px; }
-.yn-conf-high { color: #12694a; background: color-mix(in srgb, #12694a 12%, transparent); }
-.yn-conf-medium { color: #8a5a00; background: color-mix(in srgb, #8a5a00 12%, transparent); }
-.yn-conf-flagged { color: #b42318; background: color-mix(in srgb, #b42318 12%, transparent); }
+.yn-conf-high { color: var(--rd-success); background: color-mix(in srgb, var(--rd-success) 12%, transparent); }
+.yn-conf-medium { color: var(--rd-highlight); background: color-mix(in srgb, var(--rd-highlight) 12%, transparent); }
+.yn-conf-flagged { color: var(--rd-danger); background: color-mix(in srgb, var(--rd-danger) 12%, transparent); }
 .yn-status-badge { margin-left: auto; font-size: 11px; text-transform: uppercase;
   letter-spacing: .04em; color: var(--color-neutral-500); }
 .yn-finding-body { font-size: 14px; color: var(--color-text); line-height: 1.5; }
@@ -320,7 +302,7 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 
 /* ---- planning: packing list ---- */
 .yn-note-card { padding: 12px 16px; }
-.yn-note-card.yn-warn { border-left: 3px solid #b42318; }
+.yn-note-card.yn-warn { border-left: 3px solid var(--rd-danger); }
 .yn-note-card.yn-todo { border-left: 3px solid var(--color-accent); }
 .yn-notelist { margin: 8px 0 0; padding-left: 18px; font-size: 14px;
   color: var(--color-text); display: flex; flex-direction: column; gap: 4px; }
@@ -333,7 +315,7 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
   color: var(--color-neutral-500); transition: background .1s, border-color .1s; }
 .yn-pack-check:hover { border-color: var(--color-accent); }
 .yn-pack-row.yn-packed .yn-pack-check { background: var(--color-accent);
-  color: #fff; border-color: var(--color-accent); }
+  color: var(--rd-on-accent); border-color: var(--color-accent); }
 .yn-pack-row.yn-packed .yn-pack-label-input { text-decoration: line-through;
   color: var(--color-neutral-600); }
 .yn-pack-main { flex: 1; min-width: 90px; }

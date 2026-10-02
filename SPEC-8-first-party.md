@@ -275,3 +275,12 @@ request forgery (SSRF) risk.
   `save_phrases` / `save_safety` are NOT blocked (post-trip notes are
   legitimate), `/api/v1` and MCP have no resolver-run endpoints today, and there
   is no owner override. (proposed)
+- **D-161 — The web UI's palette is the design system's tokens.** `design/tokens/tokens.css`
+  is served at `/brand/tokens/tokens.css` and linked by every base template (app, trips,
+  auth card, SQLAdmin) before the app CSS. `theme.css` and `trips.css` keep their variable
+  names as aliases of the semantic `--rd-*` tokens, so dark, light and the `data-theme`
+  override come from one place and a change to `design/tokens/` reaches the whole app.
+  This replaces `theme.css` as the palette's source (its "D-52" header). Status colours in
+  `trips.css` use `--rd-danger`, `--rd-success` and `--rd-highlight`. Type (brand fonts),
+  components (44px controls, icons, one primary action) and layouts are separate steps under
+  YONDER-202. (proposed)
