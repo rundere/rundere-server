@@ -1,7 +1,8 @@
 # SPEC-9 — Capture channels and the one-step capture flow
 
-**Status: PLANNING (2026-10-02).** Decisions D-158–D-160 are **proposed**. Nothing here is
-built yet; section 2 documents what exists today (read from the code), sections 3–5 are
+**Status: PLANNING (2026-10-02), revised after owner review.** Decisions D-158–D-160, D-162
+and D-163 are **proposed** (D-161 is the design-token decision in SPEC-8). Nothing here is
+built yet; section 2 documents what exists today (read from the code), sections 3–7 are
 the proposal. Related Plane items: YONDER-159–163 (capture page redesign), YONDER-199
 (email forward), YONDER-54 (iOS Share Extension), YONDER-179 (file capture API),
 YONDER-200 (Maps place link).
@@ -14,8 +15,13 @@ are separate because D-40 deferred a scheduled worker ("button first"). Separate
 capture page's bookmarklet has never worked for the owner, and each channel is documented
 in a different place (add-on READMEs, the capture page copy, SPEC-4).
 
-Goal: one action from the person's side. Capture → extract → resolve happens by itself;
-the person's only remaining job is the human approval (D-31).
+Goal: from the capture page, one action. The person captures; extract and resolve start by
+themselves and the item is waiting in their approval queue straight away. Approval stays a
+human act (D-31): **no auto-approval, ever**. The capture page is where this has to feel
+immediate, because the person is already in Run·dere when it happens.
+
+The page is split by how often it is used (section 3): the capture box is used all the time;
+every other channel is set up once, so it is a click-through instruction manual.
 
 ## 2. What exists today
 
@@ -74,36 +80,63 @@ capture** (5) and the **MCP `capture_url` tool** (6), plus the paste form's two 
 
 | Channel | Item | Notes |
 |---|---|---|
-| **Email forward** | YONDER-199 | Admin-configured mailbox, polled; "forward your confirmation" like TripIt. Needs a sender-to-user mapping (an unmapped sender must not create ownerless rows) and is the first channel that runs without anyone clicking, so it needs D-158 |
+| **Email forward** | YONDER-199 | One admin-configured mailbox, polled; each user forwards to their own plus address (D-162). Runs without anyone clicking, so it is the first channel that needs the auto-process of D-158 to be extended beyond the page |
 | **iOS Share Extension** | YONDER-54 | Calls `POST /api/v1/capture`; offline outbox queues captures and sends them later |
 | **Maps place link** | YONDER-200 | A Google/Apple Maps *place* (not directions) → name, address, category → offer a trip |
 | **File capture** | YONDER-179 | PDF, `.ics`, `.eml` from the app (iPad drag-and-drop) |
 
-## 3. Proposed: capture runs Process (D-158)
+## 3. Proposed: the capture page, by how often it is used (D-160)
 
-- **D-158 — A capture starts processing by itself.** After `store_batch` commits, the server
-  starts extract + resolve for that owner's received batches on the existing background job
-  (`app/review/jobs.py`). It applies to every channel, not only the page, so the add-ons,
-  the app and email forward behave the same. Capture never depends on processing: if the LLM
-  is down or the job fails, the batch stays `received`, the capture still succeeds, and the
-  existing "to process" count and button remain as the retry path. (Supersedes the "button
-  first" part of D-40.)
-  - *Concurrency:* the executor runs one job at a time. A capture that arrives while a job
-    runs sets a per-owner "run again" flag, and the job re-runs once when it finishes, so a
-    batch that landed mid-run is never stranded.
+**Immediate and constant: the capture box.** This is the one reusable interface, used every
+time. One box takes a URL or pasted page HTML (and recognises a Google or Apple directions
+link, which adds the travel date and mode), with trip, title and notes under "More". It is the
+only part of the page that is always visible.
+
+**Set up once: a click-through to "Other ways to capture".** Everything else is user-action work
+that is built once on the user's side (an Apps Script project, a bookmark, a mail rule, an app
+install). These do not belong on the working page. A link under the capture box opens a guide
+page (`/capture/setup`) with **one tab per channel**, in the design board's segmented-tab
+style. Each tab is an instruction manual: a short "what you get", numbered steps with copy
+buttons where text is copied, a "check it works" step, and a troubleshooting note. The tab
+header carries that channel's status (connected or not, last capture), which is YONDER-162.
+
+| Tab | What the steps cover |
+|---|---|
+| **Gmail** | Create the Apps Script project at script.google.com; replace `appsscript.json` and `Code.gs` (copy buttons for both); create the three labels; Deploy → Test deployments → Install add-on; get past Google's "unverified app" screen; paste the Ingest URL and the user's key on the add-on home card (the key is generated inline, YONDER-161); open an email and capture it |
+| **Calendar** | Same project steps with the Calendar add-on files; same key; open an event and capture it |
+| **Bookmarklet** | Show the bookmarks bar; drag the button there; open a booking page and click it; a Run·dere tab opens with the page (D-159); what to do if the pop-up is blocked |
+| **Email forward** | The user's own address (D-162) with a copy button; how to set a forwarding rule in Gmail and in Outlook; what happens to a forwarded email; regenerate the address if it leaks |
+| **iPhone and iPad** | When built: install the app, sign in, Share → Run·dere from Safari or Mail; the confirmation notification (D-163) |
+| **Claude** | Add the Run·dere connector from `/mcp`; ask Claude to capture a link |
+
+The page's own capture box is not a tab, because it needs no setup.
+
+### 3.1 After a capture: auto-process (D-158)
+
+- **D-158 — Capturing on the capture page starts processing immediately.** After `store_batch`
+  commits, the server starts extract + resolve for that user's received batches on the existing
+  background job (`app/review/jobs.py`), and the page shows progress (the existing job panel)
+  and then what landed: one card per extracted item (type, title, dates, the trip it will file
+  to, and what still needs the person, such as "no time on the page") with **Open in review**.
+  The item is in the user's approval queue straight away. Supersedes the "button first" part of
+  D-40 for this surface.
+  - *Approval is untouched:* nothing is approved, committed or written to Run·dere trips by
+    this step (D-31). Whether the cards also carry an inline Approve button is not part of this
+    decision; it would still be a human click, and is left for after the page is built.
+  - *Capture never depends on processing:* if the LLM is down or the job fails, the batch stays
+    `received`, the capture still succeeds, and the existing "to process" count and button are
+    the retry path.
+  - *Concurrency:* the executor runs one job at a time. A capture that arrives while a job runs
+    sets a per-user "run again" flag and the job re-runs once when it finishes, so a batch that
+    landed mid-run is never stranded.
   - *Scope:* processing is filtered to the capturing user's batches (`scope.batch_filter`).
-    Ownerless captures process under the admin filter.
-  - *Cost control:* `TX_AUTO_PROCESS` (default on) turns it off; `/ingest` keeps its rate
-    limit; the LLM tier already only runs when the deterministic extractors find nothing.
-- **Capture page result becomes the review step.** The form posts, shows a progress panel
-  (reusing the job panel), then shows what was extracted as cards: type, title, dates, the
-  trip it will file to, and what still needs the person ("no time on the page"). Each card
-  has **Approve** and **Open in review**. The queue stays the place to fix things.
-- **D-31 stays.** Approval remains a human act: this proposal adds an inline button, not
-  auto-approval. Auto-approving high-confidence, deterministic items (JSON-LD, iCal,
-  Calendar) would remove the last step but changes D-31; it is left as an open question.
-- **Bookmarklet and add-ons** can't show a panel, so they get a short reply
-  ("Captured — processing; open Review") and the result lands in the queue.
+  - *Cost control:* `TX_AUTO_PROCESS` (default on) turns it off; the LLM tier already runs only
+    when the deterministic extractors find nothing.
+  - *Other channels:* the add-ons, the app and the API keep today's behaviour (captured, then
+    processed by the button) until it is decided otherwise. Email forward is the exception that
+    will need it, because nobody is present to click (D-162).
+- The bookmarklet is not exempt from this: its hand-off lands on the capture page (D-159), so
+  the same progress and cards appear there.
 
 ## 4. Proposed: a bookmarklet that works (D-159)
 
@@ -111,42 +144,53 @@ capture** (5) and the **MCP `capture_url` tool** (6), plus the paste form's two 
   not a cross-origin `fetch`.** It opens `/capture/handoff` in a new tab, waits for a ready
   message, and posts the page HTML. The Run·dere tab (same-origin, cookie attached, no CORS,
   unaffected by the booking site's CSP) submits it through the normal path and shows the
-  result cards from section 3. The handoff page accepts a message from any origin because
-  the payload is untrusted page HTML either way; it never executes it, and `/capture/web`
-  keeps its size cap. Popup blockers allow it because it follows a click on the bookmark.
-  Keep the clipboard fallback for browsers that block `window.open`.
+  progress and result cards from section 3.1. The handoff page accepts a message from any
+  origin because the payload is untrusted page HTML either way; it never executes it, and
+  `/capture/web` keeps its size cap. Popup blockers allow it because it follows a click on the
+  bookmark. Keep the clipboard fallback for browsers that block `window.open`.
 - Mobile Safari has no bookmarklet worth supporting: the iOS Share Extension is the mobile
   answer.
 
-## 5. Capture page redesign
+## 5. Proposed: email forward with a per-user plus address (D-162)
 
-Built on `design/README.md` and the design tokens (YONDER-202); one Beacon primary action.
+- **D-162 — Each user forwards to their own plus address.** The admin configures one mailbox
+  (`captures@example.com`) that most providers can receive plus-addressed mail for. The server
+  generates a random token per user and shows them `captures+<token>@example.com`; mail to that
+  address is attributed to that user (owner set, no sender-to-user mapping needed). The token
+  is a capability: it can be regenerated from the Email tab, which invalidates the old address.
+  Because the address, not the sender, identifies the user, forwarding from any of their own
+  accounts works.
+  - *Safety:* mail to a token that matches no user is dropped and counted, never stored as an
+    ownerless capture (YONDER-186); rate-limited per token; the raw message is kept (D-15).
+  - *Processing:* nobody is present when mail arrives, so the poller runs the same auto-process
+    as D-158 for that user's batch. The result is an item in their approval queue (D-31).
+  - *Needs from the deployment:* a mailbox that supports plus addressing and IMAP access. The
+    Email tab says so when the admin has not configured one.
 
-1. **Choose, don't configure.** Three equal choices, each with one line saying when to use
-   it: *A page I'm looking at* (bookmarklet), *A link or its source* (paste), *A route*
-   (Google/Apple directions). Only the directions choice shows the travel date and mode.
-2. **One field first.** A single box that accepts a URL or pasted HTML and detects
-   directions links, as the server already does; trip, title and notes sit under "More".
-3. **Status per channel (YONDER-162).** A checklist: Gmail add-on, Calendar add-on, bookmarklet,
-   email forward, app. Each shows connected or not and the last capture time, with a
-   setup guide (YONDER-160) and a token generated inline (YONDER-161).
-4. **Recent captures** below the form, each with its state (processing, ready to approve,
-   needs you, approved), so a capture is never "lost between pages".
-5. **Per-channel guides** are the section 2.1 text, in-app, with copy buttons.
+## 6. Proposed: iOS Share Extension feedback (D-163)
 
-## 6. Decisions (proposed)
+- **D-163 — The Share Extension shows a notification that the capture was received, at
+  minimum.** It calls `POST /api/v1/capture` (or queues it in the offline outbox until it can),
+  and confirms "Captured for Run·dere" or "Saved, will send when online". Whether it also shows
+  result cards (what was extracted) is unresolved: processing is asynchronous for the app, the
+  extension has a short lifetime, and the app's own capture screen may be the better place. That
+  needs a look at how the app shows results before it is decided.
 
-- **D-158** — A capture starts processing by itself, on every channel (section 3).
-- **D-159** — The bookmarklet hands the page over by `window.open` + `postMessage` (section 4).
-- **D-160** — The capture page shows extracted results and an inline Approve; approval stays
-  human (D-31).
+## 7. Decisions (proposed)
 
-## 7. Open questions
+- **D-158** — Capture-page captures start processing immediately; approval stays human (D-31).
+- **D-159** — The bookmarklet hands the page over by `window.open` + `postMessage`.
+- **D-160** — The capture page is the always-used capture box plus a click-through guide with a
+  tab per channel; each tab is an instruction manual with status.
+- **D-162** — Email forward uses a server-generated per-user plus address.
+- **D-163** — The iOS Share Extension confirms receipt with a notification at minimum.
 
-1. Auto-approve deterministic captures (JSON-LD, iCal, Calendar) and leave only the
-   uncertain ones for review? It would make capture one step end to end, but contradicts D-31.
-2. Email forward: one shared mailbox with sender-to-user mapping, or a per-user address
-   (`name+token@…`)? The second is simpler to scope but needs mail-server support.
-3. Should the add-ons' label workflow (D-26) change once capture is automatic, since
-   `toreview` is now decided after processing rather than at capture?
-4. Does the iOS Share Extension get the same inline result cards, or only a notification?
+## 8. Open questions
+
+1. Should the other channels (add-ons, app, API) also auto-process once the page proves it out?
+   Email forward will need it regardless (D-162).
+2. Inline Approve on the result cards: a human click, so it fits D-31, but it is a second place
+   to approve. Leave it out of the first version?
+3. iOS: result cards in the extension, in the app after the notification, or neither?
+4. Email: if the admin's provider does not support plus addressing, is a per-user mailbox or a
+   shared mailbox with a sender allow-list the fallback?
