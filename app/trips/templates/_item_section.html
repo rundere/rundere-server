@@ -19,7 +19,7 @@
 <div class="yn-city{% if loop.first %} active{% endif %}" data-city="{{ c.key }}">
   <div class="yn-city-head">
     <h4 class="yn-city-title">{{ c.label }}</h4>
-    {% if f.locked %}<span class="yn-status-badge">🔒 locked</span>
+    {% if f.locked %}<span class="yn-status-badge">{{ icon('lock', 14) }} locked</span>
     {% elif f.status == 'edited' %}<span class="yn-status-badge">edited</span>
     {% elif f.status == 'draft' %}<span class="yn-status-badge">draft</span>{% endif %}
     {% if f.external %}<span class="yn-status-badge" title="Written by {{ f.agent }} over MCP — local Discover runs won't overwrite it">via {{ f.agent }}</span>{% endif %}
@@ -43,7 +43,7 @@
     {% elif not c.groups %}<div class="yn-finding-body">{{ f.body }}</div>{% endif %}
     {% if f.dishes %}<p class="yn-city-dishes"><b>Local specialties to try:</b> {{ f.dishes | join(", ") }}</p>{% endif %}
     {% if f.warnings %}
-    <div class="yn-city-warn" role="note"><b>⚠️ Allergy check:</b>
+    <div class="yn-city-warn" role="note"><b>{{ icon('alert', 14) }} Allergy check:</b>
       {% for w in f.warnings %}<span>{{ w }}</span>{% if not loop.last %} · {% endif %}{% endfor %}</div>
     {% endif %}
 

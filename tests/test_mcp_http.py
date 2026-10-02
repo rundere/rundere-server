@@ -509,7 +509,7 @@ if DEPS:
         with SessionLocal() as s:
             assert s.get(DiscoveryFinding, fid).status == "approved"
         page = client.get(f"/trips/{w['shared']}").text
-        assert "🔒 locked" in page and "Unlock" in page
+        assert "locked</span>" in page and "rd-ico" in page and "Unlock" in page
         client.post(f"/trips/{w['shared']}/finding/{fid}/lock", data={"lock": "0"})
         with SessionLocal() as s:
             assert s.get(DiscoveryFinding, fid).status == "draft"

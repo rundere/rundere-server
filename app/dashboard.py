@@ -27,6 +27,8 @@ from app.models import IngestBatch, Trip
 log = logging.getLogger("yonder.dashboard")
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
+from app.icons import install as _install_icons  # noqa: E402
+_install_icons(templates)
 
 
 def _trip_status(t: Trip, today: str) -> str:

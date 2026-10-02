@@ -4,7 +4,6 @@
 <a class="bp-back" href="/trips">← All trips</a>
 
 <div class="card blueprint bp-trip-header">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <div class="bp-trip-head-row">
     <div>
       <h1 class="bp-h1">{{ trip.name }}</h1>
@@ -51,7 +50,7 @@
               hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Run·dere found</button>
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
-      <button class="btn btn-ghost"
+      <button class="btn btn-danger"
               hx-post="/trips/{{ trip.id }}/delete"
               hx-confirm="Delete this trip and its activities?">Delete</button>
     </div>
@@ -107,7 +106,6 @@
     <summary class="bp-group-label">{{ day.label }}
       <span class="bp-group-count">{{ day.activities | length }}</span></summary>
     <div class="card blueprint bp-daycard">
-      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       {% for act in day.activities %}
       <details class="bp-act">
         <summary class="yn-actrow">
@@ -142,7 +140,7 @@
             {% endif %}
             <button class="btn btn-secondary bp-sm"
                     hx-get="/trips/{{ trip.id }}/activity/{{ act.id }}/edit" hx-target="#modal-root">Edit</button>
-            <button class="btn btn-ghost bp-sm"
+            <button class="btn btn-danger bp-sm"
                     hx-post="/trips/{{ trip.id }}/activity/{{ act.id }}/delete"
                     hx-confirm="Delete this activity?">Delete</button>
           </div>
@@ -154,7 +152,6 @@
   {% endfor %}
 {% else %}
   <div class="card blueprint bp-empty-card">
-    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
     <div class="bp-empty-msg">No activities yet. Add flights, lodging, tours and more to build the timeline.</div>
     <button class="btn btn-primary"
             hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
@@ -184,7 +181,6 @@
 <div class="yn-sec-body">
 <section class="bp-group">
   <div class="card blueprint bp-daycard">
-    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
     {% for c in linked_captures %}
     <div class="yn-actrow yn-filterable">
       <span class="tag tag-outline bp-typetag">{{ c.kind }}</span>

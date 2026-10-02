@@ -22,7 +22,7 @@
     <span class="bp-chevron yn-finding-caret">▸</span>
     <span class="tag tag-outline bp-typetag">{{ f.place_key }}</span>
     <span class="yn-conf yn-conf-{{ f.confidence }}">{{ f.confidence }}</span>
-    {% if f.locked %}<span class="yn-status-badge" title="Locked — Discover runs and AI agents won't overwrite it">🔒 locked</span>
+    {% if f.locked %}<span class="yn-status-badge" title="Locked — Discover runs and AI agents won't overwrite it">{{ icon('lock', 14) }} locked</span>
     {% elif f.status == 'edited' %}<span class="yn-status-badge">edited</span>{% endif %}
     {% if f.external %}<span class="yn-status-badge" title="Written by {{ f.agent }} over MCP — local Discover runs won't overwrite it">via {{ f.agent }}</span>{% endif %}
   </summary>
@@ -44,7 +44,7 @@
     {% endif %}
     {% endfor %}
   </div>
-  {% if f.parts.single_source %}<p class="yn-part-note" role="note">⚠️ Some safety points rest on a single source — check the official travel advisory.</p>{% endif %}
+  {% if f.parts.single_source %}<p class="yn-part-note" role="note">{{ icon('alert', 14) }} Some safety points rest on a single source — check the official travel advisory.</p>{% endif %}
   {% else %}
   <div class="yn-finding-body">{{ f.body }}</div>
   {% endif %}

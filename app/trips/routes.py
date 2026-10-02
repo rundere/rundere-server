@@ -36,6 +36,8 @@ from app.trips import who
 log = logging.getLogger("yonder.trips")
 router = APIRouter(prefix="/trips")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+from app.icons import install as _install_icons  # noqa: E402
+_install_icons(templates)
 # Let Trips templates {% include %} the shared global header (_appheader.html)
 # that lives with the review templates, so all surfaces keep one header.
 from jinja2 import ChoiceLoader, FileSystemLoader  # noqa: E402

@@ -4,7 +4,6 @@
 <a class="bp-back" href="/trips/{{ trip.id }}">← {{ trip.name }}</a>
 
 <div class="card blueprint bp-trip-header">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <h1 class="bp-h1">AdventureLog sync</h1>
   <p class="bp-trip-notes">Move data between this trip and its linked AdventureLog
     collection. <b>Push</b> sends Run·dere items over (deduplicated — a re-push
@@ -18,7 +17,6 @@
 <!-- ------------------------------------------------------------------ PUSH -->
 <form hx-post="/trips/{{ trip.id }}/adventurelog/push" hx-target="#al-result"
       hx-swap="innerHTML" class="card blueprint yn-profile-card">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <div class="bp-group-label">Push to AdventureLog <span class="bp-group-count">{{ push_items | length }}</span></div>
   {% if push_items %}
   <div class="yn-table-wrap">
@@ -49,7 +47,6 @@
 <!-- ------------------------------------------------------------------ PULL -->
 <form hx-post="/trips/{{ trip.id }}/adventurelog/pull" hx-target="#al-result"
       hx-swap="innerHTML" class="card blueprint yn-profile-card">
-  <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
   <div class="bp-group-label">Pull to Run·dere Timeline <span class="bp-group-count">{{ pull_rows | length }}</span></div>
   <p class="bp-trip-notes">Transport &amp; lodging only — Notes have no Timeline
     equivalent in Run·dere, so they can't be pulled back.</p>

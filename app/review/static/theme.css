@@ -19,6 +19,22 @@
   --r:var(--rd-radius-control);
 }
 
+/* Controls (design/README §5-6): 44 tall, 32 for the small size. Several independent
+   forms on one page (Account) use secondary buttons: one Beacon primary per screen. */
+.act,.btn,.cap-input,.field input:not([type=checkbox]):not([type=radio]),.field select,.input,
+.lookup-row input,.dash-card{min-height:var(--rd-control-md)}
+.act,.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.act.tiny,.bp-sm,.btn-sm,.cap-input.sm{min-height:var(--rd-control-sm)}
+.dash-card{min-height:0}
+/* Destructive: danger text on an 8% danger fill with a 50% danger border */
+.btn.btn-danger,.act.danger{color:var(--rd-danger);
+  background:color-mix(in srgb, var(--rd-danger) 8%, transparent);
+  border:1px solid color-mix(in srgb, var(--rd-danger) 50%, transparent)}
+.btn.btn-danger:hover,.act.danger:hover{background:color-mix(in srgb, var(--rd-danger) 16%, transparent)}
+
+/* outline icons (app/icons.py) */
+.rd-ico{flex:none;vertical-align:-.2em}
+
 /* ---- global app header (shared across Review / Home / Admin) ---- */
 .appbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;
   padding:0 18px;height:46px;background:var(--surface);

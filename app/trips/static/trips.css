@@ -57,19 +57,9 @@
 .trips-body ::selection { background: var(--color-accent-200); }
 .bp-wrap { max-width: 1000px; margin: 0 auto; padding: 32px 20px 80px; }
 
-/* ---- blueprint frame ---- */
+/* ---- card frame (the old corner crosses are gone: not in design/, owner decision) ---- */
 .blueprint { position: relative; border: 1px solid var(--color-divider);
-  border-radius: 0; background: transparent; }
-.blueprint > .corner { position: absolute; width: 11px; height: 11px;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent); }
-.blueprint > .corner::before, .blueprint > .corner::after { content: "";
-  position: absolute; background: currentColor; }
-.blueprint > .corner::before { left: 5px; top: 0; width: 1px; height: 100%; }
-.blueprint > .corner::after  { top: 5px; left: 0; width: 100%; height: 1px; }
-.blueprint > .corner.tl { top: -6px; left: -6px; }
-.blueprint > .corner.tr { top: -6px; right: -6px; }
-.blueprint > .corner.bl { bottom: -6px; left: -6px; }
-.blueprint > .corner.br { bottom: -6px; right: -6px; }
+  border-radius: var(--rd-radius-card); background: transparent; }
 .card { display: flex; flex-direction: column; gap: 6.8px; padding: 10.2px;
   border: 1px solid var(--color-divider); background: transparent; }
 
@@ -78,7 +68,7 @@
   cursor: pointer; text-decoration: none; font-family: var(--font-body);
   font-weight: 600; font-size: 14px; line-height: 1.2; color: var(--color-text);
   background: transparent; border: 1px solid var(--color-divider);
-  padding: 6.8px 12.2px; border-radius: 0; }
+  padding: 6.8px 12.2px; border-radius: var(--rd-radius-control); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-primary { background: var(--color-accent); color: var(--color-bg);
   border-color: var(--color-accent); }
@@ -92,10 +82,10 @@
 /* ---- forms ---- */
 .field > label { display: block; font-size: 14px; font-weight: 700;
   color: var(--color-text); margin-bottom: 5px; }
-.input { width: 100%; min-height: 36px; padding: 6px 10px; font: inherit;
+.input { width: 100%; padding: 6px 10px; font: inherit;
   font-family: var(--font-body); font-size: 14px; color: var(--color-text);
   caret-color: var(--color-accent); background: var(--color-surface);
-  border: 1px solid var(--color-divider); border-radius: 0; }
+  border: 1px solid var(--color-divider); border-radius: var(--rd-radius-control); }
 .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
 .input:focus-visible { border-color: var(--color-accent); outline: none; }
 textarea.input { min-height: 72px; resize: vertical; }
@@ -111,7 +101,7 @@ textarea.input { min-height: 72px; resize: vertical; }
 
 /* ---- tags ---- */
 .tag { display: inline-flex; align-items: center; font-size: 11px;
-  letter-spacing: 0.02em; padding: 3px 10px; border-radius: 0; white-space: nowrap; }
+  letter-spacing: 0.02em; padding: 3px 10px; border-radius: var(--rd-radius-pill); white-space: nowrap; }
 .tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
 .tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
 
@@ -127,7 +117,7 @@ textarea.input { min-height: 72px; resize: vertical; }
   padding: 13.6px; z-index: 50;
   background: color-mix(in srgb, #000 50%, transparent); }
 .dialog { width: min(440px, 100%); display: flex; flex-direction: column; gap: 10.2px;
-  padding: 18px; border: 1px solid var(--color-divider); border-radius: 0;
+  padding: 18px; border: 1px solid var(--color-divider); border-radius: var(--rd-radius-card);
   background: var(--color-bg); box-shadow: var(--shadow-lg); }
 .bp-dialog-tall { max-height: 82vh; overflow-y: auto; width: min(480px, 100%); }
 .dialog-title { font-family: var(--font-heading); font-weight: 500; font-size: 20px; }

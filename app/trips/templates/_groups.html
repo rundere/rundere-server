@@ -16,7 +16,6 @@
   <section class="bp-group">
     <div class="bp-group-label">{{ grp.label }}</div>
     <div class="card blueprint bp-tablewrap">
-      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       <table class="table bp-triptable">
         <thead>
           <tr><th>Trip</th><th>Start</th><th>End</th><th>Notes</th><th class="bp-actcol"></th></tr>
@@ -31,7 +30,7 @@
             <td class="bp-actcol">
               <button class="btn btn-ghost bp-sm" onclick="event.stopPropagation()"
                       hx-get="/trips/{{ trip.id }}/edit?next=/trips" hx-target="#modal-root">Edit</button>
-              <button class="btn btn-ghost bp-sm bp-muted" onclick="event.stopPropagation()"
+              <button class="btn btn-danger bp-sm" onclick="event.stopPropagation()"
                       hx-post="/trips/{{ trip.id }}/delete"
                       hx-confirm="Delete “{{ trip.name }}” and its activities?">Delete</button>
             </td>
@@ -44,7 +43,6 @@
   {% endfor %}
 {% elif search_no_results %}
   <div class="card blueprint bp-empty-card">
-    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
     <div class="bp-empty-msg">No {{ tabs | selectattr("active") | map(attribute="label") | first | lower }} trips{% if q %} match your search{% endif %}.
       {% if other_tab.count %}
       <button class="btn btn-ghost bp-sm" type="button"
@@ -56,7 +54,6 @@
   </div>
 {% else %}
   <div class="card blueprint bp-empty-card">
-    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
     <div class="bp-empty-msg">No trips yet.</div>
     <button class="btn btn-primary" hx-get="/trips/new" hx-target="#modal-root">+ New trip</button>
   </div>

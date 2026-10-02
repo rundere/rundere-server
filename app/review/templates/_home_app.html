@@ -34,7 +34,7 @@
             <td class="mono">{{ p.effective_from or 'start' }} → {{ p.effective_to or 'current' }}</td>
             <td class="rowacts">
               <a class="act tiny" href="/review/home?edit={{ p.id }}{{ '&for=' ~ acting.for_id if acting and acting.for_id is not none else '' }}">Edit</a>
-              <button class="act tiny quiet" hx-post="/review/home/delete/{{ p.id }}{{ acting.qs if acting else '' }}"
+              <button class="act tiny danger" hx-post="/review/home/delete/{{ p.id }}{{ acting.qs if acting else '' }}"
                       hx-target="#home-app" hx-swap="outerHTML"
                       hx-confirm="Delete “{{ p.label }}”?">Delete</button>
             </td>
