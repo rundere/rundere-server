@@ -35,7 +35,7 @@ from app.config import settings
 from app.db import get_session
 from app.ingest import store_batch
 from app.models import ApiKey
-from extract import apple_maps_url, maps_url
+from extract import apple_maps_url, maps_url, place_url
 
 log = logging.getLogger("yonder.capture")
 router = APIRouter()
@@ -528,8 +528,26 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
                                owner_user_id=owner_user_id, provider=provider)
         return _captured(request, batch_id, _owner)
 
+    def _save_place():
+        """A Maps PLACE link (YONDER-200): kept as a saved place, not sent down the
+        bookings pipeline (D-167). Nothing here needs a date or a trip."""
+        from app import places as places_svc
+        try:
+            place, created = places_svc.save(session, _owner, url=content,
+                                             source="web", enrich=True)
+        except ValueError as exc:
+            return _msg(False, str(exc))
+        return templates.TemplateResponse(request, "_capture_result.html", {
+            "ok": True, "place_id": place.id,
+            "message": (f"Saved “{place.name}”." if created
+                        else f"“{place.name}” was already in your saved places.")})
+
     # Explicit directions paths: the selection is authoritative, so looks_like_*
-    # validates the pasted URL against the chosen provider (SPEC-4 §2.1).
+    # validates the pasted URL against the chosen provider (SPEC-4 §2.1) — but a
+    # place link is no directions link, so say so instead of failing downstream.
+    if path in ("apple", "google") and place_url.classify(content, expand=False) == "place":
+        return _msg(False, "That’s a place link, not directions. Set the type to "
+                           "automatic to save it as a place.")
     if path == "apple":
         if apple_maps_url.is_apple_short_link(content):
             return _msg(False, "That Apple Maps share link (maps.apple/p/…) carries "
@@ -554,6 +572,8 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         # sniffing so a pasted maps link still routes correctly. An explicit
         # "page" selection skips this and is fetched as a web page.
         if path != "page":
+            if place_url.classify(content) == "place":      # expands a Google short link
+                return _save_place()
             is_apple = apple_maps_url.looks_like_apple_maps_url(content)
             if apple_maps_url.is_apple_short_link(content):
                 return _msg(False, "That Apple Maps share link (maps.apple/p/…) "

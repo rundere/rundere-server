@@ -3,5 +3,7 @@
   {{ message }}
   {% if ok and batch_id %}
   <a class="cap-go" href="/review?bucket=all">Open the review queue →</a>
+  {% elif ok and place_id %}
+  <a class="cap-go" href="/places">File it to a trip →</a>
   {% endif %}
 </div>
