@@ -60,6 +60,14 @@ def _clean(v, n: int) -> str | None:
     return v[:n] or None
 
 
+def _web_url(v, n: int = 2000) -> str | None:
+    """Only an http(s) link is kept as a place's link: it is rendered as an href
+    (the /places page) and becomes the activity's Map button, so a `javascript:`
+    or other scheme from a client must never get that far."""
+    v = _clean(v, n)
+    return v if v and v.lower().startswith(("http://", "https://")) else None
+
+
 def _coord(v, lo: float, hi: float) -> float | None:
     try:
         f = float(v)
@@ -102,7 +110,7 @@ def resolve_fields(*, url: str | None = None, name: str | None = None, lat=None,
     return {"name": nm, "lat": la, "lon": lo, "address": addr, "category": cat,
             "provider": prov if prov in _PROVIDERS else "other",
             "place_id": parsed.get("place_id"),
-            "source_url": _clean(source_url or parsed.get("source_url"), 2000),
+            "source_url": _web_url(source_url) or _web_url(parsed.get("source_url")),
             "activity_type": place_url.category_for(cat)["activity"]}
 
 
@@ -182,3 +190,70 @@ def activity_for(place: SavedPlace, activity_type: str | None = None,
     elif atype in ("dining", "lodging"):
         values["address"] = where
     return atype, {k: v for k, v in values.items() if v}
+
+
+_EDITABLE = ("name", "address", "notes", "activity_type")
+
+
+def update_place(session: Session, user, place_id: str, **fields) -> SavedPlace:
+    """Edit what a saved place will become: its name (a bare pin saves under its
+    coordinates), address, notes and the activity type it files as. Only the
+    given fields change; a blank name is refused. Own-only like everything here."""
+    place = require_place(session, user, place_id)
+    for key, value in fields.items():
+        if key not in _EDITABLE or value is None:
+            continue
+        if key == "name":
+            value = _clean(value, 300)
+            if not value:
+                raise ValueError("a saved place needs a name")
+        elif key == "activity_type":
+            from app.trips import types as activity_types
+            if activity_types.get_type(value).key != value:
+                raise ValueError(f"unknown activity type {value!r}")
+        else:
+            value = _clean(value, 5000 if key == "notes" else 500)
+        setattr(place, key, value)
+    session.commit()
+    session.refresh(place)
+    return place
+
+
+_NEAR_M = 100_000       # a pin within 100 km of a trip's located stops is "on" that trip
+
+
+def suggest_trip(session: Session, trips: list, place: SavedPlace, today: str | None = None):
+    """The id of the trip a saved place most likely belongs to, or None. Only a
+    suggestion that pre-selects the picker: filing always waits for the person
+    (D-133). Past trips are never suggested. First choice is the trip whose
+    located stops (its activities' geo) are nearest the pin, within 100 km; with
+    no pin or no match, the trip covering today, else the next one to start."""
+    from datetime import date
+
+    from app import journal as journal_svc
+    from app.models import TripActivity
+    from resolve.place_lookup import _metres
+    today = today or date.today().isoformat()
+    live = [t for t in trips if not t.end_date or t.end_date >= today]
+    if not live:
+        return None
+    if place.lat is not None and place.lon is not None:
+        best: tuple[float, str] | None = None
+        ids = {t.id for t in live}
+        for a in session.query(TripActivity).filter(TripActivity.trip_id.in_(ids)).all():
+            for p in (a.geo or {}).get("points") or []:
+                if p.get("lat") is None or p.get("lon") is None:
+                    continue
+                d = _metres(place.lat, place.lon, p["lat"], p["lon"])
+                if d <= _NEAR_M and (best is None or d < best[0]):
+                    best = (d, a.trip_id)
+        if best:
+            return best[1]
+    dicts = [{"id": t.id, "name": t.name, "start_date": t.start_date,
+              "end_date": t.end_date} for t in live]
+    current = journal_svc.default_trip_id(dicts, today)
+    if current:
+        return current
+    upcoming = sorted((t for t in live if t.start_date and t.start_date >= today),
+                      key=lambda t: t.start_date)
+    return upcoming[0].id if upcoming else None

@@ -30,8 +30,12 @@ def _panel_ctx(request: Request, session: Session, notice: dict | None = None) -
     trips = [{"id": t.id, "name": t.name,
               "dates": " → ".join(x for x in (t.start_date, t.end_date) if x)}
              for t in _filing_trips(session, user)]
-    return {"request": request, "places": places_svc.list_places(session, user),
-            "trips": trips, "notice": notice}
+    fileable = api_v1.fileable_trips(session, user)
+    places = places_svc.list_places(session, user)
+    # A hint only: the picker pre-selects it, the person still presses File (D-133).
+    suggested = {p.id: places_svc.suggest_trip(session, fileable, p) for p in places}
+    return {"request": request, "places": places, "trips": trips,
+            "suggested": suggested, "notice": notice}
 
 
 def _panel(request: Request, session: Session, notice: dict | None = None):
@@ -61,6 +65,18 @@ def places_file(place_id: str, request: Request, trip_id: str = Form(""),
     return _panel(request, session, {
         "ok": True, "message": f"Filed “{a.title or 'place'}”{when}.",
         "trip_id": trip_id})
+
+
+@router.post("/{place_id}/rename", response_class=HTMLResponse)
+def places_rename(place_id: str, request: Request, name: str = Form(""),
+                  session: Session = Depends(get_session)):
+    try:
+        places_svc.update_place(session, scope.user_of(request), place_id, name=name)
+    except (ValueError, HTTPException) as exc:
+        session.rollback()
+        msg = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        return _panel(request, session, {"ok": False, "message": msg})
+    return _panel(request, session)
 
 
 @router.post("/{place_id}/delete", response_class=HTMLResponse)

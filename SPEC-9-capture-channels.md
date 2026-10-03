@@ -194,7 +194,10 @@ points that share one parser (`extract/place_url.py`) and one category table:
   rows are closed (YONDER-186). Re-saving the same place returns the existing row. Filing it to
   a trip builds a timeline activity and **consumes** the row, so there is no trip link to
   dangle. An undated activity is fine: it is scheduled later (see the unscheduled-items items,
-  YONDER-207 to 209).
+  YONDER-207 to 209). A saved place can be renamed and edited before filing. The picker
+  pre-selects a suggested trip, never files on its own: the trip whose located stops are nearest
+  the pin (within 100 km), else the trip covering today, else the next one to start; past trips
+  are never suggested. Only an http(s) link is kept as the place's link.
 - **D-167 — Saved places do not go through the extractor chain or the approval queue.** A place
   link is a deterministic parse, not an extraction, so it skips the LLM, the schema, the rules
   engine and the review queue the bookings use (D-31). The server does no lookups for a share

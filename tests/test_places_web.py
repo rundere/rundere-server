@@ -28,6 +28,7 @@ G_PLACE = ("https://www.google.com/maps/place/Sagrada+Fam%C3%ADlia/@41.4036,2.17
 G_DIR = "https://www.google.com/maps/dir/Toronto,+ON/Ottawa,+ON/@44.7,-77.0,8z"
 A_Q = "https://maps.apple.com/?q=Le+Bernardin&ll=40.7615,-73.9817"
 SHORT = "https://maps.app.goo.gl/AbCdEf"
+_TRIP_NAMES = ("Barcelona", "B trip", "Soon")
 
 
 @pytest.fixture(autouse=True)
@@ -39,10 +40,12 @@ def _offline(monkeypatch):
 @pytest.fixture(autouse=True)
 def _clean():
     yield
-    with SessionLocal() as s:
-        s.query(TripActivity).delete()
+    with SessionLocal() as s:                  # only what these tests made
+        ids = [t.id for t in s.query(Trip).filter(Trip.name.in_(_TRIP_NAMES)).all()]
+        s.query(TripActivity).filter(TripActivity.trip_id.in_(ids)).delete(
+            synchronize_session=False)
+        s.query(Trip).filter(Trip.id.in_(ids)).delete(synchronize_session=False)
         s.query(SavedPlace).delete()
-        s.query(Trip).delete()
         s.commit()
 
 
@@ -191,3 +194,39 @@ def test_places_page_is_own_only(monkeypatch):
             s.query(User).filter(User.username.in_(["pw_a", "pw_b"])).delete(
                 synchronize_session=False)
             s.commit()
+
+
+# ------------------------------------------------- review follow-ups on this PR
+def test_anonymous_paste_is_refused_when_sign_in_is_required(monkeypatch):
+    """/capture is a public path, so the route itself must not write an ownerless
+    row (YONDER-186) or do lookups for a stranger."""
+    from app import capture
+    monkeypatch.setattr(capture.settings, "auth_required", True)
+    r = client.post("/capture/web", data={"content": G_PLACE})
+    assert "Sign in to save places" in r.text and _places() == []
+
+
+def test_rename_a_saved_place_from_the_page():
+    pid = _save()
+    r = client.post(f"/places/{pid}/rename", data={"name": "Le Bernardin NYC"})
+    assert "Le Bernardin NYC" in r.text and _places()[0].name == "Le Bernardin NYC"
+    r = client.post(f"/places/{pid}/rename", data={"name": "  "})
+    assert "cap-msg err" in r.text and _places()[0].name == "Le Bernardin NYC"
+
+
+def test_places_page_preselects_the_suggested_trip_but_does_not_file():
+    from datetime import date, timedelta
+    pid, tid = _save(), _trip("Soon")
+    with SessionLocal() as s:
+        t = s.get(Trip, tid)
+        t.start_date = (date.today() + timedelta(days=2)).isoformat()
+        t.end_date = (date.today() + timedelta(days=5)).isoformat()
+        s.commit()
+    page = client.get("/places").text
+    assert f'<option value="{tid}" selected>' in page and "(suggested)" in page
+    assert len(_places()) == 1                                   # nothing filed by suggesting
+
+
+def test_nav_has_a_places_entry():
+    t = client.get("/places").text
+    assert 'href="/places"' in t and ">Places<" in t.replace("</span>Places<", ">Places<")

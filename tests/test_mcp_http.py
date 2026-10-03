@@ -27,7 +27,7 @@ if DEPS:
     from app.main import app
     from app.models import (AccountEvent, Base, DiscoveryFinding, DiscoveryItem, IngestBatch,
                             JournalEntry, OAuthGrant, PackingItem, PackingPlan,
-                            PersonalApiToken, TravelerIdentity, TravelItem, Trip,
+                            PersonalApiToken, SavedPlace, TravelerIdentity, TravelItem, Trip,
                             TripActivity, TripTraveler, User)
 
     Base.metadata.create_all(engine)
@@ -58,6 +58,7 @@ if DEPS:
         s.query(TravelItem).filter(TravelItem.owner_id.in_(uids)).delete(synchronize_session=False)
         s.query(IngestBatch).filter(IngestBatch.user_id.in_(uids)).delete(synchronize_session=False)
         s.query(JournalEntry).filter(JournalEntry.owner_id.in_(uids)).delete(synchronize_session=False)
+        s.query(SavedPlace).filter(SavedPlace.owner_id.in_(uids)).delete(synchronize_session=False)
         s.query(PersonalApiToken).filter(PersonalApiToken.user_id.in_(uids)).delete(
             synchronize_session=False)
         s.query(OAuthGrant).filter(OAuthGrant.user_id.in_(uids)).delete(synchronize_session=False)
@@ -315,6 +316,30 @@ if DEPS:
         with SessionLocal() as s:
             item = s.get(TravelItem, w["alice_cap"])
             assert item.trip_id == w["shared"] and item.review["trip_pinned"] is True
+
+    def test_capture_url_keeps_a_maps_place_link_as_a_saved_place(client, w, monkeypatch):
+        """A place link is no booking: it skips the review queue and needs no date
+        (YONDER-200, D-167). Own-only: the other user never sees it."""
+        from resolve import place_lookup
+        monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: None)
+        tok = _tok(w["alice"])
+        before = _batch_count(w["alice"])
+        out = ok(client, tok, "capture_url",
+                 url="https://maps.apple.com/?q=Le+Bernardin&ll=40.7615,-73.9817")
+        assert out["created"] is True and out["saved_place"]["name"] == "Le Bernardin"
+        assert "batch_id" not in out and _batch_count(w["alice"]) == before
+        with SessionLocal() as s:
+            row = s.get(SavedPlace, out["saved_place"]["id"])
+            assert row.owner_id == w["alice"] and row.source == "mcp"
+        again = ok(client, tok, "capture_url",
+                   url="https://maps.apple.com/?q=Le+Bernardin&ll=40.7615,-73.9817")
+        assert again["created"] is False and again["saved_place"]["id"] == out["saved_place"]["id"]
+        with SessionLocal() as s:
+            assert s.query(SavedPlace).filter(SavedPlace.owner_id == w["bob"]).count() == 0
+
+    def _batch_count(uid):
+        with SessionLocal() as s:
+            return s.query(IngestBatch).filter(IngestBatch.user_id == uid).count()
 
     # ------------------------------------------------------------------ Discover research
     def test_save_research_lands_on_callers_discover_only(client, w):

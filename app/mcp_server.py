@@ -29,7 +29,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 
-from app import api_v1, authn, oauth
+from app import api_v1, authn, oauth, places as places_svc
 from app.config import settings
 from app.db import SessionLocal
 from app.models import TripActivity, User
@@ -266,16 +266,30 @@ def attach_journal_entry(entry_id: Annotated[str, Field(description="Journal ent
 
 # --------------------------------------------------------------------------- capture + review
 @mcp.tool()
-def capture_url(url: Annotated[str, Field(description="A booking/web page URL or a Google/Apple "
-                                                      "Maps directions link")],
+def capture_url(url: Annotated[str, Field(description="A booking/web page URL, a Google/Apple "
+                                                      "Maps directions link, or a Google/Apple "
+                                                      "Maps PLACE link")],
                 travel_date: Annotated[str | None, Field(
                     description="YYYY-MM-DD — required for a maps directions link")] = None,
                 travel_time: Annotated[str | None, Field(description="HH:MM (directions)")] = None,
                 mode: Annotated[Literal["car", "transit", "walk"] | None, Field(
                     description="Directions travel mode")] = None,
                 title: str | None = None, notes: str | None = None) -> dict[str, Any]:
-    """Send a link into Yonder's capture pipeline. It is extracted and lands in
-    the user's review queue to approve. Returns the batch id."""
+    """Send a link into Run·dere. A booking page or directions link goes through
+    the capture pipeline and lands in the user's review queue to approve (returns
+    the batch id). A Google/Apple Maps PLACE link is instead kept as a saved
+    place for the user to file to a trip and date later (returns the saved place,
+    with a suggested trip); no travel_date is needed."""
+    from extract import place_url
+    if place_url.classify(url) == "place":
+        def _save(session, user):
+            place, created = places_svc.save(session, user, url=url, notes=notes,
+                                             source="mcp", enrich=True)
+            trips = api_v1.fileable_trips(session, user)
+            out = api_v1._place_out(place, places_svc.suggest_trip(session, trips, place))
+            return {"saved_place": out.model_dump(), "created": created,
+                    "next": "The user files it to a trip from Saved places (/places)."}
+        return _run(_save)
     return _run(api_v1.api_capture, body=api_v1.CaptureIn(
         url=url, travel_date=travel_date, travel_time=travel_time, mode=mode,
         title=title, notes=notes))

@@ -2960,6 +2960,8 @@ def activity_from_link(trip_id: str, request: Request, link: str = "",
         return HTMLResponse("", status_code=404)
     link = (link or "").strip()
     try:
+        if not link:
+            raise ValueError("")                  # nothing pasted: a blank form, no error
         atype, values = places_svc.activity_from_link(link)
     except ValueError as exc:
         ctx = _activity_modal_ctx(request, trip_id, mode="create",

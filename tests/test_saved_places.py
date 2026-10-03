@@ -206,3 +206,120 @@ if DEPS:
             assert client.get("/api/v1/places", headers=h).json() == []
         finally:
             _cleanup("sp_a")
+
+    # ---------------------------------------------------- hardening (review of this PR)
+    def test_only_http_links_are_kept_as_a_places_link():
+        """source_url is rendered as an href and becomes the activity's Map button."""
+        u = _user("sp_a")
+        try:
+            h = _bearer(u)
+            r = client.post("/api/v1/places", headers=h, json={
+                "name": "X", "source_url": "javascript:alert(1)"})
+            assert r.status_code == 201 and r.json()["source_url"] is None
+            ok = client.post("/api/v1/places", headers=h, json={
+                "name": "Y", "source_url": "https://maps.apple.com/?q=Y"})
+            assert ok.json()["source_url"] == "https://maps.apple.com/?q=Y"
+        finally:
+            _cleanup("sp_a")
+
+    def test_file_rejects_a_malformed_starts_at_and_keeps_the_place():
+        u = _user("sp_a")
+        try:
+            h = _bearer(u)
+            t = _trip("T", u.id)
+            pid = client.post("/api/v1/places", json={"url": G_PLACE}, headers=h).json()["id"]
+            for bad in ("tomorrow", "2026-13-01x", "2026-10-12 10:00"):
+                r = client.post(f"/api/v1/places/{pid}/file/{t.id}", json={"starts_at": bad},
+                                headers=h)
+                assert r.status_code == 400, bad
+            assert len(client.get("/api/v1/places", headers=h).json()) == 1
+        finally:
+            _cleanup("sp_a")
+
+    # ----------------------------------------------------------------- rename / edit
+    def test_patch_renames_and_edits_own_place_only():
+        a, b = _user("sp_a"), _user("sp_b")
+        try:
+            pid = client.post("/api/v1/places", json={"lat": 41.4, "lon": 2.17},
+                              headers=_bearer(a)).json()["id"]
+            r = client.patch(f"/api/v1/places/{pid}", headers=_bearer(a), json={
+                "name": "Sagrada Família", "address": "Carrer de Mallorca 401",
+                "activity_type": "event", "notes": "book ahead"})
+            assert r.status_code == 200, r.text
+            p = r.json()
+            assert (p["name"], p["activity_type"], p["notes"]) == (
+                "Sagrada Família", "event", "book ahead")
+            assert p["lat"] == 41.4                                  # untouched
+            assert client.patch(f"/api/v1/places/{pid}", headers=_bearer(b),
+                                json={"name": "mine now"}).status_code == 404
+            assert client.patch(f"/api/v1/places/{pid}", headers=_bearer(a),
+                                json={"name": "  "}).status_code == 400
+            assert client.patch(f"/api/v1/places/{pid}", headers=_bearer(a),
+                                json={"activity_type": "spaceship"}).status_code == 400
+        finally:
+            _cleanup("sp_a", "sp_b")
+
+    # ---------------------------------------------------------------- trip suggestion
+    def _located_activity(trip_id, lat, lon):
+        with SessionLocal() as s:
+            s.add(TripActivity(trip_id=trip_id, type="dining", values={"name": "Dinner"},
+                               geo={"points": [{"role": "place", "lat": lat, "lon": lon}]},
+                               starts_at=""))
+            s.commit()
+
+    def _set_dates(trip_id, start, end):
+        with SessionLocal() as s:
+            t = s.get(Trip, trip_id)
+            t.start_date, t.end_date = start, end
+            s.commit()
+
+    def test_suggests_the_trip_whose_stops_are_nearest_the_pin():
+        u = _user("sp_a")
+        try:
+            h = _bearer(u)
+            far, near = _trip("Paris", u.id), _trip("Barcelona", u.id)
+            _set_dates(far.id, "2099-01-01", "2099-01-05")
+            _set_dates(near.id, "2099-06-01", "2099-06-05")
+            _located_activity(far.id, 48.85, 2.35)
+            _located_activity(near.id, 41.39, 2.16)            # ~2 km from the Sagrada Família
+            client.post("/api/v1/places", json={"url": G_PLACE}, headers=h)
+            p = client.get("/api/v1/places", headers=h).json()[0]
+            assert p["suggested_trip_id"] == near.id
+        finally:
+            _cleanup("sp_a")
+
+    def test_suggestion_falls_back_to_current_then_next_and_never_a_past_trip():
+        from datetime import date, timedelta
+        u = _user("sp_a")
+        try:
+            h = _bearer(u)
+            today = date.today()
+            past = _trip("Past", u.id)
+            _set_dates(past.id, (today - timedelta(days=30)).isoformat(),
+                       (today - timedelta(days=20)).isoformat())
+            _located_activity(past.id, 41.40, 2.17)            # right on the pin, but over
+            client.post("/api/v1/places", json={"url": G_PLACE}, headers=h)
+            assert client.get("/api/v1/places", headers=h).json()[0]["suggested_trip_id"] is None
+            nxt = _trip("Next", u.id)
+            _set_dates(nxt.id, (today + timedelta(days=10)).isoformat(),
+                       (today + timedelta(days=14)).isoformat())
+            assert client.get("/api/v1/places", headers=h).json()[0]["suggested_trip_id"] == nxt.id
+            cur = _trip("Now", u.id)
+            _set_dates(cur.id, (today - timedelta(days=1)).isoformat(),
+                       (today + timedelta(days=2)).isoformat())
+            assert client.get("/api/v1/places", headers=h).json()[0]["suggested_trip_id"] == cur.id
+        finally:
+            _cleanup("sp_a")
+
+    def test_a_name_only_place_still_gets_a_date_based_suggestion():
+        from datetime import date, timedelta
+        u = _user("sp_a")
+        try:
+            h = _bearer(u)
+            t = _trip("Soon", u.id)
+            _set_dates(t.id, (date.today() + timedelta(days=3)).isoformat(),
+                       (date.today() + timedelta(days=6)).isoformat())
+            client.post("/api/v1/places", json={"name": "Some cafe"}, headers=h)
+            assert client.get("/api/v1/places", headers=h).json()[0]["suggested_trip_id"] == t.id
+        finally:
+            _cleanup("sp_a")

@@ -532,6 +532,11 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         """A Maps PLACE link (YONDER-200): kept as a saved place, not sent down the
         bookings pipeline (D-167). Nothing here needs a date or a trip."""
         from app import places as places_svc
+        if _owner is None and settings.auth_required:
+            # /capture is a public path, so the route decides: with sign-in on, an
+            # anonymous paste must not write an ownerless row (YONDER-186) or make
+            # the server fetch and look things up for a stranger.
+            return _msg(False, "Sign in to save places.")
         try:
             place, created = places_svc.save(session, _owner, url=content,
                                              source="web", enrich=True)

@@ -16,7 +16,10 @@
     {% for p in places %}
     <div class="cap-card" style="padding:12px 14px">
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-        <strong>{{ p.name }}</strong>
+        <input name="name" value="{{ p.name }}" aria-label="Name" class="cap-input sm"
+               style="width:auto;min-width:12ch;font-weight:600;padding:2px 6px"
+               hx-post="/places/{{ p.id }}/rename" hx-trigger="change"
+               hx-target="#places-panel" hx-swap="outerHTML">
         <span class="pill">{{ p.activity_type }}</span>
         {% if p.address %}<span class="age">{{ icon('pin', 14) }} {{ p.address }}</span>{% endif %}
         {% if p.source_url %}<a class="age" href="{{ p.source_url }}" target="_blank" rel="noopener noreferrer">Open in Maps</a>{% endif %}
@@ -26,7 +29,7 @@
         <select name="trip_id" class="cap-input sm" style="width:auto;font-size:12px;padding:4px 8px"
                 aria-label="Trip to file it to">
           <option value="">File to a trip…</option>
-          {% for t in trips %}<option value="{{ t.id }}">{{ t.name }}{% if t.dates %} · {{ t.dates }}{% endif %}</option>{% endfor %}
+          {% for t in trips %}<option value="{{ t.id }}" {% if suggested.get(p.id) == t.id %}selected{% endif %}>{{ t.name }}{% if suggested.get(p.id) == t.id %} (suggested){% endif %}{% if t.dates %} · {{ t.dates }}{% endif %}</option>{% endfor %}
         </select>
         <input type="date" name="starts_at" class="cap-input sm"
                style="width:auto;font-size:12px;padding:4px 8px" aria-label="Date (optional)"

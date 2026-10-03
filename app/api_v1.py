@@ -1568,6 +1568,15 @@ class SavedPlaceOut(BaseModel):
     notes: str | None = None
     source: str = "api"
     created_at: datetime | None = None
+    suggested_trip_id: str | None = None   # a hint only: the person confirms before filing
+
+
+class SavedPlacePatch(BaseModel):
+    """Edit a saved place before filing it. Only the fields sent change."""
+    name: str | None = None
+    address: str | None = None
+    notes: str | None = None
+    activity_type: str | None = None
 
 
 class SavedPlaceIn(BaseModel):
@@ -1595,11 +1604,12 @@ class SavedPlaceFileIn(BaseModel):
     traveler_ids: list[int] | None = None  # None/[] = everyone on the trip
 
 
-def _place_out(p) -> SavedPlaceOut:
+def _place_out(p, suggested_trip_id: str | None = None) -> SavedPlaceOut:
     return SavedPlaceOut(
         id=p.id, name=p.name, lat=p.lat, lon=p.lon, address=p.address,
         category=p.category, activity_type=p.activity_type, provider=p.provider,
-        source_url=p.source_url, notes=p.notes, source=p.source, created_at=p.created_at)
+        source_url=p.source_url, notes=p.notes, source=p.source, created_at=p.created_at,
+        suggested_trip_id=suggested_trip_id)
 
 
 @router.post("/places", response_model=SavedPlaceOut, status_code=201)
@@ -1619,10 +1629,32 @@ def api_place_save(body: SavedPlaceIn, response: Response, user=Depends(authn.cu
     return _place_out(place)
 
 
+def fileable_trips(session: Session, user) -> list:
+    """The trips this person can file a saved place into (the same filing rule as
+    captures, scope.filing_trip_filter)."""
+    return session.query(Trip).filter(scope.filing_trip_filter(session, user)).all()
+
+
 @router.get("/places", response_model=list[SavedPlaceOut])
 def api_place_list(user=Depends(authn.current_user),
                    session: Session = Depends(get_session)):
-    return [_place_out(p) for p in places_svc.list_places(session, user)]
+    """The caller's saved places, newest first, each with a suggested trip."""
+    trips = fileable_trips(session, user)
+    return [_place_out(p, places_svc.suggest_trip(session, trips, p))
+            for p in places_svc.list_places(session, user)]
+
+
+@router.patch("/places/{place_id}", response_model=SavedPlaceOut)
+def api_place_update(place_id: str, body: SavedPlacePatch,
+                     user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """Rename or otherwise edit a saved place before filing it."""
+    try:
+        p = places_svc.update_place(session, user, place_id,
+                                    **body.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return _place_out(p, places_svc.suggest_trip(session, fileable_trips(session, user), p))
 
 
 @router.delete("/places/{place_id}", status_code=204)
@@ -1642,6 +1674,9 @@ def file_place(session: Session, user, place_id: str, trip_id: str,
     atype, values = places_svc.activity_for(place, body.activity_type, body.notes)
     t = _activity_type_or_400(atype)
     if body.starts_at:
+        import re
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?", body.starts_at):
+            raise HTTPException(400, "starts_at must be YYYY-MM-DD or YYYY-MM-DDTHH:MM")
         values["when"] = body.starts_at
     from app.trips.enrich import prepare_activity
     values, geo = prepare_activity(t.key, values, session=session, trip_id=trip.id)
