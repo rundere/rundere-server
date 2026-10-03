@@ -83,12 +83,12 @@ def _clean(v, n: int) -> str | None:
     return v[:n] or None
 
 
-def _web_url(v, n: int = 2000) -> str | None:
-    """Only an http(s) link is kept as a place's link: it is rendered as an href
-    (the /places page) and becomes the activity's Map button, so a `javascript:`
-    or other scheme from a client must never get that far."""
+def _maps_url(v, n: int = 2000) -> str | None:
+    """Only a Google/Apple Maps link is kept as a place's link: it is rendered as an
+    href (the /places page) and becomes the activity's Map button, so neither a
+    `javascript:` link nor any other site's URL gets that far."""
     v = _clean(v, n)
-    return v if v and v.lower().startswith(("http://", "https://")) else None
+    return v if v and place_url.is_maps_link(v) else None
 
 
 def _coord(v, lo: float, hi: float) -> float | None:
@@ -137,7 +137,7 @@ def resolve_fields(*, url: str | None = None, name: str | None = None, lat=None,
     return {"name": nm, "lat": la, "lon": lo, "address": addr, "category": cat,
             "provider": prov if prov in _PROVIDERS else "other",
             "place_id": parsed.get("place_id"), "name_key": name_key(nm),
-            "source_url": _web_url(source_url) or _web_url(parsed.get("source_url")),
+            "source_url": _maps_url(source_url) or _maps_url(parsed.get("source_url")),
             "activity_type": place_url.category_for(cat)["activity"]}
 
 

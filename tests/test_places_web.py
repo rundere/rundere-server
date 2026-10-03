@@ -236,3 +236,16 @@ def test_places_page_preselects_the_suggested_trip_but_does_not_file():
 def test_nav_has_a_places_entry():
     t = client.get("/places").text
     assert 'href="/places"' in t and ">Places<" in t.replace("</span>Places<", ">Places<")
+
+
+def test_anonymous_paste_never_makes_the_server_expand_a_short_link(monkeypatch):
+    """With sign-in required, a stranger on the public /capture path must not get the
+    server to fetch a link on their behalf for a place it would refuse anyway."""
+    from app import capture
+    monkeypatch.setattr(capture.settings, "auth_required", True)
+
+    def boom(u):
+        raise AssertionError("expanded for an anonymous caller")
+    monkeypatch.setattr(maps_url, "_expand_short", boom)
+    r = client.post("/capture/web", data={"content": SHORT})
+    assert _places() == [] and "Sign in to save places" not in r.text   # the old path answers

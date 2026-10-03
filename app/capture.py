@@ -584,7 +584,10 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         # sniffing so a pasted maps link still routes correctly. An explicit
         # "page" selection skips this and is fetched as a web page.
         if path != "page":
-            if place_url.classify(content) == "place":      # expands a Google short link
+            # An anonymous caller (possible only on this public path, with sign-in on)
+            # never makes the server expand a short link for a place it would refuse.
+            anonymous = _owner is None and settings.auth_required
+            if place_url.classify(content, expand=not anonymous) == "place":
                 return _save_place()
             is_apple = apple_maps_url.looks_like_apple_maps_url(content)
             if apple_maps_url.is_apple_short_link(content):

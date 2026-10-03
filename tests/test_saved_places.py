@@ -219,6 +219,10 @@ if DEPS:
             ok = client.post("/api/v1/places", headers=h, json={
                 "name": "Y", "source_url": "https://maps.apple.com/?q=Y"})
             assert ok.json()["source_url"] == "https://maps.apple.com/?q=Y"
+            # a place is not a place to keep any other site's link
+            other = client.post("/api/v1/places", headers=h, json={
+                "name": "Z", "source_url": "https://example.com/anything"})
+            assert other.status_code == 201 and other.json()["source_url"] is None
         finally:
             _cleanup("sp_a")
 

@@ -114,3 +114,13 @@ def test_unknown_or_missing_category_falls_back_to_activity():
     for c in (None, "", "MKPOICategoryParking", "shop=whatever"):
         assert place_url.category_for(c) == {"topic": "events", "kind": "activity",
                                              "activity": "tour"}
+
+
+def test_is_maps_link_accepts_only_google_and_apple_maps_hosts():
+    for ok in (G_PLACE, G_API, A_Q, A_PLACE, SHORT, "https://maps.google.com/?q=x",
+               "https://www.google.co.uk/maps/place/Foo", "https://maps.apple/p/AbC123"):
+        assert place_url.is_maps_link(ok), ok
+    for bad in ("https://example.com/maps/place/Foo", "https://www.google.com/search?q=x",
+                "https://evil.example/https://www.google.com/maps/place/Foo",
+                "javascript:alert(1)", "ftp://maps.apple.com/?q=x", "not a url", "", None):
+        assert not place_url.is_maps_link(bad), bad

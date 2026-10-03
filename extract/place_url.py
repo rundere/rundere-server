@@ -162,6 +162,20 @@ def classify(url: str, *, expand: bool = True) -> str | None:
     return None
 
 
+def is_maps_link(url: str) -> bool:
+    """True for an http(s) link on a Google Maps or Apple Maps host (including the
+    Google share short links): the only kind of link kept on a saved place, so a
+    place can never be used to store an arbitrary URL."""
+    u = (url or "").strip()
+    parts = urlsplit(u)
+    if parts.scheme.lower() not in ("http", "https") or not parts.hostname:
+        return False
+    host = parts.hostname.lower()
+    if host in ("maps.apple.com", "maps.apple") or _is_google_short(u):
+        return True
+    return _is_google(u) and (host.startswith("maps.") or (parts.path or "").startswith("/maps"))
+
+
 def is_short_link(url: str) -> bool:
     """True for a Google share short link (not yet expanded)."""
     return _is_google_short((url or "").strip())
