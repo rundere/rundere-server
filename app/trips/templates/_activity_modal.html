@@ -7,6 +7,25 @@
       <input type="hidden" name="discovery_item_id" value="{{ discovery_item_id }}">
       <p class="bp-who-hint" style="margin-top:0">Filled in from Discover — set the time, check the rest.</p>
       {% endif %}
+      {% if mode == "create" and not discovery_item_id %}
+      {# Add by Maps link (YONDER-200, D-168): re-renders this form filled in. #}
+      <div class="field">
+        <label>Maps link <span class="bp-who-hint" style="display:inline">(optional)</span></label>
+        <div style="display:flex;gap:6px">
+          <input class="input" type="url" name="link" value="{{ link_value or '' }}"
+                 placeholder="Paste a Google or Apple Maps place link"
+                 hx-get="/trips/{{ trip_id }}/activity/from-link" hx-trigger="change"
+                 hx-target="#modal-root" hx-swap="innerHTML" hx-include="this"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();this.dispatchEvent(new Event('change',{bubbles:true}))}">
+          <button type="button" class="btn btn-ghost" style="white-space:nowrap"
+                  hx-get="/trips/{{ trip_id }}/activity/from-link"
+                  hx-target="#modal-root" hx-swap="innerHTML"
+                  hx-include="[name=link]">Fill in</button>
+        </div>
+        {% if link_error %}<div class="bp-who-hint" style="color:var(--danger,#b3261e)">{{ link_error }}</div>{% endif %}
+        {% if from_link %}<div class="bp-who-hint">Filled in from your link — check the type, then set the time (or leave it for later).</div>{% endif %}
+      </div>
+      {% endif %}
       <div class="field">
         <label>Type</label>
         <select class="input" name="activity_kind"

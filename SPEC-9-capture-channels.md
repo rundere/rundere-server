@@ -203,7 +203,7 @@ points that share one parser (`extract/place_url.py`) and one category table:
   other clients, and Rundere works without it (D-146).
 - **D-168 — Adding by link inside a trip pre-fills the type from the category and never
   guesses silently.** A confident category sets the type; otherwise it falls back to a generic
-  Tour that the person can change before saving. (Proposed; not built yet.)
+  Tour that the person can change before saving.
 
 ## 7. Decisions (proposed)
 
@@ -218,6 +218,9 @@ points that share one parser (`extract/place_url.py`) and one category table:
 - **D-166** — Saved places are an owner-scoped table; filing one consumes it.
 - **D-167** — Saved places skip the extractor chain and the approval queue.
 - **D-168** — Add-by-link in a trip pre-fills the type from the category, with a generic fallback.
+  Address and category come from Photon only when it finds a hit within 250 m of the link's own
+  pin whose name matches (the wrong-branch trap, resolve/geocode.py); name-only links are never
+  looked up.
 
 ## 8. Open questions
 

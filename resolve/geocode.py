@@ -65,8 +65,12 @@ class PhotonGeocoder:
         self.base = (base_url or "").rstrip("/")
         self.timeout = timeout
 
-    def _query(self, q: str, limit: int = 5) -> list[dict]:
-        url = f"{self.base}/api?{urllib.parse.urlencode({'q': q, 'limit': limit})}"
+    def _query(self, q: str, limit: int = 5,
+               near: tuple[float, float] | None = None) -> list[dict]:
+        params = {"q": q, "limit": limit}
+        if near is not None:          # Photon biases results towards lat/lon
+            params["lat"], params["lon"] = near
+        url = f"{self.base}/api?{urllib.parse.urlencode(params)}"
         try:
             with urllib.request.urlopen(url, timeout=self.timeout) as resp:
                 data = json.loads(resp.read())

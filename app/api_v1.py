@@ -1610,7 +1610,8 @@ def api_place_save(body: SavedPlaceIn, response: Response, user=Depends(authn.cu
         place, created = places_svc.save(
             session, user, url=body.url, name=body.name, lat=body.lat, lon=body.lon,
             address=body.address, category=body.category, provider=body.provider,
-            source_url=body.source_url, notes=body.notes, source=body.source)
+            source_url=body.source_url, notes=body.notes, source=body.source,
+            enrich=True)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     if not created:
@@ -1631,14 +1632,11 @@ def api_place_delete(place_id: str, user=Depends(authn.current_user),
     return None
 
 
-@router.post("/places/{place_id}/file/{trip_id}", response_model=ActivityOut,
-             status_code=201)
-def api_place_file(place_id: str, trip_id: str, body: SavedPlaceFileIn,
-                   user=Depends(authn.current_user),
-                   session: Session = Depends(get_session)):
+def file_place(session: Session, user, place_id: str, trip_id: str,
+               body: SavedPlaceFileIn) -> ActivityOut:
     """File a saved place to a trip: creates the timeline activity and consumes
     the saved place (D-166). Needs edit access to the trip; the activity is
-    undated unless `starts_at` is given."""
+    undated unless `starts_at` is given. Shared by the API and the web page."""
     place = places_svc.require_place(session, user, place_id)
     trip = scope.require_trip(session, user, trip_id, edit=True)
     atype, values = places_svc.activity_for(place, body.activity_type, body.notes)
@@ -1656,3 +1654,12 @@ def api_place_file(place_id: str, trip_id: str, body: SavedPlaceFileIn,
     session.commit()
     session.refresh(a)
     return _activity_out(a, tagged)
+
+
+@router.post("/places/{place_id}/file/{trip_id}", response_model=ActivityOut,
+             status_code=201)
+def api_place_file(place_id: str, trip_id: str, body: SavedPlaceFileIn,
+                   user=Depends(authn.current_user),
+                   session: Session = Depends(get_session)):
+    """File a saved place to a trip (see `file_place`)."""
+    return file_place(session, user, place_id, trip_id, body)
