@@ -14,11 +14,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import authn, journal as journal_svc, scope
+from app import authn, journal as journal_svc, places as places_svc, scope
 from app.db import get_session
 from app.models import (DiscoveryFinding, JournalEntry, PackingItem, PackingPlan,
                         TravelItem, TravelerIdentity, Trip, TripActivity,
@@ -1552,3 +1552,107 @@ def api_journal_delete(entry_id: str, user=Depends(authn.current_user),
                        session: Session = Depends(get_session)):
     journal_svc.delete_entry(session, user, entry_id)
     return None
+
+
+# --------------------------------------------------------------------------- saved places (YONDER-200)
+class SavedPlaceOut(BaseModel):
+    id: str
+    name: str
+    lat: float | None = None
+    lon: float | None = None
+    address: str | None = None
+    category: str | None = None
+    activity_type: str
+    provider: str
+    source_url: str | None = None
+    notes: str | None = None
+    source: str = "api"
+    created_at: datetime | None = None
+
+
+class SavedPlaceIn(BaseModel):
+    """Save a place. Either a Google/Apple Maps `url` for the server to parse, or
+    the details the app already resolved on the phone (MapKit, D-166); anything
+    supplied alongside a url overrides what the url yielded."""
+    url: str | None = None
+    name: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    address: str | None = None
+    category: str | None = None            # MKPointOfInterestCategory or an OSM tag
+    provider: str | None = None            # google | apple
+    source_url: str | None = None
+    notes: str | None = None
+    source: str = "api"
+
+
+class SavedPlaceFileIn(BaseModel):
+    """File a saved place to a trip as a timeline activity. All optional: with no
+    date it lands undated (sorts last) to be scheduled later."""
+    starts_at: str | None = None           # YYYY-MM-DD or YYYY-MM-DDTHH:MM local
+    activity_type: str | None = None       # override the category's suggestion
+    notes: str | None = None
+    traveler_ids: list[int] | None = None  # None/[] = everyone on the trip
+
+
+def _place_out(p) -> SavedPlaceOut:
+    return SavedPlaceOut(
+        id=p.id, name=p.name, lat=p.lat, lon=p.lon, address=p.address,
+        category=p.category, activity_type=p.activity_type, provider=p.provider,
+        source_url=p.source_url, notes=p.notes, source=p.source, created_at=p.created_at)
+
+
+@router.post("/places", response_model=SavedPlaceOut, status_code=201)
+def api_place_save(body: SavedPlaceIn, response: Response, user=Depends(authn.current_user),
+                   session: Session = Depends(get_session)):
+    """Save a place for the caller. 201 when new, 200 when they had already saved it."""
+    try:
+        place, created = places_svc.save(
+            session, user, url=body.url, name=body.name, lat=body.lat, lon=body.lon,
+            address=body.address, category=body.category, provider=body.provider,
+            source_url=body.source_url, notes=body.notes, source=body.source)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if not created:
+        response.status_code = 200
+    return _place_out(place)
+
+
+@router.get("/places", response_model=list[SavedPlaceOut])
+def api_place_list(user=Depends(authn.current_user),
+                   session: Session = Depends(get_session)):
+    return [_place_out(p) for p in places_svc.list_places(session, user)]
+
+
+@router.delete("/places/{place_id}", status_code=204)
+def api_place_delete(place_id: str, user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    places_svc.delete_place(session, user, place_id)
+    return None
+
+
+@router.post("/places/{place_id}/file/{trip_id}", response_model=ActivityOut,
+             status_code=201)
+def api_place_file(place_id: str, trip_id: str, body: SavedPlaceFileIn,
+                   user=Depends(authn.current_user),
+                   session: Session = Depends(get_session)):
+    """File a saved place to a trip: creates the timeline activity and consumes
+    the saved place (D-166). Needs edit access to the trip; the activity is
+    undated unless `starts_at` is given."""
+    place = places_svc.require_place(session, user, place_id)
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    atype, values = places_svc.activity_for(place, body.activity_type, body.notes)
+    t = _activity_type_or_400(atype)
+    if body.starts_at:
+        values["when"] = body.starts_at
+    from app.trips.enrich import prepare_activity
+    values, geo = prepare_activity(t.key, values, session=session, trip_id=trip.id)
+    a = TripActivity(trip_id=trip.id, type=t.key, values=values, geo=geo,
+                     starts_at=values.get("when") or "")
+    session.add(a)
+    session.flush()
+    tagged = _set_activity_travelers(session, a, body.traveler_ids or [])
+    session.delete(place)
+    session.commit()
+    session.refresh(a)
+    return _activity_out(a, tagged)

@@ -177,6 +177,34 @@ The page's own capture box is not a tab, because it needs no setup.
   extension has a short lifetime, and the app's own capture screen may be the better place. That
   needs a look at how the app shows results before it is decided.
 
+## 6b. Proposed: saved places from Maps links (D-166, D-167, D-168; YONDER-200)
+
+A Google or Apple Maps **place** link (a restaurant, museum, hotel, viewpoint) has two entry
+points that share one parser (`extract/place_url.py`) and one category table:
+
+1. **Saved place (no trip).** Shared from Google or Apple Maps to the app, or pasted into the
+   capture page. It is kept as a *saved place* until the person files it to a trip and, later,
+   a date.
+2. **Add by link inside a trip.** In a trip, paste a Maps link instead of choosing a type first.
+   The name, pin and a suggested type come from the link and a lookup, and it lands on the
+   timeline directly (D-168).
+
+- **D-166 — Saved places are their own owner-scoped table (`saved_places`), not captures.**
+  Own-only like the journal, and with no admin view: a person's wishlist is theirs. Ownerless
+  rows are closed (YONDER-186). Re-saving the same place returns the existing row. Filing it to
+  a trip builds a timeline activity and **consumes** the row, so there is no trip link to
+  dangle. An undated activity is fine: it is scheduled later (see the unscheduled-items items,
+  YONDER-207 to 209).
+- **D-167 — Saved places do not go through the extractor chain or the approval queue.** A place
+  link is a deterministic parse, not an extraction, so it skips the LLM, the schema, the rules
+  engine and the review queue the bookings use (D-31). The server does no lookups for a share
+  from iOS: the app resolves address and category on the phone with MapKit and sends them. The
+  server's own path (URL parse, then the optional Photon step) is the fallback for web, MCP and
+  other clients, and Rundere works without it (D-146).
+- **D-168 — Adding by link inside a trip pre-fills the type from the category and never
+  guesses silently.** A confident category sets the type; otherwise it falls back to a generic
+  Tour that the person can change before saving. (Proposed; not built yet.)
+
 ## 7. Decisions (proposed)
 
 - **D-158** — Capture-page captures start processing immediately; approval stays human (D-31).
@@ -187,6 +215,9 @@ The page's own capture box is not a tab, because it needs no setup.
 - **D-163** — The iOS Share Extension confirms receipt with a notification at minimum.
 - **D-164** — The Gmail add-on no longer moves labels and no longer asks for `gmail.modify`;
   it only reads the open email. Supersedes D-26.
+- **D-166** — Saved places are an owner-scoped table; filing one consumes it.
+- **D-167** — Saved places skip the extractor chain and the approval queue.
+- **D-168** — Add-by-link in a trip pre-fills the type from the category, with a generic fallback.
 
 ## 8. Open questions
 
