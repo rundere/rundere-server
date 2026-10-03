@@ -50,6 +50,12 @@ def _clean():
 
 
 def _places():
+    """The saved (not filed, not removed) places."""
+    with SessionLocal() as s:
+        return s.query(SavedPlace).filter(SavedPlace.status == "saved").all()
+
+
+def _all_places():
     with SessionLocal() as s:
         return s.query(SavedPlace).all()
 

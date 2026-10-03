@@ -36,6 +36,9 @@ _GOOGLE_HOST = re.compile(r"^(www\.|maps\.)?google\.[a-z.]{2,6}$")
 _PLACE_PATH = re.compile(r"/maps/place/([^/@?#]+)")
 _SEARCH_PATH = re.compile(r"/maps/search/([^/@?#]+)")
 _AT_COORDS = re.compile(r"@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)")
+# Google's feature id for a place (0x…:0x…), in the data blob as !1s… or as ?ftid=. It is
+# a stable identity for a place, so it lets a re-import of the same list recognise it.
+_FTID = re.compile(r"!1s(0x[0-9a-f]+:0x[0-9a-f]+)", re.I)
 _PIN_COORDS = re.compile(r"!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)")
 _COORD_PAIR = re.compile(r"^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
 
@@ -98,7 +101,9 @@ def _google(url: str) -> dict | None:
             lat, lon = _pair((q.get(key) or [None])[0])
             if lat is not None:
                 break
-    place_id = (q.get("query_place_id") or [None])[0]
+    ftid = _FTID.search(url)
+    place_id = ((q.get("query_place_id") or [None])[0] or (q.get("ftid") or [None])[0]
+                or (ftid.group(1).lower() if ftid else None))
     if not (name or lat is not None):
         return None
     return _place("google", url, name=name, lat=lat, lon=lon, place_id=place_id)
@@ -155,6 +160,11 @@ def classify(url: str, *, expand: bool = True) -> str | None:
     if maps_url.looks_like_maps_url(u) or apple_maps_url.looks_like_apple_maps_url(u):
         return "directions"
     return None
+
+
+def is_short_link(url: str) -> bool:
+    """True for a Google share short link (not yet expanded)."""
+    return _is_google_short((url or "").strip())
 
 
 def resolved_url(url: str) -> str:

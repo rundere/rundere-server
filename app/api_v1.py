@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app import authn, journal as journal_svc, places as places_svc, scope
 from app.db import get_session
 from app.models import (DiscoveryFinding, JournalEntry, PackingItem, PackingPlan,
-                        TravelItem, TravelerIdentity, Trip, TripActivity,
+                        SavedPlace, TravelItem, TravelerIdentity, Trip, TripActivity,
                         TripTraveler)
 
 router = APIRouter(prefix="/api/v1")
@@ -1568,7 +1568,11 @@ class SavedPlaceOut(BaseModel):
     notes: str | None = None
     source: str = "api"
     created_at: datetime | None = None
+    status: str = "saved"                  # saved | filed | dismissed (the last two are tombstones)
     suggested_trip_id: str | None = None   # a hint only: the person confirms before filing
+    # What a save just did (POST only): created | revived | duplicate | near_duplicate |
+    # already_filed | removed_earlier. Lets a retrying client tell "added" from "already there".
+    outcome: str | None = None
 
 
 class SavedPlacePatch(BaseModel):
@@ -1593,6 +1597,35 @@ class SavedPlaceIn(BaseModel):
     source_url: str | None = None
     notes: str | None = None
     source: str = "api"
+    # Re-add a place the person removed earlier. Never re-adds one that was filed.
+    revive: bool = False
+
+
+class SavedPlaceBatchIn(BaseModel):
+    """Save a list of places in one call (a Google list, a Takeout export). Safe to
+    send twice: each place is saved at most once, and anything filed or removed
+    earlier is skipped and reported."""
+    places: list[SavedPlaceIn]
+    dry_run: bool = False                  # report what each would do; write nothing
+    enrich: bool = False                   # Photon address/category; small batches only
+    revive: bool = False
+    allow_near_duplicates: bool = False    # also add a same-name place within 150 m
+
+
+class SavedPlaceBatchResult(BaseModel):
+    index: int
+    outcome: str                           # created | revived | duplicate | near_duplicate |
+                                           # already_filed | removed_earlier | error
+    id: str | None = None
+    name: str | None = None
+    existing_status: str | None = None
+    error: str | None = None
+
+
+class SavedPlaceBatchOut(BaseModel):
+    dry_run: bool
+    counts: dict[str, int]
+    results: list[SavedPlaceBatchResult]
 
 
 class SavedPlaceFileIn(BaseModel):
@@ -1604,29 +1637,50 @@ class SavedPlaceFileIn(BaseModel):
     traveler_ids: list[int] | None = None  # None/[] = everyone on the trip
 
 
-def _place_out(p, suggested_trip_id: str | None = None) -> SavedPlaceOut:
+def _place_out(p, suggested_trip_id: str | None = None,
+               outcome: str | None = None) -> SavedPlaceOut:
     return SavedPlaceOut(
         id=p.id, name=p.name, lat=p.lat, lon=p.lon, address=p.address,
         category=p.category, activity_type=p.activity_type, provider=p.provider,
         source_url=p.source_url, notes=p.notes, source=p.source, created_at=p.created_at,
-        suggested_trip_id=suggested_trip_id)
+        status=p.status, suggested_trip_id=suggested_trip_id, outcome=outcome)
 
 
 @router.post("/places", response_model=SavedPlaceOut, status_code=201)
 def api_place_save(body: SavedPlaceIn, response: Response, user=Depends(authn.current_user),
                    session: Session = Depends(get_session)):
-    """Save a place for the caller. 201 when new, 200 when they had already saved it."""
+    """Save a place for the caller. Safe to repeat or retry (an offline outbox, a
+    double tap): 201 when it was added, 200 when it was already there or had been
+    filed or removed, with `outcome` saying which."""
     try:
-        place, created = places_svc.save(
+        place, outcome = places_svc.save(
             session, user, url=body.url, name=body.name, lat=body.lat, lon=body.lon,
             address=body.address, category=body.category, provider=body.provider,
             source_url=body.source_url, notes=body.notes, source=body.source,
-            enrich=True)
+            enrich=True, revive=body.revive)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    if not created:
+    if outcome not in (places_svc.CREATED, places_svc.REVIVED):
         response.status_code = 200
-    return _place_out(place)
+    suggested = (places_svc.suggest_trip(session, fileable_trips(session, user), place)
+                 if place.status == places_svc.SAVED else None)
+    return _place_out(place, suggested, outcome)
+
+
+@router.post("/places/batch", response_model=SavedPlaceBatchOut)
+def api_place_batch(body: SavedPlaceBatchIn, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """Save many places in one call. Each item is judged and committed on its own:
+    a bad item is reported, not fatal, and sending the same list again adds
+    nothing. Use `dry_run` first to see what would happen."""
+    try:
+        out = places_svc.save_many(
+            session, user, [p.model_dump() for p in body.places], dry_run=body.dry_run,
+            enrich=body.enrich, revive=body.revive,
+            allow_near_duplicates=body.allow_near_duplicates, source="api")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return out
 
 
 def fileable_trips(session: Session, user) -> list:
@@ -1666,9 +1720,10 @@ def api_place_delete(place_id: str, user=Depends(authn.current_user),
 
 def file_place(session: Session, user, place_id: str, trip_id: str,
                body: SavedPlaceFileIn) -> ActivityOut:
-    """File a saved place to a trip: creates the timeline activity and consumes
-    the saved place (D-166). Needs edit access to the trip; the activity is
-    undated unless `starts_at` is given. Shared by the API and the web page."""
+    """File a saved place to a trip: creates the timeline activity and marks the
+    place filed (D-166, D-169). Needs edit access to the trip; the activity is
+    undated unless `starts_at` is given. Filing twice is a 409. Shared by the API
+    and the web page."""
     place = places_svc.require_place(session, user, place_id)
     trip = scope.require_trip(session, user, trip_id, edit=True)
     atype, values = places_svc.activity_for(place, body.activity_type, body.notes)
@@ -1682,10 +1737,17 @@ def file_place(session: Session, user, place_id: str, trip_id: str,
     values, geo = prepare_activity(t.key, values, session=session, trip_id=trip.id)
     a = TripActivity(trip_id=trip.id, type=t.key, values=values, geo=geo,
                      starts_at=values.get("when") or "")
+    # Claim the place first, atomically: of two requests filing it at once (a
+    # double tap, a retry) exactly one wins, so it never lands on a trip twice.
+    claimed = (session.query(SavedPlace)
+               .filter(SavedPlace.id == place.id, SavedPlace.status == places_svc.SAVED)
+               .update({"status": places_svc.FILED}, synchronize_session=False))
+    if claimed != 1:
+        session.rollback()
+        raise HTTPException(409, "this place was already filed to a trip")
     session.add(a)
     session.flush()
     tagged = _set_activity_travelers(session, a, body.traveler_ids or [])
-    session.delete(place)
     session.commit()
     session.refresh(a)
     return _activity_out(a, tagged)

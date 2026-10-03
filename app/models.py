@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import (Boolean, DateTime, Float, ForeignKey, Integer, JSON,
+from sqlalchemy import (Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON,
                         String, Text, UniqueConstraint)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -968,10 +968,21 @@ class SavedPlace(Base):
     server looks nothing up for this row: `address`/`category` are whatever the
     client (iOS MapKit) or the optional Photon step supplied (D-146)."""
     __tablename__ = "saved_places"
+    # One row per place per owner, enforced by the database (D-169): two requests
+    # saving the same place at once cannot both insert. (A NULL owner — the auth-off
+    # single-user world — is not covered by a unique index; the service checks.)
+    __table_args__ = (Index("uq_saved_places_owner_key", "owner_id", "place_key",
+                            unique=True),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
-    place_key: Mapped[str] = mapped_column(String(200), index=True)
+    place_key: Mapped[str] = mapped_column(String(200))
+    name_key: Mapped[str] = mapped_column(String(200), default="", index=True)  # near-duplicate check
+    # saved = waiting to be filed; filed = became a timeline activity; dismissed =
+    # the person removed it. The last two are kept as tombstones (D-169) so
+    # re-importing a list never re-adds what was already handled.
+    status: Mapped[str] = mapped_column(String(10), default="saved", server_default="saved",
+                                        index=True)
     name: Mapped[str] = mapped_column(String(300))
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)

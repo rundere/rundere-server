@@ -58,7 +58,11 @@ get); for a city's local phrases use save_phrases; for Safety & Transport use
 save_safety. Items in get_trip's
 `discovery_items` can go on the timeline with add_item_to_timeline. The
 research_* prompts are step-by-step research kits for these. Dates are
-ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items)."""
+ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items).
+Saved places are Maps places the user kept before choosing a trip: capture_url
+saves one from a link, save_places pushes a whole list (try dry_run first; it is
+safe to repeat), list_saved_places shows them and file_saved_place puts one on a
+trip, undated if the user hasn't decided when."""
 
 mcp = MCPServer("Run·dere", instructions=INSTRUCTIONS, version=settings.app_version)
 
@@ -283,16 +287,105 @@ def capture_url(url: Annotated[str, Field(description="A booking/web page URL, a
     from extract import place_url
     if place_url.classify(url) == "place":
         def _save(session, user):
-            place, created = places_svc.save(session, user, url=url, notes=notes,
+            place, outcome = places_svc.save(session, user, url=url, notes=notes,
                                              source="mcp", enrich=True)
             trips = api_v1.fileable_trips(session, user)
-            out = api_v1._place_out(place, places_svc.suggest_trip(session, trips, place))
-            return {"saved_place": out.model_dump(), "created": created,
-                    "next": "The user files it to a trip from Saved places (/places)."}
+            suggested = (places_svc.suggest_trip(session, trips, place)
+                         if place.status == places_svc.SAVED else None)
+            out = api_v1._place_out(place, suggested, outcome)
+            return {"saved_place": out.model_dump(), "outcome": outcome,
+                    "next": "File it with file_saved_place, or the user does it from "
+                            "Saved places (/places)."}
         return _run(_save)
     return _run(api_v1.api_capture, body=api_v1.CaptureIn(
         url=url, travel_date=travel_date, travel_time=travel_time, mode=mode,
         title=title, notes=notes))
+
+
+# --------------------------------------------------------------------------- saved places
+@mcp.tool()
+def list_saved_places() -> dict[str, Any]:
+    """The user's saved places: Google/Apple Maps places they kept before choosing a
+    trip, newest first, each with a `suggested_trip_id` (a hint, never a decision).
+    Filed and removed places are not listed."""
+    def _list(session, user):
+        trips = api_v1.fileable_trips(session, user)
+        rows = [api_v1._place_out(p, places_svc.suggest_trip(session, trips, p))
+                for p in places_svc.list_places(session, user)]
+        return {"count": len(rows), "places": [r.model_dump() for r in rows]}
+    return _run(_list)
+
+
+@mcp.tool()
+def save_places(places: Annotated[list[api_v1.SavedPlaceIn], Field(
+                    description="Up to 200 places. Each needs a `url` (a full Google/Apple Maps "
+                                "place link) or a `name` and/or `lat`+`lon`; add `address`, "
+                                "`category` (an OSM tag like amenity=restaurant, or a MapKit "
+                                "category), `notes` and `source_url` when you have them. For a "
+                                "Google Takeout list, map each entry's title, note, address, "
+                                "coordinates and Maps URL to these fields.")],
+                dry_run: Annotated[bool, Field(
+                    description="Report what each place would do and write nothing. Use it "
+                                "first to review a list before pushing it.")] = False,
+                enrich: Annotated[bool, Field(
+                    description="Look up address and category via the server's geocoder for "
+                                "places missing them. At most 25 places per call.")] = False,
+                revive: Annotated[bool, Field(
+                    description="Re-add places the user removed earlier. Never re-adds a "
+                                "place that was already filed to a trip.")] = False,
+                allow_near_duplicates: Annotated[bool, Field(
+                    description="Also add a place with the same name within 150 m of one "
+                                "already saved.")] = False) -> dict[str, Any]:
+    """Save a list of places for the user, for example a Google Maps list you have
+    read from a Takeout export, after choosing the ones worth keeping. Safe to run
+    twice: each place is saved at most once, a place already saved, filed to a trip
+    or removed is skipped and reported, and one bad entry never stops the rest.
+    Returns `counts` and one `results` row per place, in order, with an `outcome`:
+    created, revived, duplicate, near_duplicate, already_filed, removed_earlier or
+    error (with a reason)."""
+    return _run(lambda session, user: places_svc.save_many(
+        session, user, [p.model_dump() for p in places], dry_run=dry_run, enrich=enrich,
+        revive=revive, allow_near_duplicates=allow_near_duplicates, source="mcp"))
+
+
+@mcp.tool()
+def update_saved_place(place_id: Annotated[str, Field(description="Saved place id (from list_saved_places)")],
+                       name: str | None = None, address: str | None = None,
+                       notes: str | None = None,
+                       activity_type: Annotated[str | None, Field(
+                           description="A type from list_activity_types, e.g. dining, tour, "
+                                       "lodging, event")] = None) -> dict[str, Any]:
+    """Rename or edit a saved place before it is filed. Only the fields you pass change."""
+    return _run(lambda session, user: api_v1._place_out(places_svc.update_place(
+        session, user, place_id, name=name, address=address, notes=notes,
+        activity_type=activity_type)).model_dump())
+
+
+@mcp.tool()
+def file_saved_place(place_id: Annotated[str, Field(description="Saved place id")],
+                     trip_id: TripId,
+                     starts_at: Annotated[str | None, Field(
+                         description="YYYY-MM-DD or YYYY-MM-DDTHH:MM local. Omit to leave it "
+                                     "undated, to be scheduled later")] = None,
+                     activity_type: str | None = None, notes: str | None = None,
+                     traveler_ids: TravelerIds = None) -> dict[str, Any]:
+    """File a saved place onto a trip's timeline as an activity (the user's own trips or
+    ones they can edit). Filing a place that was already filed is refused (409), so a
+    retry never adds it twice."""
+    return _run(lambda session, user: api_v1.file_place(
+        session, user, place_id, trip_id, api_v1.SavedPlaceFileIn(
+            starts_at=starts_at, activity_type=activity_type, notes=notes,
+            traveler_ids=traveler_ids)))
+
+
+@mcp.tool()
+def remove_saved_place(place_id: Annotated[str, Field(description="Saved place id")]) -> dict[str, Any]:
+    """Remove a saved place. Re-sending a list that still contains it will not bring it
+    back unless `revive` is set."""
+    def _rm(session, user):
+        places_svc.delete_place(session, user, place_id)
+        return {"ok": True, "place_id": place_id}
+    return _run(_rm)
 
 
 @mcp.tool()

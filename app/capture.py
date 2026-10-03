@@ -538,14 +538,21 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
             # the server fetch and look things up for a stranger.
             return _msg(False, "Sign in to save places.")
         try:
-            place, created = places_svc.save(session, _owner, url=content,
-                                             source="web", enrich=True)
+            place, outcome = places_svc.save(session, _owner, url=content,
+                                             source="web", enrich=True, revive=True)
         except ValueError as exc:
             return _msg(False, str(exc))
+        said = {"created": f"Saved “{place.name}”.",
+                "revived": f"Saved “{place.name}” again (you had removed it).",
+                "duplicate": f"“{place.name}” was already in your saved places.",
+                "near_duplicate": f"“{place.name}” looks like a place you already have, so it was "
+                                  "not added again.",
+                "already_filed": f"“{place.name}” was already filed to a trip.",
+                "removed_earlier": f"You removed “{place.name}” earlier."}[outcome]
         return templates.TemplateResponse(request, "_capture_result.html", {
-            "ok": True, "place_id": place.id,
-            "message": (f"Saved “{place.name}”." if created
-                        else f"“{place.name}” was already in your saved places.")})
+            "ok": True, "message": said,
+            "place_id": place.id if outcome in ("created", "revived", "duplicate",
+                                                "near_duplicate") else None})
 
     # Explicit directions paths: the selection is authoritative, so looks_like_*
     # validates the pasted URL against the chosen provider (SPEC-4 §2.1) — but a

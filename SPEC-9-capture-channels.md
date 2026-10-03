@@ -192,8 +192,7 @@ points that share one parser (`extract/place_url.py`) and one category table:
 - **D-166 — Saved places are their own owner-scoped table (`saved_places`), not captures.**
   Own-only like the journal, and with no admin view: a person's wishlist is theirs. Ownerless
   rows are closed (YONDER-186). Re-saving the same place returns the existing row. Filing it to
-  a trip builds a timeline activity and **consumes** the row, so there is no trip link to
-  dangle. An undated activity is fine: it is scheduled later (see the unscheduled-items items,
+  a trip builds a timeline activity and marks the row filed (D-169). An undated activity is fine: it is scheduled later (see the unscheduled-items items,
   YONDER-207 to 209). A saved place can be renamed and edited before filing. The picker
   pre-selects a suggested trip, never files on its own: the trip whose located stops are nearest
   the pin (within 100 km), else the trip covering today, else the next one to start; past trips
@@ -204,6 +203,26 @@ points that share one parser (`extract/place_url.py`) and one category table:
   from iOS: the app resolves address and category on the phone with MapKit and sends them. The
   server's own path (URL parse, then the optional Photon step) is the fallback for web, MCP and
   other clients, and Rundere works without it (D-146).
+- **D-169 — A saved place is never saved or filed twice, and what was handled stays handled.**
+  One row per place per owner, backed by a unique index on `(owner_id, place_key)`, so two
+  simultaneous saves make one row (the loser gets the winner's row). Filing and removing keep
+  the row as a tombstone (`status` filed or dismissed, no trip link kept), so re-sending a list
+  never re-adds a place that was filed or removed; `revive` re-adds a removed one, never a
+  filed one. Filing claims the row atomically, so of two simultaneous filings one wins and the
+  other gets a 409. A place is the same place by its provider id (Google's `0x…:0x…` feature id
+  is read from the link), else by name plus pin to about 11 m; a same-name place within 150 m
+  is reported as a near-duplicate (a Google entry and an Apple share of the same café). This
+  revises D-166, which consumed the row on filing.
+- **D-170 — A list can be pushed in one call, safely and reviewably.** `POST /api/v1/places/batch`
+  and the MCP `save_places` take up to 200 places. Each is judged and committed on its own, so a
+  bad entry or a lost race never costs the rest and re-sending the same list changes nothing.
+  `dry_run` reports what each would do and writes nothing, so a list (for example a Google Maps
+  list read from a Takeout export) can be reviewed before it is pushed. The outcome per place is
+  one of created, revived, duplicate, near_duplicate, already_filed, removed_earlier or error. A
+  batch never expands a short link or looks up an address unless asked (25 places at most): one
+  network call per place is not one paste. The agent maps each Takeout entry's fields (title,
+  note, address, coordinates, Maps URL) to the place fields; the server does not parse Takeout
+  files.
 - **D-168 — Adding by link inside a trip pre-fills the type from the category and never
   guesses silently.** A confident category sets the type; otherwise it falls back to a generic
   Tour that the person can change before saving.
@@ -220,6 +239,8 @@ points that share one parser (`extract/place_url.py`) and one category table:
   it only reads the open email. Supersedes D-26.
 - **D-166** — Saved places are an owner-scoped table; filing one consumes it.
 - **D-167** — Saved places skip the extractor chain and the approval queue.
+- **D-169** — A saved place is never saved or filed twice; filed and removed ones are tombstones.
+- **D-170** — A list is pushed with a batch call: per-place outcomes, dry run, safe to repeat.
 - **D-168** — Add-by-link in a trip pre-fills the type from the category, with a generic fallback.
   Address and category come from Photon only when it finds a hit within 250 m of the link's own
   pin whose name matches (the wrong-branch trap, resolve/geocode.py); name-only links are never
@@ -234,3 +255,28 @@ points that share one parser (`extract/place_url.py`) and one category table:
 3. iOS: result cards in the extension, in the app after the notification, or neither?
 4. Email: if the admin's provider does not support plus addressing, is a per-user mailbox or a
    shared mailbox with a sender allow-list the fallback?
+
+
+## 9. iOS Share Extension contract for saved places (D-166 to D-170)
+
+What the Share Extension (and the app) can rely on. All calls use the app's bearer token.
+
+- **Save:** `POST /api/v1/places` with `{url}` for a Maps link, or the details the phone
+  resolved with MapKit: `{name, lat, lon, address, category, provider, source_url, source: "ios"}`.
+  Fields sent alongside a `url` win over what the server parses. Only an http(s)
+  `source_url` is kept.
+- **Response:** the saved place with `status`, `suggested_trip_id` (a hint for the sheet's trip
+  picker, never a decision) and `outcome`. `201` means it was added (`created`, `revived`);
+  `200` means it was not (`duplicate`, `near_duplicate`, `already_filed`, `removed_earlier`).
+- **Retries are safe.** The offline outbox can resend a save: the server saves it once, and
+  tells a retry after the person filed or removed the place (`already_filed`,
+  `removed_earlier`) instead of adding it back. Send `revive: true` only for an explicit "save
+  it again".
+- **Add to timeline now:** save, then `POST /api/v1/places/{id}/file/{trip_id}` with an optional
+  `starts_at` (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`; omit for undated) and `activity_type`.
+  Filing twice is a `409`. The trip picker's list is `GET /api/v1/places` (each carries its
+  `suggested_trip_id`) plus the trips the app already has.
+- **Rename or correct before filing:** `PATCH /api/v1/places/{id}`.
+- **Open question for the app side:** what the Apple Maps and Google Maps share sheets actually
+  hand to an extension on current iOS (URL only, a `.vcf` card, or text). The server accepts a
+  Maps URL or resolved fields, so it works either way; the app decides how to get them.
