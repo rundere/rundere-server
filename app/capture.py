@@ -476,10 +476,20 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     ctype = request.headers.get("Content-Type", "")
     submitted_by = _submitted_by(request)
     # Phase 2 (D-120): attribute the capture to the submitting Yonder user (from
-    # the session cookie / bearer / trusted proxy). None => an open capture.
+    # the session cookie / bearer / trusted proxy). None => an open capture, which
+    # exists only with sign-in off (the gate just below refuses it otherwise).
     from app import authn
     _owner = authn.resolve_user(session, request)
     owner_user_id = _owner.id if _owner else None
+    if _owner is None and settings.auth_required:
+        # /capture is a public path in the auth gate (it serves the login-free handoff and
+        # setup pages), so THIS route must authenticate itself: with sign-in on, nothing is
+        # fetched, parsed or stored for a stranger, and no capture is ever ownerless
+        # (YONDER-186, YONDER-210). htmx does not swap a 4xx, so the form is sent to login.
+        if ctype.startswith("text/html"):
+            return PlainTextResponse("Run·dere: sign in to capture.", status_code=401)
+        return HTMLResponse('<div class="cap-msg err">Sign in to capture.</div>',
+                            status_code=401, headers={"HX-Redirect": "/login?next=/capture"})
 
     # --- bookmarklet path: raw page HTML in the body ---
     if ctype.startswith("text/html"):
@@ -532,11 +542,6 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         """A Maps PLACE link (YONDER-200): kept as a saved place, not sent down the
         bookings pipeline (D-167). Nothing here needs a date or a trip."""
         from app import places as places_svc
-        if _owner is None and settings.auth_required:
-            # /capture is a public path, so the route decides: with sign-in on, an
-            # anonymous paste must not write an ownerless row (YONDER-186) or make
-            # the server fetch and look things up for a stranger.
-            return _msg(False, "Sign in to save places.")
         try:
             place, outcome = places_svc.save(session, _owner, url=content,
                                              source="web", enrich=True, revive=True)
@@ -584,10 +589,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         # sniffing so a pasted maps link still routes correctly. An explicit
         # "page" selection skips this and is fetched as a web page.
         if path != "page":
-            # An anonymous caller (possible only on this public path, with sign-in on)
-            # never makes the server expand a short link for a place it would refuse.
-            anonymous = _owner is None and settings.auth_required
-            if place_url.classify(content, expand=not anonymous) == "place":
+            if place_url.classify(content) == "place":      # expands a Google short link
                 return _save_place()
             is_apple = apple_maps_url.looks_like_apple_maps_url(content)
             if apple_maps_url.is_apple_short_link(content):

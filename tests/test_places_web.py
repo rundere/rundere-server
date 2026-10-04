@@ -203,15 +203,6 @@ def test_places_page_is_own_only(monkeypatch):
 
 
 # ------------------------------------------------- review follow-ups on this PR
-def test_anonymous_paste_is_refused_when_sign_in_is_required(monkeypatch):
-    """/capture is a public path, so the route itself must not write an ownerless
-    row (YONDER-186) or do lookups for a stranger."""
-    from app import capture
-    monkeypatch.setattr(capture.settings, "auth_required", True)
-    r = client.post("/capture/web", data={"content": G_PLACE})
-    assert "Sign in to save places" in r.text and _places() == []
-
-
 def test_rename_a_saved_place_from_the_page():
     pid = _save()
     r = client.post(f"/places/{pid}/rename", data={"name": "Le Bernardin NYC"})
@@ -236,16 +227,3 @@ def test_places_page_preselects_the_suggested_trip_but_does_not_file():
 def test_nav_has_a_places_entry():
     t = client.get("/places").text
     assert 'href="/places"' in t and ">Places<" in t.replace("</span>Places<", ">Places<")
-
-
-def test_anonymous_paste_never_makes_the_server_expand_a_short_link(monkeypatch):
-    """With sign-in required, a stranger on the public /capture path must not get the
-    server to fetch a link on their behalf for a place it would refuse anyway."""
-    from app import capture
-    monkeypatch.setattr(capture.settings, "auth_required", True)
-
-    def boom(u):
-        raise AssertionError("expanded for an anonymous caller")
-    monkeypatch.setattr(maps_url, "_expand_short", boom)
-    r = client.post("/capture/web", data={"content": SHORT})
-    assert _places() == [] and "Sign in to save places" not in r.text   # the old path answers

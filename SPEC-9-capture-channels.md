@@ -239,6 +239,7 @@ points that share one parser (`extract/place_url.py`) and one category table:
   it only reads the open email. Supersedes D-26.
 - **D-166** — Saved places are an owner-scoped table; filing one consumes it.
 - **D-167** — Saved places skip the extractor chain and the approval queue.
+- **D-171** — `/capture/web` authenticates itself. `/capture` is a public path in the auth gate, so with sign-in required the route refuses a stranger (401, and an `HX-Redirect` to login for the form) before it fetches, parses or stores anything, and no capture is written ownerless (YONDER-186, YONDER-210). With sign-in off (the single-user default) it stays open.
 - **D-169** — A saved place is never saved or filed twice; filed and removed ones are tombstones.
 - **D-170** — A list is pushed with a batch call: per-place outcomes, dry run, safe to repeat.
 - **D-168** — Add-by-link in a trip pre-fills the type from the category, with a generic fallback.
