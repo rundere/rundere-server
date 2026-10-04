@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Saved places{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="dash" style="gap:14px">
+    <div class="dash-hero">
+      <div>
+        <h1>Saved places</h1>
+        <p>Places you kept from a Google or Apple Maps link. File one to a trip now, with or without a date.</p>
+      </div>
+      <div class="dash-hero-actions">
+        <a class="act tiny" href="/capture">＋ Save a place</a>
+        <a class="act tiny" href="/">← Home</a>
+      </div>
+    </div>
+    {% include "_places_panel.html" %}
+  </div>
+</div>
+{% endblock %}

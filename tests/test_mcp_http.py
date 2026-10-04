@@ -27,7 +27,7 @@ if DEPS:
     from app.main import app
     from app.models import (AccountEvent, Base, DiscoveryFinding, DiscoveryItem, IngestBatch,
                             JournalEntry, OAuthGrant, PackingItem, PackingPlan,
-                            PersonalApiToken, TravelerIdentity, TravelItem, Trip,
+                            PersonalApiToken, SavedPlace, TravelerIdentity, TravelItem, Trip,
                             TripActivity, TripTraveler, User)
 
     Base.metadata.create_all(engine)
@@ -41,7 +41,8 @@ if DEPS:
                  "capture_url", "list_review", "get_review_item",
                  "assign_review_item_to_trip", "save_research", "save_city_guide",
                  "save_phrases", "add_item_to_timeline", "get_discovery_profile",
-                 "save_safety"}
+                 "save_safety", "list_saved_places", "save_places", "update_saved_place",
+                 "file_saved_place", "remove_saved_place"}
 
     @pytest.fixture(scope="module")
     def client():
@@ -58,6 +59,7 @@ if DEPS:
         s.query(TravelItem).filter(TravelItem.owner_id.in_(uids)).delete(synchronize_session=False)
         s.query(IngestBatch).filter(IngestBatch.user_id.in_(uids)).delete(synchronize_session=False)
         s.query(JournalEntry).filter(JournalEntry.owner_id.in_(uids)).delete(synchronize_session=False)
+        s.query(SavedPlace).filter(SavedPlace.owner_id.in_(uids)).delete(synchronize_session=False)
         s.query(PersonalApiToken).filter(PersonalApiToken.user_id.in_(uids)).delete(
             synchronize_session=False)
         s.query(OAuthGrant).filter(OAuthGrant.user_id.in_(uids)).delete(synchronize_session=False)
@@ -315,6 +317,75 @@ if DEPS:
         with SessionLocal() as s:
             item = s.get(TravelItem, w["alice_cap"])
             assert item.trip_id == w["shared"] and item.review["trip_pinned"] is True
+
+    def test_capture_url_keeps_a_maps_place_link_as_a_saved_place(client, w, monkeypatch):
+        """A place link is no booking: it skips the review queue and needs no date
+        (YONDER-200, D-167). Own-only: the other user never sees it."""
+        from resolve import place_lookup
+        monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: None)
+        tok = _tok(w["alice"])
+        before = _batch_count(w["alice"])
+        out = ok(client, tok, "capture_url",
+                 url="https://maps.apple.com/?q=Le+Bernardin&ll=40.7615,-73.9817")
+        assert out["outcome"] == "created" and out["saved_place"]["name"] == "Le Bernardin"
+        assert "batch_id" not in out and _batch_count(w["alice"]) == before
+        with SessionLocal() as s:
+            row = s.get(SavedPlace, out["saved_place"]["id"])
+            assert row.owner_id == w["alice"] and row.source == "mcp"
+        again = ok(client, tok, "capture_url",
+                   url="https://maps.apple.com/?q=Le+Bernardin&ll=40.7615,-73.9817")
+        assert again["outcome"] == "duplicate" and again["saved_place"]["id"] == out["saved_place"]["id"]
+        with SessionLocal() as s:
+            assert s.query(SavedPlace).filter(SavedPlace.owner_id == w["bob"]).count() == 0
+
+    def test_saved_place_tools_end_to_end_and_own_only(client, w, monkeypatch):
+        """The agent path for pushing a list (YONDER-200): review with dry_run, push,
+        push again (nothing doubles), file, and see it from no other account."""
+        from resolve import place_lookup
+        monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: None)
+        alice, bob = _tok(w["alice"]), _tok(w["bob"])
+        lst = [{"name": "Café Central", "lat": 48.2102, "lon": 16.3656, "address": "Herrengasse 14",
+                "category": "amenity=cafe", "notes": "From list: Vienna"},
+               {"name": "Sagrada Família", "lat": 41.4036, "lon": 2.1744},
+               {"name": "   "}]                                   # a bad entry
+        dry = ok(client, alice, "save_places", places=lst, dry_run=True)
+        assert dry["dry_run"] is True and dry["counts"] == {"created": 2, "error": 1}
+        assert ok(client, alice, "list_saved_places")["count"] == 0     # a dry run writes nothing
+        real = ok(client, alice, "save_places", places=lst)
+        assert real["counts"] == {"created": 2, "error": 1}
+        assert real["results"][2]["outcome"] == "error" and "name" in real["results"][2]["error"]
+        again = ok(client, alice, "save_places", places=lst)             # same list, nothing doubles
+        assert again["counts"] == {"duplicate": 2, "error": 1}
+        mine = ok(client, alice, "list_saved_places")
+        assert mine["count"] == 2
+        cafe = next(p for p in mine["places"] if p["name"] == "Café Central")
+        assert cafe["activity_type"] == "dining" and cafe["notes"] == "From list: Vienna"
+        assert ok(client, bob, "list_saved_places")["count"] == 0
+        good, err = call(client, bob, "file_saved_place", place_id=cafe["id"], trip_id=w["shared"])
+        assert not good and "404" in err                                 # not bob's
+        upd = ok(client, alice, "update_saved_place", place_id=cafe["id"], name="Café Central Wien")
+        assert upd["name"] == "Café Central Wien"
+        act = ok(client, alice, "file_saved_place", place_id=cafe["id"], trip_id=w["shared"])
+        assert act["type"] == "dining" and act["values"]["name"] == "Café Central Wien"
+        assert not act["starts_at"]                                      # undated is fine
+        good, err = call(client, alice, "file_saved_place", place_id=cafe["id"], trip_id=w["shared"])
+        assert not good and "409" in err                                 # a retry never files twice
+        # re-sending the list after filing: the filed one stays filed, the other stays saved
+        later = ok(client, alice, "save_places", places=lst[:2])
+        assert later["counts"] == {"already_filed": 1, "duplicate": 1}
+        sag = next(p for p in ok(client, alice, "list_saved_places")["places"])
+        assert ok(client, alice, "remove_saved_place", place_id=sag["id"])["ok"] is True
+        gone = ok(client, alice, "save_places", places=lst[1:2])
+        assert gone["counts"] == {"removed_earlier": 1}                  # removal sticks
+        back = ok(client, alice, "save_places", places=lst[1:2], revive=True)
+        assert back["counts"] == {"revived": 1}
+        with SessionLocal() as s:
+            assert s.query(TripActivity).filter(TripActivity.trip_id == w["shared"],
+                                                TripActivity.type == "dining").count() >= 1
+
+    def _batch_count(uid):
+        with SessionLocal() as s:
+            return s.query(IngestBatch).filter(IngestBatch.user_id == uid).count()
 
     # ------------------------------------------------------------------ Discover research
     def test_save_research_lands_on_callers_discover_only(client, w):

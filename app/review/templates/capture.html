@@ -14,7 +14,8 @@
       <h2 class="cap-h">Capture something</h2>
       <p class="why">
         Paste a link, a page's source, or a Google or Apple Maps directions link. Run·dere reads it
-        and puts it in your review queue to approve.
+        and puts it in your review queue to approve. A Google or Apple Maps <em>place</em> link is
+        kept in your <a href="/places">saved places</a> instead, to file to a trip when you are ready.
       </p>
       <form id="cap-form" hx-post="/capture/web" hx-target="#cap-result" hx-swap="innerHTML"
             hx-disabled-elt="button[type=submit]">
@@ -23,7 +24,7 @@
                   placeholder="https://… or <!doctype html>…"></textarea>
 
         <div id="dir-fields" class="cap-fields" hidden>
-          <p class="why">This looks like a directions link. A route has no date of its own, so add one.</p>
+          <p class="why" id="dir-hint">This looks like a directions link. A route has no date of its own, so add one.</p>
           <div class="field">
             <label for="travel_date">Travel date</label>
             <input id="travel_date" name="travel_date" type="date">
@@ -126,12 +127,20 @@
     var isDirections = function (v) {
       v = (v || '').trim();
       return /^https?:\/\/(www\.)?google\.[a-z.]+\/maps\/dir\//i.test(v) ||
-             /^https?:\/\/maps\.app\.goo\.gl\//i.test(v) || /^https?:\/\/goo\.gl\/maps\//i.test(v) ||
              /^https?:\/\/maps\.apple\.com\/.*(saddr|daddr)=/i.test(v);
     };
+    // A Google share link (maps.app.goo.gl) is a place OR directions; only the server can tell
+    // after expanding it, so show the date fields but never require them (YONDER-200).
+    var isShort = function (v) {
+      v = (v || '').trim();
+      return /^https?:\/\/maps\.app\.goo\.gl\//i.test(v) || /^https?:\/\/goo\.gl\/maps\//i.test(v);
+    };
     function sync() {
-      var on = isDirections(box.value);
-      dir.hidden = !on; date.required = on;
+      var on = isDirections(box.value), maybe = isShort(box.value);
+      dir.hidden = !(on || maybe); date.required = on;
+      document.getElementById('dir-hint').textContent = maybe
+        ? 'If this is a directions link, add a travel date (a route has none of its own). A place link needs nothing here: it is saved to your places.'
+        : 'This looks like a directions link. A route has no date of its own, so add one.';
     }
     box.addEventListener('input', sync); sync();
 

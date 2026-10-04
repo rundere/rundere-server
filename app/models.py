@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import (Boolean, DateTime, Float, ForeignKey, Integer, JSON,
+from sqlalchemy import (Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON,
                         String, Text, UniqueConstraint)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -947,6 +947,52 @@ class JournalEntry(Base):
     place_label: Mapped[str | None] = mapped_column(String(256))
     source: Mapped[str] = mapped_column(String(16), default="api")  # mobile|web|share|api
     duplicated_from: Mapped[str | None] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class SavedPlace(Base):
+    """Run·dere 4.7 — a place the person saved from a Google/Apple Maps link
+    before deciding which trip, or when, it belongs to (YONDER-200, D-166).
+
+    Deliberately NOT a TravelItem: a place link is a deterministic parse, not an
+    extraction, so it never enters the capture→extract→resolve→review queue the
+    bookings use (D-167). It waits here until the person files it to a trip,
+    which turns it into a (possibly undated) timeline activity and consumes the
+    row — so there is no trip link to dangle (house rule 3).
+
+    Own-only, like the journal: `owner_id` is set by every authenticated write
+    and only its owner sees the row. `place_key` (provider:id, or provider:name:
+    rounded coords) makes re-saving the same place idempotent per owner. The
+    server looks nothing up for this row: `address`/`category` are whatever the
+    client (iOS MapKit) or the optional Photon step supplied (D-146)."""
+    __tablename__ = "saved_places"
+    # One row per place per owner, enforced by the database (D-169): two requests
+    # saving the same place at once cannot both insert. (A NULL owner — the auth-off
+    # single-user world — is not covered by a unique index; the service checks.)
+    __table_args__ = (Index("uq_saved_places_owner_key", "owner_id", "place_key",
+                            unique=True),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    place_key: Mapped[str] = mapped_column(String(200))
+    name_key: Mapped[str] = mapped_column(String(200), default="", index=True)  # near-duplicate check
+    # saved = waiting to be filed; filed = became a timeline activity; dismissed =
+    # the person removed it. The last two are kept as tombstones (D-169) so
+    # re-importing a list never re-adds what was already handled.
+    status: Mapped[str] = mapped_column(String(10), default="saved", server_default="saved",
+                                        index=True)
+    name: Mapped[str] = mapped_column(String(300))
+    lat: Mapped[float | None] = mapped_column(Float)
+    lon: Mapped[float | None] = mapped_column(Float)
+    address: Mapped[str | None] = mapped_column(String(500))
+    category: Mapped[str | None] = mapped_column(String(80))     # as the source gave it
+    activity_type: Mapped[str] = mapped_column(String(24), default="tour")  # mapped, editable at filing
+    provider: Mapped[str] = mapped_column(String(12), default="other")  # google | apple | other
+    source_url: Mapped[str | None] = mapped_column(String(2000))
+    notes: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), default="api")      # ios | web | mcp | api
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)

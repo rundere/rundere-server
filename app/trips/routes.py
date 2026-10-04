@@ -24,7 +24,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 
-from app import scope
+from app import places as places_svc, scope
 from app.config import settings
 from app.db import get_session
 from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryRun, Trip,
@@ -2947,6 +2947,34 @@ def new_activity(trip_id: str, request: Request,
         _activity_modal_ctx(request, trip_id, mode="create",
                             action=f"/trips/{trip_id}/activity",
                             atype=type, values={}, session=session))
+
+
+@router.get("/{trip_id}/activity/from-link", response_class=HTMLResponse)
+def activity_from_link(trip_id: str, request: Request, link: str = "",
+                       session: Session = Depends(get_session)):
+    """Add by Maps link (YONDER-200, D-168): a pasted Google/Apple place link
+    re-renders the new-activity form with the type, name, address and Map link
+    filled in. Nothing is saved here, so the person checks the type (a generic
+    Tour when the category is unknown) and sets the time before saving."""
+    if scope.trip_or_none(session, request, trip_id) is None:
+        return HTMLResponse("", status_code=404)
+    link = (link or "").strip()
+    try:
+        if not link:
+            raise ValueError("")                  # nothing pasted: a blank form, no error
+        atype, values = places_svc.activity_from_link(link)
+    except ValueError as exc:
+        ctx = _activity_modal_ctx(request, trip_id, mode="create",
+                                  action=f"/trips/{trip_id}/activity",
+                                  atype=activity_types.DEFAULT_TYPE, values={},
+                                  session=session)
+        ctx.update(link_value=link, link_error=str(exc))
+        return templates.TemplateResponse(request, "_activity_modal.html", ctx)
+    ctx = _activity_modal_ctx(request, trip_id, mode="create",
+                              action=f"/trips/{trip_id}/activity", atype=atype,
+                              values=values, session=session)
+    ctx.update(link_value=link, from_link=True)
+    return templates.TemplateResponse(request, "_activity_modal.html", ctx)
 
 
 @router.get("/{trip_id}/activity/fields", response_class=HTMLResponse)

@@ -35,7 +35,7 @@ from app.config import settings
 from app.db import get_session
 from app.ingest import store_batch
 from app.models import ApiKey
-from extract import apple_maps_url, maps_url
+from extract import apple_maps_url, maps_url, place_url
 
 log = logging.getLogger("yonder.capture")
 router = APIRouter()
@@ -476,10 +476,20 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     ctype = request.headers.get("Content-Type", "")
     submitted_by = _submitted_by(request)
     # Phase 2 (D-120): attribute the capture to the submitting Yonder user (from
-    # the session cookie / bearer / trusted proxy). None => an open capture.
+    # the session cookie / bearer / trusted proxy). None => an open capture, which
+    # exists only with sign-in off (the gate just below refuses it otherwise).
     from app import authn
     _owner = authn.resolve_user(session, request)
     owner_user_id = _owner.id if _owner else None
+    if _owner is None and settings.auth_required:
+        # /capture is a public path in the auth gate (it serves the login-free handoff and
+        # setup pages), so THIS route must authenticate itself: with sign-in on, nothing is
+        # fetched, parsed or stored for a stranger, and no capture is ever ownerless
+        # (YONDER-186, YONDER-210). htmx does not swap a 4xx, so the form is sent to login.
+        if ctype.startswith("text/html"):
+            return PlainTextResponse("Run·dere: sign in to capture.", status_code=401)
+        return HTMLResponse('<div class="cap-msg err">Sign in to capture.</div>',
+                            status_code=401, headers={"HX-Redirect": "/login?next=/capture"})
 
     # --- bookmarklet path: raw page HTML in the body ---
     if ctype.startswith("text/html"):
@@ -528,8 +538,33 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
                                owner_user_id=owner_user_id, provider=provider)
         return _captured(request, batch_id, _owner)
 
+    def _save_place():
+        """A Maps PLACE link (YONDER-200): kept as a saved place, not sent down the
+        bookings pipeline (D-167). Nothing here needs a date or a trip."""
+        from app import places as places_svc
+        try:
+            place, outcome = places_svc.save(session, _owner, url=content,
+                                             source="web", enrich=True, revive=True)
+        except ValueError as exc:
+            return _msg(False, str(exc))
+        said = {"created": f"Saved “{place.name}”.",
+                "revived": f"Saved “{place.name}” again (you had removed it).",
+                "duplicate": f"“{place.name}” was already in your saved places.",
+                "near_duplicate": f"“{place.name}” looks like a place you already have, so it was "
+                                  "not added again.",
+                "already_filed": f"“{place.name}” was already filed to a trip.",
+                "removed_earlier": f"You removed “{place.name}” earlier."}[outcome]
+        return templates.TemplateResponse(request, "_capture_result.html", {
+            "ok": True, "message": said,
+            "place_id": place.id if outcome in ("created", "revived", "duplicate",
+                                                "near_duplicate") else None})
+
     # Explicit directions paths: the selection is authoritative, so looks_like_*
-    # validates the pasted URL against the chosen provider (SPEC-4 §2.1).
+    # validates the pasted URL against the chosen provider (SPEC-4 §2.1) — but a
+    # place link is no directions link, so say so instead of failing downstream.
+    if path in ("apple", "google") and place_url.classify(content, expand=False) == "place":
+        return _msg(False, "That’s a place link, not directions. Set the type to "
+                           "automatic to save it as a place.")
     if path == "apple":
         if apple_maps_url.is_apple_short_link(content):
             return _msg(False, "That Apple Maps share link (maps.apple/p/…) carries "
@@ -554,6 +589,8 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         # sniffing so a pasted maps link still routes correctly. An explicit
         # "page" selection skips this and is fetched as a web page.
         if path != "page":
+            if place_url.classify(content) == "place":      # expands a Google short link
+                return _save_place()
             is_apple = apple_maps_url.looks_like_apple_maps_url(content)
             if apple_maps_url.is_apple_short_link(content):
                 return _msg(False, "That Apple Maps share link (maps.apple/p/…) "

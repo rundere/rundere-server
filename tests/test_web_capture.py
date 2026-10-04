@@ -216,7 +216,11 @@ def test_capture_maps_url_routes_to_maps_channel():
     _route_or_skip(run)
 
 
-def test_capture_maps_url_requires_travel_date():
+def test_capture_maps_url_requires_travel_date(monkeypatch):
+    # The short link is expanded to tell place from directions (YONDER-200); keep it offline.
+    from extract import maps_url
+    monkeypatch.setattr(maps_url, "_expand_short", lambda u: u)
+
     def run():
         before = len(_maps_batches())
         r = _client.post("/capture/web", data={"content": "https://maps.app.goo.gl/xyz123"})
