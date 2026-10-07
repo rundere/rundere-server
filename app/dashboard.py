@@ -57,46 +57,91 @@ def _next_trip(trips: list[Trip], today: str) -> dict | None:
             "in_progress": in_progress, "days_until": days_until}
 
 
-def _next_up(session: Session, trips: list[Trip], today: str, user=None) -> dict | None:
-    """The design's Next-up card (one per screen): the soonest flight on a visible
-    trip that hasn't left yet, with mono airport codes; with no flight, the featured
-    trip itself. `overline` is the Runway-coloured line ("NEXT UP · FLIGHT · IN 12
-    DAYS"). Only real 3-letter codes are shown as codes.
+def viewer_moments(session: Session, trips: list[Trip], now: str, user=None):
+    """(next moment, in-progress moments) over the viewer's activities on `trips`
+    (app/trips/nextup.py, YONDER-177 / D-172). Shared by Home and /api/v1/dashboard.
 
-    The flight is the VIEWER'S: an activity tagged to other travellers on a shared trip
-    is never their "next up" (app/trips/who.py: no tags = everyone, so an untagged flight
-    counts for all). A signed-in user not linked to a traveller identity sees only the
-    untagged ones. `user=None` (auth off) filters nothing."""
-    import re
+    The activities are the VIEWER'S: one tagged to other travellers on a shared trip
+    is never their "next up" (app/trips/who.py: no tags = everyone). A signed-in user
+    not linked to a traveller identity sees only the untagged ones. `user=None`
+    (auth off) filters nothing. Anything that began more than 60 days ago is left
+    out of the query: it can't be the next thing, and a booking that long isn't
+    what the card is for."""
+    from datetime import timedelta
 
     from app.models import TripActivity
-    featured = _next_trip(trips, today)
-    ids = [t.id for t in trips if t.start_date or t.end_date]
-    flights = []
-    if ids:
-        for a in (session.query(TripActivity).filter(
-                TripActivity.trip_id.in_(ids), TripActivity.type == "flight").all()):
-            day = (a.starts_at or "")[:10]
-            if day and day >= today:
-                flights.append(a)
-    if user is not None and flights:
+    from app.trips import nextup
+    ids = [t.id for t in trips]
+    if not ids:
+        return None, []
+    cutoff = (date.fromisoformat(now[:10]) - timedelta(days=60)).isoformat()
+    acts = (session.query(TripActivity)
+            .filter(TripActivity.trip_id.in_(ids), TripActivity.starts_at >= cutoff).all())
+    if user is not None and acts:
         from app.trips import who
-        tags = who.activity_map(session, [a.id for a in flights])
+        tags = who.activity_map(session, [a.id for a in acts])
         me = getattr(user, "traveler_id", None)
-        flights = [a for a in flights if not tags.get(a.id) or (me is not None and me in tags[a.id])]
-    flights.sort(key=lambda a: a.starts_at or "")
-    code = re.compile(r"^[A-Z]{3}$")
-    for a in flights:
+        acts = [a for a in acts if not tags.get(a.id) or (me is not None and me in tags[a.id])]
+    return nextup.plan(acts, now)
+
+
+def _when_words(at: str, today: str) -> str:
+    """"TODAY 22:00", "TOMORROW 09:00", "IN 12 DAYS" — the overline's tail."""
+    days = (date.fromisoformat(at[:10]) - date.fromisoformat(today)).days
+    hm = f" {at[11:16]}" if len(at) >= 16 else ""
+    if days <= 0:
+        return f"TODAY{hm}"
+    if days == 1:
+        return f"TOMORROW{hm}"
+    return f"IN {days} DAYS"
+
+
+def _next_up(session: Session, trips: list[Trip], today: str, user=None,
+             now: str | None = None) -> dict | None:
+    """The design's Next-up card (one per screen): the soonest MOMENT still ahead on
+    the viewer's timeline — a departure, a check-in, a drop-off (YONDER-177, D-172) —
+    so a multi-day rental no longer holds the card while the hotel check-in two hours
+    later waits behind it. A flight departure keeps the route layout with mono airport
+    codes (only real 3-letter codes); anything else shows its title. What's under way
+    goes in `in_progress`, under the card. With nothing timed ahead, the featured trip
+    itself. `overline` is the Runway-coloured line ("NEXT UP · CHECK-IN · TODAY 22:00")."""
+    import re
+
+    from app.trips import nextup
+    from app.trips import types as activity_types
+    if now is None:
+        # Tests and callers pinning `today` get the start of that day.
+        now = nextup.now_key() if today == date.today().isoformat() else today + "T00:00"
+    nxt, under_way = viewer_moments(session, trips, now, user)
+    names = {t.id: t.name for t in trips}
+
+    def _brief(m) -> dict:
+        a = m.activity
+        t = activity_types.get_type(a.type)
+        return {"title": t.title(a.values or {}) or t.label, "label": nextup.label(m),
+                "at": m.at.replace("T", " "), "trip_id": a.trip_id,
+                "trip_name": names.get(a.trip_id, "")}
+
+    in_progress = [_brief(m) for m in under_way]
+    if nxt is not None:
+        a = nxt.activity
         v = a.values or {}
+        brief = _brief(nxt)
+        when = _when_words(nxt.at, today)
+        code = re.compile(r"^[A-Z]{3}$")
         frm, to = str(v.get("from") or "").strip().upper(), str(v.get("to") or "").strip().upper()
-        if code.match(frm) and code.match(to):
-            days = (date.fromisoformat(a.starts_at[:10]) - date.fromisoformat(today)).days
-            when = "TODAY" if days == 0 else f"IN {days} DAY{'S' if days != 1 else ''}"
-            trip = next((t for t in trips if t.id == a.trip_id), None)
+        if a.type == "flight" and nxt.edge == "start" and code.match(frm) and code.match(to):
             return {"kind": "flight", "overline": f"NEXT UP · FLIGHT · {when}",
-                    "from": frm, "to": to, "flight_number": v.get("flight_number") or "",
-                    "departs": a.starts_at.replace("T", " ")[:16], "trip_id": a.trip_id,
-                    "trip_name": trip.name if trip else ""}
+                    "from": frm, "to": to,
+                    "flight_number": v.get("flight_number") or v.get("flightNumber") or "",
+                    "departs": brief["at"], "trip_id": a.trip_id,
+                    "trip_name": brief["trip_name"], "in_progress": in_progress}
+        t = activity_types.get_type(a.type)
+        return {"kind": "activity", "overline": f"NEXT UP · {brief['label'].upper()} · {when}",
+                "title": brief["title"], "subtitle": t.subtitle(v) or "",
+                "label": brief["label"], "at": brief["at"], "trip_id": a.trip_id,
+                "trip_name": brief["trip_name"], "in_progress": in_progress}
+    featured = _next_trip(trips, today)
     if featured is None:
         return None
     if featured["in_progress"]:
@@ -105,7 +150,8 @@ def _next_up(session: Session, trips: list[Trip], today: str, user=None) -> dict
         d = featured["days_until"]
         overline = f"NEXT UP · TRIP · IN {d} DAY{'S' if d != 1 else ''}"
     return {"kind": "trip", "overline": overline, "trip_id": featured["id"],
-            "trip_name": featured["name"], "start": featured["start"], "end": featured["end"]}
+            "trip_name": featured["name"], "start": featured["start"], "end": featured["end"],
+            "in_progress": in_progress}
 
 
 def _greeting(user, now=None) -> str:

@@ -12,9 +12,9 @@ columns (activity `values`, finding `data`) are passed through as-is.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -281,8 +281,24 @@ class NextTripOut(BaseModel):
     days_until: int | None = None
 
 
+class MomentOut(BaseModel):
+    """One moment on the viewer's timeline (YONDER-177, D-172): an activity's start
+    or end. `at` is its local wall-clock time as stored ("YYYY-MM-DDTHH:MM", or a
+    bare date); `label` is what it's called ("Check-in", "Drop-off", "Departure")."""
+    edge: str                           # "start" | "end"
+    at: str
+    label: str
+    trip_id: str
+    trip_name: str = ""
+    activity: ActivityOut
+
+
 class DashboardOut(BaseModel):
     next_trip: NextTripOut | None = None
+    # D-172: the soonest moment still ahead (a multi-day booking never holds it for
+    # its whole span), and what's under way now as each item's end moment.
+    next_activity: MomentOut | None = None
+    in_progress: list[MomentOut] = []
     counts: dict[str, int]
     capture: dict[str, int]
     trip_count: int
@@ -635,18 +651,36 @@ def api_docs(user=Depends(authn.current_user)):
 
 # --------------------------------------------------------------------------- read
 @router.get("/dashboard", response_model=DashboardOut)
-def api_dashboard(user=Depends(authn.current_user), session: Session = Depends(get_session)):
+def api_dashboard(now: Annotated[str | None, Query(
+                      pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$",
+                      description="Your local wall-clock time, YYYY-MM-DDTHH:MM. Timeline "
+                                  "times have no zone, so the app sends the device's time; "
+                                  "the server's own clock is used when omitted.")] = None,
+                  user=Depends(authn.current_user), session: Session = Depends(get_session)):
     from datetime import date
 
     from app.dashboard import (_capture_activity, _next_trip, _pipeline_counts,
-                               _trip_status)
+                               _trip_status, viewer_moments)
+    from app.trips import nextup, who
     today = date.today().isoformat()
     trips = session.query(Trip).filter(scope.trip_filter(session, user)).all()
     nxt = _next_trip(trips, today)
     upcoming = sum(1 for t in trips
                    if t.start_date and _trip_status(t, today) == "upcoming")
+    moment, under_way = viewer_moments(session, trips, now or nextup.now_key(), user)
+    names = {t.id: t.name for t in trips}
+    tags = who.activity_map(session, [m.activity.id for m in [moment, *under_way] if m])
+
+    def _moment(m) -> MomentOut:
+        a = m.activity
+        return MomentOut(edge=m.edge, at=m.at, label=nextup.label(m), trip_id=a.trip_id,
+                         trip_name=names.get(a.trip_id, ""),
+                         activity=_activity_out(a, tags.get(a.id)))
+
     return DashboardOut(
         next_trip=NextTripOut(**nxt) if nxt else None,
+        next_activity=_moment(moment) if moment else None,
+        in_progress=[_moment(m) for m in under_way],
         counts=_pipeline_counts(session, user),
         capture=_capture_activity(session, today, user),
         trip_count=len(trips), upcoming_count=upcoming)

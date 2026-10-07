@@ -126,7 +126,9 @@ def update_trip(trip_id: TripId,
 
 @mcp.tool()
 def dashboard() -> dict[str, Any]:
-    """The home overview: next/current trip, review-queue counts, capture activity."""
+    """The home overview: next/current trip, the next thing on the timeline (a
+    departure, check-in or drop-off) and what's under way now, review-queue counts,
+    capture activity."""
     return _run(api_v1.api_dashboard)
 
 
