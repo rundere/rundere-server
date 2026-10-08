@@ -44,8 +44,24 @@ struct NextTrip: Codable, Hashable, Sendable {
     let days_until: Int?
 }
 
+/// One moment on the viewer's timeline (server 4.7.1, YONDER-177, D-172): an
+/// activity's start or end. `at` is its wall-clock time as stored; `label` is
+/// what it's called ("Check-in", "Drop-off", "Departure").
+struct MomentOut: Codable, Hashable, Sendable {
+    let edge: String              // "start" | "end"
+    let at: String
+    let label: String
+    let trip_id: String
+    let trip_name: String?
+    let activity: ActivityOut
+}
+
 struct Dashboard: Codable, Sendable {
     let next_trip: NextTrip?
+    /// D-172: the soonest moment still ahead, and what's under way now (each as
+    /// its end moment). Optional: pre-4.7.1 servers and older caches omit them.
+    let next_activity: MomentOut?
+    let in_progress: [MomentOut]?
     let counts: [String: Int]
     let capture: [String: Int]
     let trip_count: Int
@@ -62,6 +78,9 @@ struct TripSummary: Codable, Identifiable, Hashable, Sendable {
     let source: String
     let owner_id: String?
     let activity_count: Int
+    /// The airport codes the trip's flights visit, in order (server 4.7.1,
+    /// YONDER-177). Optional: older servers and caches omit it.
+    let airports: [String]?
 }
 
 struct ActivityOut: Codable, Identifiable, Hashable, Sendable {
@@ -179,8 +198,53 @@ struct TripSnapshot: Codable, Hashable, Sendable {
     let travelers: [TravelerOut]
     let places: [PlaceOut]
     let discovery: [FindingOut]
+    /// Discovery 2.0 (server 4.5): the Food & Drink / Events & Activities rows,
+    /// and the person's likes/dislikes. Optional: older servers and caches.
+    let discovery_items: [DiscoveryItemOut]?
+    let discovery_profile: JSONValue?
     var packing: PackingOut?
     let captures: [CaptureLite]
+}
+
+/// A place, event or activity inside a Food & Drink or Events & Activities
+/// finding (server 4.5, YONDER-147). `finding_id` ties it to its city.
+struct DiscoveryItemOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let finding_id: String
+    let topic: String            // food | events
+    let place_key: String
+    let kind: String             // restaurant|cafe|bar|…|event|activity
+    let name: String
+    let neighbourhood: String?
+    let address: String?
+    let lat: Double?
+    let lon: Double?
+    let website: String?
+    let what_to_get: String?
+    let price_tier: Int?
+    let starts_on: String?
+    let ends_on: String?
+    let when_text: String?
+    let venue: String?
+    let details: String?
+    let duration: String?
+    let booking: Bool?
+    let sources: JSONValue?
+    let extra: JSONValue?
+    let origin: String?
+    let agent: String?
+    let hidden: Bool?
+    let hidden_reason: String?
+    let edited: Bool?
+    /// Set once it's on the timeline.
+    let activity_id: String?
+}
+
+/// POST /api/v1/trips/{id}/discovery-items/{item}/timeline (server 4.5).
+struct ItemToTimelineIn: Codable, Sendable {
+    var starts_at: String?        // YYYY-MM-DDTHH:MM local; nil = the event's date
+    var traveler_ids: [Int]?      // nil / [] = everyone
+    var notes: String?
 }
 
 // MARK: - Review
