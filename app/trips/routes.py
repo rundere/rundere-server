@@ -121,10 +121,10 @@ def trip_status(t: Trip, today: str) -> str:
 _IATA = re.compile(r"^[A-Z]{3}$")
 
 
-def trip_route_codes(activities, limit: int = 4) -> list[str]:
+def trip_route_codes(activities, limit: int | None = 4) -> list[str]:
     """The airport codes a trip's flights visit, in flight order and without repeats
     (LHR, NRT, KIX) — what the design's trip card shows as mono codes. Only real
-    3-letter codes; a free-text place never becomes a code."""
+    3-letter codes; a free-text place never becomes a code. `limit=None` = all."""
     codes: list[str] = []
     for a in sorted((a for a in activities if a.type == "flight"),
                     key=lambda a: a.starts_at or ""):
@@ -132,7 +132,7 @@ def trip_route_codes(activities, limit: int = 4) -> list[str]:
             c = str((a.values or {}).get(key) or "").strip().upper()
             if _IATA.match(c) and c not in codes:
                 codes.append(c)
-    return codes[:limit]
+    return codes if limit is None else codes[:limit]
 
 
 def trip_when(t: Trip, today: str) -> str:

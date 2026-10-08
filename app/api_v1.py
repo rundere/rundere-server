@@ -36,6 +36,9 @@ class TripSummary(BaseModel):
     source: str
     owner_id: str | None = None
     activity_count: int = 0
+    # YONDER-177: the airport codes the trip's flights visit, in flight order, no
+    # repeats ("LHR", "NRT", "KIX") — the app's Upcoming cards. Real 3-letter codes only.
+    airports: list[str] = []
 
 
 class PlaceOut(BaseModel):
@@ -460,10 +463,13 @@ def _me(user=Depends(authn.current_user)):
 
 
 def _trip_summary(session: Session, t: Trip) -> TripSummary:
+    from app.trips.routes import trip_route_codes
     n = session.query(TripActivity).filter(TripActivity.trip_id == t.id).count()
+    flights = session.query(TripActivity).filter(
+        TripActivity.trip_id == t.id, TripActivity.type == "flight").all()
     return TripSummary(id=t.id, name=t.name, start_date=t.start_date,
                        end_date=t.end_date, source=t.source, owner_id=t.owner_id,
-                       activity_count=n)
+                       activity_count=n, airports=trip_route_codes(flights, limit=None))
 
 
 def _activity_out(a: TripActivity, traveler_ids: list[int] | None = None) -> ActivityOut:
