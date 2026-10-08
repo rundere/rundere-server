@@ -167,6 +167,11 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
 .nextup-v{font-size:15px;color:var(--ink)}
 .nextup-v.mono{font-family:var(--mono)}
 .nextup-open{margin-left:auto;font-size:14px;font-weight:600;text-decoration:none;color:var(--accent)}
+/* What's under way (a rental, a hotel stay) sits under the card, never on it (D-172). */
+.nextup-now{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.nextup-now li{font-size:14px;color:var(--ink-2)}
+.nextup-now .nextup-k{margin-right:6px}
+.nextup-now .mono{font-family:var(--mono)}
 @media (max-width:520px){.nextup{padding:20px}.nextup-code{font-size:34px}.nextup-route{gap:12px}
   .nextup-trip{font-size:26px;line-height:32px}.nextup-open{margin-left:0}}
 

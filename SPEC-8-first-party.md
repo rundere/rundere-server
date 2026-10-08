@@ -288,3 +288,15 @@ request forgery (SSRF) risk.
   design README's 44px touch target stays the default; every interactive control is at least
   the system's small size (`--rd-control-sm`, 32px). The theme toggle, selects, disclosure
   summaries and tab buttons use the floor rather than 44. Nothing goes below 32. (proposed)
+- **D-172 — Next up is the soonest moment, not the soonest item.** Every timed timeline
+  activity is one or two moments: its start (`when`) and, when it has one, its end
+  (`endWhen`) — a rental is a pick-up and a drop-off, a hotel a check-in and a check-out.
+  Home's Next-up card and `/api/v1/dashboard` (`next_activity`) show the soonest moment
+  still ahead, so a multi-day booking never holds the card for its whole span; what has
+  started and not ended is listed as in progress (`in_progress`), never as the card.
+  Times are local wall clock: the app sends its device time as `now`, else the server's
+  clock is used. A timed item with no end is a single moment; a date-only item with no
+  end is under way for that day; an end date with no time runs to the end of that day;
+  at the same minute an end comes before a start. Notes are never next up. Only the
+  viewer's own activities count (traveller tags, `app/trips/who.py`).
+  `app/trips/nextup.py` is the one implementation. Owner-reported bug, YONDER-177. (proposed)

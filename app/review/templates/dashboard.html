@@ -38,6 +38,14 @@
           <div><div class="nextup-k">Trip</div><div class="nextup-v">{{ next_up.trip_name }}</div></div>
           <a class="nextup-open" href="/trips/{{ next_up.trip_id }}">Open trip →</a>
         </div>
+        {% elif next_up.kind == 'activity' %}
+        <div class="nextup-trip">{{ next_up.title }}</div>
+        <div class="nextup-facts">
+          {% if next_up.subtitle %}<div><div class="nextup-k">Where</div><div class="nextup-v">{{ next_up.subtitle }}</div></div>{% endif %}
+          <div><div class="nextup-k">{{ next_up.label }}</div><div class="nextup-v mono">{{ next_up.at }}</div></div>
+          <div><div class="nextup-k">Trip</div><div class="nextup-v">{{ next_up.trip_name }}</div></div>
+          <a class="nextup-open" href="/trips/{{ next_up.trip_id }}">Open trip →</a>
+        </div>
         {% else %}
         <div class="nextup-trip">{{ next_up.trip_name }}</div>
         <div class="nextup-facts">
@@ -45,6 +53,13 @@
           <div><div class="nextup-k">Trips</div><div class="nextup-v">{{ upcoming_count }} more upcoming · {{ trip_count }} total</div></div>
           <a class="nextup-open" href="/trips/{{ next_up.trip_id }}">Open trip →</a>
         </div>
+        {% endif %}
+        {% if next_up.in_progress %}
+        <ul class="nextup-now" aria-label="In progress">
+          {% for n in next_up.in_progress %}
+          <li><span class="nextup-k">In progress</span> <b>{{ n.title }}</b> <span class="nextup-v">· {{ n.label }} <span class="mono">{{ n.at }}</span></span></li>
+          {% endfor %}
+        </ul>
         {% endif %}
       </section>
       {% else %}
