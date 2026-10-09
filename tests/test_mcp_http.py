@@ -43,7 +43,7 @@ if DEPS:
                  "save_phrases", "add_item_to_timeline", "get_discovery_profile",
                  "save_safety", "list_saved_places", "save_places", "update_saved_place",
                  "file_saved_place", "remove_saved_place", "list_expenses", "add_expense",
-                 "record_settlement", "delete_expense"}
+                 "record_settlement", "delete_expense", "save_budget", "delete_budget_item"}
 
     @pytest.fixture(scope="module")
     def client():
@@ -486,6 +486,16 @@ if DEPS:
                          currency="EUR", payer_id=w["ta"], shares={str(w["ta"]): "3"})
         assert not good and "add up to 3" in err
         assert ok(client, alice, "delete_expense", trip_id=t, expense_id=e["id"])["ok"]
+        # Planned costs: the budget kit's tool drafts them; they stay out of settle-up.
+        before = ok(client, bob, "list_expenses", trip_id=t)["transfers"]
+        out = ok(client, alice, "save_budget", trip_id=t, items=[
+            {"title": "Ferry tickets", "category": "transport", "amount": "40",
+             "currency": "EUR", "basis": "person"}])
+        assert out["counts"] == {"drafted": 1}
+        assert out["plan"]["drafts"] == "80" and out["plan"]["items"][0]["status"] == "draft"
+        assert ok(client, bob, "list_expenses", trip_id=t)["transfers"] == before
+        assert ok(client, alice, "delete_budget_item", trip_id=t,
+                  item_id=out["plan"]["items"][0]["id"])["ok"]
 
     def test_private_trip_unreachable_through_every_tool(client, w):
         tok = _tok(w["alice"])
@@ -782,7 +792,7 @@ if DEPS:
         names = {p["name"]: p for p in r.json()["result"]["prompts"]}
         assert {"research_food_and_drink", "research_events_and_activities",
                 "research_local_phrases", "research_safety_and_transport",
-                "research_visa_and_entry"} <= set(names)
+                "research_visa_and_entry", "research_trip_budget"} <= set(names)
         args = {a["name"]: a.get("required") for a in names["research_food_and_drink"]["arguments"]}
         assert args["trip_id"] is True and not args.get("place_key")
         r = _rpc(client, tok, "prompts/get", {"name": "research_food_and_drink",
@@ -798,7 +808,7 @@ if DEPS:
         kits = client.get("/api/v1/research-kits", headers=h).json()
         by = {k["slug"]: k for k in kits}
         assert set(by) >= {"food-and-drink", "events-and-activities", "local-phrases",
-                           "safety-and-transport", "visa-and-entry"}
+                           "safety-and-transport", "visa-and-entry", "trip-budget"}
         assert by["local-phrases"]["mcp_prompt"] == "research_local_phrases"
         assert by["food-and-drink"]["name"] == "rundere-food-and-drink"
         one = client.get("/api/v1/research-kits/events-and-activities", headers=h).json()

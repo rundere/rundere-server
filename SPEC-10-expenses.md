@@ -1,6 +1,6 @@
 # SPEC-10 — Trip expenses and splitting costs (YONDER-172)
 
-**Status: BUILDING (2026-10-09).** Decisions D-173–D-177. Builds option B of
+**Status: BUILDING (2026-10-09).** Decisions D-173–D-182. Builds option B of
 YONDER-172 (built in, not a SplitPro integration) inside the D-155 posture.
 
 ## Intent
@@ -11,6 +11,11 @@ trip, picks who paid and who it's for, and the trip shows net balances and the
 fewest payments that settle them. Someone can record "Ana paid Ben back"; that's
 as far as settling goes. No payment links, reminders, groups outside a trip,
 recurring bills, imports or receipt OCR (D-155).
+
+Costs come in **two parts** (D-178): the **plan** — what the trip should cost,
+researched ahead by an agent with the trip-budget kit or entered by hand — and
+the **actuals** — what was really spent, logged on the go. Only actuals settle
+people up and make the trip's actual cost.
 
 ## Model
 
@@ -23,7 +28,11 @@ recurring bills, imports or receipt OCR (D-155).
 - **TripExpenseShare** (`trip_expense_shares`): who an expense is for and their
   part of it, in the expense's currency. Always stored explicitly, even for an
   equal split, so later roster changes never rewrite history.
-- **Trip.expense_currency**: the currency balances are shown in.
+- **TripBudgetItem** (`trip_budget_items`): a planned cost — an estimate in its
+  own currency on a `basis` (trip / person / day / person_day), `draft` (an
+  agent's suggestion) or `kept`, with optional city, timeline item and sources.
+- **TripExpense.budget_item_id**: the planned item an actual paid for.
+- **Trip.expense_currency**: the currency balances and the plan are shown in.
 
 ## Decisions
 
@@ -56,15 +65,42 @@ recurring bills, imports or receipt OCR (D-155).
   settlements together. Suggested payments are the greedy largest-debtor →
   largest-creditor matching, so at most n−1 payments for n people.
 
+- **D-178 — Planned and actual are separate.** The plan is a budget: it is never
+  split, never owed and never settled. Balances, suggested payments and the
+  trip's actual cost come from actual expenses only.
+- **D-179 — A planned cost is an estimate on a basis.** Whole trip, per person,
+  per day or per person per day, multiplied by the roster size and the trip's
+  days when it's shown, so adding a traveller or a day updates the plan. Without
+  dates, a per-day estimate counts once and the plan says the days are unknown.
+- **D-180 — Budget research is a research kit and lands as drafts.** The
+  trip-budget kit (`research_trip_budget`) prices the trip from real sources and
+  saves with `save_budget`. Every agent item is a draft; a re-run replaces the
+  agent's own drafts in the categories it re-researches; what the person kept
+  (or edited, which keeps it) is never overwritten — the same contract as
+  Discover's locked findings.
+- **D-181 — Actuals can name the plan they fulfil.** Logging an actual against a
+  planned item links them, so the plan shows spent-so-far per item and planned vs
+  actual per category. Deleting either side keeps the other, unlinked.
+- **D-182 — Log an expense on the go.** An App Shortcut (Siri, Shortcuts, Action
+  button, Home Screen quick action, `rundere://expense/new`) opens a quick-entry
+  sheet on the trip under way today (else the next one), with the person as payer
+  and an even split, like the journal's quick entry. Amount and title can come
+  from the shortcut. Entering stays by hand (D-155).
+
 ## Surfaces (first build)
 
-- `/api/v1/trips/{id}/expenses` (list with balances; create), `…/expenses/{eid}`
-  (edit, delete), `…/settlements` (record a payment), `…/expenses/currency`.
-- MCP: `list_expenses`, `add_expense`, `record_settlement`, `delete_expense`.
-- iOS: an Expenses section on a trip (list, balances, add/edit, settle up).
+- `/api/v1/trips/{id}/expenses` (actuals, balances and the `plan`; create),
+  `…/expenses/{eid}` (edit, delete), `…/settlements` (record a payment),
+  `…/expenses/currency`; `…/budget` (plan a cost), `…/budget/batch` (research
+  drafts), `…/budget/{bid}` (edit/keep, delete).
+- MCP: `list_expenses`, `add_expense`, `record_settlement`, `delete_expense`,
+  `save_budget`, `delete_budget_item`; the `research_trip_budget` prompt.
+- iOS: a Costs segment with Plan and Actual (list, balances, add/edit, settle up,
+  keep drafts, log a planned item as spent) and the Log Expense shortcut.
 - Web UI: follow-up item.
 
 ## Cleanup
 
-Deleting a trip deletes its expenses and shares (trip-only data). Deleting a
-timeline activity clears `activity_id` on expenses that pointed at it.
+Deleting a trip deletes its expenses, shares and planned items (trip-only
+data). Deleting a timeline activity clears `activity_id` on expenses and planned
+items that pointed at it.

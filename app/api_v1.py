@@ -1832,9 +1832,54 @@ class ExpenseOut(BaseModel):
     shares: list[ExpenseShareOut]
     category: str
     activity_id: str | None = None
+    budget_item_id: str | None = None      # the planned item it fulfils (D-181)
     notes: str | None = None
     owner_id: str | None = None
     created_at: datetime | None = None
+
+
+class BudgetItemOut(BaseModel):
+    """A planned cost (D-178/D-179): an estimate on a basis, expanded by the
+    trip's people and days into `total` (trip currency)."""
+    id: str
+    trip_id: str
+    title: str
+    category: str
+    amount: str                            # the estimate, in `currency`, per `basis`
+    currency: str
+    basis: str                             # trip | person | day | person_day
+    times: int                             # how many times it counts (people × days)
+    total: str | None = None               # in the trip currency; None = no rate
+    rate: str | None = None
+    rate_source: str | None = None
+    status: str                            # draft (an agent's suggestion) | kept
+    place_key: str | None = None
+    activity_id: str | None = None
+    notes: str | None = None
+    sources: list[dict] = []
+    source: str = "api"
+    actual: str = "0"                      # actuals logged against it (trip currency)
+    owner_id: str | None = None
+
+
+class CategoryPlanOut(BaseModel):
+    category: str
+    planned: str                           # kept planned items
+    drafts: str                            # agents' suggestions not kept yet
+    actual: str                            # actual expenses
+
+
+class PlanOut(BaseModel):
+    """The budget beside what was actually spent (D-181). Only `actual` is the
+    trip's real cost; settle-up uses actual expenses alone (D-178)."""
+    people: int
+    days: int | None = None                # None = the trip has no dates yet
+    planned: str
+    drafts: str
+    actual: str
+    items: list[BudgetItemOut]
+    by_category: list[CategoryPlanOut]
+    unconverted: list[str] = []
 
 
 class BalanceOut(BaseModel):
@@ -1861,6 +1906,7 @@ class ExpensesOut(BaseModel):
     transfers: list[TransferOut]           # the suggested settle-up payments
     unconverted: list[str] = []            # expense ids with no rate (left out of balances)
     categories: list[str] = list(expenses_svc.CATEGORIES)
+    plan: PlanOut | None = None            # the planned budget (D-178)
 
 
 class ExpenseIn(BaseModel):
@@ -1879,6 +1925,7 @@ class ExpenseIn(BaseModel):
     category: str = "other"
     rate: str | None = None
     activity_id: str | None = None
+    budget_item_id: str | None = None      # log it against a planned item (D-181)
     notes: str | None = None
     source: str = "api"
 
@@ -1897,7 +1944,47 @@ class ExpensePatch(BaseModel):
     category: str | None = None
     rate: str | None = None
     activity_id: str | None = None
+    budget_item_id: str | None = None      # "" unlinks
     notes: str | None = None
+
+
+class BudgetItemIn(BaseModel):
+    """Plan a cost. `amount` is an estimate in `currency` per `basis`: the whole
+    trip, per person, per day, or per person per day."""
+    amount: str
+    currency: str
+    title: str = ""
+    category: str = "other"
+    basis: str = "trip"
+    rate: str | None = None
+    place_key: str | None = None
+    activity_id: str | None = None
+    notes: str | None = None
+    sources: list[dict] | None = None
+    source: str = "api"
+
+
+class BudgetItemPatch(BaseModel):
+    """Edit a planned item; editing an agent's draft keeps it. `status: "kept"`
+    keeps a draft as it is."""
+    amount: str | None = None
+    currency: str | None = None
+    title: str | None = None
+    category: str | None = None
+    basis: str | None = None
+    rate: str | None = None
+    place_key: str | None = None
+    activity_id: str | None = None
+    notes: str | None = None
+    status: str | None = None
+
+
+class BudgetBatchIn(BaseModel):
+    """An agent's budget research (the trip-budget research kit, D-180). Every
+    item lands as a draft; `replace` first drops your earlier drafts in the same
+    categories. Kept items are never touched."""
+    items: list[BudgetItemIn]
+    replace: bool = True
 
 
 class SettlementIn(BaseModel):
@@ -1930,8 +2017,8 @@ def _expense_out(e, shares, nm: dict[int, str], trip_currency: str | None) -> Ex
         payer_name=nm.get(e.payer_id, ""), split=e.split,
         shares=[ExpenseShareOut(traveler_id=s.traveler_id, name=nm.get(s.traveler_id, ""),
                                 amount=s.amount) for s in shares],
-        category=e.category, activity_id=e.activity_id, notes=e.notes,
-        owner_id=e.owner_id, created_at=e.created_at)
+        category=e.category, activity_id=e.activity_id, budget_item_id=e.budget_item_id,
+        notes=e.notes, owner_id=e.owner_id, created_at=e.created_at)
 
 
 def _one_expense_out(session: Session, trip: Trip, e) -> ExpenseOut:
@@ -1960,7 +2047,41 @@ def expenses_overview(session: Session, trip: Trip) -> ExpensesOut:
         transfers=[TransferOut(from_id=a, from_name=nm.get(a, ""), to_id=b,
                                to_name=nm.get(b, ""), amount=f(amt))
                    for a, b, amt in summ.transfers],
-        unconverted=summ.unconverted)
+        unconverted=summ.unconverted,
+        plan=plan_out(session, trip, rows))
+
+
+def _budget_out(line, actual: str = "0") -> BudgetItemOut:
+    b = line.item
+    return BudgetItemOut(
+        id=b.id, trip_id=b.trip_id, title=b.title, category=b.category, amount=b.amount,
+        currency=b.currency, basis=b.basis, times=line.times,
+        total=None if line.total is None else format(line.total.normalize(), "f"),
+        rate=b.rate, rate_source=b.rate_source, status=b.status, place_key=b.place_key,
+        activity_id=b.activity_id, notes=b.notes, sources=b.sources or [], source=b.source,
+        actual=actual, owner_id=b.owner_id)
+
+
+def plan_out(session: Session, trip: Trip, expense_rows=None) -> PlanOut:
+    from decimal import ROUND_HALF_UP, Decimal
+    p = expenses_svc.plan(session, trip)
+    q = expenses_svc.quantum(p.currency or "")
+    spent: dict[str, Decimal] = {}
+    for e in (expense_rows if expense_rows is not None
+              else expenses_svc.expenses_of(session, trip.id)):
+        if e.budget_item_id and e.kind == expenses_svc.EXPENSE and e.rate is not None:
+            spent[e.budget_item_id] = spent.get(e.budget_item_id, Decimal(0)) + (
+                Decimal(e.amount) * Decimal(e.rate)).quantize(q, rounding=ROUND_HALF_UP)
+
+    def f(d):
+        return format(d.normalize(), "f") if d else "0"
+    return PlanOut(
+        people=p.people, days=p.days, planned=f(p.planned), drafts=f(p.drafts),
+        actual=f(p.actual),
+        items=[_budget_out(ln, f(spent.get(ln.item.id))) for ln in p.lines],
+        by_category=[CategoryPlanOut(category=c, planned=f(a), drafts=f(d), actual=f(x))
+                     for c, a, d, x in p.by_category],
+        unconverted=p.unconverted)
 
 
 def _expense_or_404(session: Session, trip_id: str, expense_id: str):
@@ -2041,3 +2162,67 @@ def api_set_expense_currency(trip_id: str, body: ExpenseCurrencyIn,
     _valueerror_400(lambda: expenses_svc.set_trip_currency(session, user, trip, body.currency))
     session.commit()
     return expenses_overview(session, trip)
+
+
+
+# --------------------------------------------------------------------------- budget (planned)
+# SPEC-10 D-178–D-181: the planned side of Costs. Same sharing as expenses.
+def _budget_or_404(session: Session, trip_id: str, item_id: str):
+    from app.models import TripBudgetItem
+    b = session.get(TripBudgetItem, item_id)
+    if b is None or b.trip_id != trip_id:
+        raise HTTPException(404, "planned item not found")
+    return b
+
+
+def _one_budget_out(session: Session, trip: Trip, b) -> BudgetItemOut:
+    return next(i for i in plan_out(session, trip).items if i.id == b.id)
+
+
+def save_budget(session: Session, user, trip_id: str, body: BudgetBatchIn, source: str):
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    items = [expenses_svc.BudgetInput(**{**i.model_dump(), "source": source})
+             for i in body.items]
+    out = _valueerror_400(lambda: expenses_svc.save_budget_batch(
+        session, user, trip, items, replace=body.replace))
+    session.commit()
+    return {**out, "plan": plan_out(session, trip)}
+
+
+@router.post("/trips/{trip_id}/budget", response_model=BudgetItemOut, status_code=201)
+def api_add_budget_item(trip_id: str, body: BudgetItemIn, user=Depends(authn.current_user),
+                        session: Session = Depends(get_session)):
+    """Plan a cost yourself (it's kept straight away)."""
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    b = _valueerror_400(lambda: expenses_svc.create_budget(
+        session, user, trip, expenses_svc.BudgetInput(**body.model_dump())))
+    session.commit()
+    return _one_budget_out(session, trip, b)
+
+
+@router.post("/trips/{trip_id}/budget/batch")
+def api_save_budget(trip_id: str, body: BudgetBatchIn, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """Save budget research as drafts (see BudgetBatchIn)."""
+    return save_budget(session, user, trip_id, body, source="api")
+
+
+@router.patch("/trips/{trip_id}/budget/{item_id}", response_model=BudgetItemOut)
+def api_update_budget_item(trip_id: str, item_id: str, body: BudgetItemPatch,
+                           user=Depends(authn.current_user),
+                           session: Session = Depends(get_session)):
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    b = _budget_or_404(session, trip.id, item_id)
+    _valueerror_400(lambda: expenses_svc.update_budget(
+        session, user, trip, b, body.model_dump(exclude_unset=True)))
+    session.commit()
+    return _one_budget_out(session, trip, b)
+
+
+@router.delete("/trips/{trip_id}/budget/{item_id}", status_code=204)
+def api_delete_budget_item(trip_id: str, item_id: str, user=Depends(authn.current_user),
+                           session: Session = Depends(get_session)):
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    expenses_svc.delete_budget(session, _budget_or_404(session, trip.id, item_id))
+    session.commit()
+    return None

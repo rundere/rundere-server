@@ -16,6 +16,11 @@ The one place the expense rules live, so /api/v1 and MCP never diverge:
   listed as unconverted instead of guessed.
 - **Settlements are payments (D-177)** and net with expenses; suggested payments
   are a greedy largest-debtor → largest-creditor match.
+- **Planned vs actual (D-178–D-181).** Planned items (TripBudgetItem) are the
+  budget: estimates on a basis, expanded by the roster and the trip's days, never
+  split or settled. Only actual expenses feed balances and the trip's actual
+  cost. Agents' planned items land as drafts the person keeps (D-180); an actual
+  can name the planned item it fulfils, for plan vs actual by category (D-181).
 
 Bad input raises ValueError (the API maps it to 400).
 """
@@ -26,8 +31,8 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
-from app.models import (DiscoveryFinding, TravelerIdentity, Trip, TripExpense,
-                        TripExpenseShare)
+from app.models import (DiscoveryFinding, TravelerIdentity, Trip, TripBudgetItem,
+                        TripExpense, TripExpenseShare)
 from app.trips import who
 
 EXPENSE, SETTLEMENT = "expense", "settlement"
@@ -186,8 +191,18 @@ class ExpenseInput:
     category: str = "other"
     rate: object = None                    # trip currency per 1 unit; blank = look it up
     activity_id: str | None = None
+    budget_item_id: str | None = None      # D-181: the planned item this fulfils
     notes: str | None = None
     source: str = "api"
+
+
+def _check_budget_item(session: Session, trip_id: str, item_id: str | None) -> str | None:
+    if not item_id:
+        return None
+    b = session.get(TripBudgetItem, item_id)
+    if b is None or b.trip_id != trip_id:
+        raise ValueError("that planned item isn't on this trip")
+    return b.id
 
 
 def _check_activity(session: Session, trip_id: str, activity_id: str | None) -> str | None:
@@ -254,6 +269,7 @@ def create(session: Session, user, trip: Trip, data: ExpenseInput,
                     spent_on=_check_date(data.spent_on), payer_id=payer, split=data.split,
                     category=category,
                     activity_id=_check_activity(session, trip.id, data.activity_id),
+                    budget_item_id=_check_budget_item(session, trip.id, data.budget_item_id),
                     notes=(data.notes or None), source=data.source or "api")
     _apply_rate(session, trip, e, uid, data.rate)
     session.add(e)
@@ -293,6 +309,8 @@ def update(session: Session, user, trip: Trip, e: TripExpense, changes: dict) ->
         e.category = c
     if changes.get("activity_id") is not None:          # "" unlinks
         e.activity_id = _check_activity(session, trip.id, changes["activity_id"])
+    if changes.get("budget_item_id") is not None:       # "" unlinks
+        e.budget_item_id = _check_budget_item(session, trip.id, changes["budget_item_id"])
     roster = _roster(session, trip.id)
     if changes.get("payer_id") is not None:
         e.payer_id = _on_roster(changes["payer_id"], roster, "payer")
@@ -336,14 +354,16 @@ def set_trip_currency(session: Session, user, trip: Trip, currency: str) -> None
     (they were against the old currency) and must be given again."""
     trip.expense_currency = currency_code(currency)
     uid = getattr(user, "id", None)
-    for e in expenses_of(session, trip.id):
+    for e in [*expenses_of(session, trip.id), *budget_of(session, trip.id)]:
         _apply_rate(session, trip, e, uid, None)
 
 
 def unlink_activity(session: Session, activity_id: str) -> None:
-    """A deleted timeline item leaves its expenses in place, unlinked (rule 3)."""
-    session.query(TripExpense).filter(TripExpense.activity_id == activity_id).update(
-        {"activity_id": None}, synchronize_session=False)
+    """A deleted timeline item leaves its expenses and planned items in place,
+    unlinked (rule 3)."""
+    for model in (TripExpense, TripBudgetItem):
+        session.query(model).filter(model.activity_id == activity_id).update(
+            {"activity_id": None}, synchronize_session=False)
 
 
 def purge_trip(session: Session, trip_id: str) -> None:
@@ -352,6 +372,8 @@ def purge_trip(session: Session, trip_id: str) -> None:
         session.query(TripExpenseShare).filter(
             TripExpenseShare.expense_id.in_(ids)).delete(synchronize_session=False)
     session.query(TripExpense).filter(TripExpense.trip_id == trip_id).delete(
+        synchronize_session=False)
+    session.query(TripBudgetItem).filter(TripBudgetItem.trip_id == trip_id).delete(
         synchronize_session=False)
 
 
@@ -449,3 +471,216 @@ def suggest_transfers(net: dict[int, Decimal], q: Decimal) -> list[tuple[int, in
         if cred[j][0] < q:
             j += 1
     return out
+
+
+# --------------------------------------------------------------------------- budget (planned)
+DRAFT, KEPT = "draft", "kept"
+BASES = ("trip", "person", "day", "person_day")
+MAX_BUDGET_BATCH = 100
+
+
+def trip_days(trip: Trip) -> int | None:
+    """Days the trip spans, both ends included; None without both dates."""
+    from datetime import date
+    try:
+        a, b = date.fromisoformat(trip.start_date or ""), date.fromisoformat(trip.end_date or "")
+    except ValueError:
+        return None
+    return (b - a).days + 1 if b >= a else None
+
+
+def multiplier(basis: str, people: int, days: int | None) -> int:
+    """How many times an estimate counts (D-179). Unknown days count once; the
+    API flags those items so the person can add the trip's dates."""
+    p, d = max(people, 1), days or 1
+    return {"trip": 1, "person": p, "day": d, "person_day": p * d}.get(basis, 1)
+
+
+@dataclass
+class BudgetInput:
+    amount: object
+    currency: str
+    title: str = ""
+    category: str = "other"
+    basis: str = "trip"
+    rate: object = None
+    place_key: str | None = None
+    activity_id: str | None = None
+    notes: str | None = None
+    sources: list | None = None            # [{title, url}]
+    source: str = "api"
+
+
+def _check_basis(basis: str | None) -> str:
+    b = (basis or "trip").lower()
+    if b not in BASES:
+        raise ValueError(f"basis must be one of {', '.join(BASES)}")
+    return b
+
+
+def _check_category(category: str | None) -> str:
+    c = (category or "other").lower()
+    if c not in CATEGORIES:
+        raise ValueError(f"category must be one of {', '.join(CATEGORIES)}")
+    return c
+
+
+def _clean_sources(sources) -> list | None:
+    out = []
+    for s in sources or []:
+        if isinstance(s, dict) and str(s.get("url") or "").startswith(("http://", "https://")):
+            out.append({"title": str(s.get("title") or "")[:200], "url": str(s["url"])[:2000]})
+    return out or None
+
+
+def create_budget(session: Session, user, trip: Trip, data: BudgetInput,
+                  status: str = KEPT) -> TripBudgetItem:
+    """Add a planned cost. People's own entries are kept; agents' are drafts
+    (D-180). Caller commits."""
+    cur = currency_code(data.currency)
+    b = TripBudgetItem(trip_id=trip.id, owner_id=getattr(user, "id", None),
+                       title=(data.title or "").strip()[:200],
+                       category=_check_category(data.category),
+                       amount=_fmt(money(data.amount, cur)), currency=cur,
+                       basis=_check_basis(data.basis), status=status,
+                       place_key=(data.place_key or None),
+                       activity_id=_check_activity(session, trip.id, data.activity_id),
+                       notes=(data.notes or None), sources=_clean_sources(data.sources),
+                       source=data.source or "api")
+    if trip.expense_currency is None:
+        trip.expense_currency = cur
+    _apply_rate(session, trip, b, getattr(user, "id", None), data.rate)
+    session.add(b)
+    session.flush()
+    return b
+
+
+def update_budget(session: Session, user, trip: Trip, b: TripBudgetItem,
+                  changes: dict) -> TripBudgetItem:
+    """Edit a planned item; a person's edit keeps it (a draft becomes theirs)."""
+    if changes.get("title") is not None:
+        b.title = (changes["title"] or "").strip()[:200]
+    if changes.get("category") is not None:
+        b.category = _check_category(changes["category"])
+    if changes.get("basis") is not None:
+        b.basis = _check_basis(changes["basis"])
+    if changes.get("currency") is not None:
+        b.currency = currency_code(changes["currency"])
+    if changes.get("amount") is not None or changes.get("currency") is not None:
+        b.amount = _fmt(money(changes.get("amount") or b.amount, b.currency))
+    if changes.get("notes") is not None:
+        b.notes = changes["notes"] or None
+    if changes.get("place_key") is not None:
+        b.place_key = changes["place_key"] or None
+    if changes.get("activity_id") is not None:
+        b.activity_id = _check_activity(session, trip.id, changes["activity_id"])
+    if changes.get("status") is not None:
+        if changes["status"] not in (DRAFT, KEPT):
+            raise ValueError("status must be 'draft' or 'kept'")
+        b.status = changes["status"]
+    elif changes:
+        b.status = KEPT
+    if changes.get("rate") is not None or changes.get("currency") is not None:
+        _apply_rate(session, trip, b, getattr(user, "id", None), changes.get("rate"))
+    session.flush()
+    return b
+
+
+def delete_budget(session: Session, b: TripBudgetItem) -> None:
+    """Remove a planned item; actuals that pointed at it stay, unlinked."""
+    session.query(TripExpense).filter(TripExpense.budget_item_id == b.id).update(
+        {"budget_item_id": None}, synchronize_session=False)
+    session.delete(b)
+
+
+def save_budget_batch(session: Session, user, trip: Trip, items: list[BudgetInput],
+                      *, replace: bool = True) -> dict:
+    """An agent's budget research (D-180): every item lands as a draft. With
+    `replace`, the agent's earlier DRAFTS in the categories it's re-researching
+    go first, so a re-run doesn't pile up; kept items are never touched, and an
+    item matching a kept one (same category and title) is skipped. Returns the
+    outcome per item. Caller commits."""
+    if len(items) > MAX_BUDGET_BATCH:
+        raise ValueError(f"at most {MAX_BUDGET_BATCH} planned items per call")
+    kept = {(b.category, b.title.strip().lower()) for b in budget_of(session, trip.id)
+            if b.status == KEPT}
+    if replace:
+        cats = {(i.category or "other").lower() for i in items}
+        for b in budget_of(session, trip.id):
+            if b.status == DRAFT and b.category in cats:
+                delete_budget(session, b)
+        session.flush()
+    results = []
+    for i, data in enumerate(items):
+        key = ((data.category or "other").lower(), (data.title or "").strip().lower())
+        if key in kept:
+            results.append({"index": i, "outcome": "kept_already"})
+            continue
+        try:
+            b = create_budget(session, user, trip, data, status=DRAFT)
+            results.append({"index": i, "outcome": "drafted", "id": b.id})
+        except ValueError as err:
+            results.append({"index": i, "outcome": "error", "error": str(err)})
+    return {"results": results,
+            "counts": {o: sum(1 for r in results if r["outcome"] == o)
+                       for o in sorted({r["outcome"] for r in results})}}
+
+
+def budget_of(session: Session, trip_id: str) -> list[TripBudgetItem]:
+    return (session.query(TripBudgetItem).filter(TripBudgetItem.trip_id == trip_id)
+            .order_by(TripBudgetItem.category, TripBudgetItem.created_at).all())
+
+
+@dataclass
+class BudgetLine:
+    item: TripBudgetItem
+    times: int                       # how many times the estimate counts
+    total: Decimal | None            # in the trip currency; None = no rate
+
+
+@dataclass
+class Plan:
+    currency: str | None
+    people: int
+    days: int | None
+    lines: list[BudgetLine]
+    planned: Decimal                 # kept items
+    drafts: Decimal                  # agents' suggestions not yet kept
+    actual: Decimal                  # actual expenses, settlements excluded
+    by_category: list[tuple[str, Decimal, Decimal, Decimal]]   # (category, planned, drafts, actual)
+    unconverted: list[str]
+
+
+def plan(session: Session, trip: Trip) -> Plan:
+    """The budget next to what was actually spent, in the trip currency (D-181)."""
+    cur = trip.expense_currency
+    q = quantum(cur or "")
+    people, days = len(_roster(session, trip.id)), trip_days(trip)
+    lines, unconverted = [], []
+    planned = drafts = Decimal(0)
+    cats: dict[str, list[Decimal]] = {}
+    for b in budget_of(session, trip.id):
+        times = multiplier(b.basis, people, days)
+        total = None
+        if b.rate is None:
+            unconverted.append(b.id)
+        else:
+            total = (Decimal(b.amount) * times * Decimal(b.rate)).quantize(q, rounding=ROUND_HALF_UP)
+            row = cats.setdefault(b.category, [Decimal(0)] * 3)
+            if b.status == KEPT:
+                planned += total
+                row[0] += total
+            else:
+                drafts += total
+                row[1] += total
+        lines.append(BudgetLine(item=b, times=times, total=total))
+    actual = Decimal(0)
+    for e in expenses_of(session, trip.id):
+        if e.kind == EXPENSE and e.rate is not None:
+            amt = (Decimal(e.amount) * Decimal(e.rate)).quantize(q, rounding=ROUND_HALF_UP)
+            actual += amt
+            cats.setdefault(e.category, [Decimal(0)] * 3)[2] += amt
+    order = {c: i for i, c in enumerate(CATEGORIES)}
+    by_cat = [(c, *v) for c, v in sorted(cats.items(), key=lambda kv: order.get(kv[0], 99))]
+    return Plan(currency=cur, people=people, days=days, lines=lines, planned=planned,
+                drafts=drafts, actual=actual, by_category=by_cat, unconverted=unconverted)

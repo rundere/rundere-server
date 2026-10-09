@@ -21,7 +21,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
-from pydantic import Field
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
@@ -63,9 +63,12 @@ Saved places are Maps places the user kept before choosing a trip: capture_url
 saves one from a link, save_places pushes a whole list (try dry_run first; it is
 safe to repeat), list_saved_places shows them and file_saved_place puts one on a
 trip, undated if the user hasn't decided when.
-Expenses: list_expenses shows a trip's costs, balances and suggested settle-up
-payments; add_expense records one (entered by hand, split between the trip's
-travellers by id), record_settlement records a payment back."""
+Costs come in two parts. Planned: the budget — research_trip_budget is the kit,
+save_budget stores its estimates as drafts the user keeps. Actual: add_expense
+records what was really spent (by hand, split between the trip's travellers by
+id; pass budget_item_id when it fulfils a planned item), record_settlement records
+a payment back. Only actuals count towards balances and settle-up. list_expenses
+shows both."""
 
 mcp = MCPServer("Run·dere", instructions=INSTRUCTIONS, version=settings.app_version)
 
@@ -228,10 +231,12 @@ Amount = Annotated[str, Field(description="Decimal amount, e.g. \"42.50\"")]
 
 @mcp.tool()
 def list_expenses(trip_id: TripId) -> dict[str, Any]:
-    """A trip's expenses and settle-up payments, each traveller's balance (net:
-    + is owed, − owes) in the trip's expense currency, and the suggested payments
-    that settle everyone up. Expenses with no exchange rate are listed in
-    `unconverted` and left out of the balances."""
+    """A trip's costs, in two parts. ACTUAL: the expenses and settle-up payments,
+    each traveller's balance (net: + is owed, − owes) in the trip's expense
+    currency, and the suggested payments that settle everyone up — only actuals
+    count towards these. PLANNED (`plan`): the budget — planned items (estimates
+    per trip / person / day), drafts from research not yet kept, and planned vs
+    actual by category. Anything with no exchange rate is in `unconverted`."""
     return _run(api_v1.api_expenses, trip_id=trip_id)
 
 
@@ -255,6 +260,9 @@ def add_expense(trip_id: TripId, amount: Amount,
                                 "the user's Discover rates")] = None,
                 activity_id: Annotated[str | None, Field(
                     description="Timeline item it belongs to (get_trip)")] = None,
+                budget_item_id: Annotated[str | None, Field(
+                    description="The planned item this actually paid for "
+                                "(list_expenses' plan)")] = None,
                 notes: Annotated[str | None, Field(description="Notes")] = None,
                 ) -> dict[str, Any]:
     """Record an expense on a trip, split equally or exactly between its
@@ -263,7 +271,8 @@ def add_expense(trip_id: TripId, amount: Amount,
     body = api_v1.ExpenseIn(amount=amount, currency=currency, payer_id=payer_id, title=title,
                             spent_on=spent_on, split="exact" if shares else "equal",
                             traveler_ids=traveler_ids, shares=shares, category=category,
-                            rate=rate, activity_id=activity_id, notes=notes, source="mcp")
+                            rate=rate, activity_id=activity_id,
+                            budget_item_id=budget_item_id, notes=notes, source="mcp")
     return _run(api_v1.api_add_expense, trip_id=trip_id, body=body)
 
 
@@ -279,6 +288,50 @@ def record_settlement(trip_id: TripId,
     body = api_v1.SettlementIn(from_id=from_id, to_id=to_id, amount=amount,
                                currency=currency, spent_on=spent_on, source="mcp")
     return _run(api_v1.api_record_settlement, trip_id=trip_id, body=body)
+
+
+class PlannedCost(BaseModel):
+    """One planned cost from budget research."""
+    title: str = Field(description="What it is, e.g. \"Tokyo hotel\" or \"Daily lunches\"")
+    category: Literal["food", "lodging", "transport", "activities", "shopping", "fees",
+                      "other"] = "other"
+    amount: str = Field(description="Typical cost as a decimal string, per `basis`")
+    currency: str = Field(description="ISO-4217 code it's priced in, e.g. JPY")
+    basis: Literal["trip", "person", "day", "person_day"] = Field(
+        "trip", description="trip = once; person = each traveller; day = each day; "
+                            "person_day = each traveller each day")
+    place_key: str | None = Field(None, description="City key from get_trip's places, if it's "
+                                                    "for one city")
+    activity_id: str | None = Field(None, description="Timeline item it's for (get_trip)")
+    notes: str | None = Field(None, description="Why this number: the range, what it assumes")
+    sources: list[dict] | None = Field(None, description="[{title, url}] you priced it from")
+
+
+@mcp.tool()
+def save_budget(trip_id: TripId,
+                items: Annotated[list[PlannedCost], Field(description="The planned costs")],
+                replace: Annotated[bool, Field(
+                    description="Drop your earlier drafts in these categories first (a "
+                                "re-run). Kept items are never touched.")] = True,
+                ) -> dict[str, Any]:
+    """Save budget research to a trip's PLANNED costs. Every item lands as a draft
+    the person reviews and keeps; anything they already kept (same category and
+    title) is skipped. Planned costs are only a budget: they never count towards
+    balances or settle-up. Needs edit access. Use the research_trip_budget prompt."""
+    body = api_v1.BudgetBatchIn(items=[api_v1.BudgetItemIn(**i.model_dump()) for i in items],
+                                replace=replace)
+    return _run(lambda session, user: api_v1.save_budget(session, user, trip_id, body,
+                                                         source="mcp"))
+
+
+@mcp.tool()
+def delete_budget_item(trip_id: TripId,
+                       item_id: Annotated[str, Field(description="Planned item id from "
+                                                               "list_expenses' plan")],
+                       ) -> dict[str, Any]:
+    """Remove a planned cost (a draft you saved by mistake, say)."""
+    _run(api_v1.api_delete_budget_item, trip_id=trip_id, item_id=item_id)
+    return {"ok": True, "deleted": item_id}
 
 
 @mcp.tool()

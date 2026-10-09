@@ -1,6 +1,7 @@
-"""Run·dere 4.8 — trip expenses and settle-up (SPEC-10, YONDER-172, D-173–D-177).
+"""Run·dere 4.8 — trip expenses, budget and settle-up (SPEC-10, YONDER-172, D-173–D-182).
 
-Two tables (no foreign keys, house convention) and the trip's expense currency.
+Actual expenses + their shares, planned budget items, and the trip's expense
+currency (no foreign keys, house convention).
 Amounts and rates are decimal strings, so no float rounding creeps into balances.
 
 Revision ID: 0033
@@ -8,6 +9,9 @@ Revises: 0032
 """
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB
+
+_JSON = sa.JSON().with_variant(JSONB(), "postgresql")
 
 revision = "0033"
 down_revision = "0032"
@@ -37,6 +41,7 @@ def upgrade() -> None:
             sa.Column("split", sa.String(8), nullable=False, server_default="equal"),
             sa.Column("category", sa.String(16), nullable=False, server_default="other"),
             sa.Column("activity_id", sa.String(36)),
+            sa.Column("budget_item_id", sa.String(36)),
             sa.Column("notes", sa.Text),
             sa.Column("source", sa.String(16), nullable=False, server_default="api"),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -46,6 +51,32 @@ def upgrade() -> None:
         op.create_index("ix_trip_expenses_owner_id", "trip_expenses", ["owner_id"])
         op.create_index("ix_trip_expenses_spent_on", "trip_expenses", ["spent_on"])
         op.create_index("ix_trip_expenses_activity_id", "trip_expenses", ["activity_id"])
+        op.create_index("ix_trip_expenses_budget_item_id", "trip_expenses", ["budget_item_id"])
+    if "trip_budget_items" not in tables:
+        op.create_table(
+            "trip_budget_items",
+            sa.Column("id", sa.String(36), primary_key=True),
+            sa.Column("trip_id", sa.String(36), nullable=False),
+            sa.Column("owner_id", sa.String(36)),
+            sa.Column("title", sa.String(200), nullable=False, server_default=""),
+            sa.Column("category", sa.String(16), nullable=False, server_default="other"),
+            sa.Column("amount", sa.String(32), nullable=False),
+            sa.Column("currency", sa.String(3), nullable=False),
+            sa.Column("basis", sa.String(12), nullable=False, server_default="trip"),
+            sa.Column("rate", sa.String(32)),
+            sa.Column("rate_source", sa.String(12)),
+            sa.Column("status", sa.String(8), nullable=False, server_default="kept"),
+            sa.Column("place_key", sa.String(128)),
+            sa.Column("activity_id", sa.String(36)),
+            sa.Column("notes", sa.Text),
+            sa.Column("sources", _JSON),
+            sa.Column("source", sa.String(16), nullable=False, server_default="api"),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        )
+        op.create_index("ix_trip_budget_items_trip_id", "trip_budget_items", ["trip_id"])
+        op.create_index("ix_trip_budget_items_owner_id", "trip_budget_items", ["owner_id"])
+        op.create_index("ix_trip_budget_items_activity_id", "trip_budget_items", ["activity_id"])
     if "trip_expense_shares" not in tables:
         op.create_table(
             "trip_expense_shares",
@@ -58,6 +89,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_table("trip_budget_items")
     op.drop_table("trip_expense_shares")
     op.drop_table("trip_expenses")
     op.drop_column("trips", "expense_currency")

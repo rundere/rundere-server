@@ -1029,7 +1029,40 @@ class TripExpense(Base):
     split: Mapped[str] = mapped_column(String(8), default="equal")        # equal | exact
     category: Mapped[str] = mapped_column(String(16), default="other")
     activity_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    # D-181: the planned item this actual fulfils (soft link), for plan vs actual.
+    budget_item_id: Mapped[str | None] = mapped_column(String(36), index=True)
     notes: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), default="api")        # ios | web | mcp | api
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripBudgetItem(Base):
+    """A PLANNED cost on a trip — the budget (SPEC-10, D-178/D-179). Separate from
+    TripExpense on purpose: only actuals feed balances, settle-up and the trip's
+    actual cost (D-178). An estimate on a `basis` (trip | person | day |
+    person_day) that expands by the roster size and the trip's days when shown,
+    so adding a traveller updates the plan. Research agents save `draft` rows
+    (D-180); the person keeps them (`kept`), and agents never overwrite a kept
+    row. Same sharing as expenses (D-174). Soft links (house rule 3)."""
+    __tablename__ = "trip_budget_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    category: Mapped[str] = mapped_column(String(16), default="other")
+    amount: Mapped[str] = mapped_column(String(32))                       # estimate, decimal string
+    currency: Mapped[str] = mapped_column(String(3))
+    basis: Mapped[str] = mapped_column(String(12), default="trip")        # trip | person | day | person_day
+    rate: Mapped[str | None] = mapped_column(String(32))
+    rate_source: Mapped[str | None] = mapped_column(String(12))
+    status: Mapped[str] = mapped_column(String(8), default="kept")        # draft | kept
+    place_key: Mapped[str | None] = mapped_column(String(128))            # "JP:Tokyo", optional
+    activity_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+    sources: Mapped[list | None] = mapped_column(JsonCol)                 # [{title, url}]
     source: Mapped[str] = mapped_column(String(16), default="api")        # ios | web | mcp | api
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
