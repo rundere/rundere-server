@@ -534,3 +534,106 @@ struct JournalPatch: Codable, Sendable {
 struct APIErrorBody: Codable, Sendable {
     let detail: String?
 }
+
+// MARK: - Expenses (server 4.8, SPEC-10, YONDER-172)
+// Amounts and rates are decimal strings ("42.50"), as the server sends them, so
+// no float rounding creeps into who owes whom. The server does the arithmetic.
+
+struct ExpenseShareOut: Codable, Hashable, Sendable {
+    let traveler_id: Int
+    let name: String
+    let amount: String               // in the expense's currency
+}
+
+struct ExpenseOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let trip_id: String
+    let kind: String                 // expense | settlement
+    let title: String
+    let amount: String
+    let currency: String
+    let rate: String?                // trip currency per 1 unit; nil = unconverted
+    let rate_source: String?         // same | entered | discover
+    let amount_in_trip_currency: String?
+    let spent_on: String?
+    let payer_id: Int
+    let payer_name: String
+    let split: String                // equal | exact
+    let shares: [ExpenseShareOut]
+    let category: String
+    let activity_id: String?
+    let notes: String?
+    let owner_id: String?
+    let created_at: String?
+}
+
+struct BalanceOut: Codable, Hashable, Sendable {
+    let traveler_id: Int
+    let name: String
+    let paid: String
+    let share: String
+    let net: String                  // + is owed money, − owes money
+}
+
+struct TransferOut: Codable, Hashable, Sendable {
+    let from_id: Int
+    let from_name: String
+    let to_id: Int
+    let to_name: String
+    let amount: String
+}
+
+struct ExpensesOut: Codable, Sendable {
+    let currency: String?            // nil until the first expense
+    let total: String
+    let expenses: [ExpenseOut]
+    let balances: [BalanceOut]
+    let transfers: [TransferOut]
+    let unconverted: [String]
+    let categories: [String]
+}
+
+struct ExpenseIn: Codable, Sendable {
+    var amount: String
+    var currency: String
+    var payer_id: Int
+    var title: String = ""
+    var spent_on: String?
+    var split: String = "equal"
+    var traveler_ids: [Int]?         // equal split; nil/[] = everyone on the trip
+    var shares: [String: String]?    // exact split: traveller id (as text) → amount
+    var category: String = "other"
+    var rate: String?                // blank = the server uses your Discover rates
+    var activity_id: String?
+    var notes: String?
+    var source: String = "ios"
+}
+
+/// Only the fields set are sent (nil keys are omitted by JSONEncoder).
+struct ExpensePatch: Codable, Sendable {
+    var amount: String?
+    var currency: String?
+    var payer_id: Int?
+    var title: String?
+    var spent_on: String?
+    var split: String?
+    var traveler_ids: [Int]?
+    var shares: [String: String]?
+    var category: String?
+    var rate: String?
+    var activity_id: String?
+    var notes: String?
+}
+
+struct SettlementIn: Codable, Sendable {
+    var from_id: Int
+    var to_id: Int
+    var amount: String
+    var currency: String?
+    var spent_on: String?
+    var source: String = "ios"
+}
+
+struct ExpenseCurrencyIn: Codable, Sendable {
+    var currency: String
+}
