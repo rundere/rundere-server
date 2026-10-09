@@ -562,9 +562,54 @@ struct ExpenseOut: Codable, Identifiable, Hashable, Sendable {
     let shares: [ExpenseShareOut]
     let category: String
     let activity_id: String?
+    /// The planned item this paid for (D-181). Optional: early 4.8 builds omit it.
+    let budget_item_id: String?
     let notes: String?
     let owner_id: String?
     let created_at: String?
+}
+
+/// A planned cost (D-178/D-179): an estimate per `basis`, expanded by the
+/// trip's people and days into `total` (trip currency).
+struct BudgetItemOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let trip_id: String
+    let title: String
+    let category: String
+    let amount: String               // the estimate, in `currency`, per `basis`
+    let currency: String
+    let basis: String                // trip | person | day | person_day
+    let times: Int
+    let total: String?               // trip currency; nil = no rate
+    let rate: String?
+    let rate_source: String?
+    let status: String               // draft (an agent's suggestion) | kept
+    let place_key: String?
+    let activity_id: String?
+    let notes: String?
+    let sources: [JSONValue]
+    let source: String
+    let actual: String               // logged against it so far (trip currency)
+    let owner_id: String?
+}
+
+struct CategoryPlanOut: Codable, Hashable, Sendable {
+    let category: String
+    let planned: String
+    let drafts: String
+    let actual: String
+}
+
+/// The budget beside what was spent. Only actuals settle up (D-178).
+struct PlanOut: Codable, Sendable {
+    let people: Int
+    let days: Int?                   // nil = the trip has no dates yet
+    let planned: String
+    let drafts: String
+    let actual: String
+    let items: [BudgetItemOut]
+    let by_category: [CategoryPlanOut]
+    let unconverted: [String]
 }
 
 struct BalanceOut: Codable, Hashable, Sendable {
@@ -591,6 +636,8 @@ struct ExpensesOut: Codable, Sendable {
     let transfers: [TransferOut]
     let unconverted: [String]
     let categories: [String]
+    /// The planned side of Costs (D-178). Optional: early 4.8 builds omit it.
+    let plan: PlanOut?
 }
 
 struct ExpenseIn: Codable, Sendable {
@@ -605,6 +652,7 @@ struct ExpenseIn: Codable, Sendable {
     var category: String = "other"
     var rate: String?                // blank = the server uses your Discover rates
     var activity_id: String?
+    var budget_item_id: String?      // the planned item it fulfils (D-181)
     var notes: String?
     var source: String = "ios"
 }
@@ -622,7 +670,31 @@ struct ExpensePatch: Codable, Sendable {
     var category: String?
     var rate: String?
     var activity_id: String?
+    var budget_item_id: String?      // "" unlinks
     var notes: String?
+}
+
+struct BudgetItemIn: Codable, Sendable {
+    var amount: String
+    var currency: String
+    var title: String = ""
+    var category: String = "other"
+    var basis: String = "trip"
+    var rate: String?
+    var notes: String?
+    var source: String = "ios"
+}
+
+/// Editing a planned item keeps it; `status: "kept"` keeps a draft as it is.
+struct BudgetItemPatch: Codable, Sendable {
+    var amount: String?
+    var currency: String?
+    var title: String?
+    var category: String?
+    var basis: String?
+    var rate: String?
+    var notes: String?
+    var status: String?
 }
 
 struct SettlementIn: Codable, Sendable {
