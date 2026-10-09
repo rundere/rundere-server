@@ -42,7 +42,8 @@ if DEPS:
                  "assign_review_item_to_trip", "save_research", "save_city_guide",
                  "save_phrases", "add_item_to_timeline", "get_discovery_profile",
                  "save_safety", "list_saved_places", "save_places", "update_saved_place",
-                 "file_saved_place", "remove_saved_place"}
+                 "file_saved_place", "remove_saved_place", "list_expenses", "add_expense",
+                 "record_settlement", "delete_expense"}
 
     @pytest.fixture(scope="module")
     def client():
@@ -51,6 +52,9 @@ if DEPS:
 
     def _teardown(s):
         tids = [t.id for t in s.query(Trip).filter(Trip.name.like("MX %")).all()]
+        from app import expenses as expenses_svc
+        for tid in tids:
+            expenses_svc.purge_trip(s, tid)
         for model in (TripTraveler, TripActivity, DiscoveryItem, DiscoveryFinding,
                       PackingItem, PackingPlan):
             s.query(model).filter(model.trip_id.in_(tids)).delete(synchronize_session=False)
@@ -465,6 +469,24 @@ if DEPS:
         assert r.status_code == 400
 
     # ------------------------------------------------------------------ scoping
+    def test_expense_tools(client, w):
+        """SPEC-10: alice and bob split on their shared trip; bob settles up."""
+        alice, bob = _tok(w["alice"]), _tok(w["bob"])
+        t = w["shared"]
+        e = ok(client, alice, "add_expense", trip_id=t, amount="90", currency="EUR",
+               payer_id=w["ta"], title="Ferry", category="transport")
+        assert [s["amount"] for s in e["shares"]] == ["45", "45"]
+        ov = ok(client, bob, "list_expenses", trip_id=t)
+        assert ov["transfers"] == [{"from_id": w["tb"], "from_name": "MX Bob",
+                                    "to_id": w["ta"], "to_name": "MX Alice", "amount": "45"}]
+        ok(client, bob, "record_settlement", trip_id=t, from_id=w["tb"], to_id=w["ta"],
+           amount="45")
+        assert ok(client, alice, "list_expenses", trip_id=t)["transfers"] == []
+        good, err = call(client, alice, "add_expense", trip_id=t, amount="10",
+                         currency="EUR", payer_id=w["ta"], shares={str(w["ta"]): "3"})
+        assert not good and "add up to 3" in err
+        assert ok(client, alice, "delete_expense", trip_id=t, expense_id=e["id"])["ok"]
+
     def test_private_trip_unreachable_through_every_tool(client, w):
         tok = _tok(w["alice"])
         p = w["private"]
@@ -481,6 +503,11 @@ if DEPS:
             ("get_journal_entry", {"entry_id": w["bob_note"]}),
             ("update_journal_entry", {"entry_id": w["bob_note"], "body": "hacked"}),
             ("get_review_item", {"item_id": w["admin_cap"]}),
+            ("list_expenses", {"trip_id": p}),
+            ("add_expense", {"trip_id": p, "amount": "5", "currency": "EUR",
+                             "payer_id": w["ta"]}),
+            ("record_settlement", {"trip_id": p, "from_id": w["ta"], "to_id": w["tb"],
+                                   "amount": "5"}),
         ]
         for name, args in attempts:
             good, err = call(client, tok, name, **args)

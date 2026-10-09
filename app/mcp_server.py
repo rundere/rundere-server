@@ -62,7 +62,10 @@ ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items).
 Saved places are Maps places the user kept before choosing a trip: capture_url
 saves one from a link, save_places pushes a whole list (try dry_run first; it is
 safe to repeat), list_saved_places shows them and file_saved_place puts one on a
-trip, undated if the user hasn't decided when."""
+trip, undated if the user hasn't decided when.
+Expenses: list_expenses shows a trip's costs, balances and suggested settle-up
+payments; add_expense records one (entered by hand, split between the trip's
+travellers by id), record_settlement records a payment back."""
 
 mcp = MCPServer("Run·dere", instructions=INSTRUCTIONS, version=settings.app_version)
 
@@ -217,6 +220,74 @@ def add_packing_item(trip_id: TripId,
     """Add a custom line to the user's own packing list for a trip."""
     return _run(api_v1.api_add_packing_item, trip_id=trip_id,
                 body=api_v1.PackingItemIn(label=label, category=category, quantity=quantity))
+
+
+# --------------------------------------------------------------------------- expenses
+Amount = Annotated[str, Field(description="Decimal amount, e.g. \"42.50\"")]
+
+
+@mcp.tool()
+def list_expenses(trip_id: TripId) -> dict[str, Any]:
+    """A trip's expenses and settle-up payments, each traveller's balance (net:
+    + is owed, − owes) in the trip's expense currency, and the suggested payments
+    that settle everyone up. Expenses with no exchange rate are listed in
+    `unconverted` and left out of the balances."""
+    return _run(api_v1.api_expenses, trip_id=trip_id)
+
+
+@mcp.tool()
+def add_expense(trip_id: TripId, amount: Amount,
+                currency: Annotated[str, Field(description="ISO-4217 code, e.g. EUR")],
+                payer_id: Annotated[int, Field(description="Traveller id (get_trip's "
+                                                           "`travelers`) who paid")],
+                title: Annotated[str, Field(description="What it was, e.g. \"Dinner at Noma\"")] = "",
+                spent_on: Date = None,
+                traveler_ids: Annotated[list[int] | None, Field(
+                    description="Split equally between these travellers; omit or [] = "
+                                "everyone on the trip")] = None,
+                shares: Annotated[dict[int, str] | None, Field(
+                    description="Exact split instead: {traveler_id: amount}, adding up to "
+                                "`amount`")] = None,
+                category: Literal["food", "lodging", "transport", "activities", "shopping",
+                                  "fees", "other"] = "other",
+                rate: Annotated[str | None, Field(
+                    description="Trip-currency units per 1 unit of `currency`; omit to use "
+                                "the user's Discover rates")] = None,
+                activity_id: Annotated[str | None, Field(
+                    description="Timeline item it belongs to (get_trip)")] = None,
+                notes: Annotated[str | None, Field(description="Notes")] = None,
+                ) -> dict[str, Any]:
+    """Record an expense on a trip, split equally or exactly between its
+    travellers. Entered by hand only — never import bank, card or receipt data
+    (D-155). Needs edit access to the trip."""
+    body = api_v1.ExpenseIn(amount=amount, currency=currency, payer_id=payer_id, title=title,
+                            spent_on=spent_on, split="exact" if shares else "equal",
+                            traveler_ids=traveler_ids, shares=shares, category=category,
+                            rate=rate, activity_id=activity_id, notes=notes, source="mcp")
+    return _run(api_v1.api_add_expense, trip_id=trip_id, body=body)
+
+
+@mcp.tool()
+def record_settlement(trip_id: TripId,
+                      from_id: Annotated[int, Field(description="Traveller id who paid")],
+                      to_id: Annotated[int, Field(description="Traveller id who was paid")],
+                      amount: Amount,
+                      currency: Annotated[str | None, Field(
+                          description="Defaults to the trip's expense currency")] = None,
+                      spent_on: Date = None) -> dict[str, Any]:
+    """Record that one traveller paid another back (a settle-up payment)."""
+    body = api_v1.SettlementIn(from_id=from_id, to_id=to_id, amount=amount,
+                               currency=currency, spent_on=spent_on, source="mcp")
+    return _run(api_v1.api_record_settlement, trip_id=trip_id, body=body)
+
+
+@mcp.tool()
+def delete_expense(trip_id: TripId,
+                   expense_id: Annotated[str, Field(description="Expense id from list_expenses")],
+                   ) -> dict[str, Any]:
+    """Delete an expense or a recorded settlement. Needs edit access."""
+    _run(api_v1.api_delete_expense, trip_id=trip_id, expense_id=expense_id)
+    return {"ok": True, "deleted": expense_id}
 
 
 # --------------------------------------------------------------------------- journal

@@ -18,7 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import authn, journal as journal_svc, places as places_svc, scope
+from app import (authn, expenses as expenses_svc, journal as journal_svc,
+                 places as places_svc, scope)
 from app.db import get_session
 from app.models import (DiscoveryFinding, JournalEntry, PackingItem, PackingPlan,
                         SavedPlace, TravelItem, TravelerIdentity, Trip, TripActivity,
@@ -1153,6 +1154,8 @@ def api_delete_activity(trip_id: str, activity_id: str,
         who.clear_activity(session, a.id)
         from discover import items as discovery_items
         discovery_items.unlink_activity(session, a.id)
+        from app import expenses as expenses_svc
+        expenses_svc.unlink_activity(session, a.id)   # SPEC-10: keep the expense, unlinked
         session.delete(a)
         session.commit()
     return None
@@ -1800,3 +1803,241 @@ def api_place_file(place_id: str, trip_id: str, body: SavedPlaceFileIn,
                    session: Session = Depends(get_session)):
     """File a saved place to a trip (see `file_place`)."""
     return file_place(session, user, place_id, trip_id, body)
+
+
+# --------------------------------------------------------------------------- expenses
+# SPEC-10 (YONDER-172, D-173–D-177). Trip sharing applies (D-174): reading needs
+# view access, every write needs edit access. Rules live in app/expenses.py.
+
+class ExpenseShareOut(BaseModel):
+    traveler_id: int
+    name: str = ""
+    amount: str                            # in the expense's currency
+
+
+class ExpenseOut(BaseModel):
+    id: str
+    trip_id: str
+    kind: str                              # expense | settlement
+    title: str
+    amount: str                            # decimal string, e.g. "42.50"
+    currency: str
+    rate: str | None = None                # trip currency per 1 unit; None = unconverted
+    rate_source: str | None = None         # same | entered | discover
+    amount_in_trip_currency: str | None = None
+    spent_on: str | None = None
+    payer_id: int
+    payer_name: str = ""
+    split: str                             # equal | exact
+    shares: list[ExpenseShareOut]
+    category: str
+    activity_id: str | None = None
+    notes: str | None = None
+    owner_id: str | None = None
+    created_at: datetime | None = None
+
+
+class BalanceOut(BaseModel):
+    traveler_id: int
+    name: str = ""
+    paid: str                              # expenses they paid (trip currency)
+    share: str                             # their part of all expenses
+    net: str                               # + is owed money, − owes money
+
+
+class TransferOut(BaseModel):
+    from_id: int
+    from_name: str = ""
+    to_id: int
+    to_name: str = ""
+    amount: str
+
+
+class ExpensesOut(BaseModel):
+    currency: str | None = None            # the trip's balance currency (None = no expenses yet)
+    total: str                             # trip spend, settlements excluded
+    expenses: list[ExpenseOut]
+    balances: list[BalanceOut]
+    transfers: list[TransferOut]           # the suggested settle-up payments
+    unconverted: list[str] = []            # expense ids with no rate (left out of balances)
+    categories: list[str] = list(expenses_svc.CATEGORIES)
+
+
+class ExpenseIn(BaseModel):
+    """Record an expense. `traveler_ids` is who it's split equally between
+    ([]/omitted = everyone on the trip); for `split: "exact"` send `shares`
+    ({traveler_id: amount}) adding up to `amount`. Leave `rate` blank to use your
+    Discover currency rates for the trip; give it to override."""
+    amount: str
+    currency: str
+    payer_id: int
+    title: str = ""
+    spent_on: str | None = None            # YYYY-MM-DD
+    split: str = "equal"
+    traveler_ids: list[int] | None = None
+    shares: dict[int, str] | None = None
+    category: str = "other"
+    rate: str | None = None
+    activity_id: str | None = None
+    notes: str | None = None
+    source: str = "api"
+
+
+class ExpensePatch(BaseModel):
+    """Edit an expense. Only the fields sent change; changing amount, currency or
+    split recomputes the shares. `activity_id: ""` unlinks the timeline item."""
+    amount: str | None = None
+    currency: str | None = None
+    payer_id: int | None = None
+    title: str | None = None
+    spent_on: str | None = None
+    split: str | None = None
+    traveler_ids: list[int] | None = None
+    shares: dict[int, str] | None = None
+    category: str | None = None
+    rate: str | None = None
+    activity_id: str | None = None
+    notes: str | None = None
+
+
+class SettlementIn(BaseModel):
+    """`from_id` paid `to_id` back. Currency defaults to the trip's."""
+    from_id: int
+    to_id: int
+    amount: str
+    currency: str | None = None
+    spent_on: str | None = None
+    rate: str | None = None
+    notes: str | None = None
+    source: str = "api"
+
+
+class ExpenseCurrencyIn(BaseModel):
+    currency: str
+
+
+def _expense_out(e, shares, nm: dict[int, str], trip_currency: str | None) -> ExpenseOut:
+    from decimal import ROUND_HALF_UP, Decimal
+    converted = None
+    if e.rate is not None:
+        q = expenses_svc.quantum(trip_currency or e.currency)
+        converted = format((Decimal(e.amount) * Decimal(e.rate))
+                           .quantize(q, rounding=ROUND_HALF_UP).normalize(), "f")
+    return ExpenseOut(
+        id=e.id, trip_id=e.trip_id, kind=e.kind, title=e.title, amount=e.amount,
+        currency=e.currency, rate=e.rate, rate_source=e.rate_source,
+        amount_in_trip_currency=converted, spent_on=e.spent_on, payer_id=e.payer_id,
+        payer_name=nm.get(e.payer_id, ""), split=e.split,
+        shares=[ExpenseShareOut(traveler_id=s.traveler_id, name=nm.get(s.traveler_id, ""),
+                                amount=s.amount) for s in shares],
+        category=e.category, activity_id=e.activity_id, notes=e.notes,
+        owner_id=e.owner_id, created_at=e.created_at)
+
+
+def _one_expense_out(session: Session, trip: Trip, e) -> ExpenseOut:
+    shares = expenses_svc.shares_of(session, e.id)
+    nm = expenses_svc.names(session, [e.payer_id, *[s.traveler_id for s in shares]])
+    return _expense_out(e, shares, nm, trip.expense_currency)
+
+
+def expenses_overview(session: Session, trip: Trip) -> ExpensesOut:
+    rows = expenses_svc.expenses_of(session, trip.id)
+    smap = expenses_svc.share_map(session, [e.id for e in rows])
+    summ = expenses_svc.summarize(session, trip)
+    ids = {*summ.net, *[e.payer_id for e in rows],
+           *[s.traveler_id for ss in smap.values() for s in ss]}
+    nm = expenses_svc.names(session, ids)
+
+    def f(d):
+        return format(d.normalize(), "f") if d else "0"
+    return ExpensesOut(
+        currency=summ.currency, total=f(summ.total),
+        expenses=[_expense_out(e, smap.get(e.id, []), nm, summ.currency) for e in rows],
+        balances=[BalanceOut(traveler_id=t, name=nm.get(t, ""),
+                             paid=f(summ.paid.get(t)), share=f(summ.share.get(t)),
+                             net=f(summ.net.get(t)))
+                  for t in sorted(summ.net)],
+        transfers=[TransferOut(from_id=a, from_name=nm.get(a, ""), to_id=b,
+                               to_name=nm.get(b, ""), amount=f(amt))
+                   for a, b, amt in summ.transfers],
+        unconverted=summ.unconverted)
+
+
+def _expense_or_404(session: Session, trip_id: str, expense_id: str):
+    from app.models import TripExpense
+    e = session.get(TripExpense, expense_id)
+    if e is None or e.trip_id != trip_id:
+        raise HTTPException(404, "expense not found")
+    return e
+
+
+def _valueerror_400(fn):
+    try:
+        return fn()
+    except ValueError as err:
+        raise HTTPException(400, str(err)) from None
+
+
+@router.get("/trips/{trip_id}/expenses", response_model=ExpensesOut)
+def api_expenses(trip_id: str, user=Depends(authn.current_user),
+                 session: Session = Depends(get_session)):
+    """The trip's expenses, everyone's balance and the suggested settle-up payments."""
+    trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
+    return expenses_overview(session, trip)
+
+
+@router.post("/trips/{trip_id}/expenses", response_model=ExpenseOut, status_code=201)
+def api_add_expense(trip_id: str, body: ExpenseIn, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    data = expenses_svc.ExpenseInput(**body.model_dump())
+    e = _valueerror_400(lambda: expenses_svc.create(session, user, trip, data))
+    session.commit()
+    return _one_expense_out(session, trip, e)
+
+
+@router.patch("/trips/{trip_id}/expenses/{expense_id}", response_model=ExpenseOut)
+def api_update_expense(trip_id: str, expense_id: str, body: ExpensePatch,
+                       user=Depends(authn.current_user),
+                       session: Session = Depends(get_session)):
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    e = _expense_or_404(session, trip.id, expense_id)
+    _valueerror_400(lambda: expenses_svc.update(session, user, trip, e,
+                                                body.model_dump(exclude_unset=True)))
+    session.commit()
+    return _one_expense_out(session, trip, e)
+
+
+@router.delete("/trips/{trip_id}/expenses/{expense_id}", status_code=204)
+def api_delete_expense(trip_id: str, expense_id: str, user=Depends(authn.current_user),
+                       session: Session = Depends(get_session)):
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    e = _expense_or_404(session, trip.id, expense_id)
+    expenses_svc.delete(session, e)
+    session.commit()
+    return None
+
+
+@router.post("/trips/{trip_id}/settlements", response_model=ExpenseOut, status_code=201)
+def api_record_settlement(trip_id: str, body: SettlementIn, user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """Record that one traveller paid another back (D-177)."""
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    e = _valueerror_400(lambda: expenses_svc.record_settlement(
+        session, user, trip, from_id=body.from_id, to_id=body.to_id, amount=body.amount,
+        currency=body.currency, spent_on=body.spent_on, rate=body.rate, notes=body.notes,
+        source=body.source))
+    session.commit()
+    return _one_expense_out(session, trip, e)
+
+
+@router.put("/trips/{trip_id}/expenses/currency", response_model=ExpensesOut)
+def api_set_expense_currency(trip_id: str, body: ExpenseCurrencyIn,
+                             user=Depends(authn.current_user),
+                             session: Session = Depends(get_session)):
+    """Change the currency balances are shown in (D-176). Rates you entered were
+    against the old currency, so they are cleared and need entering again."""
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    _valueerror_400(lambda: expenses_svc.set_trip_currency(session, user, trip, body.currency))
+    session.commit()
+    return expenses_overview(session, trip)
