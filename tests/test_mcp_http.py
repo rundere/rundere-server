@@ -496,11 +496,11 @@ if DEPS:
         before = ok(client, bob, "list_expenses", trip_id=t)["transfers"]
         good, err = call(client, alice, "save_budget", trip_id=t, items=[
             {"title": "Ferry tickets", "category": "transport", "amount": "40",
-             "currency": "EUR", "basis": "person"}])
+             "currency": "EUR"}])
         assert not good and "traveler_ids" in err               # must say who it's for
         out = ok(client, alice, "save_budget", trip_id=t, items=[
             {"title": "Ferry tickets", "category": "transport", "amount": "40",
-             "currency": "EUR", "basis": "person", "traveler_ids": [w["ta"]]}])
+             "currency": "EUR", "traveler_ids": [w["ta"]]}])
         assert out["counts"] == {"drafted": 1}
         assert out["plan"]["drafts"] == "40" and out["plan"]["items"][0]["status"] == "draft"
         assert ok(client, bob, "list_expenses", trip_id=t)["plan"]["items"] == []   # not his

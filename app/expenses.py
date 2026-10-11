@@ -20,9 +20,8 @@ The one place the expense rules live, so /api/v1 and MCP never diverge:
 - **Settlements are payments (D-177)** and net with expenses; suggested payments
   are a greedy largest-debtor → largest-creditor match.
 - **Planned vs actual (D-178–D-181, D-184).** Planned items (TripBudgetItem) are
-  the budget: estimates for the travellers tagged on them, on a basis expanded by
-  those travellers and the days they cover — never the whole roster — never
-  split or settled. Only actual expenses feed balances and the trip's actual
+  the budget: one amount each for the travellers tagged on it — nothing is
+  multiplied by people or days (D-179) — never owed or settled. Only actual expenses feed balances and the trip's actual
   cost. Agents' planned items land as drafts the person keeps (D-180); an actual
   can name the planned item it fulfils, for plan vs actual by category (D-181).
 
@@ -559,7 +558,6 @@ def suggest_transfers(net: dict[int, Decimal], q: Decimal) -> list[tuple[int, in
 
 # --------------------------------------------------------------------------- budget (planned)
 DRAFT, KEPT = "draft", "kept"
-BASES = ("trip", "person", "day", "person_day")
 MAX_BUDGET_BATCH = 100
 
 
@@ -573,38 +571,14 @@ def trip_days(trip: Trip) -> int | None:
     return (b - a).days + 1 if b >= a else None
 
 
-def span_days(start: str | None, end: str | None) -> int | None:
-    """Days from `start` to `end`, both included; None unless both are dates."""
-    from datetime import date
-    try:
-        a, b = date.fromisoformat(start or ""), date.fromisoformat(end or "")
-    except ValueError:
-        return None
-    return (b - a).days + 1 if b >= a else None
-
-
-def item_days(b: TripBudgetItem, trip: Trip) -> int | None:
-    """The days a planned cost covers: its own dates, else the trip's (D-184)."""
-    return span_days(b.start_date, b.end_date) or trip_days(trip)
-
-
-def multiplier(basis: str, people: int, days: int | None) -> int:
-    """How many times an estimate counts (D-179/D-184): `people` is the number of
-    travellers TAGGED on it, never the roster. Unknown days count once; the API
-    flags those items so the person can add dates."""
-    p, d = max(people, 1), days or 1
-    return {"trip": 1, "person": p, "day": d, "person_day": p * d}.get(basis, 1)
-
-
 @dataclass
 class BudgetInput:
     amount: object
     currency: str
     title: str = ""
     category: str = "other"
-    basis: str = "trip"
     traveler_ids: list | None = None       # who it's for (D-184); required from agents
-    start_date: str | None = None          # the days it covers, if not the whole trip
+    start_date: str | None = None          # when it applies, if not the whole trip
     end_date: str | None = None
     rate: object = None
     place_key: str | None = None
@@ -612,13 +586,6 @@ class BudgetInput:
     notes: str | None = None
     sources: list | None = None            # [{title, url}]
     source: str = "api"
-
-
-def _check_basis(basis: str | None) -> str:
-    b = (basis or "trip").lower()
-    if b not in BASES:
-        raise ValueError(f"basis must be one of {', '.join(BASES)}")
-    return b
 
 
 def _check_category(category: str | None) -> str:
@@ -693,7 +660,7 @@ def create_budget(session: Session, user, trip: Trip, data: BudgetInput,
                        title=(data.title or "").strip()[:200],
                        category=_check_category(data.category),
                        amount=_fmt(money(data.amount, cur)), currency=cur,
-                       basis=_check_basis(data.basis), status=status,
+                       status=status,
                        start_date=start, end_date=end,
                        place_key=(data.place_key or None),
                        activity_id=_check_activity(session, trip.id, data.activity_id),
@@ -715,8 +682,6 @@ def update_budget(session: Session, user, trip: Trip, b: TripBudgetItem,
         b.title = (changes["title"] or "").strip()[:200]
     if changes.get("category") is not None:
         b.category = _check_category(changes["category"])
-    if changes.get("basis") is not None:
-        b.basis = _check_basis(changes["basis"])
     if changes.get("currency") is not None:
         b.currency = currency_code(changes["currency"])
     if changes.get("amount") is not None or changes.get("currency") is not None:
@@ -805,8 +770,6 @@ def budget_of(session: Session, trip_id: str) -> list[TripBudgetItem]:
 class BudgetLine:
     item: TripBudgetItem
     traveler_ids: list[int]          # who it's for
-    days: int | None                 # the days it covers (None = unknown)
-    times: int                       # how many times the estimate counts
     total: Decimal | None            # in the trip currency; None = no rate
 
 
@@ -834,10 +797,9 @@ def _split_evenly(total: Decimal, ids: list[int], q: Decimal) -> dict[int, Decim
 
 def plan(session: Session, trip: Trip, user=None) -> Plan:
     """The budget next to what was actually spent, in the trip currency (D-181),
-    from what `user` can see (D-183). Per traveller (D-184): a per-person cost
-    counts in full for each tagged traveller; a shared one (whole trip, or per
-    day for the group) is split evenly between them. Actuals per traveller are
-    their shares of expenses."""
+    from what `user` can see (D-183). A planned cost is one amount (D-179); per
+    traveller (D-184) it's split evenly between the people tagged on it. Actuals
+    per traveller are their shares of expenses."""
     cur = trip.expense_currency
     q = quantum(cur or "")
     items = budget_of(session, trip.id)
@@ -850,28 +812,21 @@ def plan(session: Session, trip: Trip, user=None) -> Plan:
         people = tags.get(b.id, [])
         if not can_see(user, b.owner_id, people):
             continue
-        days = item_days(b, trip)
-        times = multiplier(b.basis, len(people), days)
         total = None
         if b.rate is None:
             unconverted.append(b.id)
         else:
-            total = (Decimal(b.amount) * times * Decimal(b.rate)).quantize(q, rounding=ROUND_HALF_UP)
+            total = (Decimal(b.amount) * Decimal(b.rate)).quantize(q, rounding=ROUND_HALF_UP)
             row = cats.setdefault(b.category, [Decimal(0)] * 3)
             if b.status == KEPT:
                 planned += total
                 row[0] += total
-                if b.basis in ("person", "person_day"):
-                    each = (total / max(len(people), 1)).quantize(q, rounding=ROUND_HALF_UP)
-                    split = {t: each for t in people}
-                else:
-                    split = _split_evenly(total, people, q)
-                for t, v in split.items():
+                for t, v in _split_evenly(total, people, q).items():
                     per.setdefault(t, [Decimal(0), Decimal(0)])[0] += v
             else:
                 drafts += total
                 row[1] += total
-        lines.append(BudgetLine(item=b, traveler_ids=people, days=days, times=times, total=total))
+        lines.append(BudgetLine(item=b, traveler_ids=people, total=total))
     actual = Decimal(0)
     rows, smap = visible_expenses(session, trip, user)
     for e in rows:

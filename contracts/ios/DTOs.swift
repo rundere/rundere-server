@@ -584,23 +584,20 @@ struct ExpenseCommentIn: Codable, Sendable {
     var body: String
 }
 
-/// A planned cost (D-178/D-179/D-184): an estimate per `basis` for the
-/// travellers tagged on it, expanded by them and its days into `total`.
+/// A planned cost (D-178/D-179/D-184): one estimated amount for the travellers
+/// tagged on it — never multiplied by people or days (a room for two is one cost).
 struct BudgetItemOut: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let trip_id: String
     let title: String
     let category: String
-    let amount: String               // the estimate, in `currency`, per `basis`
+    let amount: String               // the estimate, in `currency`
     let currency: String
-    let basis: String                // trip | person | day | person_day
     /// Who it's for (D-184). Optional: earlier 4.8 builds omit these.
     let traveler_ids: [Int]?
     let traveler_names: [String]?
     let start_date: String?
-    let end_date: String?
-    let days: Int?
-    let times: Int
+    let end_date: String?            // when it applies, if not the whole trip
     let total: String?               // trip currency; nil = no rate
     let rate: String?
     let rate_source: String?
@@ -709,7 +706,6 @@ struct BudgetItemIn: Codable, Sendable {
     var currency: String
     var title: String = ""
     var category: String = "other"
-    var basis: String = "trip"
     var traveler_ids: [Int]?         // who it's for; nil = you (D-184)
     var start_date: String?
     var end_date: String?
@@ -724,7 +720,6 @@ struct BudgetItemPatch: Codable, Sendable {
     var currency: String?
     var title: String?
     var category: String?
-    var basis: String?
     var traveler_ids: [Int]?
     var start_date: String?          // "" clears it
     var end_date: String?

@@ -28,10 +28,10 @@ people up and make the trip's actual cost.
 - **TripExpenseShare** (`trip_expense_shares`): who an expense is for and their
   part of it, in the expense's currency. Always stored explicitly, even for an
   equal split, so later roster changes never rewrite history.
-- **TripBudgetItem** (`trip_budget_items`): a planned cost — an estimate in its
-  own currency on a `basis` (trip / person / day / person_day), `draft` (an
-  agent's suggestion) or `kept`, optionally for part of the trip
-  (`start_date`–`end_date`), with optional city, timeline item and sources.
+- **TripBudgetItem** (`trip_budget_items`): a planned cost — one estimated amount
+  in its own currency (never multiplied), `draft` (an agent's suggestion) or
+  `kept`, optionally for part of the trip (`start_date`–`end_date`), with
+  optional city, timeline item and sources.
 - **TripBudgetTraveler** (`trip_budget_travelers`): who a planned cost is for.
 - **TripExpenseComment** (`trip_expense_comments`): the discussion on an actual.
 - **TripExpense.budget_item_id**: the planned item an actual paid for.
@@ -70,11 +70,13 @@ people up and make the trip's actual cost.
 - **D-178 — Planned and actual are separate.** The plan is a budget: it is never
   split, never owed and never settled. Balances, suggested payments and the
   trip's actual cost come from actual expenses only.
-- **D-179 — A planned cost is an estimate on a basis (revised 2026-10-11).**
-  Once for its travellers together, per person, per day, or per person per day,
-  multiplied by the travellers TAGGED on it (D-184) and the days it covers — its
-  own dates, else the trip's — never the whole roster. Without dates, a per-day
-  estimate counts once and the plan says the days are unknown.
+- **D-179 — A planned cost is one amount (revised 2026-10-11).** Each planned
+  cost is a single estimated amount for the travellers tagged on it (D-184) and
+  is never multiplied — not by people, not by days. A room for two is one cost
+  (the room's price), tagged with both; three days of lunches for one person is
+  the three-day total. Its dates, when given, say when it applies; they don't
+  change the amount. In the per-traveller view a cost is split evenly between
+  the people tagged on it.
 - **D-180 — Budget research is a research kit and lands as drafts.** The
   trip-budget kit (`research_trip_budget`) prices the trip from real sources and
   saves with `save_budget`. Every agent item is a draft; a re-run replaces the
@@ -102,8 +104,7 @@ people up and make the trip's actual cost.
   themselves, and an agent must name them (`traveler_ids` is required from
   research). Nothing is extrapolated to people a cost isn't for. The plan shows
   each traveller's budget beside their share of actual spending
-  (`by_traveler`): a per-person cost counts in full for each tagged traveller, a
-  shared one is split evenly between them.
+  (`by_traveler`), each cost split evenly between the people tagged on it.
 - **D-185 — The people on an actual can discuss it.** Comments sit on an actual
   expense and are visible exactly where it is (D-183); anyone who can see the
   expense can comment, and people delete only their own comments. Deleting the

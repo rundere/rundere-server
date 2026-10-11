@@ -47,19 +47,25 @@ restaurant-price sources for meals. Note the date you checked.
 
 Cover what applies to this trip:
 
-- **Lodging** — per night for the room (basis `day`), or the booked total.
-- **Transport** — flights and long-distance trains not yet booked (`person`),
-  local transit passes (`person` or `person_day`), taxis, fuel, tolls, parking.
-- **Food** — breakfast, lunch, dinner, coffee and snacks at their budget level
-  (`person_day`), plus any special meals they've planned.
-- **Activities** — entry tickets, tours and events, per person.
+- **Lodging** — the room for the nights they're there, or the booked total.
+- **Transport** — flights and long-distance trains not yet booked, local
+  transit passes, taxis, fuel, tolls, parking.
+- **Food** — breakfast, lunch, dinner, coffee and snacks at their budget level,
+  plus any special meals they've planned.
+- **Activities** — entry tickets, tours and events.
 - **Fees** — visas, eTAs, travel insurance, tourist taxes, SIM/eSIM, tips if
   customary.
 - **Shopping / other** — only if they've asked for it.
 
 Price in the **local currency** and let Run·dere convert. Use the middle of the
-range as `amount` and put the range in `notes` ("¥1,000–1,800; mid-range
-ramen or set lunch").
+range and put the range and your arithmetic in `notes` ("3 nights × ¥18,000–30,000;
+mid-range double, Shinjuku").
+
+**Every `amount` is one total, and Run·dere never multiplies it.** A room for
+two people is one cost (the room's price), tagged with both. Three days of
+lunches for one person is the three-day total, tagged with that person. If two
+people each need their own ticket, either save one item with both tagged and
+the combined price, or one item per person with their own price.
 
 ## 3. Save it
 
@@ -67,25 +73,23 @@ One call per trip (or per city), every item a planned cost:
 
 ```
 save_budget(trip_id, items=[
-  {title: "Tokyo hotel (3 nights)", category: "lodging", amount: "24000",
-   currency: "JPY", basis: "day", traveler_ids: [12, 14],
+  {title: "Tokyo hotel (3 nights)", category: "lodging", amount: "72000",
+   currency: "JPY", traveler_ids: [12, 14],
    start_date: "2027-04-02", end_date: "2027-04-04", place_key: "JP:Tokyo",
-   notes: "¥18,000–30,000 per night for a double, mid-range, Shinjuku",
+   notes: "3 nights × ~¥24,000 (¥18,000–30,000) for a double, mid-range, Shinjuku",
    sources: [{title, url}]},
-  {title: "Lunches", category: "food", amount: "1400", currency: "JPY",
-   basis: "person_day", traveler_ids: [12], notes: "…"},
+  {title: "Lunches in Tokyo", category: "food", amount: "4200", currency: "JPY",
+   traveler_ids: [12], notes: "3 days × ~¥1,400 …"},
   …
 ])
 ```
 
 - `traveler_ids` (required): who it's for. A shared room is one item tagged
-  with both people; a per-person ticket for only one of them is tagged with
-  just that one.
-- `basis`: `trip` (once, for the tagged people together), `person` (each tagged
-  traveller), `day` (each day, shared) or `person_day` (each tagged traveller
-  each day). Run·dere multiplies it by the **tagged** travellers only, over
-  `start_date`–`end_date` when someone is there for part of the trip (else the
-  trip's dates).
+  with both people; a ticket for only one of them is tagged with just that one.
+- `amount`: the single total for them — see above. In the per-traveller view
+  Run·dere splits it evenly between the people tagged.
+- `start_date`–`end_date`: when it applies, if not the whole trip (for the
+  record; it doesn't change the amount).
 - Everything lands as a **draft** the person reviews and keeps. Saving again
   with `replace: true` replaces your earlier drafts in those categories; it
   never touches what they've kept.

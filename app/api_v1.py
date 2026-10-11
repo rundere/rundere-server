@@ -1852,22 +1852,19 @@ class ExpenseOut(BaseModel):
 
 
 class BudgetItemOut(BaseModel):
-    """A planned cost (D-178/D-179/D-184): an estimate for the travellers tagged
-    on it, on a basis, expanded by THOSE travellers and the days it covers into
-    `total` (trip currency)."""
+    """A planned cost (D-178/D-179/D-184): one estimated amount for the travellers
+    tagged on it — never multiplied by people or days. `total` is it in the trip
+    currency."""
     id: str
     trip_id: str
     title: str
     category: str
-    amount: str                            # the estimate, in `currency`, per `basis`
+    amount: str                            # the estimate, in `currency`
     currency: str
-    basis: str                             # trip | person | day | person_day
     traveler_ids: list[int] = []           # who it's for (D-184)
     traveler_names: list[str] = []
-    start_date: str | None = None          # the days it covers, if not the whole trip
+    start_date: str | None = None          # when it applies, if not the whole trip
     end_date: str | None = None
-    days: int | None = None                # days it counts (None = unknown → once)
-    times: int                             # how many times it counts (tagged people × days)
     total: str | None = None               # in the trip currency; None = no rate
     rate: str | None = None
     rate_source: str | None = None
@@ -1978,15 +1975,13 @@ class ExpensePatch(BaseModel):
 
 class BudgetItemIn(BaseModel):
     """Plan a cost for the travellers it's for (`traveler_ids`; your own entry
-    defaults to you, research must name them). `amount` is an estimate in
-    `currency` per `basis`: once for them, per person, per day, or per person per
-    day — counted for the tagged travellers only, over `start_date`–`end_date`
-    if given, else the trip's dates (D-184)."""
+    defaults to you, research must name them). `amount` is the one estimated
+    amount for them — a room for two is one cost; nothing is multiplied (D-179).
+    `start_date`–`end_date` say when it applies, if not the whole trip."""
     amount: str
     currency: str
     title: str = ""
     category: str = "other"
-    basis: str = "trip"
     traveler_ids: list[int] | None = None
     start_date: str | None = None
     end_date: str | None = None
@@ -2005,7 +2000,6 @@ class BudgetItemPatch(BaseModel):
     currency: str | None = None
     title: str | None = None
     category: str | None = None
-    basis: str | None = None
     traveler_ids: list[int] | None = None
     start_date: str | None = None          # "" clears it
     end_date: str | None = None
@@ -2125,9 +2119,9 @@ def _budget_out(line, actual: str = "0", nm: dict[int, str] | None = None) -> Bu
     nm = nm or {}
     return BudgetItemOut(
         id=b.id, trip_id=b.trip_id, title=b.title, category=b.category, amount=b.amount,
-        currency=b.currency, basis=b.basis, traveler_ids=line.traveler_ids,
+        currency=b.currency, traveler_ids=line.traveler_ids,
         traveler_names=[nm.get(t, "") for t in line.traveler_ids],
-        start_date=b.start_date, end_date=b.end_date, days=line.days, times=line.times,
+        start_date=b.start_date, end_date=b.end_date,
         total=None if line.total is None else format(line.total.normalize(), "f"),
         rate=b.rate, rate_source=b.rate_source, status=b.status, place_key=b.place_key,
         activity_id=b.activity_id, notes=b.notes, sources=b.sources or [], source=b.source,

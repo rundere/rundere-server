@@ -236,8 +236,8 @@ def list_expenses(trip_id: TripId) -> dict[str, Any]:
     """A trip's costs, in two parts. ACTUAL: the expenses and settle-up payments,
     each traveller's balance (net: + is owed, − owes) in the trip's expense
     currency, and the suggested payments that settle everyone up — only actuals
-    count towards these. PLANNED (`plan`): the budget — planned items (estimates
-    per trip / person / day), drafts from research not yet kept, and planned vs
+    count towards these. PLANNED (`plan`): the budget — planned items (one amount
+    each for the travellers tagged on it), drafts from research not yet kept, and planned vs
     actual by category. Anything with no exchange rate is in `unconverted`."""
     return _run(api_v1.api_expenses, trip_id=trip_id)
 
@@ -297,19 +297,18 @@ class PlannedCost(BaseModel):
     title: str = Field(description="What it is, e.g. \"Tokyo hotel\" or \"Daily lunches\"")
     category: Literal["food", "lodging", "transport", "activities", "shopping", "fees",
                       "other"] = "other"
-    amount: str = Field(description="Typical cost as a decimal string, per `basis`")
+    amount: str = Field(description="The cost for the tagged travellers together, as a "
+                                    "decimal string — ONE amount, never multiplied: a room "
+                                    "for two is one cost; three days of lunches is the "
+                                    "three-day total")
     currency: str = Field(description="ISO-4217 code it's priced in, e.g. JPY")
     traveler_ids: list[int] = Field(
         min_length=1, description="REQUIRED: who this cost is for — traveller ids from "
                                   "get_trip's `travelers`. It counts for them only; "
                                   "never add people it isn't for")
-    basis: Literal["trip", "person", "day", "person_day"] = Field(
-        "trip", description="trip = once for the tagged travellers together; person = "
-                            "each tagged traveller; day = each day (shared); "
-                            "person_day = each tagged traveller each day")
-    start_date: str | None = Field(None, description="First day it covers (YYYY-MM-DD), "
+    start_date: str | None = Field(None, description="When it applies from (YYYY-MM-DD), "
                                                      "if not the whole trip")
-    end_date: str | None = Field(None, description="Last day it covers, if not the whole trip")
+    end_date: str | None = Field(None, description="When it applies to, if not the whole trip")
     place_key: str | None = Field(None, description="City key from get_trip's places, if it's "
                                                     "for one city")
     activity_id: str | None = Field(None, description="Timeline item it's for (get_trip)")
@@ -325,8 +324,9 @@ def save_budget(trip_id: TripId,
                                 "re-run). Kept items are never touched.")] = True,
                 ) -> dict[str, Any]:
     """Save budget research to a trip's PLANNED costs. Each item is for the
-    travellers you tag on it (`traveler_ids`) and counts for them only — don't
-    extrapolate a cost to people it isn't for. Every item lands as a draft the
+    travellers you tag on it (`traveler_ids`) and is ONE amount for them — it's
+    never multiplied by people or days, and never extrapolated to people it
+    isn't for. Every item lands as a draft the
     person reviews and keeps; anything already kept (same category, title and
     travellers) is skipped. Only the tagged travellers and the user see it. Planned costs are only a budget: they never count towards
     balances or settle-up. Needs edit access. Use the research_trip_budget prompt."""

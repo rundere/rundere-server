@@ -62,7 +62,6 @@ def upgrade() -> None:
             sa.Column("category", sa.String(16), nullable=False, server_default="other"),
             sa.Column("amount", sa.String(32), nullable=False),
             sa.Column("currency", sa.String(3), nullable=False),
-            sa.Column("basis", sa.String(12), nullable=False, server_default="trip"),
             sa.Column("rate", sa.String(32)),
             sa.Column("rate_source", sa.String(12)),
             sa.Column("status", sa.String(8), nullable=False, server_default="kept"),

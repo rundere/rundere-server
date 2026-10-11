@@ -314,29 +314,28 @@ if DEPS:
     def _budget(tid, rest=""):
         return f"/api/v1/trips/{tid}/budget{rest}"
 
-    def test_planned_costs_count_only_their_travellers():
-        """D-184: a planned cost counts for the travellers tagged on it, over its
-        own days when given — never the whole roster."""
+    def test_planned_costs_are_one_amount_for_their_travellers():
+        """D-179/D-184: a planned cost is one amount for the travellers tagged on
+        it — a room for two is one cost — never multiplied by people or days."""
         owner = _user("ex-owner")
         tid, p = _trip(owner, names=("Ana", "Ben", "Cy"))      # trip: 9 days (05-01 → 05-09)
         ana = _traveller_user(f"ex-ana-{tid[:6]}", p["Ana"])
         hotel = client.post(_budget(tid), headers=_h(ana), json={
-            "title": "Hotel", "category": "lodging", "amount": "100", "currency": "EUR",
-            "basis": "day", "traveler_ids": [p["Ana"], p["Ben"]]}).json()
-        assert hotel["status"] == "kept" and hotel["times"] == 9 and hotel["total"] == "900"
+            "title": "Hotel", "category": "lodging", "amount": "900", "currency": "EUR",
+            "traveler_ids": [p["Ana"], p["Ben"]]}).json()
+        assert hotel["status"] == "kept" and hotel["total"] == "900" and "basis" not in hotel
         assert hotel["traveler_ids"] == sorted([p["Ana"], p["Ben"]])
         # Lunch only for Ana (the default when you plan your own), 3 days of it.
         lunch = client.post(_budget(tid), headers=_h(ana), json={
-            "title": "Lunch", "category": "food", "amount": "15", "currency": "EUR",
-            "basis": "person_day", "start_date": "2031-05-02", "end_date": "2031-05-04"}).json()
-        assert lunch["traveler_ids"] == [p["Ana"]] and lunch["days"] == 3
-        assert lunch["times"] == 3 and lunch["total"] == "45"
+            "title": "Lunch", "category": "food", "amount": "45", "currency": "EUR",
+            "start_date": "2031-05-02", "end_date": "2031-05-04"}).json()
+        assert lunch["traveler_ids"] == [p["Ana"]] and lunch["start_date"] == "2031-05-02"
+        assert lunch["total"] == "45"
         tickets = client.post(_budget(tid), headers=_h(ana), json={
-            "title": "Museum", "category": "activities", "amount": "20", "currency": "EUR",
-            "basis": "person", "traveler_ids": [p["Ana"], p["Cy"]]}).json()
-        assert tickets["times"] == 2 and tickets["total"] == "40"
-        for bad, msg in [({"basis": "per_week"}, "basis"),
-                         ({"traveler_ids": [99999]}, "isn't on this trip"),
+            "title": "Museum", "category": "activities", "amount": "40", "currency": "EUR",
+            "traveler_ids": [p["Ana"], p["Cy"]]}).json()
+        assert tickets["total"] == "40"                          # not 40 × 2
+        for bad, msg in [({"traveler_ids": [99999]}, "isn't on this trip"),
                          ({"start_date": "2031-05-05", "end_date": "2031-05-01"}, "before")]:
             r = client.post(_budget(tid), headers=_h(ana), json={
                 "amount": "5", "currency": "EUR", **bad})
@@ -378,13 +377,12 @@ if DEPS:
         tid, p = _trip(owner, names=("Ana", "Ben"))
         ana = _traveller_user(f"ex-ana-{tid[:6]}", p["Ana"])
         mine = client.post(_budget(tid), headers=_h(ana), json={
-            "title": "Hotel", "category": "lodging", "amount": "90", "currency": "EUR",
-            "basis": "day"}).json()
+            "title": "Hotel", "category": "lodging", "amount": "90", "currency": "EUR"}).json()
         research = {"items": [
             {"title": "Hotel", "category": "lodging", "amount": "120", "currency": "EUR",
-             "basis": "day", "traveler_ids": [p["Ana"]]},
+             "traveler_ids": [p["Ana"]]},
             {"title": "Metro pass", "category": "transport", "amount": "30", "currency": "EUR",
-             "basis": "person", "traveler_ids": [p["Ana"]],
+             "traveler_ids": [p["Ana"]],
              "sources": [{"title": "RATP", "url": "https://ratp.fr"},
                          {"title": "bad", "url": "javascript:x"}]},
             {"title": "Untagged", "category": "food", "amount": "10", "currency": "EUR"},
@@ -397,18 +395,18 @@ if DEPS:
         items = {i["title"]: i for i in out["plan"]["items"]}
         assert items["Hotel"]["id"] == mine["id"] and items["Hotel"]["amount"] == "90"
         assert items["Metro pass"]["status"] == "draft"
-        assert items["Metro pass"]["traveler_ids"] == [p["Ana"]] and items["Metro pass"]["times"] == 1
+        assert items["Metro pass"]["traveler_ids"] == [p["Ana"]]
         assert items["Metro pass"]["sources"] == [{"title": "RATP", "url": "https://ratp.fr"}]
-        assert out["plan"]["drafts"] == "30" and out["plan"]["planned"] == "810"
+        assert out["plan"]["drafts"] == "30" and out["plan"]["planned"] == "90"
         # The same title for someone else isn't "already kept": it's their own line.
         ben_hotel = client.post(_budget(tid, "/batch"), headers=_h(ana), json={"items": [
             {"title": "Hotel", "category": "lodging", "amount": "80", "currency": "EUR",
-             "basis": "day", "traveler_ids": [p["Ben"]]}]}).json()
+             "traveler_ids": [p["Ben"]]}]}).json()
         assert ben_hotel["counts"] == {"drafted": 1}
         # A re-run replaces the caller's drafts in those categories, nothing else.
         again = client.post(_budget(tid, "/batch"), headers=_h(ana), json={"items": [
             {"title": "Metro pass", "category": "transport", "amount": "28",
-             "currency": "EUR", "basis": "person", "traveler_ids": [p["Ana"]]}]}).json()
+             "currency": "EUR", "traveler_ids": [p["Ana"]]}]}).json()
         metro = [i for i in again["plan"]["items"] if i["title"] == "Metro pass"]
         assert len(metro) == 1 and metro[0]["amount"] == "28"
         kept = client.patch(_budget(tid, f"/{metro[0]['id']}"), headers=_h(ana),
@@ -428,7 +426,7 @@ if DEPS:
             s.commit()
         b = client.post(_budget(tid), headers=_h(ana), json={
             "title": "Tickets", "category": "activities", "amount": "40",
-            "currency": "EUR", "basis": "person"}).json()
+            "currency": "EUR"}).json()
         assert client.get(_url(tid), headers=_h(ana)).json()["plan"]["items"][0]["id"] == b["id"]
         assert client.get(_url(tid), headers=_h(viewer)).json()["plan"]["items"] == []
         assert client.get(_url(tid), headers=_h(owner)).json()["plan"]["items"] == []
