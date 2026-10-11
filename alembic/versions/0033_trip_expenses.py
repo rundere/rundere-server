@@ -1,4 +1,4 @@
-"""Run·dere 4.8 — trip expenses, budget and settle-up (SPEC-10, YONDER-172, D-173–D-182).
+"""Run·dere 4.8 — trip expenses, budget and settle-up (SPEC-10, YONDER-172, D-173–D-185).
 
 Actual expenses + their shares, planned budget items, and the trip's expense
 currency (no foreign keys, house convention).
@@ -66,6 +66,8 @@ def upgrade() -> None:
             sa.Column("rate", sa.String(32)),
             sa.Column("rate_source", sa.String(12)),
             sa.Column("status", sa.String(8), nullable=False, server_default="kept"),
+            sa.Column("start_date", sa.String(10)),
+            sa.Column("end_date", sa.String(10)),
             sa.Column("place_key", sa.String(128)),
             sa.Column("activity_id", sa.String(36)),
             sa.Column("notes", sa.Text),
@@ -77,6 +79,29 @@ def upgrade() -> None:
         op.create_index("ix_trip_budget_items_trip_id", "trip_budget_items", ["trip_id"])
         op.create_index("ix_trip_budget_items_owner_id", "trip_budget_items", ["owner_id"])
         op.create_index("ix_trip_budget_items_activity_id", "trip_budget_items", ["activity_id"])
+    if "trip_budget_travelers" not in tables:
+        op.create_table(
+            "trip_budget_travelers",
+            sa.Column("budget_item_id", sa.String(36), primary_key=True),
+            sa.Column("traveler_id", sa.Integer, primary_key=True),
+        )
+        op.create_index("ix_trip_budget_travelers_traveler_id", "trip_budget_travelers",
+                        ["traveler_id"])
+    if "trip_expense_comments" not in tables:
+        op.create_table(
+            "trip_expense_comments",
+            sa.Column("id", sa.String(36), primary_key=True),
+            sa.Column("expense_id", sa.String(36), nullable=False),
+            sa.Column("trip_id", sa.String(36), nullable=False),
+            sa.Column("author_id", sa.String(36)),
+            sa.Column("body", sa.Text, nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        )
+        op.create_index("ix_trip_expense_comments_expense_id", "trip_expense_comments",
+                        ["expense_id"])
+        op.create_index("ix_trip_expense_comments_trip_id", "trip_expense_comments", ["trip_id"])
+        op.create_index("ix_trip_expense_comments_author_id", "trip_expense_comments",
+                        ["author_id"])
     if "trip_expense_shares" not in tables:
         op.create_table(
             "trip_expense_shares",
@@ -89,6 +114,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_table("trip_expense_comments")
+    op.drop_table("trip_budget_travelers")
     op.drop_table("trip_budget_items")
     op.drop_table("trip_expense_shares")
     op.drop_table("trip_expenses")

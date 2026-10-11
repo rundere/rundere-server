@@ -4,8 +4,11 @@ The one place the expense rules live, so /api/v1 and MCP never diverge:
 
 - **Small on purpose (D-173).** Expenses with an equal or exact split, net
   balances, suggested payments and recorded settlements. No imports (D-155).
-- **Trip sharing, not journal sharing (D-174).** Readers need `can_view_trip`,
-  writers `can_edit_trip`; callers resolve the trip with `scope.require_trip`.
+- **Only the people on a cost see it (D-183).** The trip gate still applies
+  (`scope.require_trip`: view to read, edit to write), and inside it a cost is
+  visible only to the travellers tagged on it — payer and sharers for an actual,
+  the tagged travellers for a planned item — and to whoever entered it. Each
+  viewer's balances and plan are worked out from what they can see.
 - **Roster people only (D-175).** Payer and sharers are TravelerIdentity ids on
   the trip's roster when the expense is saved. Shares are always stored, an equal
   split divided to the currency's minor unit with the leftover going to the first
@@ -16,11 +19,15 @@ The one place the expense rules live, so /api/v1 and MCP never diverge:
   listed as unconverted instead of guessed.
 - **Settlements are payments (D-177)** and net with expenses; suggested payments
   are a greedy largest-debtor → largest-creditor match.
-- **Planned vs actual (D-178–D-181).** Planned items (TripBudgetItem) are the
-  budget: estimates on a basis, expanded by the roster and the trip's days, never
+- **Planned vs actual (D-178–D-181, D-184).** Planned items (TripBudgetItem) are
+  the budget: estimates for the travellers tagged on them, on a basis expanded by
+  those travellers and the days they cover — never the whole roster — never
   split or settled. Only actual expenses feed balances and the trip's actual
   cost. Agents' planned items land as drafts the person keeps (D-180); an actual
   can name the planned item it fulfils, for plan vs actual by category (D-181).
+
+- **Comments (D-185).** The people on an actual can discuss it; comments are
+  visible wherever the expense is.
 
 Bad input raises ValueError (the API maps it to 400).
 """
@@ -31,8 +38,10 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
+from app import scope
 from app.models import (DiscoveryFinding, TravelerIdentity, Trip, TripBudgetItem,
-                        TripExpense, TripExpenseShare)
+                        TripBudgetTraveler, TripExpense, TripExpenseComment,
+                        TripExpenseShare)
 from app.trips import who
 
 EXPENSE, SETTLEMENT = "expense", "settlement"
@@ -345,6 +354,8 @@ def update(session: Session, user, trip: Trip, e: TripExpense, changes: dict) ->
 def delete(session: Session, e: TripExpense) -> None:
     session.query(TripExpenseShare).filter(
         TripExpenseShare.expense_id == e.id).delete(synchronize_session=False)
+    session.query(TripExpenseComment).filter(
+        TripExpenseComment.expense_id == e.id).delete(synchronize_session=False)
     session.delete(e)
 
 
@@ -373,8 +384,77 @@ def purge_trip(session: Session, trip_id: str) -> None:
             TripExpenseShare.expense_id.in_(ids)).delete(synchronize_session=False)
     session.query(TripExpense).filter(TripExpense.trip_id == trip_id).delete(
         synchronize_session=False)
+    bids = [i for (i,) in session.query(TripBudgetItem.id)
+            .filter(TripBudgetItem.trip_id == trip_id)]
+    if bids:
+        session.query(TripBudgetTraveler).filter(
+            TripBudgetTraveler.budget_item_id.in_(bids)).delete(synchronize_session=False)
     session.query(TripBudgetItem).filter(TripBudgetItem.trip_id == trip_id).delete(
         synchronize_session=False)
+    session.query(TripExpenseComment).filter(TripExpenseComment.trip_id == trip_id).delete(
+        synchronize_session=False)
+
+
+# --------------------------------------------------------------------------- visibility (D-183)
+def can_see(user, owner_id: str | None, people) -> bool:
+    """A cost is visible to the travellers on it and to whoever entered it.
+    Being the trip's owner or an admin doesn't widen that; auth-off sees all."""
+    if scope.unrestricted(user):
+        return True
+    if owner_id is not None and owner_id == getattr(user, "id", None):
+        return True
+    tid = getattr(user, "traveler_id", None)
+    return tid is not None and tid in set(people)
+
+
+def expense_people(e: TripExpense, shares) -> set[int]:
+    return {e.payer_id, *(s.traveler_id for s in shares)}
+
+
+def can_see_expense(session: Session, user, e: TripExpense) -> bool:
+    return can_see(user, e.owner_id, expense_people(e, shares_of(session, e.id)))
+
+
+def visible_expenses(session: Session, trip: Trip, user) -> tuple[list[TripExpense], dict]:
+    """(the expenses this person can see, their shares by expense id)."""
+    rows = expenses_of(session, trip.id)
+    smap = share_map(session, [e.id for e in rows])
+    seen = [e for e in rows if can_see(user, e.owner_id, expense_people(e, smap.get(e.id, [])))]
+    return seen, smap
+
+
+# --------------------------------------------------------------------------- comments (D-185)
+MAX_COMMENT = 4000
+
+
+def comments_of(session: Session, expense_ids) -> dict[str, list[TripExpenseComment]]:
+    ids = list(expense_ids)
+    out: dict[str, list[TripExpenseComment]] = {}
+    if ids:
+        for c in (session.query(TripExpenseComment)
+                  .filter(TripExpenseComment.expense_id.in_(ids))
+                  .order_by(TripExpenseComment.created_at).all()):
+            out.setdefault(c.expense_id, []).append(c)
+    return out
+
+
+def add_comment(session: Session, user, e: TripExpense, body: str) -> TripExpenseComment:
+    """Comment on an expense the caller can see (the API checks). Caller commits."""
+    text = (body or "").strip()
+    if not text:
+        raise ValueError("a comment needs some text")
+    if len(text) > MAX_COMMENT:
+        raise ValueError(f"a comment is at most {MAX_COMMENT} characters")
+    c = TripExpenseComment(expense_id=e.id, trip_id=e.trip_id,
+                           author_id=getattr(user, "id", None), body=text)
+    session.add(c)
+    session.flush()
+    return c
+
+
+def can_delete_comment(user, c: TripExpenseComment) -> bool:
+    return scope.unrestricted(user) or (c.author_id is not None
+                                        and c.author_id == getattr(user, "id", None))
 
 
 # --------------------------------------------------------------------------- reads
@@ -418,13 +498,17 @@ class Summary:
     total: Decimal = Decimal(0)                                 # trip spend, settlements excluded
 
 
-def summarize(session: Session, trip: Trip) -> Summary:
-    """Balances in the trip's expense currency (D-176, D-177)."""
+def summarize(session: Session, trip: Trip, user=None) -> Summary:
+    """Balances in the trip's expense currency (D-176, D-177), from the expenses
+    `user` can see (D-183). Every expense someone is on is visible to them, so
+    their own balance is always complete; other people's are as far as they can
+    see."""
     cur = trip.expense_currency
     s = Summary(currency=cur)
-    rows = expenses_of(session, trip.id)
-    smap = share_map(session, [e.id for e in rows])
-    for tid in _roster(session, trip.id):
+    rows, smap = visible_expenses(session, trip, user)
+    me = getattr(user, "traveler_id", None)
+    roster = _roster(session, trip.id)
+    for tid in (roster if scope.unrestricted(user) else [t for t in roster if t == me]):
         s.net.setdefault(tid, Decimal(0))
     for e in rows:
         if e.rate is None:
@@ -489,9 +573,25 @@ def trip_days(trip: Trip) -> int | None:
     return (b - a).days + 1 if b >= a else None
 
 
+def span_days(start: str | None, end: str | None) -> int | None:
+    """Days from `start` to `end`, both included; None unless both are dates."""
+    from datetime import date
+    try:
+        a, b = date.fromisoformat(start or ""), date.fromisoformat(end or "")
+    except ValueError:
+        return None
+    return (b - a).days + 1 if b >= a else None
+
+
+def item_days(b: TripBudgetItem, trip: Trip) -> int | None:
+    """The days a planned cost covers: its own dates, else the trip's (D-184)."""
+    return span_days(b.start_date, b.end_date) or trip_days(trip)
+
+
 def multiplier(basis: str, people: int, days: int | None) -> int:
-    """How many times an estimate counts (D-179). Unknown days count once; the
-    API flags those items so the person can add the trip's dates."""
+    """How many times an estimate counts (D-179/D-184): `people` is the number of
+    travellers TAGGED on it, never the roster. Unknown days count once; the API
+    flags those items so the person can add dates."""
     p, d = max(people, 1), days or 1
     return {"trip": 1, "person": p, "day": d, "person_day": p * d}.get(basis, 1)
 
@@ -503,6 +603,9 @@ class BudgetInput:
     title: str = ""
     category: str = "other"
     basis: str = "trip"
+    traveler_ids: list | None = None       # who it's for (D-184); required from agents
+    start_date: str | None = None          # the days it covers, if not the whole trip
+    end_date: str | None = None
     rate: object = None
     place_key: str | None = None
     activity_id: str | None = None
@@ -533,16 +636,65 @@ def _clean_sources(sources) -> list | None:
     return out or None
 
 
+def _budget_people(session: Session, trip: Trip, user, ids, *, default_me: bool) -> list[int]:
+    """The travellers a planned cost is for: roster ids only, at least one. A
+    person's own entry defaults to themselves; an agent must say (D-184)."""
+    roster = _roster(session, trip.id)
+    picked = sorted({_on_roster(t, roster, "traveller") for t in (ids or [])})
+    if not picked and default_me:
+        me = getattr(user, "traveler_id", None)
+        if me in roster:
+            picked = [me]
+    if not picked:
+        raise ValueError("tag the traveller(s) this cost is for (traveler_ids from the trip)")
+    return picked
+
+
+def _set_budget_people(session: Session, item_id: str, ids: list[int]) -> None:
+    session.query(TripBudgetTraveler).filter(
+        TripBudgetTraveler.budget_item_id == item_id).delete(synchronize_session=False)
+    for t in ids:
+        session.add(TripBudgetTraveler(budget_item_id=item_id, traveler_id=t))
+    session.flush()
+
+
+def budget_people(session: Session, item_ids) -> dict[str, list[int]]:
+    ids = list(item_ids)
+    out: dict[str, list[int]] = {}
+    if ids:
+        for r in (session.query(TripBudgetTraveler)
+                  .filter(TripBudgetTraveler.budget_item_id.in_(ids)).all()):
+            out.setdefault(r.budget_item_id, []).append(r.traveler_id)
+    for v in out.values():
+        v.sort()
+    return out
+
+
+def can_see_budget(session: Session, user, b: TripBudgetItem) -> bool:
+    return can_see(user, b.owner_id, budget_people(session, [b.id]).get(b.id, []))
+
+
+def _check_span(start: str | None, end: str | None) -> tuple[str | None, str | None]:
+    a, b = _check_date(start), _check_date(end)
+    if a and b and b < a:
+        raise ValueError("the end date is before the start date")
+    return a, b
+
+
 def create_budget(session: Session, user, trip: Trip, data: BudgetInput,
                   status: str = KEPT) -> TripBudgetItem:
-    """Add a planned cost. People's own entries are kept; agents' are drafts
-    (D-180). Caller commits."""
+    """Add a planned cost for the travellers it's tagged with. People's own
+    entries are kept (and default to themselves); agents' are drafts that must
+    name their travellers (D-180, D-184). Caller commits."""
     cur = currency_code(data.currency)
+    people = _budget_people(session, trip, user, data.traveler_ids, default_me=status == KEPT)
+    start, end = _check_span(data.start_date, data.end_date)
     b = TripBudgetItem(trip_id=trip.id, owner_id=getattr(user, "id", None),
                        title=(data.title or "").strip()[:200],
                        category=_check_category(data.category),
                        amount=_fmt(money(data.amount, cur)), currency=cur,
                        basis=_check_basis(data.basis), status=status,
+                       start_date=start, end_date=end,
                        place_key=(data.place_key or None),
                        activity_id=_check_activity(session, trip.id, data.activity_id),
                        notes=(data.notes or None), sources=_clean_sources(data.sources),
@@ -552,6 +704,7 @@ def create_budget(session: Session, user, trip: Trip, data: BudgetInput,
     _apply_rate(session, trip, b, getattr(user, "id", None), data.rate)
     session.add(b)
     session.flush()
+    _set_budget_people(session, b.id, people)
     return b
 
 
@@ -568,6 +721,13 @@ def update_budget(session: Session, user, trip: Trip, b: TripBudgetItem,
         b.currency = currency_code(changes["currency"])
     if changes.get("amount") is not None or changes.get("currency") is not None:
         b.amount = _fmt(money(changes.get("amount") or b.amount, b.currency))
+    if changes.get("traveler_ids") is not None:
+        _set_budget_people(session, b.id, _budget_people(
+            session, trip, user, changes["traveler_ids"], default_me=False))
+    if "start_date" in changes or "end_date" in changes:
+        b.start_date, b.end_date = _check_span(
+            changes.get("start_date", b.start_date) or None,
+            changes.get("end_date", b.end_date) or None)
     if changes.get("notes") is not None:
         b.notes = changes["notes"] or None
     if changes.get("place_key") is not None:
@@ -590,29 +750,39 @@ def delete_budget(session: Session, b: TripBudgetItem) -> None:
     """Remove a planned item; actuals that pointed at it stay, unlinked."""
     session.query(TripExpense).filter(TripExpense.budget_item_id == b.id).update(
         {"budget_item_id": None}, synchronize_session=False)
+    session.query(TripBudgetTraveler).filter(
+        TripBudgetTraveler.budget_item_id == b.id).delete(synchronize_session=False)
     session.delete(b)
 
 
 def save_budget_batch(session: Session, user, trip: Trip, items: list[BudgetInput],
                       *, replace: bool = True) -> dict:
-    """An agent's budget research (D-180): every item lands as a draft. With
-    `replace`, the agent's earlier DRAFTS in the categories it's re-researching
-    go first, so a re-run doesn't pile up; kept items are never touched, and an
-    item matching a kept one (same category and title) is skipped. Returns the
-    outcome per item. Caller commits."""
+    """An agent's budget research (D-180): every item lands as a draft and must
+    name the traveller(s) it's for — nothing is extrapolated to anyone else
+    (D-184). With `replace`, the caller's own earlier DRAFTS in the categories
+    it's re-researching go first, so a re-run doesn't pile up; kept items are
+    never touched, and an item matching a kept one (same category, title and
+    travellers) is skipped. Returns the outcome per item. Caller commits."""
     if len(items) > MAX_BUDGET_BATCH:
         raise ValueError(f"at most {MAX_BUDGET_BATCH} planned items per call")
-    kept = {(b.category, b.title.strip().lower()) for b in budget_of(session, trip.id)
-            if b.status == KEPT}
+    existing = budget_of(session, trip.id)
+    tags = budget_people(session, [b.id for b in existing])
+    kept = {(b.category, b.title.strip().lower(), tuple(tags.get(b.id, [])))
+            for b in existing if b.status == KEPT}
     if replace:
         cats = {(i.category or "other").lower() for i in items}
-        for b in budget_of(session, trip.id):
-            if b.status == DRAFT and b.category in cats:
+        uid = getattr(user, "id", None)
+        for b in existing:
+            if b.status == DRAFT and b.category in cats and b.owner_id == uid:
                 delete_budget(session, b)
         session.flush()
     results = []
     for i, data in enumerate(items):
-        key = ((data.category or "other").lower(), (data.title or "").strip().lower())
+        try:
+            people = tuple(sorted({int(t) for t in (data.traveler_ids or [])}))
+        except (TypeError, ValueError):
+            people = ()
+        key = ((data.category or "other").lower(), (data.title or "").strip().lower(), people)
         if key in kept:
             results.append({"index": i, "outcome": "kept_already"})
             continue
@@ -634,6 +804,8 @@ def budget_of(session: Session, trip_id: str) -> list[TripBudgetItem]:
 @dataclass
 class BudgetLine:
     item: TripBudgetItem
+    traveler_ids: list[int]          # who it's for
+    days: int | None                 # the days it covers (None = unknown)
     times: int                       # how many times the estimate counts
     total: Decimal | None            # in the trip currency; None = no rate
 
@@ -641,26 +813,45 @@ class BudgetLine:
 @dataclass
 class Plan:
     currency: str | None
-    people: int
+    people: int                      # on the roster (for reference; items count their own)
     days: int | None
     lines: list[BudgetLine]
     planned: Decimal                 # kept items
     drafts: Decimal                  # agents' suggestions not yet kept
     actual: Decimal                  # actual expenses, settlements excluded
     by_category: list[tuple[str, Decimal, Decimal, Decimal]]   # (category, planned, drafts, actual)
+    by_traveler: list[tuple[int, Decimal, Decimal]]            # (traveller, planned, actual)
     unconverted: list[str]
 
 
-def plan(session: Session, trip: Trip) -> Plan:
-    """The budget next to what was actually spent, in the trip currency (D-181)."""
+def _split_evenly(total: Decimal, ids: list[int], q: Decimal) -> dict[int, Decimal]:
+    if not ids:
+        return {}
+    units = int((total / q).to_integral_value(rounding=ROUND_HALF_UP))
+    base, extra = divmod(units, len(ids))
+    return {t: (base + (1 if i < extra else 0)) * q for i, t in enumerate(sorted(ids))}
+
+
+def plan(session: Session, trip: Trip, user=None) -> Plan:
+    """The budget next to what was actually spent, in the trip currency (D-181),
+    from what `user` can see (D-183). Per traveller (D-184): a per-person cost
+    counts in full for each tagged traveller; a shared one (whole trip, or per
+    day for the group) is split evenly between them. Actuals per traveller are
+    their shares of expenses."""
     cur = trip.expense_currency
     q = quantum(cur or "")
-    people, days = len(_roster(session, trip.id)), trip_days(trip)
+    items = budget_of(session, trip.id)
+    tags = budget_people(session, [b.id for b in items])
     lines, unconverted = [], []
     planned = drafts = Decimal(0)
     cats: dict[str, list[Decimal]] = {}
-    for b in budget_of(session, trip.id):
-        times = multiplier(b.basis, people, days)
+    per: dict[int, list[Decimal]] = {}
+    for b in items:
+        people = tags.get(b.id, [])
+        if not can_see(user, b.owner_id, people):
+            continue
+        days = item_days(b, trip)
+        times = multiplier(b.basis, len(people), days)
         total = None
         if b.rate is None:
             unconverted.append(b.id)
@@ -670,17 +861,31 @@ def plan(session: Session, trip: Trip) -> Plan:
             if b.status == KEPT:
                 planned += total
                 row[0] += total
+                if b.basis in ("person", "person_day"):
+                    each = (total / max(len(people), 1)).quantize(q, rounding=ROUND_HALF_UP)
+                    split = {t: each for t in people}
+                else:
+                    split = _split_evenly(total, people, q)
+                for t, v in split.items():
+                    per.setdefault(t, [Decimal(0), Decimal(0)])[0] += v
             else:
                 drafts += total
                 row[1] += total
-        lines.append(BudgetLine(item=b, times=times, total=total))
+        lines.append(BudgetLine(item=b, traveler_ids=people, days=days, times=times, total=total))
     actual = Decimal(0)
-    for e in expenses_of(session, trip.id):
+    rows, smap = visible_expenses(session, trip, user)
+    for e in rows:
         if e.kind == EXPENSE and e.rate is not None:
-            amt = (Decimal(e.amount) * Decimal(e.rate)).quantize(q, rounding=ROUND_HALF_UP)
+            rate = Decimal(e.rate)
+            amt = (Decimal(e.amount) * rate).quantize(q, rounding=ROUND_HALF_UP)
             actual += amt
             cats.setdefault(e.category, [Decimal(0)] * 3)[2] += amt
+            for sh in smap.get(e.id, []):
+                per.setdefault(sh.traveler_id, [Decimal(0), Decimal(0)])[1] += (
+                    Decimal(sh.amount) * rate).quantize(q, rounding=ROUND_HALF_UP)
     order = {c: i for i, c in enumerate(CATEGORIES)}
     by_cat = [(c, *v) for c, v in sorted(cats.items(), key=lambda kv: order.get(kv[0], 99))]
-    return Plan(currency=cur, people=people, days=days, lines=lines, planned=planned,
-                drafts=drafts, actual=actual, by_category=by_cat, unconverted=unconverted)
+    by_tr = [(t, v[0], v[1]) for t, v in sorted(per.items())]
+    return Plan(currency=cur, people=len(_roster(session, trip.id)), days=trip_days(trip),
+                lines=lines, planned=planned, drafts=drafts, actual=actual,
+                by_category=by_cat, by_traveler=by_tr, unconverted=unconverted)

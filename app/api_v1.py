@@ -1807,12 +1807,24 @@ def api_place_file(place_id: str, trip_id: str, body: SavedPlaceFileIn,
 
 # --------------------------------------------------------------------------- expenses
 # SPEC-10 (YONDER-172, D-173–D-177). Trip sharing applies (D-174): reading needs
-# view access, every write needs edit access. Rules live in app/expenses.py.
+# view access, every write needs edit access, and inside that a cost is visible
+# only to the travellers on it and whoever entered it (D-183) — anything else
+# 404s like a missing one. Rules live in app/expenses.py.
 
 class ExpenseShareOut(BaseModel):
     traveler_id: int
     name: str = ""
     amount: str                            # in the expense's currency
+
+
+class ExpenseCommentOut(BaseModel):
+    """A comment on an actual expense (D-185)."""
+    id: str
+    author_id: str | None = None
+    author_name: str = ""
+    body: str
+    created_at: datetime | None = None
+    mine: bool = False                     # the caller wrote it (and can delete it)
 
 
 class ExpenseOut(BaseModel):
@@ -1836,11 +1848,13 @@ class ExpenseOut(BaseModel):
     notes: str | None = None
     owner_id: str | None = None
     created_at: datetime | None = None
+    comments: list[ExpenseCommentOut] = []  # the discussion, oldest first (D-185)
 
 
 class BudgetItemOut(BaseModel):
-    """A planned cost (D-178/D-179): an estimate on a basis, expanded by the
-    trip's people and days into `total` (trip currency)."""
+    """A planned cost (D-178/D-179/D-184): an estimate for the travellers tagged
+    on it, on a basis, expanded by THOSE travellers and the days it covers into
+    `total` (trip currency)."""
     id: str
     trip_id: str
     title: str
@@ -1848,7 +1862,12 @@ class BudgetItemOut(BaseModel):
     amount: str                            # the estimate, in `currency`, per `basis`
     currency: str
     basis: str                             # trip | person | day | person_day
-    times: int                             # how many times it counts (people × days)
+    traveler_ids: list[int] = []           # who it's for (D-184)
+    traveler_names: list[str] = []
+    start_date: str | None = None          # the days it covers, if not the whole trip
+    end_date: str | None = None
+    days: int | None = None                # days it counts (None = unknown → once)
+    times: int                             # how many times it counts (tagged people × days)
     total: str | None = None               # in the trip currency; None = no rate
     rate: str | None = None
     rate_source: str | None = None
@@ -1869,6 +1888,14 @@ class CategoryPlanOut(BaseModel):
     actual: str                            # actual expenses
 
 
+class TravelerPlanOut(BaseModel):
+    """One traveller's budget beside their share of what was spent (D-184)."""
+    traveler_id: int
+    name: str = ""
+    planned: str
+    actual: str
+
+
 class PlanOut(BaseModel):
     """The budget beside what was actually spent (D-181). Only `actual` is the
     trip's real cost; settle-up uses actual expenses alone (D-178)."""
@@ -1879,6 +1906,7 @@ class PlanOut(BaseModel):
     actual: str
     items: list[BudgetItemOut]
     by_category: list[CategoryPlanOut]
+    by_traveler: list[TravelerPlanOut] = []
     unconverted: list[str] = []
 
 
@@ -1949,13 +1977,19 @@ class ExpensePatch(BaseModel):
 
 
 class BudgetItemIn(BaseModel):
-    """Plan a cost. `amount` is an estimate in `currency` per `basis`: the whole
-    trip, per person, per day, or per person per day."""
+    """Plan a cost for the travellers it's for (`traveler_ids`; your own entry
+    defaults to you, research must name them). `amount` is an estimate in
+    `currency` per `basis`: once for them, per person, per day, or per person per
+    day — counted for the tagged travellers only, over `start_date`–`end_date`
+    if given, else the trip's dates (D-184)."""
     amount: str
     currency: str
     title: str = ""
     category: str = "other"
     basis: str = "trip"
+    traveler_ids: list[int] | None = None
+    start_date: str | None = None
+    end_date: str | None = None
     rate: str | None = None
     place_key: str | None = None
     activity_id: str | None = None
@@ -1972,6 +2006,9 @@ class BudgetItemPatch(BaseModel):
     title: str | None = None
     category: str | None = None
     basis: str | None = None
+    traveler_ids: list[int] | None = None
+    start_date: str | None = None          # "" clears it
+    end_date: str | None = None
     rate: str | None = None
     place_key: str | None = None
     activity_id: str | None = None
@@ -2003,7 +2040,32 @@ class ExpenseCurrencyIn(BaseModel):
     currency: str
 
 
-def _expense_out(e, shares, nm: dict[int, str], trip_currency: str | None) -> ExpenseOut:
+class ExpenseCommentIn(BaseModel):
+    body: str
+
+
+def _comments_out(comments, user, users: dict[str, str]) -> list[ExpenseCommentOut]:
+    me = getattr(user, "id", None)
+    return [ExpenseCommentOut(id=c.id, author_id=c.author_id,
+                              author_name=users.get(c.author_id or "", ""), body=c.body,
+                              created_at=c.created_at,
+                              mine=c.author_id is not None and c.author_id == me)
+            for c in comments]
+
+
+def _user_names(session: Session, ids) -> dict[str, str]:
+    """Comment authors by name: their traveller's display name, else username."""
+    from app.models import User
+    ids = [i for i in set(ids) if i]
+    if not ids:
+        return {}
+    users = session.query(User).filter(User.id.in_(ids)).all()
+    tnames = expenses_svc.names(session, [u.traveler_id for u in users if u.traveler_id])
+    return {u.id: tnames.get(u.traveler_id) or u.username for u in users}
+
+
+def _expense_out(e, shares, nm: dict[int, str], trip_currency: str | None,
+                 comments=None) -> ExpenseOut:
     from decimal import ROUND_HALF_UP, Decimal
     converted = None
     if e.rate is not None:
@@ -2018,19 +2080,25 @@ def _expense_out(e, shares, nm: dict[int, str], trip_currency: str | None) -> Ex
         shares=[ExpenseShareOut(traveler_id=s.traveler_id, name=nm.get(s.traveler_id, ""),
                                 amount=s.amount) for s in shares],
         category=e.category, activity_id=e.activity_id, budget_item_id=e.budget_item_id,
-        notes=e.notes, owner_id=e.owner_id, created_at=e.created_at)
+        notes=e.notes, owner_id=e.owner_id, created_at=e.created_at,
+        comments=comments or [])
 
 
-def _one_expense_out(session: Session, trip: Trip, e) -> ExpenseOut:
+def _one_expense_out(session: Session, trip: Trip, e, user=None) -> ExpenseOut:
     shares = expenses_svc.shares_of(session, e.id)
     nm = expenses_svc.names(session, [e.payer_id, *[s.traveler_id for s in shares]])
-    return _expense_out(e, shares, nm, trip.expense_currency)
+    cs = expenses_svc.comments_of(session, [e.id]).get(e.id, [])
+    users = _user_names(session, [c.author_id for c in cs])
+    return _expense_out(e, shares, nm, trip.expense_currency, _comments_out(cs, user, users))
 
 
-def expenses_overview(session: Session, trip: Trip) -> ExpensesOut:
-    rows = expenses_svc.expenses_of(session, trip.id)
-    smap = expenses_svc.share_map(session, [e.id for e in rows])
-    summ = expenses_svc.summarize(session, trip)
+def expenses_overview(session: Session, trip: Trip, user=None) -> ExpensesOut:
+    """What `user` can see of the trip's costs (D-183): the expenses they're on
+    or entered, balances and suggested payments from those, and their plan."""
+    rows, smap = expenses_svc.visible_expenses(session, trip, user)
+    summ = expenses_svc.summarize(session, trip, user)
+    cmap = expenses_svc.comments_of(session, [e.id for e in rows])
+    users = _user_names(session, [c.author_id for cs in cmap.values() for c in cs])
     ids = {*summ.net, *[e.payer_id for e in rows],
            *[s.traveler_id for ss in smap.values() for s in ss]}
     nm = expenses_svc.names(session, ids)
@@ -2039,7 +2107,8 @@ def expenses_overview(session: Session, trip: Trip) -> ExpensesOut:
         return format(d.normalize(), "f") if d else "0"
     return ExpensesOut(
         currency=summ.currency, total=f(summ.total),
-        expenses=[_expense_out(e, smap.get(e.id, []), nm, summ.currency) for e in rows],
+        expenses=[_expense_out(e, smap.get(e.id, []), nm, summ.currency,
+                               _comments_out(cmap.get(e.id, []), user, users)) for e in rows],
         balances=[BalanceOut(traveler_id=t, name=nm.get(t, ""),
                              paid=f(summ.paid.get(t)), share=f(summ.share.get(t)),
                              net=f(summ.net.get(t)))
@@ -2048,27 +2117,32 @@ def expenses_overview(session: Session, trip: Trip) -> ExpensesOut:
                                to_name=nm.get(b, ""), amount=f(amt))
                    for a, b, amt in summ.transfers],
         unconverted=summ.unconverted,
-        plan=plan_out(session, trip, rows))
+        plan=plan_out(session, trip, user, rows))
 
 
-def _budget_out(line, actual: str = "0") -> BudgetItemOut:
+def _budget_out(line, actual: str = "0", nm: dict[int, str] | None = None) -> BudgetItemOut:
     b = line.item
+    nm = nm or {}
     return BudgetItemOut(
         id=b.id, trip_id=b.trip_id, title=b.title, category=b.category, amount=b.amount,
-        currency=b.currency, basis=b.basis, times=line.times,
+        currency=b.currency, basis=b.basis, traveler_ids=line.traveler_ids,
+        traveler_names=[nm.get(t, "") for t in line.traveler_ids],
+        start_date=b.start_date, end_date=b.end_date, days=line.days, times=line.times,
         total=None if line.total is None else format(line.total.normalize(), "f"),
         rate=b.rate, rate_source=b.rate_source, status=b.status, place_key=b.place_key,
         activity_id=b.activity_id, notes=b.notes, sources=b.sources or [], source=b.source,
         actual=actual, owner_id=b.owner_id)
 
 
-def plan_out(session: Session, trip: Trip, expense_rows=None) -> PlanOut:
+def plan_out(session: Session, trip: Trip, user=None, expense_rows=None) -> PlanOut:
     from decimal import ROUND_HALF_UP, Decimal
-    p = expenses_svc.plan(session, trip)
+    p = expenses_svc.plan(session, trip, user)
     q = expenses_svc.quantum(p.currency or "")
+    nm = expenses_svc.names(session, {*[t for ln in p.lines for t in ln.traveler_ids],
+                                      *[t for t, _, _ in p.by_traveler]})
     spent: dict[str, Decimal] = {}
     for e in (expense_rows if expense_rows is not None
-              else expenses_svc.expenses_of(session, trip.id)):
+              else expenses_svc.visible_expenses(session, trip, user)[0]):
         if e.budget_item_id and e.kind == expenses_svc.EXPENSE and e.rate is not None:
             spent[e.budget_item_id] = spent.get(e.budget_item_id, Decimal(0)) + (
                 Decimal(e.amount) * Decimal(e.rate)).quantize(q, rounding=ROUND_HALF_UP)
@@ -2078,16 +2152,21 @@ def plan_out(session: Session, trip: Trip, expense_rows=None) -> PlanOut:
     return PlanOut(
         people=p.people, days=p.days, planned=f(p.planned), drafts=f(p.drafts),
         actual=f(p.actual),
-        items=[_budget_out(ln, f(spent.get(ln.item.id))) for ln in p.lines],
+        items=[_budget_out(ln, f(spent.get(ln.item.id)), nm) for ln in p.lines],
         by_category=[CategoryPlanOut(category=c, planned=f(a), drafts=f(d), actual=f(x))
                      for c, a, d, x in p.by_category],
+        by_traveler=[TravelerPlanOut(traveler_id=t, name=nm.get(t, ""), planned=f(a),
+                                     actual=f(x)) for t, a, x in p.by_traveler],
         unconverted=p.unconverted)
 
 
-def _expense_or_404(session: Session, trip_id: str, expense_id: str):
+def _expense_or_404(session: Session, trip_id: str, expense_id: str, user=None):
+    """The expense, if it's on this trip and the caller is on it or entered it
+    (D-183); otherwise 404, exactly like a missing one."""
     from app.models import TripExpense
     e = session.get(TripExpense, expense_id)
-    if e is None or e.trip_id != trip_id:
+    if (e is None or e.trip_id != trip_id
+            or not expenses_svc.can_see_expense(session, user, e)):
         raise HTTPException(404, "expense not found")
     return e
 
@@ -2102,9 +2181,10 @@ def _valueerror_400(fn):
 @router.get("/trips/{trip_id}/expenses", response_model=ExpensesOut)
 def api_expenses(trip_id: str, user=Depends(authn.current_user),
                  session: Session = Depends(get_session)):
-    """The trip's expenses, everyone's balance and the suggested settle-up payments."""
+    """The trip's costs you're on: expenses, balances and the suggested settle-up
+    payments, and the planned budget (D-183)."""
     trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
-    return expenses_overview(session, trip)
+    return expenses_overview(session, trip, user)
 
 
 @router.post("/trips/{trip_id}/expenses", response_model=ExpenseOut, status_code=201)
@@ -2114,7 +2194,7 @@ def api_add_expense(trip_id: str, body: ExpenseIn, user=Depends(authn.current_us
     data = expenses_svc.ExpenseInput(**body.model_dump())
     e = _valueerror_400(lambda: expenses_svc.create(session, user, trip, data))
     session.commit()
-    return _one_expense_out(session, trip, e)
+    return _one_expense_out(session, trip, e, user)
 
 
 @router.patch("/trips/{trip_id}/expenses/{expense_id}", response_model=ExpenseOut)
@@ -2122,18 +2202,18 @@ def api_update_expense(trip_id: str, expense_id: str, body: ExpensePatch,
                        user=Depends(authn.current_user),
                        session: Session = Depends(get_session)):
     trip = scope.require_trip(session, user, trip_id, edit=True)
-    e = _expense_or_404(session, trip.id, expense_id)
+    e = _expense_or_404(session, trip.id, expense_id, user)
     _valueerror_400(lambda: expenses_svc.update(session, user, trip, e,
                                                 body.model_dump(exclude_unset=True)))
     session.commit()
-    return _one_expense_out(session, trip, e)
+    return _one_expense_out(session, trip, e, user)
 
 
 @router.delete("/trips/{trip_id}/expenses/{expense_id}", status_code=204)
 def api_delete_expense(trip_id: str, expense_id: str, user=Depends(authn.current_user),
                        session: Session = Depends(get_session)):
     trip = scope.require_trip(session, user, trip_id, edit=True)
-    e = _expense_or_404(session, trip.id, expense_id)
+    e = _expense_or_404(session, trip.id, expense_id, user)
     expenses_svc.delete(session, e)
     session.commit()
     return None
@@ -2149,7 +2229,7 @@ def api_record_settlement(trip_id: str, body: SettlementIn, user=Depends(authn.c
         currency=body.currency, spent_on=body.spent_on, rate=body.rate, notes=body.notes,
         source=body.source))
     session.commit()
-    return _one_expense_out(session, trip, e)
+    return _one_expense_out(session, trip, e, user)
 
 
 @router.put("/trips/{trip_id}/expenses/currency", response_model=ExpensesOut)
@@ -2161,22 +2241,60 @@ def api_set_expense_currency(trip_id: str, body: ExpenseCurrencyIn,
     trip = scope.require_trip(session, user, trip_id, edit=True)
     _valueerror_400(lambda: expenses_svc.set_trip_currency(session, user, trip, body.currency))
     session.commit()
-    return expenses_overview(session, trip)
+    return expenses_overview(session, trip, user)
+
+
+@router.post("/trips/{trip_id}/expenses/{expense_id}/comments",
+             response_model=ExpenseCommentOut, status_code=201)
+def api_add_expense_comment(trip_id: str, expense_id: str, body: ExpenseCommentIn,
+                            user=Depends(authn.current_user),
+                            session: Session = Depends(get_session)):
+    """Comment on an expense you're on or entered (D-185). Anyone who can see the
+    expense can join the discussion, view-only shares included."""
+    trip = scope.require_trip(session, user, trip_id)
+    e = _expense_or_404(session, trip.id, expense_id, user)
+    c = _valueerror_400(lambda: expenses_svc.add_comment(session, user, e, body.body))
+    session.commit()
+    return _comments_out([c], user, _user_names(session, [c.author_id]))[0]
+
+
+@router.delete("/trips/{trip_id}/expenses/{expense_id}/comments/{comment_id}",
+               status_code=204)
+def api_delete_expense_comment(trip_id: str, expense_id: str, comment_id: str,
+                               user=Depends(authn.current_user),
+                               session: Session = Depends(get_session)):
+    """Delete your own comment."""
+    from app.models import TripExpenseComment
+    trip = scope.require_trip(session, user, trip_id)
+    e = _expense_or_404(session, trip.id, expense_id, user)
+    c = session.get(TripExpenseComment, comment_id)
+    if c is None or c.expense_id != e.id:
+        raise HTTPException(404, "comment not found")
+    if not expenses_svc.can_delete_comment(user, c):
+        raise HTTPException(403, "you can only delete your own comments")
+    session.delete(c)
+    session.commit()
+    return None
 
 
 
 # --------------------------------------------------------------------------- budget (planned)
-# SPEC-10 D-178–D-181: the planned side of Costs. Same sharing as expenses.
-def _budget_or_404(session: Session, trip_id: str, item_id: str):
+# SPEC-10 D-178–D-184: the planned side of Costs. Visible to the travellers it's
+# for and whoever entered it (D-183).
+def _budget_or_404(session: Session, trip_id: str, item_id: str, user=None):
     from app.models import TripBudgetItem
     b = session.get(TripBudgetItem, item_id)
-    if b is None or b.trip_id != trip_id:
+    if (b is None or b.trip_id != trip_id
+            or not expenses_svc.can_see_budget(session, user, b)):
         raise HTTPException(404, "planned item not found")
     return b
 
 
-def _one_budget_out(session: Session, trip: Trip, b) -> BudgetItemOut:
-    return next(i for i in plan_out(session, trip).items if i.id == b.id)
+def _one_budget_out(session: Session, trip: Trip, b, user=None) -> BudgetItemOut:
+    # Echo what was just written even if the edit took the caller off it.
+    items = plan_out(session, trip, user).items
+    hit = next((i for i in items if i.id == b.id), None)
+    return hit or next(i for i in plan_out(session, trip, None).items if i.id == b.id)
 
 
 def save_budget(session: Session, user, trip_id: str, body: BudgetBatchIn, source: str):
@@ -2186,7 +2304,7 @@ def save_budget(session: Session, user, trip_id: str, body: BudgetBatchIn, sourc
     out = _valueerror_400(lambda: expenses_svc.save_budget_batch(
         session, user, trip, items, replace=body.replace))
     session.commit()
-    return {**out, "plan": plan_out(session, trip)}
+    return {**out, "plan": plan_out(session, trip, user)}
 
 
 @router.post("/trips/{trip_id}/budget", response_model=BudgetItemOut, status_code=201)
@@ -2197,7 +2315,7 @@ def api_add_budget_item(trip_id: str, body: BudgetItemIn, user=Depends(authn.cur
     b = _valueerror_400(lambda: expenses_svc.create_budget(
         session, user, trip, expenses_svc.BudgetInput(**body.model_dump())))
     session.commit()
-    return _one_budget_out(session, trip, b)
+    return _one_budget_out(session, trip, b, user)
 
 
 @router.post("/trips/{trip_id}/budget/batch")
@@ -2212,17 +2330,17 @@ def api_update_budget_item(trip_id: str, item_id: str, body: BudgetItemPatch,
                            user=Depends(authn.current_user),
                            session: Session = Depends(get_session)):
     trip = scope.require_trip(session, user, trip_id, edit=True)
-    b = _budget_or_404(session, trip.id, item_id)
+    b = _budget_or_404(session, trip.id, item_id, user)
     _valueerror_400(lambda: expenses_svc.update_budget(
         session, user, trip, b, body.model_dump(exclude_unset=True)))
     session.commit()
-    return _one_budget_out(session, trip, b)
+    return _one_budget_out(session, trip, b, user)
 
 
 @router.delete("/trips/{trip_id}/budget/{item_id}", status_code=204)
 def api_delete_budget_item(trip_id: str, item_id: str, user=Depends(authn.current_user),
                            session: Session = Depends(get_session)):
     trip = scope.require_trip(session, user, trip_id, edit=True)
-    expenses_svc.delete_budget(session, _budget_or_404(session, trip.id, item_id))
+    expenses_svc.delete_budget(session, _budget_or_404(session, trip.id, item_id, user))
     session.commit()
     return None

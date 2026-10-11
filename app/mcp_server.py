@@ -67,8 +67,10 @@ Costs come in two parts. Planned: the budget — research_trip_budget is the kit
 save_budget stores its estimates as drafts the user keeps. Actual: add_expense
 records what was really spent (by hand, split between the trip's travellers by
 id; pass budget_item_id when it fulfils a planned item), record_settlement records
-a payment back. Only actuals count towards balances and settle-up. list_expenses
-shows both."""
+a payment back; comment_on_expense discusses one. Only actuals count towards
+balances and settle-up. Every cost is for the travellers tagged on it and only
+they (and whoever entered it) see it — tag planned costs with traveler_ids and
+never spread them to others. list_expenses shows both."""
 
 mcp = MCPServer("Run·dere", instructions=INSTRUCTIONS, version=settings.app_version)
 
@@ -297,9 +299,17 @@ class PlannedCost(BaseModel):
                       "other"] = "other"
     amount: str = Field(description="Typical cost as a decimal string, per `basis`")
     currency: str = Field(description="ISO-4217 code it's priced in, e.g. JPY")
+    traveler_ids: list[int] = Field(
+        min_length=1, description="REQUIRED: who this cost is for — traveller ids from "
+                                  "get_trip's `travelers`. It counts for them only; "
+                                  "never add people it isn't for")
     basis: Literal["trip", "person", "day", "person_day"] = Field(
-        "trip", description="trip = once; person = each traveller; day = each day; "
-                            "person_day = each traveller each day")
+        "trip", description="trip = once for the tagged travellers together; person = "
+                            "each tagged traveller; day = each day (shared); "
+                            "person_day = each tagged traveller each day")
+    start_date: str | None = Field(None, description="First day it covers (YYYY-MM-DD), "
+                                                     "if not the whole trip")
+    end_date: str | None = Field(None, description="Last day it covers, if not the whole trip")
     place_key: str | None = Field(None, description="City key from get_trip's places, if it's "
                                                     "for one city")
     activity_id: str | None = Field(None, description="Timeline item it's for (get_trip)")
@@ -314,9 +324,11 @@ def save_budget(trip_id: TripId,
                     description="Drop your earlier drafts in these categories first (a "
                                 "re-run). Kept items are never touched.")] = True,
                 ) -> dict[str, Any]:
-    """Save budget research to a trip's PLANNED costs. Every item lands as a draft
-    the person reviews and keeps; anything they already kept (same category and
-    title) is skipped. Planned costs are only a budget: they never count towards
+    """Save budget research to a trip's PLANNED costs. Each item is for the
+    travellers you tag on it (`traveler_ids`) and counts for them only — don't
+    extrapolate a cost to people it isn't for. Every item lands as a draft the
+    person reviews and keeps; anything already kept (same category, title and
+    travellers) is skipped. Only the tagged travellers and the user see it. Planned costs are only a budget: they never count towards
     balances or settle-up. Needs edit access. Use the research_trip_budget prompt."""
     body = api_v1.BudgetBatchIn(items=[api_v1.BudgetItemIn(**i.model_dump()) for i in items],
                                 replace=replace)
@@ -332,6 +344,18 @@ def delete_budget_item(trip_id: TripId,
     """Remove a planned cost (a draft you saved by mistake, say)."""
     _run(api_v1.api_delete_budget_item, trip_id=trip_id, item_id=item_id)
     return {"ok": True, "deleted": item_id}
+
+
+@mcp.tool()
+def comment_on_expense(trip_id: TripId,
+                       expense_id: Annotated[str, Field(description="Expense id from "
+                                                                    "list_expenses")],
+                       body: Annotated[str, Field(description="The comment")],
+                       ) -> dict[str, Any]:
+    """Add a comment to an expense the user is on, for the people on it to discuss
+    (a question about the split, a correction). Only post what the user asked you to."""
+    return _run(api_v1.api_add_expense_comment, trip_id=trip_id, expense_id=expense_id,
+                body=api_v1.ExpenseCommentIn(body=body))
 
 
 @mcp.tool()

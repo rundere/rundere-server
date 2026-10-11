@@ -205,39 +205,87 @@ if DEPS:
         with SessionLocal() as s:
             assert s.query(TripExpenseShare).filter_by(expense_id=e["id"]).count() == 0
 
-    def test_expenses_follow_trip_sharing():
-        """D-174 on top of D-122: a traveller on the roster edits, an explicit
-        (view-only) share sees but can't change, a stranger gets nothing."""
+    def _traveller_user(name, tid):
+        """A signed-in user who is traveller `tid` on the roster (an editor, D-122)."""
+        with SessionLocal() as s:
+            u = s.query(User).filter_by(username=name).one_or_none()
+            if u is None:
+                u = User(username=name, auth_source="local")
+                s.add(u)
+            u.traveler_id = tid
+            s.commit()
+        return _user(name)
+
+    def test_only_the_people_on_a_cost_see_it():
+        """D-183: inside the trip, an expense is visible to its payer and sharers
+        and to whoever entered it — not the trip owner, not a view-only share,
+        not another traveller who isn't on it."""
         owner, viewer, stranger = _user("ex-owner"), _user("ex-viewer"), _user("ex-stranger")
         tid, p = _trip(owner)
-        traveller = _user(f"ex-trav-{tid[:6]}")
+        ana = _traveller_user(f"ex-ana-{tid[:6]}", p["Ana"])
+        ben = _traveller_user(f"ex-ben-{tid[:6]}", p["Ben"])
+        cy = _traveller_user(f"ex-cy-{tid[:6]}", p["Cy"])
         with SessionLocal() as s:
             s.add(TripMember(trip_id=tid, user_id=viewer.id))
-            s.get(User, traveller.id).traveler_id = p["Cy"]
             s.commit()
-        traveller = _user(f"ex-trav-{tid[:6]}")
-        body = {"amount": "12", "currency": "EUR", "payer_id": p["Cy"]}
-        r = client.post(_url(tid), headers=_h(traveller), json=body)
-        assert r.status_code == 201 and r.json()["owner_id"] == traveller.id
+        # Ana pays a dinner for Ana and Ben only.
+        r = client.post(_url(tid), headers=_h(ana), json={
+            "amount": "40", "currency": "EUR", "payer_id": p["Ana"],
+            "traveler_ids": [p["Ana"], p["Ben"]], "title": "Dinner"})
+        assert r.status_code == 201 and r.json()["owner_id"] == ana.id
         eid = r.json()["id"]
-        assert len(client.get(_url(tid), headers=_h(owner)).json()["expenses"]) == 1
-        assert len(client.get(_url(tid), headers=_h(viewer)).json()["expenses"]) == 1
-        assert client.post(_url(tid), headers=_h(viewer), json=body).status_code == 403
-        assert client.delete(_url(tid, f"/{eid}"), headers=_h(viewer)).status_code == 403
-        for call in (lambda: client.get(_url(tid), headers=_h(stranger)),
-                     lambda: client.post(_url(tid), headers=_h(stranger), json=body),
-                     lambda: client.patch(_url(tid, f"/{eid}"), headers=_h(stranger),
-                                          json={"title": "mine"}),
-                     lambda: client.delete(_url(tid, f"/{eid}"), headers=_h(stranger)),
-                     lambda: client.post(f"/api/v1/trips/{tid}/settlements",
-                                         headers=_h(stranger),
-                                         json={"from_id": p["Ana"], "to_id": p["Cy"],
-                                               "amount": "4"})):
-            assert call().status_code == 404
-        # An expense id from another trip isn't reachable through this one.
-        other, q = _trip(stranger, names=("Zed",))
-        assert client.patch(_url(other, f"/{eid}"), headers=_h(stranger),
-                            json={"title": "x"}).status_code == 404
+        seen = lambda u: [e["id"] for e in client.get(_url(tid), headers=_h(u)).json()["expenses"]]
+        assert seen(ana) == [eid] and seen(ben) == [eid]
+        assert seen(cy) == [] and seen(owner) == [] and seen(viewer) == []
+        # Cy's view has no trace of it: no balance for others, nothing to settle.
+        cy_view = client.get(_url(tid), headers=_h(cy)).json()
+        assert _net(cy_view) == {p["Cy"]: "0"} and cy_view["transfers"] == []
+        assert cy_view["total"] == "0"
+        ben_view = client.get(_url(tid), headers=_h(ben)).json()
+        assert _net(ben_view) == {p["Ana"]: "20", p["Ben"]: "-20"}
+        # Not on it = can't touch it, even with edit access to the trip.
+        for who in (cy, owner):
+            assert client.patch(_url(tid, f"/{eid}"), headers=_h(who),
+                                json={"title": "x"}).status_code == 404
+            assert client.delete(_url(tid, f"/{eid}"), headers=_h(who)).status_code == 404
+        assert client.get(_url(tid), headers=_h(stranger)).status_code == 404
+        # Entering a cost for others keeps it visible to you (owner enters for Cy).
+        mine = client.post(_url(tid), headers=_h(owner), json={
+            "amount": "9", "currency": "EUR", "payer_id": p["Cy"],
+            "traveler_ids": [p["Cy"]]}).json()
+        assert seen(owner) == [mine["id"]] and seen(cy) == [mine["id"]]
+        assert seen(ana) == [eid]
+        assert client.post(_url(tid), headers=_h(viewer), json={
+            "amount": "1", "currency": "EUR", "payer_id": p["Cy"]}).status_code == 403
+
+    def test_comments_on_an_expense():
+        """D-185: the people on an expense can discuss it; only they see the thread;
+        you delete only your own comments."""
+        owner = _user("ex-owner")
+        tid, p = _trip(owner)
+        ana = _traveller_user(f"ex-ana-{tid[:6]}", p["Ana"])
+        ben = _traveller_user(f"ex-ben-{tid[:6]}", p["Ben"])
+        cy = _traveller_user(f"ex-cy-{tid[:6]}", p["Cy"])
+        e = client.post(_url(tid), headers=_h(ana), json={
+            "amount": "60", "currency": "EUR", "payer_id": p["Ana"],
+            "traveler_ids": [p["Ana"], p["Ben"]]}).json()
+        cpath = _url(tid, f"/{e['id']}/comments")
+        r = client.post(cpath, headers=_h(ben), json={"body": "  Wasn't the wine extra?  "})
+        assert r.status_code == 201 and r.json()["body"] == "Wasn't the wine extra?"
+        assert r.json()["author_name"].startswith("Exp Ben") and r.json()["mine"] is True
+        cid = r.json()["id"]
+        client.post(cpath, headers=_h(ana), json={"body": "Yes — I'll take 10 off."})
+        thread = client.get(_url(tid), headers=_h(ana)).json()["expenses"][0]["comments"]
+        assert [c["body"] for c in thread] == ["Wasn't the wine extra?", "Yes — I'll take 10 off."]
+        assert [c["mine"] for c in thread] == [False, True]
+        assert client.post(cpath, headers=_h(cy), json={"body": "hi"}).status_code == 404
+        assert client.post(cpath, headers=_h(ana), json={"body": "   "}).status_code == 400
+        assert client.delete(f"{cpath}/{cid}", headers=_h(ana)).status_code == 403
+        assert client.delete(f"{cpath}/{cid}", headers=_h(ben)).status_code == 204
+        assert client.delete(_url(tid, f"/{e['id']}"), headers=_h(ana)).status_code == 204
+        with SessionLocal() as s:
+            from app.models import TripExpenseComment
+            assert s.query(TripExpenseComment).filter_by(expense_id=e["id"]).count() == 0
 
     def test_activity_delete_unlinks_and_trip_delete_purges():
         owner = _user("ex-owner")
@@ -262,101 +310,142 @@ if DEPS:
             assert s.query(TripExpense).filter_by(trip_id=tid).count() == 0
             assert s.query(TripExpenseShare).filter_by(expense_id=e["id"]).count() == 0
 
-    # ------------------------------------------------------------------ planned (D-178–D-181)
+    # ------------------------------------------------------------------ planned (D-178–D-184)
     def _budget(tid, rest=""):
         return f"/api/v1/trips/{tid}/budget{rest}"
 
-    def test_planned_costs_expand_and_stay_out_of_balances():
+    def test_planned_costs_count_only_their_travellers():
+        """D-184: a planned cost counts for the travellers tagged on it, over its
+        own days when given — never the whole roster."""
         owner = _user("ex-owner")
-        tid, p = _trip(owner, names=("Ana", "Ben"))            # 9 days (05-01 → 05-09)
-        hotel = client.post(_budget(tid), headers=_h(owner), json={
+        tid, p = _trip(owner, names=("Ana", "Ben", "Cy"))      # trip: 9 days (05-01 → 05-09)
+        ana = _traveller_user(f"ex-ana-{tid[:6]}", p["Ana"])
+        hotel = client.post(_budget(tid), headers=_h(ana), json={
             "title": "Hotel", "category": "lodging", "amount": "100", "currency": "EUR",
-            "basis": "day"}).json()
+            "basis": "day", "traveler_ids": [p["Ana"], p["Ben"]]}).json()
         assert hotel["status"] == "kept" and hotel["times"] == 9 and hotel["total"] == "900"
-        lunch = client.post(_budget(tid), headers=_h(owner), json={
+        assert hotel["traveler_ids"] == sorted([p["Ana"], p["Ben"]])
+        # Lunch only for Ana (the default when you plan your own), 3 days of it.
+        lunch = client.post(_budget(tid), headers=_h(ana), json={
             "title": "Lunch", "category": "food", "amount": "15", "currency": "EUR",
-            "basis": "person_day"}).json()
-        assert lunch["times"] == 18 and lunch["total"] == "270"
-        bad = client.post(_budget(tid), headers=_h(owner), json={
-            "amount": "5", "currency": "EUR", "basis": "per_week"})
-        assert bad.status_code == 400 and "basis" in bad.json()["detail"]
-        # An actual logged against the hotel plan.
-        e = client.post(_url(tid), headers=_h(owner), json={
+            "basis": "person_day", "start_date": "2031-05-02", "end_date": "2031-05-04"}).json()
+        assert lunch["traveler_ids"] == [p["Ana"]] and lunch["days"] == 3
+        assert lunch["times"] == 3 and lunch["total"] == "45"
+        tickets = client.post(_budget(tid), headers=_h(ana), json={
+            "title": "Museum", "category": "activities", "amount": "20", "currency": "EUR",
+            "basis": "person", "traveler_ids": [p["Ana"], p["Cy"]]}).json()
+        assert tickets["times"] == 2 and tickets["total"] == "40"
+        for bad, msg in [({"basis": "per_week"}, "basis"),
+                         ({"traveler_ids": [99999]}, "isn't on this trip"),
+                         ({"start_date": "2031-05-05", "end_date": "2031-05-01"}, "before")]:
+            r = client.post(_budget(tid), headers=_h(ana), json={
+                "amount": "5", "currency": "EUR", **bad})
+            assert r.status_code == 400 and msg in r.json()["detail"], r.text
+        # The trip owner isn't a traveller: their own plan must say who it's for.
+        r = client.post(_budget(tid), headers=_h(owner), json={"amount": "5", "currency": "EUR"})
+        assert r.status_code == 400 and "tag the traveller" in r.json()["detail"]
+        # An actual against the hotel plan.
+        e = client.post(_url(tid), headers=_h(ana), json={
             "amount": "880", "currency": "EUR", "payer_id": p["Ana"], "category": "lodging",
-            "budget_item_id": hotel["id"]}).json()
-        assert e["budget_item_id"] == hotel["id"]
-        ov = client.get(_url(tid), headers=_h(owner)).json()
+            "traveler_ids": [p["Ana"], p["Ben"]], "budget_item_id": hotel["id"]}).json()
+        ov = client.get(_url(tid), headers=_h(ana)).json()
         plan = ov["plan"]
-        assert plan["people"] == 2 and plan["days"] == 9
-        assert plan["planned"] == "1170" and plan["actual"] == "880" and plan["drafts"] == "0"
+        assert plan["planned"] == "985" and plan["actual"] == "880"
         by_cat = {c["category"]: c for c in plan["by_category"]}
         assert by_cat["lodging"] == {"category": "lodging", "planned": "900", "drafts": "0",
                                      "actual": "880"}
+        # Per traveller: Ana = half the hotel + her lunches + her ticket; spent = her share.
+        by_tr = {t["traveler_id"]: t for t in plan["by_traveler"]}
+        assert by_tr[p["Ana"]]["planned"] == "515" and by_tr[p["Ana"]]["actual"] == "440"
+        assert by_tr[p["Ben"]]["planned"] == "450" and by_tr[p["Ben"]]["actual"] == "440"
+        assert by_tr[p["Cy"]]["planned"] == "20" and by_tr[p["Cy"]]["actual"] == "0"
         assert {i["id"]: i["actual"] for i in plan["items"]}[hotel["id"]] == "880"
         # D-178: the plan never touches who owes whom.
         assert _net(ov) == {p["Ana"]: "440", p["Ben"]: "-440"} and ov["total"] == "880"
+        # D-183: Ben sees the hotel (he's on it) but not Ana's lunches or the museum.
+        ben = _traveller_user(f"ex-ben-{tid[:6]}", p["Ben"])
+        ben_items = {i["title"] for i in client.get(_url(tid), headers=_h(ben)).json()["plan"]["items"]}
+        assert ben_items == {"Hotel"}
+        assert client.patch(_budget(tid, f"/{lunch['id']}"), headers=_h(ben),
+                            json={"amount": "1"}).status_code == 404
         # Removing the planned item keeps the actual, unlinked.
-        assert client.delete(_budget(tid, f"/{hotel['id']}"), headers=_h(owner)).status_code == 204
+        assert client.delete(_budget(tid, f"/{hotel['id']}"), headers=_h(ana)).status_code == 204
         with SessionLocal() as s:
             assert s.get(TripExpense, e["id"]).budget_item_id is None
 
-    def test_agent_budget_lands_as_drafts_and_respects_kept():
+    def test_agent_budget_names_its_travellers_and_respects_kept():
         owner = _user("ex-owner")
-        tid, p = _trip(owner, names=("Ana",))
-        mine = client.post(_budget(tid), headers=_h(owner), json={
+        tid, p = _trip(owner, names=("Ana", "Ben"))
+        ana = _traveller_user(f"ex-ana-{tid[:6]}", p["Ana"])
+        mine = client.post(_budget(tid), headers=_h(ana), json={
             "title": "Hotel", "category": "lodging", "amount": "90", "currency": "EUR",
             "basis": "day"}).json()
         research = {"items": [
             {"title": "Hotel", "category": "lodging", "amount": "120", "currency": "EUR",
-             "basis": "day"},
+             "basis": "day", "traveler_ids": [p["Ana"]]},
             {"title": "Metro pass", "category": "transport", "amount": "30", "currency": "EUR",
-             "basis": "person", "sources": [{"title": "RATP", "url": "https://ratp.fr"},
-                                            {"title": "bad", "url": "javascript:x"}]},
-            {"title": "Broken", "category": "food", "amount": "-1", "currency": "EUR"}]}
-        out = client.post(_budget(tid, "/batch"), headers=_h(owner), json=research).json()
-        assert out["counts"] == {"drafted": 1, "error": 1, "kept_already": 1}
+             "basis": "person", "traveler_ids": [p["Ana"]],
+             "sources": [{"title": "RATP", "url": "https://ratp.fr"},
+                         {"title": "bad", "url": "javascript:x"}]},
+            {"title": "Untagged", "category": "food", "amount": "10", "currency": "EUR"},
+            {"title": "Broken", "category": "food", "amount": "-1", "currency": "EUR",
+             "traveler_ids": [p["Ana"]]}]}
+        out = client.post(_budget(tid, "/batch"), headers=_h(ana), json=research).json()
+        assert out["counts"] == {"drafted": 1, "error": 2, "kept_already": 1}
+        errors = [r["error"] for r in out["results"] if r["outcome"] == "error"]
+        assert any("tag the traveller" in e for e in errors)    # no extrapolating to anyone
         items = {i["title"]: i for i in out["plan"]["items"]}
         assert items["Hotel"]["id"] == mine["id"] and items["Hotel"]["amount"] == "90"
         assert items["Metro pass"]["status"] == "draft"
+        assert items["Metro pass"]["traveler_ids"] == [p["Ana"]] and items["Metro pass"]["times"] == 1
         assert items["Metro pass"]["sources"] == [{"title": "RATP", "url": "https://ratp.fr"}]
         assert out["plan"]["drafts"] == "30" and out["plan"]["planned"] == "810"
-        # A re-run replaces the agent's drafts in those categories, nothing else.
-        again = client.post(_budget(tid, "/batch"), headers=_h(owner), json={"items": [
+        # The same title for someone else isn't "already kept": it's their own line.
+        ben_hotel = client.post(_budget(tid, "/batch"), headers=_h(ana), json={"items": [
+            {"title": "Hotel", "category": "lodging", "amount": "80", "currency": "EUR",
+             "basis": "day", "traveler_ids": [p["Ben"]]}]}).json()
+        assert ben_hotel["counts"] == {"drafted": 1}
+        # A re-run replaces the caller's drafts in those categories, nothing else.
+        again = client.post(_budget(tid, "/batch"), headers=_h(ana), json={"items": [
             {"title": "Metro pass", "category": "transport", "amount": "28",
-             "currency": "EUR", "basis": "person"}]}).json()
+             "currency": "EUR", "basis": "person", "traveler_ids": [p["Ana"]]}]}).json()
         metro = [i for i in again["plan"]["items"] if i["title"] == "Metro pass"]
         assert len(metro) == 1 and metro[0]["amount"] == "28"
-        # The person keeps it; it's theirs from then on.
-        kept = client.patch(_budget(tid, f"/{metro[0]['id']}"), headers=_h(owner),
+        kept = client.patch(_budget(tid, f"/{metro[0]['id']}"), headers=_h(ana),
                             json={"status": "kept"}).json()
         assert kept["status"] == "kept"
-        third = client.post(_budget(tid, "/batch"), headers=_h(owner), json={"items": [
-            {"title": "Metro pass", "category": "transport", "amount": "1", "currency": "EUR"}]})
+        third = client.post(_budget(tid, "/batch"), headers=_h(ana), json={"items": [
+            {"title": "Metro pass", "category": "transport", "amount": "1", "currency": "EUR",
+             "traveler_ids": [p["Ana"]]}]})
         assert third.json()["counts"] == {"kept_already": 1}
 
-    def test_budget_follows_trip_sharing_and_cleanup():
+    def test_budget_scoping_and_cleanup():
         owner, viewer, stranger = _user("ex-owner"), _user("ex-viewer"), _user("ex-stranger")
         tid, p = _trip(owner, names=("Ana",))
+        ana = _traveller_user(f"ex-ana-{tid[:6]}", p["Ana"])
         with SessionLocal() as s:
             s.add(TripMember(trip_id=tid, user_id=viewer.id))
             s.commit()
-        b = client.post(_budget(tid), headers=_h(owner), json={
+        b = client.post(_budget(tid), headers=_h(ana), json={
             "title": "Tickets", "category": "activities", "amount": "40",
             "currency": "EUR", "basis": "person"}).json()
-        assert client.get(_url(tid), headers=_h(viewer)).json()["plan"]["items"][0]["id"] == b["id"]
-        body = {"title": "x", "amount": "1", "currency": "EUR"}
+        assert client.get(_url(tid), headers=_h(ana)).json()["plan"]["items"][0]["id"] == b["id"]
+        assert client.get(_url(tid), headers=_h(viewer)).json()["plan"]["items"] == []
+        assert client.get(_url(tid), headers=_h(owner)).json()["plan"]["items"] == []
+        body = {"title": "x", "amount": "1", "currency": "EUR", "traveler_ids": [p["Ana"]]}
         assert client.post(_budget(tid), headers=_h(viewer), json=body).status_code == 403
         assert client.post(_budget(tid, "/batch"), headers=_h(viewer),
                            json={"items": [body]}).status_code == 403
         assert client.patch(_budget(tid, f"/{b['id']}"), headers=_h(stranger),
                             json={"title": "mine"}).status_code == 404
-        assert client.delete(_budget(tid, f"/{b['id']}"), headers=_h(stranger)).status_code == 404
-        other, _ = _trip(stranger, names=("Zed",))
+        assert client.delete(_budget(tid, f"/{b['id']}"), headers=_h(owner)).status_code == 404
+        other, q = _trip(stranger, names=("Zed",))
         assert client.post(_url(other), headers=_h(stranger), json={
-            "amount": "1", "currency": "EUR", "payer_id": _["Zed"],
+            "amount": "1", "currency": "EUR", "payer_id": q["Zed"],
             "budget_item_id": b["id"]}).status_code == 400
         with SessionLocal() as s:
-            from app.models import TripBudgetItem
+            from app.models import TripBudgetItem, TripBudgetTraveler
             purge_trip(s, s.get(Trip, tid))
             s.commit()
             assert s.query(TripBudgetItem).filter_by(trip_id=tid).count() == 0
+            assert s.query(TripBudgetTraveler).filter_by(budget_item_id=b["id"]).count() == 0

@@ -43,7 +43,8 @@ if DEPS:
                  "save_phrases", "add_item_to_timeline", "get_discovery_profile",
                  "save_safety", "list_saved_places", "save_places", "update_saved_place",
                  "file_saved_place", "remove_saved_place", "list_expenses", "add_expense",
-                 "record_settlement", "delete_expense", "save_budget", "delete_budget_item"}
+                 "record_settlement", "delete_expense", "save_budget", "delete_budget_item",
+                 "comment_on_expense"}
 
     @pytest.fixture(scope="module")
     def client():
@@ -485,14 +486,24 @@ if DEPS:
         good, err = call(client, alice, "add_expense", trip_id=t, amount="10",
                          currency="EUR", payer_id=w["ta"], shares={str(w["ta"]): "3"})
         assert not good and "add up to 3" in err
+        c = ok(client, bob, "comment_on_expense", trip_id=t, expense_id=e["id"],
+               body="Was the return leg in this?")
+        assert c["body"] == "Was the return leg in this?"
+        seen = ok(client, alice, "list_expenses", trip_id=t)["expenses"]
+        assert [x["comments"][0]["body"] for x in seen if x["id"] == e["id"]] == [c["body"]]
         assert ok(client, alice, "delete_expense", trip_id=t, expense_id=e["id"])["ok"]
         # Planned costs: the budget kit's tool drafts them; they stay out of settle-up.
         before = ok(client, bob, "list_expenses", trip_id=t)["transfers"]
-        out = ok(client, alice, "save_budget", trip_id=t, items=[
+        good, err = call(client, alice, "save_budget", trip_id=t, items=[
             {"title": "Ferry tickets", "category": "transport", "amount": "40",
              "currency": "EUR", "basis": "person"}])
+        assert not good and "traveler_ids" in err               # must say who it's for
+        out = ok(client, alice, "save_budget", trip_id=t, items=[
+            {"title": "Ferry tickets", "category": "transport", "amount": "40",
+             "currency": "EUR", "basis": "person", "traveler_ids": [w["ta"]]}])
         assert out["counts"] == {"drafted": 1}
-        assert out["plan"]["drafts"] == "80" and out["plan"]["items"][0]["status"] == "draft"
+        assert out["plan"]["drafts"] == "40" and out["plan"]["items"][0]["status"] == "draft"
+        assert ok(client, bob, "list_expenses", trip_id=t)["plan"]["items"] == []   # not his
         assert ok(client, bob, "list_expenses", trip_id=t)["transfers"] == before
         assert ok(client, alice, "delete_budget_item", trip_id=t,
                   item_id=out["plan"]["items"][0]["id"])["ok"]

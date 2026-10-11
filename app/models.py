@@ -1059,6 +1059,9 @@ class TripBudgetItem(Base):
     rate: Mapped[str | None] = mapped_column(String(32))
     rate_source: Mapped[str | None] = mapped_column(String(12))
     status: Mapped[str] = mapped_column(String(8), default="kept")        # draft | kept
+    # D-184: the days it covers for these travellers, when not the whole trip.
+    start_date: Mapped[str | None] = mapped_column(String(10))
+    end_date: Mapped[str | None] = mapped_column(String(10))
     place_key: Mapped[str | None] = mapped_column(String(128))            # "JP:Tokyo", optional
     activity_id: Mapped[str | None] = mapped_column(String(36), index=True)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -1067,6 +1070,28 @@ class TripBudgetItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripBudgetTraveler(Base):
+    """Who a planned cost is for (D-184): it counts only for these travellers, and
+    only they (and whoever entered it) can see it (D-183). Soft link, no DB FK."""
+    __tablename__ = "trip_budget_travelers"
+
+    budget_item_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    traveler_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+
+class TripExpenseComment(Base):
+    """A comment on an actual expense, so the people on it can talk it through
+    (D-185). Visible exactly where the expense is (D-183). Soft links."""
+    __tablename__ = "trip_expense_comments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    expense_id: Mapped[str] = mapped_column(String(36), index=True)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    author_id: Mapped[str | None] = mapped_column(String(36), index=True)   # users.id
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class TripExpenseShare(Base):

@@ -1,6 +1,6 @@
 # SPEC-10 — Trip expenses and splitting costs (YONDER-172)
 
-**Status: BUILDING (2026-10-09).** Decisions D-173–D-182. Builds option B of
+**Status: BUILDING (2026-10-11).** Decisions D-173–D-185 (D-174 and D-179 revised 2026-10-11). Builds option B of
 YONDER-172 (built in, not a SplitPro integration) inside the D-155 posture.
 
 ## Intent
@@ -30,7 +30,10 @@ people up and make the trip's actual cost.
   equal split, so later roster changes never rewrite history.
 - **TripBudgetItem** (`trip_budget_items`): a planned cost — an estimate in its
   own currency on a `basis` (trip / person / day / person_day), `draft` (an
-  agent's suggestion) or `kept`, with optional city, timeline item and sources.
+  agent's suggestion) or `kept`, optionally for part of the trip
+  (`start_date`–`end_date`), with optional city, timeline item and sources.
+- **TripBudgetTraveler** (`trip_budget_travelers`): who a planned cost is for.
+- **TripExpenseComment** (`trip_expense_comments`): the discussion on an actual.
 - **TripExpense.budget_item_id**: the planned item an actual paid for.
 - **Trip.expense_currency**: the currency balances and the plan are shown in.
 
@@ -41,12 +44,11 @@ people up and make the trip's actual cost.
   settlements. Nothing else: no payment links, reminders, recurring expenses,
   multi-trip groups or bank/CSV/receipt imports (D-155). SplitPro stays the tool
   for anything heavier.
-- **D-174 — Expenses follow the trip's sharing, not the journal's.** Splitting
-  costs is about other people, so anyone who can view the trip sees its expenses
-  and balances (`scope.can_view_trip`), and anyone who can edit the trip — its
-  owner and the travellers on its roster — can add, change or delete them
-  (`scope.can_edit_trip`); a view-only share can't (D-122). Every write records
-  `owner_id`.
+- **D-174 — The trip gates costs (revised 2026-10-11).** Reading costs needs
+  view access to the trip and writing needs edit access — its owner and the
+  travellers on its roster (`scope.can_edit_trip`); a view-only share can't
+  write (D-122). Inside that gate, who sees which cost is D-183. Every write
+  records `owner_id`.
 - **D-175 — Payers and sharers are the trip's travellers.** Ids must be on the
   roster when the expense is saved. An equal split with no one chosen means
   everyone on the roster at that moment, divided to the currency's minor unit
@@ -68,10 +70,11 @@ people up and make the trip's actual cost.
 - **D-178 — Planned and actual are separate.** The plan is a budget: it is never
   split, never owed and never settled. Balances, suggested payments and the
   trip's actual cost come from actual expenses only.
-- **D-179 — A planned cost is an estimate on a basis.** Whole trip, per person,
-  per day or per person per day, multiplied by the roster size and the trip's
-  days when it's shown, so adding a traveller or a day updates the plan. Without
-  dates, a per-day estimate counts once and the plan says the days are unknown.
+- **D-179 — A planned cost is an estimate on a basis (revised 2026-10-11).**
+  Once for its travellers together, per person, per day, or per person per day,
+  multiplied by the travellers TAGGED on it (D-184) and the days it covers — its
+  own dates, else the trip's — never the whole roster. Without dates, a per-day
+  estimate counts once and the plan says the days are unknown.
 - **D-180 — Budget research is a research kit and lands as drafts.** The
   trip-budget kit (`research_trip_budget`) prices the trip from real sources and
   saves with `save_budget`. Every agent item is a draft; a re-run replaces the
@@ -87,20 +90,41 @@ people up and make the trip's actual cost.
   and an even split, like the journal's quick entry. Amount and title can come
   from the shortcut. Entering stays by hand (D-155).
 
+- **D-183 — Only the people on a cost see it.** An actual is visible to its
+  payer and sharers, a planned cost to the travellers tagged on it, and either
+  to whoever entered it. Not to the trip's owner, an admin, a view-only share or
+  another traveller who isn't on it — like an itinerary item someone isn't
+  tagged on. Balances, suggested payments and the plan are worked out from the
+  costs each person can see: everything someone is on is visible to them, so
+  their own balance is always complete. A cost they can't see 404s.
+- **D-184 — Planned costs are for named travellers.** Every planned cost is
+  tagged with the traveller(s) it's for; a person's own entry defaults to
+  themselves, and an agent must name them (`traveler_ids` is required from
+  research). Nothing is extrapolated to people a cost isn't for. The plan shows
+  each traveller's budget beside their share of actual spending
+  (`by_traveler`): a per-person cost counts in full for each tagged traveller, a
+  shared one is split evenly between them.
+- **D-185 — The people on an actual can discuss it.** Comments sit on an actual
+  expense and are visible exactly where it is (D-183); anyone who can see the
+  expense can comment, and people delete only their own comments. Deleting the
+  expense deletes its thread.
+
 ## Surfaces (first build)
 
 - `/api/v1/trips/{id}/expenses` (actuals, balances and the `plan`; create),
   `…/expenses/{eid}` (edit, delete), `…/settlements` (record a payment),
-  `…/expenses/currency`; `…/budget` (plan a cost), `…/budget/batch` (research
-  drafts), `…/budget/{bid}` (edit/keep, delete).
+  `…/expenses/currency`, `…/expenses/{eid}/comments` (comment; delete your own);
+  `…/budget` (plan a cost), `…/budget/batch` (research drafts), `…/budget/{bid}`
+  (edit/keep, delete).
 - MCP: `list_expenses`, `add_expense`, `record_settlement`, `delete_expense`,
-  `save_budget`, `delete_budget_item`; the `research_trip_budget` prompt.
+  `comment_on_expense`, `save_budget`, `delete_budget_item`; the
+  `research_trip_budget` prompt.
 - iOS: a Costs segment with Plan and Actual (list, balances, add/edit, settle up,
   keep drafts, log a planned item as spent) and the Log Expense shortcut.
 - Web UI: follow-up item.
 
 ## Cleanup
 
-Deleting a trip deletes its expenses, shares and planned items (trip-only
-data). Deleting a timeline activity clears `activity_id` on expenses and planned
+Deleting a trip deletes its expenses, shares, comments, planned items and their
+travellers (trip-only data). Deleting a timeline activity clears `activity_id` on expenses and planned
 items that pointed at it.
