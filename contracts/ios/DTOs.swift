@@ -567,10 +567,25 @@ struct ExpenseOut: Codable, Identifiable, Hashable, Sendable {
     let notes: String?
     let owner_id: String?
     let created_at: String?
+    /// The discussion on it, oldest first (D-185). Optional: earlier 4.8 builds omit it.
+    let comments: [ExpenseCommentOut]?
 }
 
-/// A planned cost (D-178/D-179): an estimate per `basis`, expanded by the
-/// trip's people and days into `total` (trip currency).
+struct ExpenseCommentOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let author_id: String?
+    let author_name: String
+    let body: String
+    let created_at: String?
+    let mine: Bool                   // you wrote it (and can delete it)
+}
+
+struct ExpenseCommentIn: Codable, Sendable {
+    var body: String
+}
+
+/// A planned cost (D-178/D-179/D-184): an estimate per `basis` for the
+/// travellers tagged on it, expanded by them and its days into `total`.
 struct BudgetItemOut: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let trip_id: String
@@ -579,6 +594,12 @@ struct BudgetItemOut: Codable, Identifiable, Hashable, Sendable {
     let amount: String               // the estimate, in `currency`, per `basis`
     let currency: String
     let basis: String                // trip | person | day | person_day
+    /// Who it's for (D-184). Optional: earlier 4.8 builds omit these.
+    let traveler_ids: [Int]?
+    let traveler_names: [String]?
+    let start_date: String?
+    let end_date: String?
+    let days: Int?
     let times: Int
     let total: String?               // trip currency; nil = no rate
     let rate: String?
@@ -600,6 +621,14 @@ struct CategoryPlanOut: Codable, Hashable, Sendable {
     let actual: String
 }
 
+/// One traveller's budget beside their share of actual spending (D-184).
+struct TravelerPlanOut: Codable, Hashable, Sendable {
+    let traveler_id: Int
+    let name: String
+    let planned: String
+    let actual: String
+}
+
 /// The budget beside what was spent. Only actuals settle up (D-178).
 struct PlanOut: Codable, Sendable {
     let people: Int
@@ -609,6 +638,7 @@ struct PlanOut: Codable, Sendable {
     let actual: String
     let items: [BudgetItemOut]
     let by_category: [CategoryPlanOut]
+    let by_traveler: [TravelerPlanOut]?
     let unconverted: [String]
 }
 
@@ -680,6 +710,9 @@ struct BudgetItemIn: Codable, Sendable {
     var title: String = ""
     var category: String = "other"
     var basis: String = "trip"
+    var traveler_ids: [Int]?         // who it's for; nil = you (D-184)
+    var start_date: String?
+    var end_date: String?
     var rate: String?
     var notes: String?
     var source: String = "ios"
@@ -692,6 +725,9 @@ struct BudgetItemPatch: Codable, Sendable {
     var title: String?
     var category: String?
     var basis: String?
+    var traveler_ids: [Int]?
+    var start_date: String?          // "" clears it
+    var end_date: String?
     var rate: String?
     var notes: String?
     var status: String?
