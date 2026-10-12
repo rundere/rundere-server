@@ -374,7 +374,31 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         **_packing_context(session, trip.id, user.id if user else None),
         **_sharing_context(session, trip, user),
         **_costs_context(session, trip, user),
+        "journal": _journal_context(session, trip, user),
     }
+
+
+def _journal_context(session: Session, trip: Trip, user) -> list[dict]:
+    """The viewer's OWN journal entries linked to this trip (YONDER-215),
+    grouped by the day they're about, newest first. Own-only, stricter than the
+    Journal page's filter: sharing a trip never shows anyone else's journal —
+    an admin's or a co-traveller's (D-134). Auth off (no user) is the single
+    owner and sees every entry."""
+    from app.models import JournalEntry
+    q = session.query(JournalEntry).filter(JournalEntry.trip_id == trip.id)
+    if user is not None:
+        q = q.filter(JournalEntry.owner_id == user.id)
+    groups: list[dict] = []
+    for e in q.order_by(JournalEntry.entry_date.desc(), JournalEntry.captured_at.desc()):
+        if not groups or groups[-1]["date"] != e.entry_date:
+            groups.append({"date": e.entry_date, "display": fmt_date(e.entry_date) or e.entry_date,
+                           "entries": []})
+        groups[-1]["entries"].append({
+            "id": e.id, "body": e.body or "",
+            "time": e.captured_at.strftime("%H:%M") if e.captured_at else "",
+            "place": e.place_label or "",
+            "tags": (e.values or {}).get("tags") or []})
+    return groups
 
 
 def _costs_context(session: Session, trip: Trip, user) -> dict:
