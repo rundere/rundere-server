@@ -669,3 +669,11 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-split-amt { width: 8em; }
 .yn-comments { border-top: 1px solid var(--rd-border-subtle); display: flex;
   flex-direction: column; gap: 6px; }
+
+/* Journal tab (YONDER-215). */
+.yn-journal-row { align-items: flex-start; }
+.yn-journal-body { white-space: pre-wrap; line-height: 1.45; }
+
+/* Travel profile (YONDER-216): the read-only name, styled like a field value. */
+.yn-readonly { padding: 8px 0; font-size: 15px; font-weight: 500; }
+.yn-profile-card textarea.input { width: 100%; box-sizing: border-box; }
