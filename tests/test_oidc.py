@@ -320,6 +320,40 @@ if DEPS:
         lan = TestClient(app, base_url=f"http://{_LAN}")
         assert lan.post("/api/v1/auth/login", json=body).status_code == 401
 
+    # ------------------------------------------------------------------ YONDER-180
+    def test_auth_methods_per_host(monkeypatch):
+        """/api/v1/auth/methods answers for the host it was asked on, unsigned-in:
+        SSO-forced on the public host, password-only on the LAN host."""
+        _per_host(monkeypatch)
+        monkeypatch.setattr(settings, "oidc_display_name", "Authentik")
+        monkeypatch.setattr(settings, "auth_required", True)
+        pub = TestClient(app, base_url=f"https://{_PUBLIC}").get("/api/v1/auth/methods")
+        assert pub.status_code == 200
+        m = pub.json()
+        assert (m["sso"], m["sso_forced"], m["sso_name"]) == (True, True, "Authentik")
+        assert m["password"] is True and m["oauth"] is True     # app login not opted out
+        assert m["version"] == settings.app_version
+        lan = TestClient(app, base_url=f"http://{_LAN}").get("/api/v1/auth/methods").json()
+        assert (lan["sso"], lan["sso_forced"], lan["sso_name"]) == (False, False, None)
+        assert lan["password"] is True
+
+    def test_auth_methods_mirror_the_api_login_opt_out(monkeypatch):
+        """password=false exactly when /api/v1/auth/login would answer 403."""
+        _per_host(monkeypatch)
+        monkeypatch.setattr(settings, "oidc_force_api_login", True)
+        c = TestClient(app, base_url=f"https://{_PUBLIC}")
+        assert c.get("/api/v1/auth/methods").json()["password"] is False
+        assert c.post("/api/v1/auth/login",
+                      json={"username": "x", "password": "y"}).status_code == 403
+
+    def test_auth_methods_ignores_a_forwarded_host(monkeypatch):
+        """A client can't talk the endpoint into another host's answer."""
+        _per_host(monkeypatch)
+        lan = TestClient(app, base_url=f"http://{_LAN}")
+        m = lan.get("/api/v1/auth/methods",
+                    headers={"X-Forwarded-Host": _PUBLIC}).json()
+        assert m["sso_forced"] is False
+
     def test_lan_host_is_password_only_when_not_listed(monkeypatch):
         _per_host(monkeypatch)
         c = TestClient(app, base_url=f"http://{_LAN}")
