@@ -135,7 +135,8 @@ people up and make the trip's actual cost.
 - Currency picker (YONDER-213): `ExpensesOut.suggested_currencies` is the one
   ordering for web, MCP and the app — the destination currencies from the
   caller's Discover findings, then their own base currency, the trip's balance
-  currency, and those already used — with every other current ISO-4217 code
+  currency, and those already used on this trip's expenses (nothing from other
+  trips) — with every other current ISO-4217 code
   after. `default_currency` (the person's own, else the trip's, else the
   destination's) is what a new expense starts in. `/api/v1/auth/me` carries the
   person's `base_currency` (and `timezone`, D-187). Pickers show only the

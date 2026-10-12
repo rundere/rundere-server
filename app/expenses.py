@@ -138,9 +138,10 @@ def discover_rate(session: Session, trip_id: str, user_id: str | None,
 def suggested_currencies(session: Session, trip: Trip, user) -> list[str]:
     """The currencies an expense on this trip most likely uses, best first
     (YONDER-213): the destination's — every currency the caller's Discover
-    findings name for the trip, so a multi-country trip lists them all — then
+    findings name for THIS trip, so a multi-country trip lists them all — then
     the caller's own base currency, the trip's balance currency, and whatever
-    the caller's visible expenses already use. One ordering for web, MCP and
+    the caller's visible expenses on THIS trip already use. Nothing comes from
+    other trips: Morocco last year never puts MAD on the Brazil trip. One ordering for web, MCP and
     the app; a picker lists every other ISO-4217 code after these."""
     out: list[str] = []
 

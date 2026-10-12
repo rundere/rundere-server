@@ -288,6 +288,27 @@ if DEPS:
         assert "PTE" not in client.get(f"/api/v1/trips/{tid}/expenses",
                                        headers=h["Ben"]).json()["suggested_currencies"]
 
+    def test_suggestions_never_come_from_another_trip():
+        """Morocco last year doesn't put MAD on the Brazil trip: destination
+        findings and "already used" are this trip's alone."""
+        morocco, p1, _, h1 = _setup()
+        _destination(morocco, _ana(morocco).id, "MAD")
+        client.post(f"/api/v1/trips/{morocco}/expenses", headers=h1["Ana"], json={
+            "amount": "50", "currency": "MAD", "payer_id": p1["Ana"]})
+        with SessionLocal() as s:                  # the same person, a new trip
+            ana = _ana(morocco)
+            brazil = Trip(name=f"Cw brazil {uuid.uuid4().hex[:4]}", source="manual",
+                          owner_id=ana.id, start_date="2032-01-01", end_date="2032-01-09")
+            s.add(brazil)
+            s.flush()
+            s.add(TripTraveler(trip_id=brazil.id, traveler_id=p1["Ana"]))
+            s.commit()
+            bid = brazil.id
+        _destination(bid, ana.id, "BRL")
+        ov = client.get(f"/api/v1/trips/{bid}/expenses", headers=h1["Ana"]).json()
+        assert "MAD" not in ov["suggested_currencies"]
+        assert ov["suggested_currencies"][0] == "BRL"
+
     def test_the_web_form_is_a_picker_defaulting_to_your_currency():
         tid, p, ck, _ = _setup()
         with SessionLocal() as s:
