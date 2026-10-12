@@ -103,10 +103,21 @@ def _owner_id(user):
     return getattr(user, "id", None)
 
 
+def _accuracy(value) -> float | None:
+    """GPS accuracy in metres (0 or more), or None. Same rule as an expense's."""
+    if value is None:
+        return None
+    v = float(value)
+    if not 0 <= v < 1e7:
+        raise ValueError("place_accuracy_m must be 0 or more")
+    return v
+
+
 def create_entry(session: Session, user, *, entry_date=None, captured_at=None,
                  body: str = "", trip_id: str | None = None, values: dict | None = None,
                  place_lat: float | None = None, place_lon: float | None = None,
-                 place_label: str | None = None, source: str = "api") -> JournalEntry:
+                 place_label: str | None = None, place_accuracy_m: float | None = None,
+                 source: str = "api") -> JournalEntry:
     """Create one entry owned by `user`. If `trip_id` is given it must be a trip
     the user can see (else 404) — attaching is never a way to discover trips."""
     if trip_id:
@@ -121,6 +132,7 @@ def create_entry(session: Session, user, *, entry_date=None, captured_at=None,
         place_lat=place_lat,
         place_lon=place_lon,
         place_label=(place_label or None),
+        place_accuracy_m=_accuracy(place_accuracy_m),
         source=(source or "api")[:16],
     )
     session.add(entry)
@@ -151,7 +163,8 @@ def get_entry(session: Session, user, entry_id: str) -> JournalEntry:
 
 def update_entry(session: Session, user, entry_id: str, *, entry_date=_UNSET,
                  body=_UNSET, trip_id=_UNSET, values=_UNSET, place_lat=_UNSET,
-                 place_lon=_UNSET, place_label=_UNSET) -> JournalEntry:
+                 place_lon=_UNSET, place_label=_UNSET,
+                 place_accuracy_m=_UNSET) -> JournalEntry:
     """Edit fields the author supplied. `trip_id=None` DETACHES; a non-null
     trip_id re-attaches (validated). Entries are freely mutable by their author
     (D-133), unlike the immutable commit records elsewhere in Yonder."""
@@ -172,6 +185,8 @@ def update_entry(session: Session, user, entry_id: str, *, entry_date=_UNSET,
         entry.place_lon = place_lon
     if place_label is not _UNSET:
         entry.place_label = place_label or None
+    if place_accuracy_m is not _UNSET:
+        entry.place_accuracy_m = _accuracy(place_accuracy_m)
     session.commit()
     session.refresh(entry)
     return entry
@@ -204,6 +219,7 @@ def duplicate_entry(session: Session, user, entry_id: str, *,
         place_lat=orig.place_lat,
         place_lon=orig.place_lon,
         place_label=orig.place_label,
+        place_accuracy_m=orig.place_accuracy_m,
         source=orig.source,
         duplicated_from=orig.id,
     )

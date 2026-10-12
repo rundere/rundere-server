@@ -1,0 +1,89 @@
+{# Plan a cost / edit a planned cost (YONDER-221, D-178–D-184). One amount for
+   the people it's for — a room for two is one cost, nothing is multiplied by
+   people or days (D-179). An agent's draft is kept by saving it. #}
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
+  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+    <div class="dialog-title">{% if item is none %}Plan a cost{% elif draft %}Suggested cost{% else %}Planned cost{% endif %}</div>
+    {% if draft %}<p class="bp-trip-notes">An agent's suggestion. Save (or Keep on the list) to make it part of your plan.</p>{% endif %}
+    {% if error %}<div class="bp-error">{{ error }}</div>{% endif %}
+    <form class="dialog-body"
+          hx-post="/trips/{{ trip.id }}/costs/plan{% if item %}/{{ item.id }}{% endif %}"
+          hx-target="#modal-root" hx-swap="innerHTML"
+          hx-disabled-elt="find button[type=submit]">
+      <div class="field">
+        <label for="bd-title">What for</label>
+        <input id="bd-title" class="input" name="title" value="{{ form.title }}" maxlength="200"
+               placeholder="e.g. Hotel in Lisbon, flights, a day's food" {% if item is none %}autofocus{% endif %}>
+      </div>
+      <div class="bp-row2">
+        <div class="field">
+          <label for="bd-amount">Estimated amount</label>
+          <input id="bd-amount" class="input" name="amount" value="{{ form.amount }}" inputmode="decimal" required>
+        </div>
+        <div class="field">
+          <label for="bd-cur">Currency</label>
+          {% set cc = currency_choices %}
+          {% set known = cc.suggested | map(attribute=0) | list %}
+          <select id="bd-cur" class="input" name="currency" required onchange="ynMoreCurrencies(this)">
+            {% if not form.currency %}<option value="" selected disabled>Choose…</option>{% endif %}
+            {% for code, label in cc.suggested %}<option value="{{ code }}" {% if code == form.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            {% if form.currency and form.currency not in known %}<option value="{{ form.currency }}" selected>{{ form.currency }}</option>{% endif %}
+            <option value="__more">Other currency…</option>
+          </select>
+          <template id="bd-cur-all">{% for code, label in cc.rest %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</template>
+        </div>
+      </div>
+      <div class="bp-row2">
+        <div class="field">
+          <label for="bd-cat">Category</label>
+          <select id="bd-cat" class="input" name="category">
+            {% for c, label in categories %}<option value="{{ c }}" {% if c == form.category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        {% if timeline %}
+        <div class="field">
+          <label for="bd-act">Timeline item <span class="yn-help">— optional</span></label>
+          <select id="bd-act" class="input" name="activity_id">
+            <option value="">— none —</option>
+            {% for id, label in timeline %}<option value="{{ id }}" {% if id == form.activity_id %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
+      <div class="bp-row2">
+        <div class="field">
+          <label for="bd-from">From <span class="yn-help">— if not the whole trip</span></label>
+          <input id="bd-from" class="input" type="date" name="start_date" value="{{ form.start_date }}">
+        </div>
+        <div class="field">
+          <label for="bd-to">To</label>
+          <input id="bd-to" class="input" type="date" name="end_date" value="{{ form.end_date }}">
+        </div>
+      </div>
+      {% if roster | length > 1 %}
+      <fieldset class="field yn-split">
+        <legend>For</legend>
+        {% for p in roster %}
+        <label><input type="checkbox" name="traveler_ids" value="{{ p.id }}"
+                      {% if p.id in form.traveler_ids %}checked{% endif %}> {{ p.name }}</label>
+        {% endfor %}
+        <p class="yn-help">One amount for everyone ticked — a room for two is one cost.</p>
+      </fieldset>
+      {% else %}
+      {% for p in roster %}<input type="hidden" name="traveler_ids" value="{{ p.id }}">{% endfor %}
+      {% endif %}
+      <div class="field">
+        <label for="bd-notes">Notes</label>
+        <textarea id="bd-notes" class="input" name="notes" rows="2">{{ form.notes }}</textarea>
+      </div>
+      <div class="dialog-actions">
+        {% if item and can_edit %}
+        <button type="button" class="btn btn-danger" hx-post="/trips/{{ trip.id }}/costs/plan/{{ item.id }}/delete"
+                hx-confirm="Delete this planned cost? Expenses logged against it stay, unlinked.">Delete</button>
+        {% endif %}
+        <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
+        {% if can_edit %}<button type="submit" class="btn btn-primary">{{ 'Keep' if draft else 'Save' }}</button>{% endif %}
+      </div>
+    </form>
+  </div>
+</div>
