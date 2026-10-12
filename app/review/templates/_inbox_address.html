@@ -1,0 +1,5 @@
+{# The person's own forward-to address (SPEC-9 D-162, D-190). Swapped in place
+   when it is regenerated. #}
+<div class="cap-copy"><pre id="inbox-address">{{ address }}</pre>
+  <button class="act tiny" type="button" data-copy="inbox-address">Copy</button></div>
+{% if rotated %}<div class="cap-msg ok">New address made. The old one no longer works — update any forwarding rule that used it.</div>{% endif %}

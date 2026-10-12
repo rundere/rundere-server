@@ -1,9 +1,10 @@
 # SPEC-9 — Capture channels and the one-step capture flow
 
-**Status: PLANNING (2026-10-02), revised after owner review.** Decisions D-158–D-160, D-162,
-D-163 and D-164 are **proposed** (D-161 is the design-token decision in SPEC-8). Nothing here is
-built yet; section 2 documents what exists today (read from the code), sections 3–7 are
-the proposal. Related Plane items: YONDER-159–163 (capture page redesign), YONDER-199
+**Status: PLANNING (2026-10-02), revised after owner review.** D-162 and D-190 (email
+forward) are built (2026-10-12). Decisions D-158–D-160, D-163 and D-164 were proposed here
+(D-161 is the design-token decision in SPEC-8); several have shipped since, so check the code
+and Plane for each. Section 2 documents what existed on 2026-10-02 (read from the code);
+sections 3–7 are the proposal. Related Plane items: YONDER-159–163 (capture page redesign), YONDER-199
 (email forward), YONDER-54 (iOS Share Extension), YONDER-179 (file capture API),
 YONDER-200 (Maps place link).
 
@@ -167,6 +168,36 @@ The page's own capture box is not a tab, because it needs no setup.
     as D-158 for that user's batch. The result is an item in their approval queue (D-31).
   - *Needs from the deployment:* a mailbox that supports plus addressing and IMAP access. The
     Email tab says so when the admin has not configured one.
+  - **Built 2026-10-12 (YONDER-199), with the details in D-190.** This supersedes the
+    verified-sender idea in the original Plane item: the address alone decides.
+
+- **D-190 — How the email inbox is built (YONDER-199; owner, 2026-10-12).**
+  - *Configuration:* `TX_INBOX_ADDRESS` and `TX_INBOX_IMAP_*`, like SMTP. The mailbox
+    password is read from the environment only, never stored in the database or shown in a
+    log or status line. With no host, user or address the feature is off and the tab says so.
+  - *Address:* `local+<token>@domain`. The token is 12 random characters from an alphabet
+    without look-alikes; one per user (`inbox_addresses`); made the first time it is shown;
+    regenerated from the Email tab or `POST /api/v1/capture/email-address/rotate`
+    (first-party only).
+  - *Recipient:* read from `Delivered-To`, `X-Original-To`, `Envelope-To`, `X-Forwarded-To`,
+    `To` and `Cc`, so a forwarding rule that keeps the original `To` still works. A message
+    addressed to several people's tokens becomes one capture each. A deactivated user's
+    address matches no one.
+  - *Capture:* an `email`-channel batch shaped like the Gmail add-on's (raw RFC 2822,
+    D-15; `source.type` `email`). Mail forwarded as an attachment keeps the original's
+    booking markup, because the MIME decoder walks into it. Then auto-process (D-158).
+  - *Dropped, never stored:* no matching address, larger than `TX_INBOX_MAX_BYTES` (never
+    downloaded), or over `TX_INBOX_RATE_LIMIT` captures per address per hour. Such mail is
+    moved to the dropped folder, and only the outcome is recorded (`inbox_messages`: no
+    sender, subject or body).
+  - *Exactly once:* `inbox_messages.message_key` = sha256(Message-ID, or the raw bytes, +
+    user) is unique, so a re-forward, a second poll or a second worker never captures twice.
+  - *Mailbox housekeeping:* captured mail moves to `TX_INBOX_DONE_FOLDER`, everything else
+    to `TX_INBOX_DROPPED_FOLDER` (IMAP MOVE, or copy + expunge). One poller thread per
+    process, every `TX_INBOX_POLL_SECONDS`. Admins see its last read, last error and a
+    7-day count on the Email tab.
+  - *Not in v1:* a "got it" reply email, an IMAP IDLE push, and a webhook front door for
+    mail services that push instead of being polled.
 
 ## 6. Proposed: iOS Share Extension feedback (D-163)
 

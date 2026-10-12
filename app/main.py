@@ -297,6 +297,12 @@ def startup() -> None:
         except Exception:                   # pragma: no cover
             log.exception("language data seed failed; discovery uses JSON fallback")
     try:
+        # Email-forward capture (D-190): poll the admin's mailbox, if configured.
+        from app import inbox
+        inbox.start(SessionLocal)
+    except Exception:                       # pragma: no cover
+        log.exception("inbox poller failed to start; email forward is off")
+    try:
         from app.admin import mount_admin
         mount_admin(app, engine)
     except Exception:                       # pragma: no cover

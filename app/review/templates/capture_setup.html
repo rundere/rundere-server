@@ -116,14 +116,48 @@
 
     {% elif tab == 'email' %}
       <h2 class="cap-h">Email forward</h2>
-      <p class="why"><b>Not available yet.</b> You will get your own address, like <code>captures+yourcode@your-server</code>.
-        Forward any confirmation email to it, from any of your accounts, and it is read and waits in your review
-        queue. It needs the server's mail inbox set up by an admin first.</p>
+      {% if not inbox or not inbox.configured %}
+      <p class="why"><b>Not set up on this server yet.</b> You will get your own address, like
+        <code>trips+yourcode@your-server</code>. Forward any confirmation email to it, from any of your accounts,
+        and it waits in your review queue. An admin needs to connect the server's mailbox first.</p>
+      {% elif not inbox.address %}
+      <p class="why"><a href="/login?next=/capture/setup%3Ftab%3Demail">Sign in</a> to get your own address.</p>
+      {% else %}
+      <p class="why">This address is yours. Forward a booking confirmation to it, from any of your email accounts,
+        and in a few minutes it is read and waits in your review queue. Nothing is filed until you approve it.</p>
+      <div id="inbox-slot">{% with address = inbox.address, rotated = False %}{% include "_inbox_address.html" %}{% endwith %}</div>
       <ol class="cap-steps">
-        <li>Copy your address (it will appear here).</li>
-        <li>In Gmail or Outlook, add a forwarding rule for the senders you care about, or forward a message by hand.</li>
-        <li>Check it works: the email shows in your review queue after it has been read.</li>
+        <li>Copy your address.</li>
+        <li>Forward a confirmation to it by hand, or add a forwarding rule. In Gmail: Settings → Filters → create a
+          filter for the senders you care about → <i>Forward it to</i> your address (Gmail asks you to confirm the
+          address once; that confirmation email lands in your review queue — open the link in it). In Outlook:
+          Rules → <i>Forward to</i>.</li>
+        <li>Check it works: the booking shows in your review queue after the next read (every few minutes).</li>
       </ol>
+      <p class="why">Anyone who has this address can send things to your review queue, so keep it to yourself.
+        If it leaks, make a new one; the old one stops working at once.</p>
+      <button class="act" type="button" hx-post="/capture/setup/email-address" hx-target="#inbox-slot"
+              hx-swap="innerHTML" hx-confirm="Make a new address? The current one stops working straight away.">Make a new address</button>
+      {% endif %}
+      {% if inbox and inbox.admin %}
+      <div class="cap-admin">
+        <h3 class="cap-h">Server mailbox (admins)</h3>
+        {% if not inbox.configured %}
+        <p class="why">Set <code>TX_INBOX_ADDRESS</code> (e.g. <code>trips@example.com</code>), <code>TX_INBOX_IMAP_HOST</code>,
+          <code>TX_INBOX_IMAP_USER</code> and <code>TX_INBOX_IMAP_PASSWORD</code> (an app password), then restart. The mailbox must
+          accept plus-addressed mail (<code>trips+anything@…</code> delivered to <code>trips@…</code>): Gmail, Fastmail,
+          Microsoft 365, iCloud and most hosts do.</p>
+        {% else %}
+        <p class="why"><code>{{ inbox.admin.mailbox }}</code> on <code>{{ inbox.admin.host }}</code>, folder
+          <code>{{ inbox.admin.folder }}</code>, read every {{ inbox.admin.every }} s.
+          Last read: {{ inbox.admin.last_poll or 'not yet' }}.{% if inbox.admin.last_error %}
+          <br><b>Last error:</b> <code>{{ inbox.admin.last_error }}</code>{% endif %}</p>
+        <p class="why">Captured mail is filed in <code>{{ inbox.admin.done }}</code>; mail to an unknown address, too
+          large or over the rate limit goes to <code>{{ inbox.admin.dropped }}</code> and is never stored here.
+          Last 7 days: {% for k, v in inbox.admin.week|dictsort %}{{ v }} {{ k.replace('_', ' ') }}{% if not loop.last %} · {% endif %}{% else %}nothing yet{% endfor %}.</p>
+        {% endif %}
+      </div>
+      {% endif %}
 
     {% elif tab == 'ios' %}
       <h2 class="cap-h">iPhone and iPad</h2>

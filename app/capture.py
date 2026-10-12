@@ -346,7 +346,7 @@ _CHANNELS = [  # (tab key, label, capture_channel values it produces)
     ("gmail", "Gmail", ("gmail",)),
     ("calendar", "Calendar", ("gcal",)),
     ("bookmarklet", "Bookmarklet", ("bookmarklet",)),
-    ("email", "Email forward", ()),
+    ("email", "Email forward", ("email",)),
     ("ios", "iPhone and iPad", ()),
     ("mcp", "AI assistants (MCP)", ()),
 ]
@@ -430,7 +430,47 @@ def capture_setup(request: Request, tab: str = "gmail", session: Session = Depen
         "gcal_code": _addon_file("gcal-addon", "Code.gs"),
         "gcal_manifest": _addon_file("gcal-addon", "appsscript.json"),
         "signed_in": user is not None or not settings.auth_required,
+        "inbox": _inbox_context(session, user) if tab == "email" else None,
     })
+
+
+def _inbox_context(session: Session, user) -> dict:
+    """The Email forward tab (D-162, D-190): the person's own address, and for an
+    admin how the poller is doing. The address is made the first time it's shown."""
+    from app import inbox, scope
+    ctx = {"configured": inbox.configured(), "address": None, "admin": None}
+    if ctx["configured"]:
+        ctx["address"] = inbox.user_address(session, user)
+    if user is not None and scope.is_admin(user):
+        ctx["admin"] = {"mailbox": settings.inbox_address or None,
+                        "host": settings.inbox_imap_host or None,
+                        "folder": settings.inbox_folder,
+                        "done": settings.inbox_done_folder,
+                        "dropped": settings.inbox_dropped_folder,
+                        "every": max(30, settings.inbox_poll_seconds),
+                        "last_poll": _ago(inbox.status["last_poll_at"]),
+                        "last_error": inbox.status["last_error"],
+                        "week": inbox.recent_counts(session)}
+    return ctx
+
+
+@router.post("/capture/setup/email-address", response_class=HTMLResponse)
+def capture_setup_email_rotate(request: Request, session: Session = Depends(get_session)):
+    """Regenerate the person's forward-to address (D-162): the old one stops
+    working at once, so a leaked address can be shut off."""
+    from app import authn, inbox
+    user = authn.resolve_user(session, request)
+    if user is None:
+        return HTMLResponse('<div class="cap-msg err">Sign in to get your address.</div>',
+                            status_code=401)
+    address = inbox.rotate(session, user)
+    if address is None:
+        return HTMLResponse('<div class="cap-msg err">The email inbox isn\'t set up on '
+                            'this server.</div>', status_code=409)
+    resp = templates.TemplateResponse(request, "_inbox_address.html",
+                                      {"address": address, "rotated": True})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @router.post("/capture/setup/key", response_class=HTMLResponse)

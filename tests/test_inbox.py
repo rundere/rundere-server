@@ -1,0 +1,308 @@
+"""YONDER-199 — email-forward capture (SPEC-9 D-162, D-190).
+
+The admin's mailbox `trips@…` accepts plus-addressed mail; each user forwards to
+their own `trips+<token>@…`. The address decides whose capture it is; mail to an
+address that matches no one is dropped and counted, never stored."""
+import base64
+import imaplib
+import json
+import sys
+import uuid
+from email.message import EmailMessage
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+try:
+    from fastapi.testclient import TestClient
+    DEPS = True
+except ImportError:
+    DEPS = False
+
+if DEPS:
+    from app import authn, inbox, scope
+    from app.config import settings
+    from app.db import SessionLocal, engine
+    from app.main import app
+    from app.models import (Base, InboxAddress, InboxMessage, IngestBatch, TravelItem,
+                            User)
+    from app.processing import process_pending
+
+    Base.metadata.create_all(engine)
+    client = TestClient(app)
+
+    MAILBOX = "trips@example.test"
+    _LD = json.dumps({
+        "@context": "https://schema.org", "@type": "LodgingReservation",
+        "reservationNumber": "IN199", "checkinDate": "2031-03-20", "checkoutDate": "2031-03-23",
+        "reservationFor": {"@type": "LodgingBusiness", "name": "Inbox Riad",
+                           "address": {"@type": "PostalAddress",
+                                       "addressLocality": "Harar",
+                                       "addressCountry": "MA"}}})
+    HTML = ('<html><head><script type="application/ld+json">'
+            f'{_LD}</script></head><body>Your stay</body></html>')
+
+    @pytest.fixture(autouse=True)
+    def _inbox_on(monkeypatch):
+        monkeypatch.setattr(settings, "inbox_address", MAILBOX)
+        monkeypatch.setattr(settings, "inbox_imap_host", "imap.example.test")
+        monkeypatch.setattr(settings, "inbox_imap_user", MAILBOX)
+        monkeypatch.setattr(settings, "inbox_imap_password", "s3cret-app-pass")
+        monkeypatch.setattr(settings, "inbox_rate_limit", 30)
+        yield
+
+    def _user(session, name="in"):
+        u = User(username=f"{name}-{uuid.uuid4().hex[:8]}", auth_source="local")
+        session.add(u)
+        session.commit()
+        return u
+
+    def _token(address):
+        return address.split("+", 1)[1].split("@", 1)[0]
+
+    def _mail(to, *, msgid=None, html=HTML, extra=None) -> bytes:
+        m = EmailMessage()
+        m["From"] = "Hotel <bookings@hotel.example>"
+        m["To"] = to
+        m["Subject"] = "Your reservation IN199"
+        m["Date"] = "Mon, 12 Oct 2026 10:00:00 +0000"
+        m["Message-ID"] = msgid or f"<{uuid.uuid4().hex}@hotel.example>"
+        for k, v in (extra or {}).items():
+            m[k] = v
+        m.set_content("Your stay")
+        m.add_alternative(html, subtype="html")
+        return bytes(m)
+
+    def _batches_for(session, user_id):
+        return session.query(IngestBatch).filter_by(user_id=user_id).all()
+
+    # ------------------------------------------------------------- addresses
+    def test_address_is_made_once_and_regenerating_retires_the_old_one():
+        with SessionLocal() as s:
+            u = _user(s)
+            a1 = inbox.user_address(s, u)
+            assert a1 == inbox.user_address(s, u)                  # stable
+            assert a1.startswith("trips+") and a1.endswith("@example.test")
+            a2 = inbox.rotate(s, u)
+            assert a2 != a1
+            # the old address now matches no one: dropped, nothing stored
+            assert inbox.handle_message(s, _mail(a1))[0].outcome == inbox.UNMATCHED
+            assert _batches_for(s, u.id) == []
+            assert inbox.handle_message(s, _mail(a2))[0].outcome == inbox.CAPTURED
+
+    def test_no_address_when_the_inbox_is_not_set_up(monkeypatch):
+        monkeypatch.setattr(settings, "inbox_imap_host", "")
+        with SessionLocal() as s:
+            assert inbox.user_address(s, _user(s)) is None
+
+    # ------------------------------------------------------------- one message
+    def test_forwarded_mail_becomes_the_users_capture():
+        with SessionLocal() as s:
+            u = _user(s)
+            addr = inbox.user_address(s, u)
+            raw = _mail(f"Me <{addr}>")
+            [h] = inbox.handle_message(s, raw)
+            assert h.outcome == inbox.CAPTURED and h.user_id == u.id
+            b = s.get(IngestBatch, h.batch_id)
+            assert b.user_id == u.id                               # owned, never open
+            assert b.payload["capture_channel"] == "email"
+            assert base64.b64decode(b.payload["raw_message_base64"]) == raw   # D-15
+            process_pending(s, llm=None)
+            [item] = s.query(TravelItem).filter_by(batch_id=b.id).all()
+            assert item.owner_id == u.id and item.item_type == "lodging"
+            assert item.source["type"] == "email"
+
+    def test_delivered_to_counts_when_the_visible_to_is_someone_else():
+        """A forwarding rule keeps the original To; the server's Delivered-To
+        says where it really went."""
+        with SessionLocal() as s:
+            u = _user(s)
+            addr = inbox.user_address(s, u)
+            raw = _mail("someone@elsewhere.example", extra={"Delivered-To": addr.upper()})
+            assert inbox.handle_message(s, raw)[0].outcome == inbox.CAPTURED
+
+    def test_unknown_or_bare_address_is_dropped_and_never_stored():
+        with SessionLocal() as s:
+            before = s.query(IngestBatch).count()
+            for to in ("trips+nosuchtoken@example.test", MAILBOX,
+                       "trips+abc@other.example"):
+                [h] = inbox.handle_message(s, _mail(to))
+                assert h.outcome == inbox.UNMATCHED and h.user_id is None
+            assert s.query(IngestBatch).count() == before          # YONDER-186
+            assert s.query(InboxMessage).filter_by(outcome=inbox.UNMATCHED).count() >= 3
+
+    def test_the_same_message_is_captured_once():
+        with SessionLocal() as s:
+            u = _user(s)
+            raw = _mail(inbox.user_address(s, u), msgid="<same-199@hotel.example>")
+            assert inbox.handle_message(s, raw)[0].outcome == inbox.CAPTURED
+            assert inbox.handle_message(s, raw)[0].outcome == inbox.DUPLICATE
+            assert len(_batches_for(s, u.id)) == 1
+
+    def test_one_message_to_two_people_is_a_capture_each():
+        with SessionLocal() as s:
+            a, b = _user(s, "ana"), _user(s, "ben")
+            raw = _mail(inbox.user_address(s, a),
+                        extra={"Cc": inbox.user_address(s, b)})
+            outcomes = {h.user_id: h.outcome for h in inbox.handle_message(s, raw)}
+            assert outcomes == {a.id: inbox.CAPTURED, b.id: inbox.CAPTURED}
+
+    def test_each_address_is_rate_limited(monkeypatch):
+        monkeypatch.setattr(settings, "inbox_rate_limit", 1)
+        with SessionLocal() as s:
+            u = _user(s)
+            addr = inbox.user_address(s, u)
+            assert inbox.handle_message(s, _mail(addr))[0].outcome == inbox.CAPTURED
+            assert inbox.handle_message(s, _mail(addr))[0].outcome == inbox.RATE_LIMITED
+            assert len(_batches_for(s, u.id)) == 1
+
+    def test_too_large_mail_is_dropped(monkeypatch):
+        monkeypatch.setattr(settings, "inbox_max_bytes", 200)
+        with SessionLocal() as s:
+            u = _user(s)
+            assert (inbox.handle_message(s, _mail(inbox.user_address(s, u)))[0].outcome
+                    == inbox.TOO_LARGE)
+            assert _batches_for(s, u.id) == []
+
+    def test_a_deactivated_users_address_is_dropped():
+        with SessionLocal() as s:
+            u = _user(s)
+            addr = inbox.user_address(s, u)
+            u.is_active = False
+            s.commit()
+            assert inbox.handle_message(s, _mail(addr))[0].outcome == inbox.UNMATCHED
+
+    def test_someone_elses_inbox_capture_is_not_visible_to_me():
+        """Scoping (house rule 2): Ben's inbox capture is his alone."""
+        with SessionLocal() as s:
+            ana, ben = _user(s, "ana"), _user(s, "ben")
+            [h] = inbox.handle_message(s, _mail(inbox.user_address(s, ben)))
+            mine = s.query(IngestBatch).filter(scope.batch_filter(ana)).all()
+            assert h.batch_id not in {b.id for b in mine}
+            theirs = s.query(IngestBatch).filter(scope.batch_filter(ben)).all()
+            assert h.batch_id in {b.id for b in theirs}
+
+    # ------------------------------------------------------------- the IMAP poll
+    class FakeIMAP:
+        """Just enough of imaplib.IMAP4 for poll_once."""
+        def __init__(self, messages, move=True, fail_login=None):
+            self.messages = dict(messages)            # uid(bytes) -> raw bytes
+            self.capabilities = ("IMAP4REV1", "MOVE") if move else ("IMAP4REV1",)
+            self.moved: dict[bytes, str] = {}
+            self.created: list[str] = []
+            self.fail_login = fail_login
+
+        def login(self, user, password):
+            if self.fail_login:
+                raise imaplib.IMAP4.error(self.fail_login)
+            return "OK", [b"logged in"]
+
+        def select(self, folder):
+            return "OK", [str(len(self.messages)).encode()]
+
+        def create(self, folder):
+            self.created.append(folder)
+            return "NO", [b"exists"]
+
+        def uid(self, cmd, *args):
+            cmd = cmd.upper()
+            if cmd == "SEARCH":
+                return "OK", [b" ".join(sorted(self.messages))]
+            if cmd == "FETCH":
+                uid, what = args
+                raw = self.messages[uid]
+                if "RFC822.SIZE" in what:
+                    return "OK", [f"1 (UID {uid.decode()} RFC822.SIZE {len(raw)})".encode()]
+                return "OK", [(f"1 (UID {uid.decode()} BODY[] {{{len(raw)}}}".encode(), raw),
+                              b")"]
+            if cmd in ("MOVE", "COPY"):
+                uid, folder = args
+                self.moved[uid] = folder.strip('"')
+                return "OK", [b"done"]
+            if cmd == "STORE":
+                return "OK", [b""]
+            raise AssertionError(cmd)
+
+        def expunge(self):
+            return "OK", [b""]
+
+        def logout(self):
+            return "BYE", [b""]
+
+    def test_poll_files_captured_and_dropped_mail_and_starts_processing(monkeypatch):
+        with SessionLocal() as s:
+            u = _user(s)
+            addr = inbox.user_address(s, u)
+            uid_ = u.id
+        fake = FakeIMAP({b"1": _mail(addr), b"2": _mail("trips+nobody@example.test")})
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        kicked = []
+        from app.review import autoprocess
+        monkeypatch.setattr(autoprocess, "kick", lambda user: kicked.append(user.id))
+        counts = inbox.poll_once(SessionLocal)
+        assert counts == {inbox.CAPTURED: 1, inbox.UNMATCHED: 1}
+        assert fake.moved == {b"1": settings.inbox_done_folder,
+                              b"2": settings.inbox_dropped_folder}
+        assert kicked == [uid_]                                    # D-158, unattended
+
+    def test_poll_without_move_copies_and_expunges(monkeypatch):
+        with SessionLocal() as s:
+            addr = inbox.user_address(s, _user(s))
+        fake = FakeIMAP({b"7": _mail(addr)}, move=False)
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        from app.review import autoprocess
+        monkeypatch.setattr(autoprocess, "kick", lambda user: None)
+        inbox.poll_once(SessionLocal)
+        assert fake.moved == {b"7": settings.inbox_done_folder}
+
+    def test_a_failed_poll_never_shows_the_password(monkeypatch):
+        def boom():
+            raise imaplib.IMAP4.error(
+                f"LOGIN failed for {settings.inbox_imap_user} / {settings.inbox_imap_password}")
+        monkeypatch.setattr(inbox, "_connect", boom)
+        inbox.poll_and_record(SessionLocal)
+        assert inbox.status["last_error"]
+        assert settings.inbox_imap_password not in inbox.status["last_error"]
+
+    # ------------------------------------------------------------- web + API
+    def _signed_in(monkeypatch, admin=False):
+        monkeypatch.setattr(settings, "auth_required", True)
+        with SessionLocal() as s:
+            u = _user(s, "web")
+            u.is_admin = admin
+            s.commit()
+            return u.id, {settings.auth_cookie_name: authn.issue_web_token(u)}, \
+                {"Authorization": f"Bearer {authn.issue_access_token(u)}"}
+
+    def test_email_tab_shows_my_address_and_regenerates_it(monkeypatch):
+        uid_, cookie, _ = _signed_in(monkeypatch)
+        page = client.get("/capture/setup?tab=email", cookies=cookie).text
+        with SessionLocal() as s:
+            token = s.get(InboxAddress, uid_).token
+        assert f"trips+{token}@example.test" in page
+        assert "Server mailbox (admins)" not in page               # not an admin
+        r = client.post("/capture/setup/email-address", cookies=cookie)
+        assert r.status_code == 200 and "New address made" in r.text
+        with SessionLocal() as s:
+            assert s.get(InboxAddress, uid_).token != token
+
+    def test_email_tab_says_when_the_server_has_no_mailbox(monkeypatch):
+        _, cookie, _ = _signed_in(monkeypatch, admin=True)
+        monkeypatch.setattr(settings, "inbox_imap_host", "")
+        page = client.get("/capture/setup?tab=email", cookies=cookie).text
+        assert "Not set up on this server yet" in page
+        assert "TX_INBOX_IMAP_HOST" in page                         # the admin's how-to
+        assert "s3cret-app-pass" not in page
+
+    def test_api_returns_and_rotates_my_address(monkeypatch):
+        uid_, _, bearer = _signed_in(monkeypatch)
+        r = client.get("/api/v1/capture/email-address", headers=bearer).json()
+        assert r["enabled"] is True and _token(r["address"])
+        r2 = client.post("/api/v1/capture/email-address/rotate", headers=bearer).json()
+        assert r2["address"] != r["address"]
+        monkeypatch.setattr(settings, "inbox_imap_host", "")
+        r3 = client.get("/api/v1/capture/email-address", headers=bearer).json()
+        assert r3 == {"enabled": False, "address": None}

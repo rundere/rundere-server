@@ -49,7 +49,7 @@ if DEPS:
         marks = {"gmail": ["script.google.com", "Install add-on", "DEFAULT_INGEST_URL", "Check it works"],
                  "calendar": ["calendar.addons.execute", "Install add-on", "Check it works"],
                  "bookmarklet": ["bookmarks bar", "/capture/handoff", "Check it works"],
-                 "email": ["Not available yet", "captures+"],
+                 "email": ["Not set up on this server yet", "trips+", "forward"],   # D-190; no mailbox in tests
                  "ios": ["Not available yet", "Share"],
                  "mcp": ["Model Context Protocol", "/mcp", "capture_url", "Check it works"]}
         for tab, needles in marks.items():

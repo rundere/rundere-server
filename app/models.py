@@ -1146,3 +1146,34 @@ class TripExpenseShare(Base):
     expense_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     traveler_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     amount: Mapped[str] = mapped_column(String(32))
+
+
+class InboxAddress(Base):
+    """A user's own email-forward address (SPEC-9 D-162, D-190; YONDER-199): the
+    admin's mailbox `local@domain` plus this token, `local+<token>@domain`. The
+    token is a capability — mail to it is that user's capture — so it is random,
+    one per user, and regenerating it retires the old address."""
+    __tablename__ = "inbox_addresses"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)    # users.id
+    token: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class InboxMessage(Base):
+    """One email the inbox poller handled, kept so the same message is never
+    captured twice and the admin can see what was dropped and why (D-190). No
+    body, sender or subject: the raw mail of a capture lives in its batch's
+    artifact (D-15); a dropped one stays only in the admin's own mailbox."""
+    __tablename__ = "inbox_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # sha256 of Message-ID (or the raw bytes) + the user it was for: the same
+    # message forwarded to two people is two captures, never one twice.
+    message_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    outcome: Mapped[str] = mapped_column(String(16), index=True)
+    detail: Mapped[str | None] = mapped_column(String(200))
+    batch_id: Mapped[str | None] = mapped_column(String(36))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now,
+                                                  index=True)
