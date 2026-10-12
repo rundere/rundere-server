@@ -1849,6 +1849,11 @@ class ExpenseOut(BaseModel):
     owner_id: str | None = None
     created_at: datetime | None = None
     comments: list[ExpenseCommentOut] = []  # the discussion, oldest first (D-185)
+    # Where it was logged (YONDER-212). Visible exactly where the expense is (D-183).
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    place_accuracy_m: float | None = None
 
 
 class BudgetItemOut(BaseModel):
@@ -1953,6 +1958,11 @@ class ExpenseIn(BaseModel):
     budget_item_id: str | None = None      # log it against a planned item (D-181)
     notes: str | None = None
     source: str = "api"
+    # Where it was logged (YONDER-212): the app captures it; optional everywhere.
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    place_accuracy_m: float | None = None
 
 
 class ExpensePatch(BaseModel):
@@ -1971,6 +1981,11 @@ class ExpensePatch(BaseModel):
     activity_id: str | None = None
     budget_item_id: str | None = None      # "" unlinks
     notes: str | None = None
+    # Replaces the stored location as a whole; send nulls to clear it.
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    place_accuracy_m: float | None = None
 
 
 class BudgetItemIn(BaseModel):
@@ -2075,7 +2090,8 @@ def _expense_out(e, shares, nm: dict[int, str], trip_currency: str | None,
                                 amount=s.amount) for s in shares],
         category=e.category, activity_id=e.activity_id, budget_item_id=e.budget_item_id,
         notes=e.notes, owner_id=e.owner_id, created_at=e.created_at,
-        comments=comments or [])
+        comments=comments or [], place_lat=e.place_lat, place_lon=e.place_lon,
+        place_label=e.place_label, place_accuracy_m=e.place_accuracy_m)
 
 
 def _one_expense_out(session: Session, trip: Trip, e, user=None) -> ExpenseOut:

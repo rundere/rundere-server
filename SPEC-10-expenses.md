@@ -122,7 +122,15 @@ people up and make the trip's actual cost.
   `research_trip_budget` prompt.
 - iOS: a Costs segment with Plan and Actual (list, balances, add/edit, settle up,
   keep drafts, log a planned item as spent) and the Log Expense shortcut.
-- Web UI: follow-up item.
+- Web UI (YONDER-212): a Costs tab on the trip page (`app/trips/costs.py`) —
+  balances, suggested payments with "Mark paid", the expense list, an add/edit
+  form (equal or exact split), comments, the balance currency, and planned vs
+  spent by category. Same rules and gates as the API (D-174, D-183).
+- Location (YONDER-212): an actual records where it was logged —
+  `place_lat`/`place_lon`/`place_label`/`place_accuracy_m`, named like the
+  journal's. Only the iOS app captures it; the API takes it as optional and the
+  web shows it (label or an OpenStreetMap link) without ever capturing or
+  editing it. It's visible exactly where the expense is (D-183).
 
 ## Cleanup
 

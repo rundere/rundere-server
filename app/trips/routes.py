@@ -371,7 +371,13 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         **_discovery_context(session, trip.id, user.id if user else None),
         **_packing_context(session, trip.id, user.id if user else None),
         **_sharing_context(session, trip, user),
+        **_costs_context(session, trip, user),
     }
+
+
+def _costs_context(session: Session, trip: Trip, user) -> dict:
+    from app.trips.costs import costs_context       # costs.py imports this module
+    return costs_context(session, trip, user)
 
 
 def _linked_captures(session: Session, trip_id: str) -> list[dict]:

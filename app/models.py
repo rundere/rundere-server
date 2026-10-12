@@ -1033,6 +1033,12 @@ class TripExpense(Base):
     budget_item_id: Mapped[str | None] = mapped_column(String(36), index=True)
     notes: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(16), default="api")        # ios | web | mcp | api
+    # Where the person was when they logged it (YONDER-212). Captured by the iOS
+    # app only; web, MCP and agents send none. Same names as JournalEntry.
+    place_lat: Mapped[float | None] = mapped_column(Float)
+    place_lon: Mapped[float | None] = mapped_column(Float)
+    place_label: Mapped[str | None] = mapped_column(String(256))
+    place_accuracy_m: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)

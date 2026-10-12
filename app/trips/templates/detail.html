@@ -64,6 +64,7 @@
     <button type="button" role="tab" class="yn-tab" data-tab="timeline" onclick="ynTab(this.dataset.tab)">Timeline</button>
     <button type="button" role="tab" class="yn-tab" data-tab="discovery" onclick="ynTab(this.dataset.tab)">Discovery</button>
     <button type="button" role="tab" class="yn-tab" data-tab="packing" onclick="ynTab(this.dataset.tab)">Packing</button>
+    <button type="button" role="tab" class="yn-tab" data-tab="costs" onclick="ynTab(this.dataset.tab)">Costs</button>
     {% if linked_captures %}<button type="button" role="tab" class="yn-tab" data-tab="captures" onclick="ynTab(this.dataset.tab)">Captures</button>{% endif %}
     {# Per-trip settings go last; Sharing is the first. #}
     {% if sharing %}<button type="button" role="tab" class="yn-tab" data-tab="sharing" onclick="ynTab(this.dataset.tab)">Sharing</button>{% endif %}
@@ -167,6 +168,10 @@
 
 <div class="yn-tabpanel" role="tabpanel" data-tab="packing">
 {% include "_packing_section.html" %}
+</div>
+
+<div class="yn-tabpanel" role="tabpanel" data-tab="costs">
+{% include "_costs_section.html" %}
 </div>
 
 {% if linked_captures %}

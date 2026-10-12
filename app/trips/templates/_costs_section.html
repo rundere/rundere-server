@@ -1,0 +1,123 @@
+{# The Costs tab (YONDER-212, SPEC-10). Every figure comes from app/expenses.py;
+   the caller only sees the costs they're on or entered (D-183). #}
+<div id="costs-section" class="yn-sec">
+<span id="sec-costs" class="yn-anchor"></span>
+<div class="bp-timeline-head">
+  <div class="yn-sec-title">
+    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Costs">▾</button>
+    <h2 class="bp-h2">Costs</h2>
+  </div>
+  {% if costs.can_edit and costs.has_roster %}
+  <div class="bp-head-actions">
+    <button class="btn btn-primary" hx-get="/trips/{{ trip.id }}/costs/new"
+            hx-target="#modal-root">Add expense</button>
+  </div>
+  {% endif %}
+</div>
+<div class="yn-sec-body">
+{% if not costs.has_roster %}
+<p class="bp-empty">Add the trip's travellers first — expenses are split between them.</p>
+{% elif not costs.rows %}
+<p class="bp-empty">No expenses yet.{% if costs.can_edit %} Add one, or log them on the go in the app.{% endif %}</p>
+{% else %}
+
+<section class="bp-group">
+  <div class="card blueprint bp-daycard yn-costs-summary">
+    <div class="yn-costs-total">
+      <div class="bp-group-label">Spent</div>
+      <div class="yn-costs-figure">{{ costs.total }}</div>
+      {% if costs.planned %}<div class="bp-act-sub">Planned {{ costs.planned }}</div>{% endif %}
+    </div>
+    {% if costs.can_edit %}
+    <form class="yn-costs-currency" hx-post="/trips/{{ trip.id }}/costs/currency"
+          hx-target="#costs-section" hx-swap="outerHTML">
+      <label class="bp-muted" for="costs-cur">Show balances in</label>
+      <input id="costs-cur" class="input" name="currency" value="{{ costs.currency or '' }}"
+             maxlength="3" size="4" pattern="[A-Za-z]{3}" required>
+      <button class="btn btn-ghost bp-sm" type="submit">Change</button>
+    </form>
+    {% endif %}
+    {% if costs.unconverted %}
+    <p class="bp-muted">{{ costs.unconverted }} expense{{ 's' if costs.unconverted != 1 }}
+      in another currency {{ 'have' if costs.unconverted != 1 else 'has' }} no rate yet and
+      {{ 'are' if costs.unconverted != 1 else 'is' }} left out of the balances. Add a rate to include
+      {{ 'them' if costs.unconverted != 1 else 'it' }}.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="bp-group">
+  <div class="bp-group-label">Balances</div>
+  <div class="card blueprint bp-daycard">
+    {% for b in costs.balances %}
+    <div class="yn-actrow">
+      <div class="bp-act-main">
+        <div class="bp-act-title">{{ b.name }}{% if b.me %} <span class="bp-muted">(you)</span>{% endif %}</div>
+        <div class="bp-act-sub">Paid {{ b.paid }} · share {{ b.share }}</div>
+      </div>
+      <span class="yn-costs-net {{ 'is-owed' if b.sign > 0 else ('owes' if b.sign < 0 else 'square') }}">
+        {% if b.sign > 0 %}is owed {{ b.net }}{% elif b.sign < 0 %}owes {{ b.net }}{% else %}settled{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% if costs.transfers %}
+  <div class="bp-group-label" style="margin-top:10px">To settle up</div>
+  <div class="card blueprint bp-daycard">
+    {% for t in costs.transfers %}
+    <div class="yn-actrow">
+      <div class="bp-act-main"><div class="bp-act-title">{{ t.from }} pays {{ t.to }} {{ t.display }}</div></div>
+      {% if costs.can_edit %}
+      <button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/costs/settle"
+              hx-vals='{"from_id": "{{ t.from_id }}", "to_id": "{{ t.to_id }}", "amount": "{{ t.amount }}"}'
+              hx-target="#costs-section" hx-swap="outerHTML" hx-disabled-elt="this"
+              hx-confirm="Record that {{ t.from }} paid {{ t.to }} {{ t.display }}?">Mark paid</button>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="bp-group">
+  <div class="bp-group-label">Expenses</div>
+  <div class="card blueprint bp-daycard">
+    {% for r in costs.rows %}
+    <div class="yn-actrow yn-filterable">
+      <span class="tag tag-chip bp-typetag">{{ r.category if r.kind == 'expense' else 'Settle-up' }}</span>
+      <div class="bp-act-main">
+        <div class="bp-act-title">{{ r.title }}</div>
+        <div class="bp-act-sub">
+          {% if r.spent_on %}{{ r.spent_on }} · {% endif %}{{ r.payer }} paid{% if r.kind == 'expense' %} · for {{ r.for }}{% else %} {{ r.for }}{% endif %}
+          {% if r.place_link %} · <a href="{{ r.place_link }}" target="_blank" rel="noopener">{{ r.place_label or 'Where it was logged' }}</a>{% endif %}
+          {% if r.comments %} · {{ r.comments }} comment{{ 's' if r.comments != 1 }}{% endif %}
+        </div>
+      </div>
+      <div class="yn-costs-amt">
+        <div>{{ r.amount }}</div>
+        {% if r.converted %}<div class="bp-act-sub">≈ {{ r.converted }}</div>{% endif %}
+        {% if r.unconverted %}<div class="bp-act-sub">no rate</div>{% endif %}
+      </div>
+      <button class="btn btn-ghost bp-sm" hx-get="/trips/{{ trip.id }}/costs/{{ r.id }}/edit"
+              hx-target="#modal-root">{{ 'Edit' if costs.can_edit else 'View' }}</button>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if costs.by_category %}
+<section class="bp-group">
+  <div class="bp-group-label">Planned vs spent</div>
+  <div class="card blueprint bp-daycard">
+    {% for c in costs.by_category %}
+    <div class="yn-actrow">
+      <div class="bp-act-main"><div class="bp-act-title">{{ c.label }}</div></div>
+      <div class="yn-costs-amt"><div>{{ c.actual }}</div><div class="bp-act-sub">of {{ c.planned }}</div></div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endif %}
+</div>
+</div>

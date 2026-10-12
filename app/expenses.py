@@ -202,6 +202,36 @@ class ExpenseInput:
     budget_item_id: str | None = None      # D-181: the planned item this fulfils
     notes: str | None = None
     source: str = "api"
+    # Where it was logged (YONDER-212): the iOS app sends it, nothing else does.
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    place_accuracy_m: float | None = None
+
+
+PLACE_FIELDS = ("place_lat", "place_lon", "place_label", "place_accuracy_m")
+
+
+def _check_place(lat, lon, label, accuracy) -> dict:
+    """The location columns from the caller's values: both coordinates or
+    neither, in range; a label and accuracy only travel with coordinates."""
+    if lat is None and lon is None:
+        if label or accuracy is not None:
+            raise ValueError("a place needs place_lat and place_lon")
+        return dict.fromkeys(PLACE_FIELDS)
+    if lat is None or lon is None:
+        raise ValueError("send both place_lat and place_lon, or neither")
+    try:
+        lat, lon = float(lat), float(lon)
+        acc = None if accuracy is None else float(accuracy)
+    except (TypeError, ValueError):
+        raise ValueError("place_lat, place_lon and place_accuracy_m are numbers") from None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError("place_lat/place_lon are out of range")
+    if acc is not None and not 0 <= acc < 1e7:
+        raise ValueError("place_accuracy_m must be 0 or more")
+    return {"place_lat": lat, "place_lon": lon,
+            "place_label": (label or "").strip()[:256] or None, "place_accuracy_m": acc}
 
 
 def _check_budget_item(session: Session, trip_id: str, item_id: str | None) -> str | None:
@@ -278,7 +308,9 @@ def create(session: Session, user, trip: Trip, data: ExpenseInput,
                     category=category,
                     activity_id=_check_activity(session, trip.id, data.activity_id),
                     budget_item_id=_check_budget_item(session, trip.id, data.budget_item_id),
-                    notes=(data.notes or None), source=data.source or "api")
+                    notes=(data.notes or None), source=data.source or "api",
+                    **_check_place(data.place_lat, data.place_lon, data.place_label,
+                                   data.place_accuracy_m))
     _apply_rate(session, trip, e, uid, data.rate)
     session.add(e)
     session.flush()
@@ -319,6 +351,12 @@ def update(session: Session, user, trip: Trip, e: TripExpense, changes: dict) ->
         e.activity_id = _check_activity(session, trip.id, changes["activity_id"])
     if changes.get("budget_item_id") is not None:       # "" unlinks
         e.budget_item_id = _check_budget_item(session, trip.id, changes["budget_item_id"])
+    if any(k in changes for k in PLACE_FIELDS):
+        # A location is replaced as a whole (all nulls clears it); the app never
+        # re-captures on edit, so this is only an explicit correction.
+        merged = {k: changes.get(k, getattr(e, k)) for k in PLACE_FIELDS}
+        for k, v in _check_place(*(merged[k] for k in PLACE_FIELDS)).items():
+            setattr(e, k, v)
     roster = _roster(session, trip.id)
     if changes.get("payer_id") is not None:
         e.payer_id = _on_roster(changes["payer_id"], roster, "payer")

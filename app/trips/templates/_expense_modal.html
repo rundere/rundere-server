@@ -1,0 +1,107 @@
+{# Add / edit one expense (YONDER-212). Location is shown, never captured or
+   edited here — the iOS app records it (D-183 decides who sees it). #}
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
+  <div class="dialog blueprint" onclick="event.stopPropagation()">
+    <div class="dialog-title">{% if expense is none %}Add expense{% elif settlement %}Settle-up{% else %}Expense{% endif %}</div>
+    {% if error %}<div class="bp-error">{{ error }}</div>{% endif %}
+    <form class="dialog-body"
+          hx-post="/trips/{{ trip.id }}/costs{% if expense %}/{{ expense.id }}{% endif %}"
+          hx-target="#modal-root" hx-swap="innerHTML">
+      {% if not settlement %}
+      <div class="field">
+        <label for="ex-title">What for</label>
+        <input id="ex-title" class="input" name="title" value="{{ form.title }}" maxlength="200"
+               placeholder="e.g. Dinner at the night market" {% if expense is none %}autofocus{% endif %}>
+      </div>
+      {% endif %}
+      <div class="bp-row2">
+        <div class="field">
+          <label for="ex-amount">Amount</label>
+          <input id="ex-amount" class="input" name="amount" value="{{ form.amount }}" inputmode="decimal" required>
+        </div>
+        <div class="field">
+          <label for="ex-cur">Currency</label>
+          <input id="ex-cur" class="input" name="currency" value="{{ form.currency }}" maxlength="3"
+                 pattern="[A-Za-z]{3}" placeholder="e.g. EUR" required {% if settlement %}readonly{% endif %}>
+        </div>
+      </div>
+      <div class="bp-row2">
+        <div class="field">
+          <label for="ex-date">Date</label>
+          <input id="ex-date" class="input" type="date" name="spent_on" value="{{ form.spent_on }}">
+        </div>
+        <div class="field">
+          <label for="ex-rate">Rate to the trip currency</label>
+          <input id="ex-rate" class="input" name="rate" value="{{ form.rate }}" inputmode="decimal"
+                 placeholder="blank = your Discover rates">
+        </div>
+      </div>
+      {% if not settlement %}
+      <div class="bp-row2">
+        <div class="field">
+          <label for="ex-payer">Paid by</label>
+          <select id="ex-payer" class="input" name="payer_id">
+            {% for p in roster %}<option value="{{ p.id }}" {% if p.id == form.payer_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="ex-cat">Category</label>
+          <select id="ex-cat" class="input" name="category">
+            {% for c, label in categories %}<option value="{{ c }}" {% if c == form.category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <fieldset class="field yn-split">
+        <legend>Split</legend>
+        <label><input type="radio" name="split" value="equal" {% if form.split != 'exact' %}checked{% endif %}> Equally between</label>
+        <label><input type="radio" name="split" value="exact" {% if form.split == 'exact' %}checked{% endif %}> Exact amounts</label>
+        {% for p in roster %}
+        <div class="yn-split-row">
+          <label><input type="checkbox" name="traveler_ids" value="{{ p.id }}"
+                        {% if p.id in form.traveler_ids %}checked{% endif %}> {{ p.name }}</label>
+          <input class="input yn-split-amt" name="share_{{ p.id }}" inputmode="decimal"
+                 value="{{ form.shares.get(p.id, '') }}" aria-label="{{ p.name }}'s amount"
+                 placeholder="exact only">
+        </div>
+        {% endfor %}
+      </fieldset>
+      {% endif %}
+      <div class="field">
+        <label for="ex-notes">Notes</label>
+        <textarea id="ex-notes" class="input" name="notes" rows="2">{{ form.notes }}</textarea>
+      </div>
+      {% if place %}
+      <div class="field">
+        <label>Logged at</label>
+        <p class="bp-muted">
+          {% if place.link %}<a href="{{ place.link }}" target="_blank" rel="noopener">{{ place.label or 'Show on a map' }}</a>{% else %}{{ place.label }}{% endif %}
+          {% if place.accuracy %} · within {{ place.accuracy | round | int }} m{% endif %}
+        </p>
+      </div>
+      {% endif %}
+      <div class="dialog-actions">
+        {% if expense and can_edit %}
+        <button type="button" class="btn btn-danger" hx-post="/trips/{{ trip.id }}/costs/{{ expense.id }}/delete"
+                hx-confirm="Delete this {{ 'settle-up' if settlement else 'expense' }}?">Delete</button>
+        {% endif %}
+        <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
+        {% if can_edit %}<button type="submit" class="btn btn-primary">Save</button>{% endif %}
+      </div>
+    </form>
+    {% if expense and not settlement %}
+    <div class="dialog-body yn-comments">
+      <div class="bp-group-label">Comments</div>
+      {% for c in comments %}
+      <div class="yn-comment"><strong>{{ c.author_name or 'Someone' }}</strong> {{ c.body }}</div>
+      {% else %}<p class="bp-muted">No comments yet.</p>{% endfor %}
+      {% if can_edit %}
+      <form hx-post="/trips/{{ trip.id }}/costs/{{ expense.id }}/comment" hx-target="#modal-root"
+            hx-swap="innerHTML" style="display:flex;gap:8px">
+        <input class="input" name="body" maxlength="4000" placeholder="Add a comment…" style="flex:1" required>
+        <button class="btn btn-ghost bp-sm" type="submit">Post</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
