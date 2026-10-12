@@ -118,9 +118,14 @@ jobs:
           sed -i -E "s/^    app_version: str = \"[0-9]+\.[0-9]+\.[0-9]+\"/    app_version: str = \"${VERSION}\"/" app/config.py
           grep -q "^version = \"${VERSION}\"" pyproject.toml
           grep -q "app_version: str = \"${VERSION}\"" app/config.py
+          # uv.lock records the project's own version too; bump it in step or
+          # the lock goes stale on every release and CI's `uv lock --check`
+          # fails (YONDER-194).
+          sed -i -E '/^name = "yonder"$/{n;s/^version = "[0-9]+\.[0-9]+\.[0-9]+"/version = "'"${VERSION}"'"/}' uv.lock
+          grep -A1 '^name = "yonder"$' uv.lock | grep -q "^version = \"${VERSION}\""
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml app/config.py
+          git add pyproject.toml app/config.py uv.lock
           git commit -m "chore: release ${VERSION}"
           git tag -a "v${VERSION}" -m "Yonder ${VERSION}"
           git push origin HEAD:main
