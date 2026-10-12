@@ -1,6 +1,6 @@
 # SPEC-10 — Trip expenses and splitting costs (YONDER-172)
 
-**Status: BUILDING (2026-10-11).** Decisions D-173–D-185 (D-174 and D-179 revised 2026-10-11). Builds option B of
+**Status: BUILDING (2026-10-11).** Decisions D-173–D-185 and D-188 (D-174 and D-179 revised 2026-10-11). Builds option B of
 YONDER-172 (built in, not a SplitPro integration) inside the D-155 posture.
 
 ## Intent
@@ -109,6 +109,13 @@ people up and make the trip's actual cost.
   expense and are visible exactly where it is (D-183); anyone who can see the
   expense can comment, and people delete only their own comments. Deleting the
   expense deletes its thread.
+- **D-188 — Costs opens on Plan before the trip and on Actual from its first
+  day (YONDER-223; owner, 2026-10-12).** The sub-tabs read Plan | Actual, the
+  order the work happens in. With no tab asked for, a trip that hasn't started
+  opens on Plan; from its start date on, including settling up afterwards, it
+  opens on Actual. "Today" is the viewer's own date (D-187). A trip with no
+  start date opens on Plan unless something has been spent. The iOS Costs view
+  follows the same rule.
 
 ## Surfaces (first build)
 

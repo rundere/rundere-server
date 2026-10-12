@@ -491,3 +491,64 @@ if DEPS:
         html = client.get(f"/trips/{tid}/costs", cookies=ck).text
         assert "Flight Cost" in html and "1,000.00 CAD" in html
         assert "Balances" not in html and "To settle up" not in html
+
+    # ------------------------------------------------- which sub-tab opens (D-188)
+
+    def _open_sub(html):
+        """The sub-tab the Costs section opens on (its data-sub attribute)."""
+        import re
+        return re.search(r'id="costs-section" class="yn-sec" data-sub="(\w+)"', html).group(1)
+
+    def _set_dates(tid, start, end):
+        with SessionLocal() as s:
+            t = s.get(Trip, tid)
+            t.start_date, t.end_date = start, end
+            s.commit()
+
+    def test_plan_comes_before_actual():
+        tid, p, ck, _ = _setup()
+        html = client.get(f"/trips/{tid}/costs", cookies=ck["Ana"]).text
+        assert html.index('data-sub="plan" onclick') < html.index('data-sub="actual" onclick')
+
+    def test_opens_on_plan_before_the_trip_and_actual_once_it_starts():
+        tid, p, ck, _ = _setup()                          # trip starts 2031-05-01
+        # Something spent already doesn't change it: before the trip, you're planning.
+        _closed(client.post(f"/trips/{tid}/costs", cookies=ck["Ana"], data=_form(p)))
+        assert _open_sub(client.get(f"/trips/{tid}/costs", cookies=ck["Ana"]).text) == "plan"
+        _set_dates(tid, "2020-05-01", "2020-05-09")      # under way / over
+        assert _open_sub(client.get(f"/trips/{tid}/costs", cookies=ck["Ana"]).text) == "actual"
+
+    def test_an_asked_for_sub_tab_wins():
+        tid, p, ck, _ = _setup()
+        _set_dates(tid, "2020-05-01", "2020-05-09")      # would open on Actual
+        html = client.get(f"/trips/{tid}/costs?sub=plan", cookies=ck["Ana"]).text
+        assert _open_sub(html) == "plan"
+
+    def test_default_sub_rules():
+        """Unit: the viewer's today against the trip's start date (D-187)."""
+        from types import SimpleNamespace as NS
+        from app.trips.costs import default_sub
+        trip = NS(start_date="2031-05-01")
+        assert default_sub(trip, "2031-04-30", has_actuals=True) == "plan"
+        assert default_sub(trip, "2031-05-01", has_actuals=False) == "actual"
+        assert default_sub(trip, "2031-06-30", has_actuals=False) == "actual"
+        undated = NS(start_date=None)
+        assert default_sub(undated, "2031-05-01", has_actuals=False) == "plan"
+        assert default_sub(undated, "2031-05-01", has_actuals=True) == "actual"
+
+    def test_the_switch_follows_the_viewers_own_time_zone(monkeypatch):
+        """On the trip's first day in Tokyo it's still the day before in
+        Los Angeles: each viewer sees the tab for THEIR date (D-187)."""
+        from datetime import datetime, timezone
+        from app import clock
+        tid, p, ck, _ = _setup()
+        with SessionLocal() as s:
+            s.get(TravelerIdentity, p["Ana"]).timezone = "Asia/Tokyo"
+            s.get(TravelerIdentity, p["Ben"]).timezone = "America/Los_Angeles"
+            s.commit()
+        at = datetime(2031, 4, 30, 18, 0, tzinfo=timezone.utc)   # Tokyo: May 1, 03:00
+        real = clock.now_for
+        monkeypatch.setattr(clock, "now_for",
+                            lambda session, user, **kw: real(session, user, _utcnow=at))
+        assert _open_sub(client.get(f"/trips/{tid}/costs", cookies=ck["Ana"]).text) == "actual"
+        assert _open_sub(client.get(f"/trips/{tid}/costs", cookies=ck["Ben"]).text) == "plan"

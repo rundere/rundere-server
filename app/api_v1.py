@@ -1026,6 +1026,7 @@ def api_assign_trip(item_id: str, body: AssignTripIn,
 def api_update_trip(trip_id: str, body: TripPatch,
                     user=Depends(authn.current_user), session: Session = Depends(get_session)):
     trip = scope.require_trip(session, user, trip_id, edit=True)
+    dates_before = (trip.start_date, trip.end_date)
     if body.name is not None and body.name.strip():
         trip.name = body.name.strip()[:200]
     if body.start_date is not None:
@@ -1035,6 +1036,10 @@ def api_update_trip(trip_id: str, body: TripPatch,
     if body.notes is not None:
         trip.notes = body.notes or None
     session.commit()
+    if (trip.start_date, trip.end_date) != dates_before:
+        # Re-dated: it may now cover captures waiting for a trip (YONDER-222).
+        from app.trips.routes import _recheck_waiting
+        _recheck_waiting(session, trip, user)
     session.refresh(trip)
     return _trip_summary(session, trip)
 

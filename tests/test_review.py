@@ -529,8 +529,8 @@ def _ready_flight(session):
 
 
 def test_yonder_trip_picker_links_and_unlinks_a_capture():
-    """2.1.2: the Yonder trip picker is an in-house association only — it sets
-    item.trip_id and must NOT disturb resolution / targets / the commit path."""
+    """2.1.2: the Run·dere trip picker sets / clears item.trip_id. (Since D-148 it
+    also re-resolves — see test_linking_a_trip_settles_a_deferred_capture.)"""
     def run():
         from app.models import Trip
         with SessionLocal() as s:
@@ -539,17 +539,242 @@ def test_yonder_trip_picker_links_and_unlinks_a_capture():
             s.add(trip); s.commit(); trip_id = trip.id
             item = _ready_flight(s)
             item_id = item.id
-            before = dict(item.resolution)
         r = client.post(f"/review/item/{item_id}/assign-trip",
                         data={"trip_id": trip_id})
         assert r.status_code == 200
         with SessionLocal() as s:
             it = s.get(TravelItem, item_id)
             assert it.trip_id == trip_id
-            assert it.resolution == before             # resolution untouched
+            assert (it.review or {}).get("trip_pinned") is True
         r = client.post(f"/review/item/{item_id}/assign-trip", data={"trip_id": ""})
         with SessionLocal() as s:
             assert s.get(TravelItem, item_id).trip_id is None   # unlinked
+    _skip_or(run)
+
+
+def _hotel_payload(year):
+    """A clean hotel booking in a year no other test uses, so no trip covers it
+    until the test makes one (the test DB is shared; an earlier test's trip
+    would auto-link it). YONDER-222 was a real one of these."""
+    return {
+        "item_type": "lodging", "booking_status": "confirmed",
+        "booking_reference": "HOTEL222",
+        "lodging": {
+            "property_name": "Test Hotel YONDER-222",
+            "place": {"raw": "1 Test Street, Testville", "city": "Testville",
+                      "country": "US", "lat": 40.44, "lon": -79.99,
+                      "tz": "America/New_York"},
+            "check_in": {"local": f"{year}-05-14T16:00", "precision": "datetime",
+                         "origin": "document"},
+            "check_out": {"local": f"{year}-05-16T11:00", "precision": "datetime",
+                          "origin": "document"},
+        },
+    }
+
+
+def _deferred_hotel(session, year):
+    """Resolve a hotel with no trip for it: it waits ("Waiting for a trip")."""
+    from app.review.routes import _bucket_of, _reresolve
+    item = _add(session, _hotel_payload(year), resolve_state="pending")
+    item.review = {}
+    session.commit()
+    _reresolve(session, item)
+    session.refresh(item)
+    assert (item.status or {}).get("resolve") == "deferred", item.status
+    assert _bucket_of(item) == "waiting"
+    return item
+
+
+def _trip_covering_the_hotel(session, year):
+    from app.models import Trip
+    trip = Trip(name=f"Testville May {year}", start_date=f"{year}-05-14",
+                end_date=f"{year}-05-18")
+    session.add(trip)
+    session.commit()
+    return trip
+
+
+def test_linking_a_trip_settles_a_deferred_capture():
+    """YONDER-222: a hotel captured before its trip existed waits for a trip.
+    Picking that Run·dere trip in review must re-check the item so it becomes
+    approvable at once — the link used to be stored while the item stayed in
+    "Waiting for a trip" until its TTL sweep."""
+    def run():
+        from app.review.routes import _bucket_of
+        with SessionLocal() as s:
+            item_id = _deferred_hotel(s, 2091).id
+            trip_id = _trip_covering_the_hotel(s, 2091).id
+        r = client.post(f"/review/item/{item_id}/assign-trip?bucket=waiting",
+                        data={"trip_id": trip_id})
+        assert r.status_code == 200
+        assert 'hx-swap-oob="true"' in r.text            # counts refresh too
+        with SessionLocal() as s:
+            it = s.get(TravelItem, item_id)
+            assert it.trip_id == trip_id
+            assert (it.status or {}).get("resolve") == "ok"
+            assert "yonder.activity" in (it.resolution or {}).get("targets", [])
+            assert _bucket_of(it) == "ready"
+    _skip_or(run)
+
+
+def test_save_and_approve_rechecks_a_stale_deferred_capture():
+    """YONDER-222: Save & approve with no edits on an item whose state predates
+    its trip link must re-check it and approve, not silently do nothing."""
+    def run():
+        with SessionLocal() as s:
+            item = _deferred_hotel(s, 2092)
+            item.trip_id = _trip_covering_the_hotel(s, 2092).id   # linked, never re-checked
+            s.commit()
+            item_id = item.id
+        r = client.post(f"/review/item/{item_id}/save?bucket=waiting",
+                        data={"and_approve": "1"})
+        assert r.status_code == 200
+        assert r.headers.get("HX-Retarget") == "#queue-body"
+        with SessionLocal() as s:
+            assert (s.get(TravelItem, item_id).review or {}).get("action_taken") \
+                == "approved"
+    _skip_or(run)
+
+
+def test_save_and_approve_says_why_when_it_cannot_approve():
+    """A refused approval must say so instead of re-rendering silently."""
+    def run():
+        with SessionLocal() as s:
+            item_id = _deferred_hotel(s, 2093).id                 # no trip: can't settle
+        r = client.post(f"/review/item/{item_id}/save?bucket=waiting",
+                        data={"and_approve": "1"})
+        assert r.status_code == 200
+        assert "Not approved yet." in r.text
+        with SessionLocal() as s:
+            assert (s.get(TravelItem, item_id).review or {}).get("action_taken") \
+                != "approved"
+    _skip_or(run)
+
+
+def test_linking_a_trip_leaves_an_ignored_capture_ignored():
+    """Ignored is terminal: linking a trip records the link, nothing else."""
+    def run():
+        with SessionLocal() as s:
+            item = _deferred_hotel(s, 2094)
+            item.review = {**(item.review or {}), "action_taken": "ignored"}
+            s.commit()
+            item_id = item.id
+            trip_id = _trip_covering_the_hotel(s, 2094).id
+        client.post(f"/review/item/{item_id}/assign-trip", data={"trip_id": trip_id})
+        with SessionLocal() as s:
+            it = s.get(TravelItem, item_id)
+            assert it.trip_id == trip_id
+            assert (it.status or {}).get("resolve") == "deferred"
+    _skip_or(run)
+
+
+def test_creating_the_trip_settles_a_waiting_capture():
+    """YONDER-222 follow-up: making the trip a waiting capture needs re-checks
+    it — no trip pick needed, no waiting for the TTL sweep."""
+    def run():
+        from app.review.routes import _bucket_of
+        with SessionLocal() as s:
+            item_id = _deferred_hotel(s, 2095).id
+        r = client.post("/trips", data={"name": "Testville May 2095",
+                                         "start": "2095-05-14", "end": "2095-05-18"})
+        assert r.status_code == 200
+        with SessionLocal() as s:
+            it = s.get(TravelItem, item_id)
+            assert it.trip_id is not None
+            assert _bucket_of(it) == "ready"
+    _skip_or(run)
+
+
+def test_re_dating_a_trip_settles_a_capture_it_now_covers():
+    def run():
+        from app.models import Trip
+        from app.review.routes import _bucket_of
+        with SessionLocal() as s:
+            item_id = _deferred_hotel(s, 2096).id
+            trip = Trip(name="Testville 2096", source="manual",
+                        start_date="2096-06-01", end_date="2096-06-05")
+            s.add(trip); s.commit(); trip_id = trip.id
+        client.post(f"/trips/{trip_id}", data={"name": "Testville 2096",
+                                               "start": "2096-05-13", "end": "2096-05-17"})
+        with SessionLocal() as s:
+            it = s.get(TravelItem, item_id)
+            assert it.trip_id == trip_id and _bucket_of(it) == "ready"
+    _skip_or(run)
+
+
+def test_a_new_trip_leaves_pinned_and_approved_captures_alone():
+    """A person's own decision is never redone: a capture they unlinked by hand
+    (pinned) or already approved isn't re-checked by a new trip."""
+    def run():
+        with SessionLocal() as s:
+            pinned = _deferred_hotel(s, 2097)
+            pinned.review = {**(pinned.review or {}), "trip_pinned": True}
+            s.commit()
+            pinned_id = pinned.id
+        client.post("/trips", data={"name": "Testville May 2097",
+                                    "start": "2097-05-14", "end": "2097-05-18"})
+        with SessionLocal() as s:
+            it = s.get(TravelItem, pinned_id)
+            assert it.trip_id is None
+            assert (it.status or {}).get("resolve") == "deferred"
+    _skip_or(run)
+
+
+def test_someone_elses_trip_never_touches_my_waiting_capture(monkeypatch):
+    """Scoping (house rule 2): Ben making a trip over the dates of Ana's waiting
+    hotel must not re-check it or link it to his trip."""
+    def run():
+        import uuid
+        from app import authn
+        from app.config import settings
+        from app.models import Trip, User
+        monkeypatch.setattr(settings, "auth_required", True)
+        tag = uuid.uuid4().hex[:6]
+        with SessionLocal() as s:
+            ana = User(username=f"rv-ana-{tag}", auth_source="local")
+            ben = User(username=f"rv-ben-{tag}", auth_source="local")
+            s.add_all([ana, ben]); s.flush()
+            item = _deferred_hotel(s, 2098)
+            item.owner_id = ana.id
+            s.commit()
+            item_id, ben_id = item.id, ben.id
+            ben_cookie = {settings.auth_cookie_name: authn.issue_access_token(ben)}
+        r = client.post("/trips", cookies=ben_cookie,
+                        data={"name": "Ben in Testville 2098",
+                              "start": "2098-05-14", "end": "2098-05-18"})
+        assert r.status_code == 200
+        with SessionLocal() as s:
+            assert s.query(Trip).filter_by(owner_id=ben_id).count() == 1
+            it = s.get(TravelItem, item_id)
+            assert it.trip_id is None
+            assert (it.status or {}).get("resolve") == "deferred"
+    _skip_or(run)
+
+
+def test_re_dating_over_the_api_settles_a_waiting_capture():
+    """PATCH /api/v1/trips/{id} (and MCP update_trip, which calls it) re-checks
+    the owner's waiting captures too when the dates change."""
+    def run():
+        import uuid
+        from app import authn
+        from app.models import Trip, User
+        from app.review.routes import _bucket_of
+        with SessionLocal() as s:
+            me = User(username=f"rv-api-{uuid.uuid4().hex[:6]}", auth_source="local")
+            s.add(me); s.flush()
+            item = _deferred_hotel(s, 2099)
+            item.owner_id = me.id
+            trip = Trip(name="Testville 2099", source="manual", owner_id=me.id,
+                        start_date="2099-01-01", end_date="2099-01-05")
+            s.add(trip); s.commit()
+            item_id, trip_id = item.id, trip.id
+            bearer = {"Authorization": f"Bearer {authn.issue_access_token(me)}"}
+        r = client.patch(f"/api/v1/trips/{trip_id}", headers=bearer,
+                         json={"start_date": "2099-05-13", "end_date": "2099-05-17"})
+        assert r.status_code == 200, r.text
+        with SessionLocal() as s:
+            it = s.get(TravelItem, item_id)
+            assert it.trip_id == trip_id and _bucket_of(it) == "ready"
     _skip_or(run)
 
 

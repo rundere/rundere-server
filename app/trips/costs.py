@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app import expenses as expenses_svc, scope
+from app import clock, expenses as expenses_svc, scope
 from app.db import get_session
 from app.models import TripExpense
 from app.trips.routes import templates
@@ -58,6 +58,18 @@ def _roster(session: Session, trip_id: str) -> list[dict]:
     ids = expenses_svc._roster(session, trip_id)
     nm = expenses_svc.names(session, ids)
     return [{"id": t, "name": nm.get(t, f"#{t}")} for t in ids]
+
+
+def default_sub(trip, today: str, *, has_actuals: bool) -> str:
+    """Which Costs sub-tab opens when none was asked for (D-188, YONDER-223): the one
+    for where the trip is. Before it starts you're planning, so Plan; from its
+    first day on — including settling up afterwards — Actual. A trip with no
+    start date opens on Plan unless something has already been spent. `today`
+    is the viewer's own date (D-187), so the switch happens at their midnight."""
+    start = (getattr(trip, "start_date", None) or "")[:10]
+    if start:
+        return "plan" if today < start else "actual"
+    return "actual" if has_actuals else "plan"
 
 
 def costs_context(session: Session, trip, user, sub: str = "") -> dict:
@@ -114,8 +126,7 @@ def costs_context(session: Session, trip, user, sub: str = "") -> dict:
                 "draft": b.status == expenses_svc.DRAFT})
     can_edit = scope.can_edit_trip(session, user, trip)
     if sub not in ("actual", "plan"):
-        # Open on whatever has something in it; Actual when both or neither.
-        sub = "plan" if (lines and not rows) else "actual"
+        sub = default_sub(trip, clock.today_for(session, user), has_actuals=bool(rows))
     return {"costs": {
         "sub": sub, "lines": lines,
         "drafts": _money(plan.drafts, cur) if plan and cur and Decimal(plan.drafts) else None,
@@ -315,11 +326,13 @@ def _changes(form: dict) -> dict:
 # ------------------------------------------------------------------ routes
 
 @router.get("/{trip_id}/costs", response_class=HTMLResponse)
-def costs_section(trip_id: str, request: Request, session: Session = Depends(get_session)):
+def costs_section(trip_id: str, request: Request, sub: str = "",
+                  session: Session = Depends(get_session)):
+    """`?sub=plan|actual` opens that sub-tab; otherwise default_sub picks."""
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    return _section(request, session, trip)
+    return _section(request, session, trip, sub)
 
 
 @router.get("/{trip_id}/costs/new", response_class=HTMLResponse)

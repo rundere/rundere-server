@@ -2266,6 +2266,7 @@ def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
     session.flush()                       # need trip.id for the self-traveller link
     _auto_link_self(session, trip.id)     # §11.2 — you're on your own trip by default
     session.commit()
+    _recheck_waiting(session, trip, _u)
     return _redirect("/trips")
 
 
@@ -2286,9 +2287,24 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
             "form": {"name": name, "start": start, "end": end, "notes": notes,
                      "collection_id": adventurelog_collection_id or ""},
             "error": "A trip needs a name."})
+    dates_before = (trip.start_date, trip.end_date)
     _save_trip_fields(trip, name, start, end, notes, adventurelog_collection_id)
     session.commit()
+    if (trip.start_date, trip.end_date) != dates_before:
+        _recheck_waiting(session, trip, scope.user_of(request))
     return _redirect(dest)
+
+
+def _recheck_waiting(session: Session, trip: Trip, user) -> None:
+    """A new or re-dated trip may be the one a waiting capture needs
+    (YONDER-222). Best-effort: the trip is already saved, so a resolver
+    failure here is logged, never shown as a failed save."""
+    from app.review.service import recheck_for_trip
+    try:
+        recheck_for_trip(session, trip, user)
+    except Exception:
+        session.rollback()
+        log.warning("re-checking captures for trip %s failed", trip.id, exc_info=True)
 
 
 @router.post("/{trip_id}/delete", response_class=HTMLResponse)
