@@ -173,7 +173,13 @@ class Settings(BaseSettings):
     inbox_folder: str = "INBOX"              # where forwarded mail arrives
     inbox_done_folder: str = "Rundere/Captured"     # captured (or already captured) mail
     inbox_dropped_folder: str = "Rundere/Dropped"   # unknown address, too big, rate-limited
+    # Push: hold an IMAP IDLE so new mail is read within seconds (D-190); when the
+    # server can't IDLE, or this is off, read every inbox_poll_seconds instead.
+    inbox_idle: bool = True
     inbox_poll_seconds: int = 120
+    # A "got it" email to the capture's owner (their account address, never the
+    # sender) as soon as it's captured. Needs SMTP; skipped without it.
+    inbox_acknowledge: bool = True
     inbox_max_bytes: int = 10_000_000        # larger mail is dropped, not fetched
     inbox_rate_limit: int = 30               # captures per address per hour
     # Absolute base (e.g. https://yonder.home.example) for links in emails. Empty

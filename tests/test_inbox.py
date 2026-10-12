@@ -221,6 +221,8 @@ if DEPS:
             if cmd in ("MOVE", "COPY"):
                 uid, folder = args
                 self.moved[uid] = folder.strip('"')
+                if cmd == "MOVE":
+                    self.messages.pop(uid, None)            # it leaves the folder
                 return "OK", [b"done"]
             if cmd == "STORE":
                 return "OK", [b""]
@@ -306,3 +308,114 @@ if DEPS:
         monkeypatch.setattr(settings, "inbox_imap_host", "")
         r3 = client.get("/api/v1/capture/email-address", headers=bearer).json()
         assert r3 == {"enabled": False, "address": None}
+
+    # ------------------------------------------------------------- "got it" (D-190)
+    def _captured_poll(monkeypatch, email=None, smtp=True):
+        sent = []
+        from app import email as mail
+        monkeypatch.setattr(mail, "email_configured", lambda: smtp)
+        monkeypatch.setattr(mail, "send_email", lambda to, subj, body: sent.append((to, subj, body)) or True)
+        from app.review import autoprocess
+        monkeypatch.setattr(autoprocess, "kick", lambda user: None)
+        with SessionLocal() as s:
+            u = _user(s)
+            u.email = email
+            s.commit()
+            addr = inbox.user_address(s, u)
+        raw = _mail(addr, extra={"Reply-To": "attacker@evil.example"})
+        monkeypatch.setattr(inbox, "_connect", lambda: FakeIMAP({b"1": raw}))
+        inbox.poll_once(SessionLocal)
+        return sent
+
+    def test_a_capture_is_acknowledged_to_the_owner_not_the_sender(monkeypatch):
+        sent = _captured_poll(monkeypatch, email="owner@example.test")
+        assert len(sent) == 1
+        to, subject, body = sent[0]
+        assert to == "owner@example.test"                 # never bookings@ / Reply-To
+        assert subject == "Got it: Your reservation IN199"
+        assert "Nothing is filed until you approve it" in body
+
+    def test_no_acknowledgement_without_smtp_or_an_account_email(monkeypatch):
+        assert _captured_poll(monkeypatch, email="owner@example.test", smtp=False) == []
+        assert _captured_poll(monkeypatch, email=None) == []
+
+    # ------------------------------------------------------------- IDLE push (D-190)
+    class IdleConn:
+        """The few imaplib internals idle_wait uses, over a real socketpair so
+        the select() path is exercised for real."""
+        def __init__(self):
+            import collections
+            import socket
+            self.a, self.b = socket.socketpair()
+            self.a.setblocking(False)
+            self.lines = collections.deque()
+            self.sent = []
+
+        def _new_tag(self):
+            return b"A001"
+
+        def send(self, data):
+            self.sent.append(data)
+            if data.endswith(b" IDLE\r\n"):
+                self.lines.append(b"+ idling\r\n")
+            elif data == b"DONE\r\n":
+                self.lines.append(b"A001 OK IDLE terminated\r\n")
+
+        def socket(self):
+            return self.a
+
+        def readline(self):
+            try:
+                self.a.recv(1)
+            except BlockingIOError:
+                pass
+            return self.lines.popleft()
+
+        def push(self, line):
+            self.lines.append(line)
+            self.b.send(b"x")
+
+    def test_idle_returns_as_soon_as_mail_arrives():
+        import threading
+        import time
+        conn = IdleConn()
+        threading.Timer(0.2, conn.push, [b"* 4 EXISTS\r\n"]).start()
+        t0 = time.monotonic()
+        assert inbox.idle_wait(conn, seconds=30) is True
+        assert time.monotonic() - t0 < 5                   # seconds, not a poll interval
+        assert conn.sent == [b"A001 IDLE\r\n", b"DONE\r\n"]
+
+    def test_idle_times_out_quietly_and_ends_the_idle():
+        conn = IdleConn()
+        assert inbox.idle_wait(conn, seconds=0.3) is False
+        assert conn.sent[-1] == b"DONE\r\n"
+
+    def test_listen_drains_idles_and_drains_again(monkeypatch):
+        with SessionLocal() as s:
+            addr = inbox.user_address(s, _user(s))
+        fake = FakeIMAP({b"1": _mail(addr)})
+        fake.capabilities = ("IMAP4REV1", "MOVE", "IDLE")
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        from app.review import autoprocess
+        monkeypatch.setattr(autoprocess, "kick", lambda user: None)
+        calls = []
+
+        def idle(conn, seconds=0):
+            calls.append(1)
+            if len(calls) == 1:                            # new mail arrives
+                fake.messages = {b"2": _mail(addr)}
+                return True
+            inbox._stop.set()                              # then shut down
+            return False
+        monkeypatch.setattr(inbox, "idle_wait", idle)
+        try:
+            assert inbox.listen(SessionLocal) is True
+        finally:
+            inbox._stop.clear()
+        assert set(fake.moved) == {b"1", b"2"} and inbox.status["mode"] == "push"
+
+    def test_listen_falls_back_to_polling_without_idle(monkeypatch):
+        fake = FakeIMAP({})
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        assert inbox.listen(SessionLocal) is False
+        assert inbox.status["mode"] == "polling"

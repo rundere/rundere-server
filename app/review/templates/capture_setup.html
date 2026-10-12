@@ -124,7 +124,7 @@
       <p class="why"><a href="/login?next=/capture/setup%3Ftab%3Demail">Sign in</a> to get your own address.</p>
       {% else %}
       <p class="why">This address is yours. Forward a booking confirmation to it, from any of your email accounts,
-        and in a few minutes it is read and waits in your review queue. Nothing is filed until you approve it.</p>
+        and moments later it is read and waits in your review queue. Nothing is filed until you approve it.</p>
       <div id="inbox-slot">{% with address = inbox.address, rotated = False %}{% include "_inbox_address.html" %}{% endwith %}</div>
       <ol class="cap-steps">
         <li>Copy your address.</li>
@@ -132,9 +132,14 @@
           filter for the senders you care about → <i>Forward it to</i> your address (Gmail asks you to confirm the
           address once; that confirmation email lands in your review queue — open the link in it). In Outlook:
           Rules → <i>Forward to</i>.</li>
-        <li>Check it works: the booking shows in your review queue after the next read (every few minutes).</li>
+        <li>Check it works: the booking shows in your review queue moments later.{% if inbox.ack and inbox.ack.to %}
+          A <b>“Got it”</b> email goes to <code>{{ inbox.ack.to }}</code> as soon as it arrives.{% endif %}</li>
       </ol>
-      <p class="why">Anyone who has this address can send things to your review queue, so keep it to yourself.
+      {% if inbox.ack and not inbox.ack.to %}
+      <p class="why cap-note">Add your email under <a href="/account">Settings → Account</a> to get a “Got it” email
+        each time a forward arrives.</p>
+      {% endif %}
+      <p class="why cap-note">Anyone who has this address can send things to your review queue, so keep it to yourself.
         If it leaks, make a new one; the old one stops working at once.</p>
       <button class="act" type="button" hx-post="/capture/setup/email-address" hx-target="#inbox-slot"
               hx-swap="innerHTML" hx-confirm="Make a new address? The current one stops working straight away.">Make a new address</button>
@@ -149,7 +154,8 @@
           Microsoft 365, iCloud and most hosts do.</p>
         {% else %}
         <p class="why"><code>{{ inbox.admin.mailbox }}</code> on <code>{{ inbox.admin.host }}</code>, folder
-          <code>{{ inbox.admin.folder }}</code>, read every {{ inbox.admin.every }} s.
+          <code>{{ inbox.admin.folder }}</code>,
+          {% if inbox.admin.mode == 'push' %}read the moment mail arrives (IMAP IDLE){% elif inbox.admin.mode == 'polling' %}read every {{ inbox.admin.every }} s (the server doesn’t offer IMAP IDLE){% elif inbox.admin.last_error %}not connected{% else %}connecting…{% endif %}.
           Last read: {{ inbox.admin.last_poll or 'not yet' }}.{% if inbox.admin.last_error %}
           <br><b>Last error:</b> <code>{{ inbox.admin.last_error }}</code>{% endif %}</p>
         <p class="why">Captured mail is filed in <code>{{ inbox.admin.done }}</code>; mail to an unknown address, too

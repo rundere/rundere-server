@@ -22,6 +22,13 @@ queue a few minutes later. Nothing is filed until they approve it.
 - **Captured mail** is kept raw in full (D-15), filed into the done folder in
   your mailbox, and processed at once, like a capture from the capture page.
   The same message is never captured twice for the same person.
+- **Read in real time.** Run·dere holds an IMAP IDLE connection, so the mail
+  server tells it the moment mail arrives. If the server doesn't support IDLE
+  (most do: Gmail, Fastmail, iCloud, Microsoft 365, Dovecot), it reads every
+  `TX_INBOX_POLL_SECONDS` instead. The admin panel shows which mode is in use.
+- **"Got it" email.** When SMTP is set up ([email.md](email.md)), the person
+  gets a "Got it: <subject>" email as soon as their forward is captured. It goes
+  to the email on their Run·dere account, never to whoever sent the message.
 
 ## Settings
 
@@ -35,7 +42,9 @@ queue a few minutes later. Nothing is filed until they approve it.
 | `TX_INBOX_FOLDER` | `INBOX` | Where forwarded mail arrives. |
 | `TX_INBOX_DONE_FOLDER` | `Rundere/Captured` | Captured mail is moved here. Created if missing. |
 | `TX_INBOX_DROPPED_FOLDER` | `Rundere/Dropped` | Mail that wasn't captured is moved here. Created if missing. |
-| `TX_INBOX_POLL_SECONDS` | `120` | How often the mailbox is read (at least 30). |
+| `TX_INBOX_IDLE` | `true` | Read in real time with IMAP IDLE when the server supports it. |
+| `TX_INBOX_POLL_SECONDS` | `120` | Without IDLE: how often the mailbox is read (at least 30). |
+| `TX_INBOX_ACKNOWLEDGE` | `true` | Send the "Got it" email (needs SMTP and an email on the person's account). |
 | `TX_INBOX_MAX_BYTES` | `10000000` | Larger messages are dropped without being downloaded. |
 | `TX_INBOX_RATE_LIMIT` | `30` | Captures per address per hour. |
 
@@ -68,8 +77,8 @@ Gmail shows the done and dropped folders as labels.
 1. **Capture → Other ways to capture → Email forward.** Your address appears.
    Admins also see the mailbox status, when it was last read, any last error,
    and the last 7 days' counts.
-2. Forward a confirmation to your address. After the next read it's in your
-   review queue.
+2. Forward a confirmation to your address. Within seconds it's in your review
+   queue, and the "Got it" email arrives if SMTP is set up.
 3. Forward something to `trips+wrong@…`. It ends up in the dropped folder, and
    the admin panel counts it as "unmatched".
 

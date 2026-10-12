@@ -31,7 +31,9 @@ import imaplib
 import json
 import logging
 import secrets
+import select
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -60,7 +62,7 @@ CAPTURED, DUPLICATE, UNMATCHED, TOO_LARGE, RATE_LIMITED, UNREADABLE = (
     "captured", "duplicate", "unmatched", "too_large", "rate_limited", "unreadable")
 
 # What the admin panel shows about the poller; module state, one per process.
-status: dict = {"last_poll_at": None, "last_error": None, "last_counts": {}}
+status: dict = {"last_poll_at": None, "last_error": None, "last_counts": {}, "mode": None}
 
 
 # --------------------------------------------------------------------- config + addresses
@@ -193,6 +195,7 @@ class Handled:
     outcome: str
     user_id: str | None = None
     batch_id: str | None = None
+    subject: str | None = None
 
 
 def handle_message(session: Session, raw: bytes) -> list[Handled]:
@@ -257,7 +260,7 @@ def handle_message(session: Session, raw: bytes) -> list[Handled]:
             session.rollback()
             out.append(Handled(DUPLICATE, user.id))
             continue
-        out.append(Handled(CAPTURED, user.id, batch.id))
+        out.append(Handled(CAPTURED, user.id, batch.id, payload["subject"]))
     return out
 
 
@@ -311,44 +314,82 @@ def _fetch(conn, uid: bytes) -> bytes | None:
     return None
 
 
-def poll_once(session_factory) -> dict:
-    """Read the inbox once: capture, file and count every waiting message, then
-    start processing for the people who got something. Returns the counts."""
+def _drain(conn, session_factory) -> dict:
+    """Capture, file and count every message waiting in the folder on an open,
+    logged-in connection; acknowledge each capture and start processing for
+    the people who got one. Returns the counts."""
     counts: dict[str, int] = {}
-    captured_for: set[str] = set()
+    captured: list[Handled] = []
+    typ, _ = conn.select(_quote(settings.inbox_folder))
+    if typ != "OK":
+        raise RuntimeError(f"can't open folder {settings.inbox_folder!r}")
+    typ, data = conn.uid("SEARCH", None, "ALL")
+    uids = (data[0] or b"").split()[:_PER_POLL] if typ == "OK" and data else []
+    for uid in uids:
+        with session_factory() as session:
+            size = _size_of(conn, uid)
+            if size > settings.inbox_max_bytes:
+                # Never fetched; it moves to the dropped folder, so it isn't seen again.
+                _record(session, hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
+                        TOO_LARGE, detail=f"{size} bytes")
+                results = [Handled(TOO_LARGE)]
+            else:
+                raw = _fetch(conn, uid)
+                results = (handle_message(session, raw) if raw is not None
+                           else [Handled(UNREADABLE)])
+        for r in results:
+            counts[r.outcome] = counts.get(r.outcome, 0) + 1
+            if r.outcome == CAPTURED and r.user_id:
+                captured.append(r)
+        keep = any(r.outcome in (CAPTURED, DUPLICATE) for r in results)
+        _move(conn, uid, settings.inbox_done_folder if keep
+              else settings.inbox_dropped_folder)
+    _acknowledge(session_factory, captured)
+    _kick(session_factory, {r.user_id for r in captured})
+    return counts
+
+
+def poll_once(session_factory) -> dict:
+    """Connect, read the inbox once (_drain), disconnect. Returns the counts."""
     conn = _connect()
     try:
-        typ, _ = conn.select(_quote(settings.inbox_folder))
-        if typ != "OK":
-            raise RuntimeError(f"can't open folder {settings.inbox_folder!r}")
-        typ, data = conn.uid("SEARCH", None, "ALL")
-        uids = (data[0] or b"").split()[:_PER_POLL] if typ == "OK" and data else []
-        for uid in uids:
-            with session_factory() as session:
-                size = _size_of(conn, uid)
-                if size > settings.inbox_max_bytes:
-                    # Never fetched; it moves to the dropped folder, so it isn't seen again.
-                    _record(session, hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
-                            TOO_LARGE, detail=f"{size} bytes")
-                    results = [Handled(TOO_LARGE)]
-                else:
-                    raw = _fetch(conn, uid)
-                    results = (handle_message(session, raw) if raw is not None
-                               else [Handled(UNREADABLE)])
-            for r in results:
-                counts[r.outcome] = counts.get(r.outcome, 0) + 1
-                if r.outcome == CAPTURED and r.user_id:
-                    captured_for.add(r.user_id)
-            keep = any(r.outcome in (CAPTURED, DUPLICATE) for r in results)
-            _move(conn, uid, settings.inbox_done_folder if keep
-                  else settings.inbox_dropped_folder)
+        return _drain(conn, session_factory)
     finally:
-        try:
-            conn.logout()
-        except Exception:
-            pass
-    _kick(session_factory, captured_for)
-    return counts
+        _logout(conn)
+
+
+def _logout(conn) -> None:
+    try:
+        conn.logout()
+    except Exception:
+        pass
+
+
+def _acknowledge(session_factory, captured: list[Handled]) -> None:
+    """A "got it" email for each capture, right away (D-190). It goes to the
+    capture owner's OWN account address — never to the message's sender, which
+    nobody verified (D-162), so a forged sender can't make Run·dere mail a
+    stranger. Best-effort: no SMTP, or no address on the account, means none."""
+    if not captured or not settings.inbox_acknowledge:
+        return
+    from app import email as mail
+    if not mail.email_configured():
+        return
+    base = settings.public_base_url.rstrip("/")
+    with session_factory() as session:
+        for r in captured:
+            user = session.get(User, r.user_id)
+            if user is None or not user.email:
+                continue
+            what = " ".join((r.subject or "").split())[:150] or "your forwarded email"
+            where = f"{base}/review" if base else "your review queue in Run·dere"
+            mail.send_email(
+                user.email, f"Got it: {what}",
+                f"Run·dere received the email you forwarded — \"{what}\" — and is "
+                f"reading it now.\n\nIt will wait for your approval in {where}. Nothing "
+                f"is filed until you approve it.\n\nYou get this because it was sent to "
+                f"your Run·dere forwarding address. If you didn't forward it, make a new "
+                f"address under Capture → Other ways to capture → Email forward.")
 
 
 def _kick(session_factory, user_ids: set[str]) -> None:
@@ -368,46 +409,140 @@ def _kick(session_factory, user_ids: set[str]) -> None:
                 log.exception("auto-process could not start for an inbox capture")
 
 
-# --------------------------------------------------------------------- the poller
+# --------------------------------------------------------------------- IMAP IDLE
+_IDLE_SECONDS = 20 * 60        # re-issue before the ~29-minute server cut-off (RFC 2177)
+_IDLE_TICK = 5                 # how often a waiting IDLE checks for shutdown
+
+
+def supports_idle(conn) -> bool:
+    return settings.inbox_idle and "IDLE" in (conn.capabilities or ())
+
+
+def _readable(conn, seconds: float) -> bool:
+    """Is a server line waiting? TLS can hold decrypted bytes the OS socket no
+    longer shows, so check those first."""
+    sock = conn.socket()
+    pending = getattr(sock, "pending", None)
+    if pending is not None and pending():
+        return True
+    ready, _, _ = select.select([sock], [], [], seconds)
+    return bool(ready)
+
+
+def idle_wait(conn, seconds: float = _IDLE_SECONDS) -> bool:
+    """Hold an IMAP IDLE (RFC 2177) until the server announces new mail, the
+    time is up, or the reader is stopping. True when new mail arrived. Python
+    3.12's imaplib has no idle(), so this speaks the three lines of protocol
+    itself; it reads only once select() says a line is there, so no socket
+    timeout is ever tripped (that would leave imaplib's reader unusable)."""
+    tag = conn._new_tag()
+    conn.send(tag + b" IDLE\r\n")
+    first = conn.readline()
+    if not first.startswith(b"+"):
+        raise RuntimeError(f"server refused IDLE: {first[:80]!r}")
+    new_mail = False
+    deadline = time.monotonic() + seconds
+    while not new_mail and not _stop.is_set():
+        left = deadline - time.monotonic()
+        if left <= 0:
+            break
+        if _readable(conn, min(_IDLE_TICK, left)):
+            line = conn.readline()
+            if not line:
+                raise ConnectionError("the mail server closed the connection")
+            new_mail = b"EXISTS" in line or b"RECENT" in line
+    conn.send(b"DONE\r\n")
+    while True:                                   # read to the IDLE's own completion
+        line = conn.readline()
+        if not line:
+            raise ConnectionError("the mail server closed the connection")
+        if line.startswith(tag):
+            break
+    return new_mail
+
+
+# --------------------------------------------------------------------- the reader
 _stop = threading.Event()
 _thread: threading.Thread | None = None
 
 
+def _ok(counts: dict, mode: str) -> None:
+    status.update(last_poll_at=datetime.now(timezone.utc), last_error=None,
+                  last_counts=counts, mode=mode)
+    if counts:
+        log.info("inbox: %s", ", ".join(f"{v} {k}" for k, v in sorted(counts.items())))
+
+
+def _failed(ex: Exception) -> None:
+    """Record a failure for the admin panel: the server's reply, never our
+    credentials (redacted in case a server ever echoes them)."""
+    text = str(ex)
+    if settings.inbox_imap_password:
+        text = text.replace(settings.inbox_imap_password, "***")
+    status.update(last_poll_at=datetime.now(timezone.utc),
+                  last_error=f"{type(ex).__name__}: {text[:200]}")
+    log.warning("inbox read failed: %s", status["last_error"])
+
+
 def poll_and_record(session_factory) -> None:
-    """One poll, with its outcome kept in `status` for the admin panel. Never
-    raises. A failure records the server's reply, never our credentials."""
+    """One poll, with its outcome kept in `status`. Never raises."""
     try:
-        counts = poll_once(session_factory)
-        status.update(last_poll_at=datetime.now(timezone.utc), last_error=None,
-                      last_counts=counts)
-        if counts:
-            log.info("inbox: %s", ", ".join(f"{v} {k}" for k, v in sorted(counts.items())))
+        _ok(poll_once(session_factory), "polling")
     except Exception as ex:
-        text = str(ex)
-        if settings.inbox_imap_password:
-            text = text.replace(settings.inbox_imap_password, "***")
-        status.update(last_poll_at=datetime.now(timezone.utc),
-                      last_error=f"{type(ex).__name__}: {text[:200]}")
-        log.warning("inbox poll failed: %s", status["last_error"])
+        _failed(ex)
+
+
+def listen(session_factory) -> bool:
+    """One connection's worth of near-real-time reading: drain the folder, then
+    IDLE until the server says mail arrived and drain again, re-IDLEing every
+    20 minutes. Returns False when the server can't IDLE (the caller polls
+    instead) and True when the connection ended and should be re-opened.
+    Never raises."""
+    try:
+        conn = _connect()
+    except Exception as ex:
+        _failed(ex)
+        return True
+    try:
+        if not supports_idle(conn):
+            _ok(_drain(conn, session_factory), "polling")
+            return False
+        while not _stop.is_set():
+            _ok(_drain(conn, session_factory), "push")
+            idle_wait(conn)                  # new mail, timeout or stop: drain again
+        return True
+    except Exception as ex:
+        _failed(ex)
+        return True
+    finally:
+        _logout(conn)
 
 
 def _loop(session_factory) -> None:
+    pause = max(30, settings.inbox_poll_seconds)
     while not _stop.is_set():
-        poll_and_record(session_factory)
-        _stop.wait(max(30, settings.inbox_poll_seconds))
+        if settings.inbox_idle and listen(session_factory):
+            # The connection ended (an error or the server's cut-off): reconnect,
+            # after a pause when it was an error so a down server isn't hammered.
+            _stop.wait(pause if status.get("last_error") else 1)
+            continue
+        if not settings.inbox_idle:
+            poll_and_record(session_factory)
+        _stop.wait(pause)
 
 
 def start(session_factory) -> bool:
-    """Start the background poller once per process, if the inbox is configured."""
+    """Start the background reader once per process, if the inbox is configured."""
     global _thread
     if not configured() or (_thread is not None and _thread.is_alive()):
         return False
     _stop.clear()
-    _thread = threading.Thread(target=_loop, args=(session_factory,), name="inbox-poller",
+    _thread = threading.Thread(target=_loop, args=(session_factory,), name="inbox-reader",
                                daemon=True)
     _thread.start()
-    log.info("inbox poller started for %s every %ss", settings.inbox_address,
-             max(30, settings.inbox_poll_seconds))
+    log.info("inbox reader started for %s (%s)", settings.inbox_address,
+             "IDLE push, polling fallback" if settings.inbox_idle
+             else f"polling every {max(30, settings.inbox_poll_seconds)}s")
     return True
 
 
