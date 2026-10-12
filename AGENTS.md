@@ -30,10 +30,9 @@ python3 rules.py --docs > RULES.md    # regenerate after ANY change to rules.py
 
 - The system Python may be 3.11. Use `uv run` (or Python 3.12) rather than bare
   `pip install .`, which refuses to install on 3.11.
-- **`uv.lock` is stale.** It's out of step with `pyproject.toml`, so `uv run`
-  rewrites it (about 500 added lines). Don't commit that incidental change in a feature PR; run
-  `git checkout -- uv.lock` before committing. Refreshing the lockfile gets its
-  own PR.
+- **`uv.lock` is checked in CI** (`uv lock --check`). If you change
+  dependencies in `pyproject.toml`, run `uv lock` and commit the lockfile in the
+  same PR. The release workflow bumps the project's own version in it.
 - CI (`.github/workflows/ci.yml`) runs `pytest -q` and the `validate.py`
   accuracy line on every push and PR.
 
