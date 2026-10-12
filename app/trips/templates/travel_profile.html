@@ -1,53 +1,92 @@
 {% extends "base.html" %}
 {% block title %}Travel profile{% endblock %}
 {% block content %}
-<div class="app">
-  <div class="ops"><div class="ops-row">
-    <span class="pagetitle">{% if acting and acting.is_other %}Travel profile{% else %}My travel profile{% endif %}</span>
-  </div></div>
-  {% include "_acting_for.html" %}
-
-  {% if saved %}<div class="saved-note">Saved.</div>{% endif %}
-
-  <div style="padding:16px;max-width:640px">
-  {% if no_traveller %}
-    <p class="why">Your account isn't linked to a traveller yet. <a href="/account/traveller">Link it now</a>, or ask an admin
-      (Settings → Users), then you can set your
-      travel details here.</p>
-  {% else %}
-    <p class="why">{% if acting and acting.is_other %}{{ trav.display_name }}'s personal travel
-      details — used for their visa checks, currency and ticket matching.{% else %}These are your
-      own personal travel details — only you (and the trips you're on) use them. They are never
-      shown in the admin tables.{% endif %}</p>
-    <form method="post" action="/trips/settings/travel-profile{{ acting.qs if acting else '' }}">
-      <div class="field"><label>Name</label>
-        <span class="v ro">{{ trav.display_name }}</span></div>
-      <div class="field"><label>Nationality</label>
-        <input name="nationality" maxlength="2" placeholder="ISO-2, e.g. CA, US, GB"
-               value="{{ trav.nationality or '' }}" style="text-transform:uppercase"></div>
-      <div class="field"><label>Base currency</label>
-        <select name="base_currency" class="v">
-          <option value="">— deployment default —</option>
-          {% for code, label in currencies %}
-          <option value="{{ code }}" {% if trav.base_currency == code %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select></div>
-      <div class="field"><label>Name-on-ticket aliases</label>
-        <textarea name="aliases" rows="3" class="v"
-                  placeholder="One per line — e.g. OKAFOR/DANIEL MR">{{ (trav.aliases or []) | join('\n') }}</textarea></div>
-      <div class="field"><label>AirTrail user id</label>
-        <input name="airtrail_user_id" placeholder="optional — links your flight history"
-               value="{{ trav.airtrail_user_id or '' }}"></div>
-      <div class="field"><label>Notes</label>
-        <textarea name="notes" rows="3" class="v">{{ trav.notes or '' }}</textarea></div>
-      <button class="act primary" type="submit" style="margin-top:12px">Save</button>
-    </form>
-    <p class="why" style="margin-top:12px">Nationality drives visa research on your
-      trips. Base currency is your own currency for the discovery rates and
-      calculator; the deployment's configured currencies are always shown too, so
-      leaving this blank just uses those. Aliases help match flights printed under
-      name variants.</p>
-  {% endif %}
-  </div>
+{# Same layout as the Discovery and Packing profiles (YONDER-216): a header
+   card, then one profile card, on the design tokens (D-161). #}
+<div class="card blueprint bp-trip-header">
+  <h1 class="bp-h1">{% if acting and acting.is_other %}Travel profile{% else %}My travel profile{% endif %}</h1>
+  <p class="bp-trip-notes">{% if acting and acting.is_other %}{{ trav.display_name if trav else '' }}'s personal
+    travel details — used for their visa checks, currency and ticket matching.{% else %}Your own personal
+    travel details — only you (and the trips you're on) use them. They're never shown in the admin
+    tables.{% endif %}</p>
 </div>
+{% include "_acting_for.html" %}
+
+{% if no_traveller %}
+<div class="card blueprint yn-note-card yn-todo">
+  <p class="bp-trip-notes">Your account isn't linked to a traveller yet.
+    <a href="/account/traveller">Link it now</a>, or ask an admin (Settings → Users), then you can
+    set your travel details here.</p>
+</div>
+{% else %}
+
+{% if saved %}
+<div class="card blueprint yn-note-card yn-todo yn-profile-saved">
+  <div class="bp-group-label">Saved ✓</div>
+  <p class="bp-trip-notes">Your travel details are saved.</p>
+</div>
+{% endif %}
+
+<form method="post" action="/trips/settings/travel-profile{{ acting.qs if acting else '' }}"
+      class="card blueprint yn-profile-card">
+  <div class="field"><label>Name</label>
+    <div class="yn-readonly">{{ trav.display_name }}</div></div>
+
+  <div class="yn-form-grid">
+    <div class="field"><label for="tp-nat">Nationality <span class="yn-help">— drives visa research</span></label>
+      <input id="tp-nat" class="input" name="nationality" maxlength="2"
+             placeholder="ISO-2, e.g. CA, US, GB" value="{{ trav.nationality or '' }}"
+             style="text-transform:uppercase"></div>
+    <div class="field"><label for="tp-cur">Base currency <span class="yn-help">— for rates and the calculator</span></label>
+      <select id="tp-cur" class="input" name="base_currency">
+        <option value="">— deployment default —</option>
+        {% for code, label in currencies %}
+        <option value="{{ code }}" {% if trav.base_currency == code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select></div>
+  </div>
+
+  <div class="field"><label for="tp-tz">Time zone <span class="yn-help">— your "now": greetings, countdowns, Next up and which trips are upcoming</span></label>
+    <div class="yn-tz-row">
+      <select id="tp-tz" class="input" name="timezone">
+        <option value="">— the server's clock —</option>
+        {% for z in zones %}
+        <option value="{{ z }}" {% if trav.timezone == z %}selected{% endif %}>{{ z | replace('_', ' ') }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" class="btn btn-ghost bp-sm" id="tp-tz-detect" hidden>Use this device's</button>
+    </div>
+    <p class="yn-help" style="margin:4px 0 0">Set it once — it doesn't follow your home profiles,
+      so change it if you move.</p>
+  </div>
+  <script>
+    // Offer the browser's own zone in one click (it's only a suggestion until saved).
+    (function () {
+      var z; try { z = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return; }
+      var sel = document.getElementById('tp-tz'), btn = document.getElementById('tp-tz-detect');
+      if (!z || !sel || sel.value === z) return;
+      if (![].some.call(sel.options, function (o) { return o.value === z; })) return;
+      btn.textContent = "Use this device's (" + z.replace(/_/g, ' ') + ")";
+      btn.hidden = false;
+      btn.onclick = function () { sel.value = z; btn.hidden = true; };
+    })();
+  </script>
+
+  <div class="field"><label for="tp-alias">Name-on-ticket aliases <span class="yn-help">— one per line; matches flights printed under name variants</span></label>
+    <textarea id="tp-alias" class="input" name="aliases" rows="3"
+              placeholder="e.g. OKAFOR/DANIEL MR">{{ (trav.aliases or []) | join('\n') }}</textarea></div>
+
+  <div class="field"><label for="tp-at">AirTrail user id <span class="yn-help">— optional; your AirTrail connection (Settings → Connections) normally covers this</span></label>
+    <input id="tp-at" class="input" name="airtrail_user_id" value="{{ trav.airtrail_user_id or '' }}"></div>
+
+  <div class="field"><label for="tp-notes">Notes</label>
+    <textarea id="tp-notes" class="input" name="notes" rows="3">{{ trav.notes or '' }}</textarea></div>
+
+  <div class="dialog-actions">
+    <button type="submit" class="btn btn-primary">Save profile</button>
+  </div>
+  <p class="bp-trip-notes">The deployment's configured currencies are always shown too, so leaving
+    the base currency blank just uses those.</p>
+</form>
+{% endif %}
 {% endblock %}

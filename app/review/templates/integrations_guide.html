@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}How to connect{% endblock %}
+{% block content %}
+{# Instructions for the Connections tab (SPEC-8 D-150, D-186). Steps match
+   AirTrail 3.13's own docs (Settings → Security → API Keys, scope names). #}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <h1 class="pagetitle">How to connect AirTrail and AdventureLog</h1>
+  </div></div>
+
+  <div class="settings-hub guide">
+    <p class="why"><a href="/settings/integrations">← Back to Connections</a></p>
+
+    <section>
+      <h2 class="settings-h">Before you start</h2>
+      <ul>
+        <li>Both are optional. Run·dere keeps your trips, timeline and flights with
+          neither connected; a connection only logs your captures there as well.</li>
+        <li>Each connection is <strong>yours</strong>: your server address and your own
+          token, so Run·dere can only do what your account there may do. Other people
+          connect their own.</li>
+        <li><strong>You set it up yourself</strong>, signed in to Run·dere on the web or in
+          the app. Connected apps and AI agents (Claude, MCP clients, API tokens) can't
+          add, change or read a connection.</li>
+        <li>The token is stored encrypted and never shown again — only its last four
+          characters.</li>
+        <li>The server address must be public <code>https</code>. A server on your home
+          network (e.g. <code>http://airtrail:3000</code>) works only if your Run·dere
+          admin has allowed that host.</li>
+      </ul>
+    </section>
+
+    <section id="airtrail">
+      <h2 class="settings-h">AirTrail</h2>
+      <p class="why">Needs AirTrail <strong>3.13 or newer</strong>. Run·dere talks to it only
+        through its API — no database access.</p>
+      <ol>
+        <li>In AirTrail, open <strong>Settings → Security</strong> and expand
+          <strong>API Keys</strong>. Click <strong>Create</strong>.</li>
+        <li>Name it <strong>Run·dere</strong>, so you can revoke just this one later.</li>
+        <li>Choose a custom set of scopes — only these:
+          <table class="guide-table">
+            <thead><tr><th>Scope</th><th>Why Run·dere needs it</th></tr></thead>
+            <tbody>
+              <tr><td><code>flight.read.own</code></td><td>see your flights, so nothing is logged twice</td></tr>
+              <tr><td><code>flight.create.own</code></td><td>log a flight you captured</td></tr>
+              <tr><td><code>flight.update.own</code></td><td>apply a changed booking</td></tr>
+              <tr><td><code>flight.delete.own</code></td><td>remove a cancelled flight</td></tr>
+              <tr><td><code>reference_data.read</code></td><td>look up an airline you haven't flown before</td></tr>
+              <tr><td><code>profile.read</code></td><td>check the key works</td></tr>
+            </tbody>
+          </table>
+          No <code>.any</code> or administration scopes: Run·dere only ever writes flights
+          you're on.</li>
+        <li>Click <strong>Create key</strong> and copy it — AirTrail shows it once.</li>
+        <li>In Run·dere, go to <a href="/settings/integrations#conn-airtrail">Connections</a> →
+          <strong>Connect AirTrail</strong>. Paste the key, and enter your AirTrail address
+          (the one you open in the browser, e.g. <code>https://airtrail.example.com</code>).</li>
+        <li><strong>Save</strong>. Run·dere tests it straight away: it lists your flights and
+          checks the airline lookup. "Connected" means you're done.</li>
+      </ol>
+      <p class="why">The AirTrail user id field can stay empty: flights are logged as the
+        owner of the key. Only flights you're on go to AirTrail; a companion's booking
+        never does.</p>
+    </section>
+
+    <section id="adventurelog">
+      <h2 class="settings-h">AdventureLog</h2>
+      <ol>
+        <li>In AdventureLog, open <strong>Settings → Integrations</strong> (API keys) and
+          create a key named <strong>Run·dere</strong>. Copy it.</li>
+        <li>In Run·dere, go to <a href="/settings/integrations#conn-adventurelog">Connections</a> →
+          <strong>Connect AdventureLog</strong>. Paste the key and enter the address Run·dere
+          should call.</li>
+        <li>If you open AdventureLog in the browser at a different address than the one
+          Run·dere calls (e.g. Run·dere uses an internal name), put the browser one in
+          <strong>Browser address</strong>, so "View in AdventureLog" links work.</li>
+        <li><strong>Save</strong>. Run·dere lists your collections to test it.</li>
+      </ol>
+      <p class="why">With AdventureLog connected, captures are matched to your own
+        collections, and a trip page gets <strong>Advanced → AdventureLog sync</strong>.</p>
+    </section>
+
+    <section>
+      <h2 class="settings-h">Changing or removing a connection</h2>
+      <ul>
+        <li><strong>Test</strong> re-checks it any time. <strong>Turn off</strong> stops
+          Run·dere sending anything, and keeps the key for later.</li>
+        <li>Changing the address needs the key again, so a saved key is never sent
+          somewhere new.</li>
+        <li><strong>Remove</strong> deletes the stored key. Delete the key in AirTrail or
+          AdventureLog too if you don't need it any more.</li>
+        <li>Only captures processed <em>after</em> you connect go there. What you captured
+          before stays in Run·dere (it's all on your trips); it isn't sent back in time.</li>
+      </ul>
+    </section>
+  </div>
+</div>
+<style>
+  .guide section { max-width: 760px; }
+  .guide ol, .guide ul { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  .guide-table { border-collapse: collapse; margin: 8px 0; font-size: 14px; }
+  .guide-table th, .guide-table td { text-align: left; padding: 4px 10px 4px 0;
+    border-bottom: 1px solid var(--line); vertical-align: top; }
+</style>
+{% endblock %}

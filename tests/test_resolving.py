@@ -254,6 +254,18 @@ def test_no_trip_is_minted_until_a_flight_comes_home():
     _skip_or(run)
 
 
+class _ConnectedAL:
+    """The owner has an AdventureLog connection with no collections yet."""
+    def list_collections(self):
+        return []
+
+
+class _ConnectedAirTrail:
+    """The owner has an AirTrail connection (nothing flown yet)."""
+    def airport_reference(self):
+        return {}
+
+
 def _leg(ref, num, frm, to, dep_at, arr_at, *, from_home=False, to_home=False,
          dest_country=None, dep_country=None, arr_country=None):
     fp = {"raw": frm, "iata": frm, **({"is_home": True} if from_home else {})}
@@ -324,7 +336,9 @@ def test_multileg_journey_named_by_destination_not_layover():
                 minters += 1 if r.get("is_minter") else 0
             assert len(names) == 1                        # every leg, one name
             name = names.pop()
-            assert name.startswith("IN")                  # India, not DE (layover)
+            # India, not Germany (the layover) — named from CLDR, not a raw ISO
+            # code, now that names don't need AdventureLog (D-148).
+            assert name.startswith("India")
             assert minters == 1                           # one minter for the journey
     _skip_or(run)
 
@@ -346,7 +360,8 @@ def test_journey_legs_share_one_trip_with_a_single_minter():
             ret = _leg("RET9", "2", "LIS", "HHH", "2027-09-14T09:00",
                        "2027-09-14T15:00", to_home=True, dest_country="PT")
             o, r = _add_item(s, out), _add_item(s, ret)
-            resolve_pending(s, adventurelog=None)      # no collections -> must mint
+            # Connected to AdventureLog, no collections yet -> must mint.
+            resolve_pending(s, adventurelog=_ConnectedAL())
 
             ro = s.get(TravelItem, o.id).resolution
             rr = s.get(TravelItem, r.id).resolution
@@ -482,7 +497,9 @@ def test_unresolved_trip_flight_still_targets_airtrail():
             out = _leg("SOLO9", "1", "HHH", "LIS", "2027-09-01T08:00",
                        "2027-09-01T12:00", from_home=True, dest_country="PT")
             o = _add_item(s, out)
-            resolve_pending(s, adventurelog=None)
+            # Both connected (the AirTrail write and the AdventureLog trip are
+            # what's at stake here); no collection to match yet.
+            resolve_pending(s, adventurelog=_ConnectedAL(), airtrail=_ConnectedAirTrail())
             it = s.get(TravelItem, o.id)
             assert it.status["resolve"] == "ok"                 # approvable now
             assert it.resolution["targets"] == ["airtrail.flight"]

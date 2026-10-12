@@ -10,17 +10,27 @@ COLLECTION_EXCLUSIVE = {"adventurelog.transportation", "adventurelog.lodging",
                         "adventurelog.note"}
 
 
+EXTERNAL_SYSTEMS = frozenset({"airtrail", "adventurelog"})
+
+
 def compute_targets(payload: dict, *, self_on_booking: bool,
                     within_home: bool, has_collection: bool,
                     unsuppressed_places: int,
-                    creating_collection: bool = False) -> list[str]:
-    """The write set for one item.
+                    creating_collection: bool = False,
+                    external: frozenset[str] | set[str] | None = None) -> list[str]:
+    """The AirTrail / AdventureLog part of the write set for one item.
 
     self_on_booking=False means a guest-only flight: AirTrail is excluded
     entirely, enforced here at resolution rather than at commit (D-22/RULE-10).
+
+    `external` is which integrations the capture's owner has connected
+    (D-148, D-150): a system not in it gets no targets at all. None means both
+    (the operator CLI and this function's own unit tests). The first-party
+    `yonder.activity` target is added by the resolver, not here.
     """
     if within_home:
         return []                       # never left home; not a trip (RULE-28b)
+    on = EXTERNAL_SYSTEMS if external is None else frozenset(external)
 
     item_type = payload.get("item_type")
     targets: list[str] = []
@@ -52,9 +62,11 @@ def compute_targets(payload: dict, *, self_on_booking: bool,
     if creating_collection and (COLLECTION_EXCLUSIVE & set(targets)):
         targets.append("adventurelog.collection")
 
-    # Stable order, no duplicates.
+    # Stable order, no duplicates; only the connected systems (D-148).
     seen, out = set(), []
     for t in targets:
+        if t.split(".", 1)[0] not in on:
+            continue
         if t not in seen:
             seen.add(t)
             out.append(t)

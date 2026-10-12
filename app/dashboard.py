@@ -154,13 +154,29 @@ def _next_up(session: Session, trips: list[Trip], today: str, user=None,
             "in_progress": in_progress}
 
 
-def _greeting(user, now=None) -> str:
-    """"Good evening, ada" — the Home header's opening line. Server-local time; the
-    page is a daily glance, not a clock, so no client-side hour lookup."""
+def greeting_name(session: Session, user) -> str:
+    """Who Home greets (YONDER-218): the first name of the person's traveller
+    ("Daniel" from "Daniel Okafor"), not their username; the username only when
+    no traveller is linked."""
+    if user is None:
+        return ""
+    from app.models import TravelerIdentity
+    tid = getattr(user, "traveler_id", None)
+    t = session.get(TravelerIdentity, tid) if tid is not None else None
+    full = (t.display_name if t else "") or ""
+    return full.split()[0] if full.strip() else (getattr(user, "username", "") or "")
+
+
+def day_part(hour: int) -> str:
+    return "morning" if hour < 12 else "afternoon" if hour < 18 else "evening"
+
+
+def _greeting(name: str = "", now=None) -> str:
+    """"Good evening, Ada" — the Home header's opening line. The server clock is
+    only the first guess: it may run on UTC, so the page re-reads the hour from
+    the viewer's own clock (dashboard.html, YONDER-218)."""
     from datetime import datetime
-    hour = (now or datetime.now()).hour
-    part = "morning" if hour < 12 else "afternoon" if hour < 18 else "evening"
-    name = getattr(user, "username", "") or ""
+    part = day_part((now or datetime.now()).hour)
     return f"Good {part}, {name}" if name else f"Good {part}"
 
 
@@ -216,15 +232,23 @@ def _capture_activity(session: Session, today: str, user=None) -> dict:
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, session: Session = Depends(get_session)):
-    today = date.today().isoformat()
+    from app import clock
+    from app.trips import nextup
     user = scope.user_of(request)
+    # Everything here runs on the viewer's own clock (YONDER-219, D-187).
+    now = clock.now_for(session, user)
+    today = now.date().isoformat()
     trips = session.query(Trip).filter(scope.trip_filter(session, user)).all()
     upcoming_count = sum(1 for t in trips
                          if t.start_date and _trip_status(t, today) == "upcoming")
     return templates.TemplateResponse(request, "dashboard.html", {
         "next_trip": _next_trip(trips, today),
-        "next_up": _next_up(session, trips, today, user),
-        "greeting": _greeting(user),
+        "next_up": _next_up(session, trips, today, user, now=nextup.now_key(now)),
+        "greeting": _greeting(greet_name := greeting_name(session, user), now),
+        "greeting_name": greet_name,
+        # With a profile time zone the server's greeting is right; without one,
+        # the page corrects it from the browser's clock.
+        "greeting_tz_set": clock.zone_for(session, user) is not None,
         "queue": _queue_preview(session, user),
         "trip_cards": _trip_cards(session, trips, today, user=user),
         "counts": _pipeline_counts(session, user),

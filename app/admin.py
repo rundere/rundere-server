@@ -135,11 +135,14 @@ def mount_admin(app, engine) -> None:
         # `kind` is a closed vocabulary (self | guest, D-35) — force the choice.
         form_overrides = {"kind": wtforms.SelectField}
         form_args = {
-            "kind": {"choices": [("self", "self — the AirTrail account holder"),
+            "kind": {"choices": [("self", "self — the deployment owner"),
                                  ("guest", "guest")],
                      "default": "guest",
-                     "description": "Exactly one traveller is 'self' (the "
-                     "AirTrail account holder); everyone else is a guest."},
+                     # D-150/D-186: AirTrail is per person now, so 'self' only
+                     # marks whose captures an ownerless capture belongs to.
+                     "description": "Exactly one traveller is 'self': the deployment "
+                     "owner. Everyone else is a guest. AirTrail and AdventureLog "
+                     "are connected per person under Settings → Connections."},
         }
 
     class PackingCatalogItemAdmin(ModelView, model=models.PackingCatalogItem):

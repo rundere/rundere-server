@@ -1,42 +1,162 @@
 {% extends "base.html" %}
-{% block title %}Integrations{% endblock %}
+{% block title %}Connections{% endblock %}
 {% block content %}
+{# Per-user connections (SPEC-8 D-150–D-152, YONDER-192). A saved token is
+   write-only: this page shows "ends in …1234", never the token or the URL's
+   secrets (D-151). #}
 <div class="app">
   <div class="ops"><div class="ops-row">
-    <h1 class="pagetitle">Integrations</h1>
+    <h1 class="pagetitle">Connections</h1>
   </div></div>
 
   <div class="settings-hub">
     <section>
       <h2 class="settings-h">Run·dere</h2>
       <div class="settings-card" style="cursor:default">
-        <span class="settings-title">Trips, timeline, journal, packing and Discover
+        <span class="settings-title">Trips, timeline, journal, packing, costs and Discover
           <span class="pill ok">Built in · always on</span></span>
-        <span class="settings-desc">Everything you capture and plan is saved in Run·dere. You
-          don't need to connect anything else.</span>
+        <span class="settings-desc">Everything you capture and plan is saved in Run·dere,
+          including airport data. You don't need to connect anything else.</span>
       </div>
     </section>
 
     <section>
-      <h2 class="settings-h">Optional connections</h2>
-      <p class="why" style="margin:-4px 0 10px">Advanced: log bookings to other apps as well.
-        These are set up once for the whole server and only admins use them for now.
-        Per-user connections will be set up on this page.</p>
+      <h2 class="settings-h">Advanced: your own connections</h2>
+      <p class="why" style="margin:-4px 0 10px">Optional. Connect your own AirTrail or
+        AdventureLog and your captures are logged there too, with your own token —
+        only what your account there is allowed to do.
+        <a href="/settings/integrations/guide">How to connect →</a></p>
+      {% if key_problem %}
+      <div class="toast err show" role="alert">Connections are off on this server: {{ key_problem }}
+        {% if admin %}Set <code>TX_SECRETS_KEY</code> (32 random bytes, e.g.
+        <code>openssl rand -base64 32</code>) and keep a copy apart from the database.{% else %}
+        Ask an admin to turn them on.{% endif %}</div>
+      {% endif %}
+      {% if not signed_in %}
+      <p class="why">Sign-in is off on this server, so connections can't be set up here.
+        Captures use the deployment owner's connections.</p>
+      {% endif %}
+
       <div class="settings-grid">
-        {% for name, on, what in [
-          ("AdventureLog", have_adventurelog, "Collections and the trip sync page."),
-          ("AirTrail", have_airtrail, "Flights, and its airport and airline data.")] %}
-        <div class="settings-card" style="cursor:default">
-          <span class="settings-title">{{ name }}
-            {% if not can_use %}<span class="pill">Admin-managed</span>
-            {% elif on %}<span class="pill ok">Connected</span>
-            {% else %}<span class="pill">Not connected</span>{% endif %}</span>
-          <span class="settings-desc">{{ what }}
-            {% if not can_use %}Not used for your account.{% endif %}</span>
+        {% for card in cards %}{% set c = card.c %}
+        <div class="settings-card conn-card" style="cursor:default" id="conn-{{ card.kind }}">
+          <span class="settings-title">{{ card.label }}
+            {% if not c %}<span class="pill">Not connected</span>
+            {% elif not c.enabled %}<span class="pill">Off</span>
+            {% elif c.last_check_ok %}<span class="pill ok">Connected</span>
+            {% elif c.last_check_ok is sameas false %}<span class="pill warn">Failing</span>
+            {% else %}<span class="pill">Saved · not tested</span>{% endif %}</span>
+          <span class="settings-desc">{{ card.what }}</span>
+          {% if card.msg %}<div class="toast ok show" role="status">{{ card.msg }}</div>{% endif %}
+          {% if card.err %}<div class="toast err show" role="alert">{{ card.err }}</div>{% endif %}
+
+          {% if c %}
+          <dl class="conn-facts">
+            <dt>Server</dt><dd>{{ c.base_url }}</dd>
+            <dt>Token</dt><dd>saved{% if c.credential_hint %} · ends in …{{ c.credential_hint }}{% endif %}</dd>
+            {% if c.last_check_at %}<dt>Last test</dt><dd>{{ c.last_check_at.strftime('%Y-%m-%d %H:%M') }} UTC ·
+              {{ 'OK' if c.last_check_ok else (c.last_error or 'failed') }}</dd>{% endif %}
+            {% if c.remote_user_id %}<dt>{{ 'AirTrail user' if card.kind == 'airtrail' else 'Remote user' }}</dt><dd>{{ c.remote_user_id }}</dd>{% endif %}
+          </dl>
+          {% if signed_in %}
+          <div class="conn-actions">
+            <form method="post" action="/settings/integrations/{{ card.kind }}/test"><button class="btn btn-secondary bp-sm" type="submit">Test</button></form>
+            <form method="post" action="/settings/integrations/{{ card.kind }}/toggle"><button class="btn btn-ghost bp-sm" type="submit">{{ 'Turn off' if c.enabled else 'Turn on' }}</button></form>
+            <form method="post" action="/settings/integrations/{{ card.kind }}/delete"
+                  onsubmit="return confirm('Remove your {{ card.label }} connection? The saved token is deleted.')">
+              <button class="btn btn-danger bp-sm" type="submit">Remove</button></form>
+          </div>
+          {% endif %}
+          {% endif %}
+
+          {% if signed_in and not key_problem %}
+          <details class="conn-form" {% if not c or card.err %}open{% endif %}>
+            <summary>{{ 'Replace the token or change settings' if c else 'Connect ' ~ card.label }}</summary>
+            <form method="post" action="/settings/integrations/{{ card.kind }}" autocomplete="off">
+              <div class="field">
+                <label for="{{ card.kind }}-url">Server address</label>
+                <input id="{{ card.kind }}-url" class="input" name="base_url" required
+                       value="{{ card.form.base_url if card.form else (c.base_url if c else '') }}"
+                       placeholder="https://{{ card.kind }}.example.com">
+              </div>
+              <div class="field">
+                <label for="{{ card.kind }}-token">API token</label>
+                <input id="{{ card.kind }}-token" class="input" type="password" name="credential"
+                       autocomplete="new-password" {% if not c %}required{% endif %}
+                       placeholder="{{ 'leave blank to keep the saved token' if c else '' }}">
+              </div>
+              {% if card.kind == 'adventurelog' %}
+              <div class="field">
+                <label for="al-public">Browser address (optional)</label>
+                <input id="al-public" class="input" name="public_url"
+                       value="{{ card.form.public_url if card.form else ((c.public_url or '') if c else '') }}"
+                       placeholder="where you open AdventureLog, if different">
+              </div>
+              {% else %}
+              <div class="field">
+                <label for="at-user">AirTrail user id (optional — blank means the key's owner)</label>
+                <input id="at-user" class="input" name="remote_user_id"
+                       value="{{ card.form.remote_user_id if card.form else ((c.remote_user_id or '') if c else '') }}"
+                       placeholder="whose seat your flights are logged as">
+              </div>
+              {% endif %}
+              <p class="why">Saving tests the connection. Changing the address needs the token
+                again, so a saved token is never sent somewhere new.</p>
+              <button class="btn btn-primary" type="submit">Save</button>
+            </form>
+          </details>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
     </section>
+
+    {% if admin %}
+    <section>
+      <h2 class="settings-h">Administration</h2>
+      {% if deprecated %}
+      <div class="toast err show" role="alert">Deprecated server-wide settings are still set:
+        {{ deprecated | join(', ') }}. The owner's connections are created from them once;
+        after that, remove them from the stack (SPEC-8 D-150). Their hosts are trusted
+        only while they're set: add any LAN host (e.g. <code>airtrail:3000</code>) to
+        <code>TX_INTEGRATION_ALLOWED_HOSTS</code> first.</div>
+      {% endif %}
+      <p class="why">Who has which connection. Tokens are never shown, to admins either.
+        Hosts allowed on the local network:
+        {{ allowed_hosts | join(', ') if allowed_hosts else 'none (TX_INTEGRATION_ALLOWED_HOSTS)' }}.</p>
+      {% if overview %}
+      <table class="conn-table">
+        <thead><tr><th>User</th><th>Connection</th><th>Host</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for r in overview %}
+        <tr><td>{{ r.user }}</td><td>{{ r.kind }}</td><td>{{ r.host }}</td>
+          <td>{% if not r.enabled %}off{% elif r.ok %}ok{% elif r.ok is sameas false %}failing{% else %}not tested{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="why">Nobody has connected anything yet.</p>{% endif %}
+    </section>
+    {% endif %}
   </div>
 </div>
+<style>
+  .conn-card { gap: 8px; align-items: stretch; text-align: left; }
+  .conn-card .toast.show { margin: 0; overflow-wrap: anywhere; }
+  .conn-card, .conn-card label, .conn-card summary { text-align: left; }
+  .conn-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 4px 0;
+    font-size: 13px; overflow-wrap: anywhere; }
+  .conn-facts dt { color: var(--rd-text-muted); }
+  .conn-facts dd { margin: 0; }
+  .conn-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .conn-actions form { margin: 0; }
+  .conn-form summary { cursor: pointer; font-weight: 600; margin: 4px 0; }
+  .conn-form form { display: flex; flex-direction: column; gap: 10px; }
+  .conn-form .field { display: flex; flex-direction: column; gap: 4px; }
+  .conn-form .field label { font-size: 13px; font-weight: 600; }
+  .conn-form .input { width: 100%; box-sizing: border-box; }
+  .conn-form .btn { align-self: flex-start; }
+  .conn-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .conn-table th, .conn-table td { text-align: left; padding: 6px 8px;
+    border-bottom: 1px solid var(--rd-border-subtle); }
+</style>
 {% endblock %}

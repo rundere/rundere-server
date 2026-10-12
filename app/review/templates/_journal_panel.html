@@ -43,7 +43,7 @@
     <h2>{{ g.date }}</h2>
     <div style="display:flex;flex-direction:column;gap:8px">
       {% for e in g.entries %}
-      <div class="cap-card" style="padding:12px 14px">
+      <div class="cap-card" id="je-{{ e.id }}" style="padding:12px 14px">
         <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
           {% if e.time %}<span class="age">{{ e.time }}</span>{% endif %}
           {% if e.place %}<span class="age">{{ icon('pin', 14) }} {{ e.place }}</span>{% endif %}

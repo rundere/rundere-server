@@ -171,11 +171,13 @@ from app.places_web import router as places_router  # noqa: E402
 from app.review.home import router as home_router  # noqa: E402
 from app.review.routes import router as review_router  # noqa: E402
 from app.trips.routes import router as trips_router  # noqa: E402
+from app.trips.costs import router as costs_router  # noqa: E402
 
 app.include_router(review_router)
 app.include_router(home_router)
 app.include_router(capture_router)
 app.include_router(trips_router)
+app.include_router(costs_router)
 app.include_router(journal_router)
 app.include_router(places_router)
 # Root ("/") is the dashboard — registered last so it never shadows a router
@@ -276,6 +278,13 @@ def startup() -> None:
                                 "assign an owner): %s", drift)
             except Exception:               # pragma: no cover
                 log.exception("ownerless-row check failed")
+        try:
+            # SPEC-8 D-150: move the deprecated server-wide AirTrail/AdventureLog
+            # settings into the deployment owner's own connections, once.
+            from app.integrations import seed_from_env
+            seed_from_env(session)
+        except Exception:                   # pragma: no cover
+            log.exception("connection migration failed; integrations stay as they were")
         try:
             from planning.catalog import seed_catalog
             seed_catalog(session)

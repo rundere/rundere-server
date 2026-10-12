@@ -26,6 +26,9 @@ dependencies = [
     # Remote MCP server at /mcp (YONDER-108): MCP Streamable HTTP via the
     # official SDK's MCPServer (the 2.x name for FastMCP).
     "mcp>=2.2,<3",
+    # AES-256-GCM for per-user integration credentials at rest (SPEC-8 D-151).
+    # Already installed with mcp; declared because we use it directly.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +40,8 @@ py-modules = ["rules", "validation"]
 
 [tool.setuptools.package-data]
 discover = ["data/*.json"]
+# The bundled airport table (D-147) and its MIT notice.
+resolve = ["data/*.json.gz", "data/AIRPORTS-LICENSE"]
 planning = ["data/*.json"]
 
 [tool.pytest.ini_options]

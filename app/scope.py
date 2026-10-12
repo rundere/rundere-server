@@ -55,14 +55,6 @@ def is_admin(user) -> bool:
     return bool(getattr(user, "is_admin", False))
 
 
-def external_writes_allowed(user) -> bool:
-    """May this person write to (or read through) the server-wide AirTrail and
-    AdventureLog credentials? Those are one person's accounts (YONDER-191), so
-    until per-user connections land (YONDER-192) only admins use them. Auth off
-    (no user) is the single-operator deployment and stays allowed."""
-    return unrestricted(user) or is_admin(user)
-
-
 def sharing_owner_ids():
     """SQL subquery of the users who share their data with admins."""
     return select(User.id).where(User.share_with_admins.is_(True))

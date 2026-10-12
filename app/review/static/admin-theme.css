@@ -13,6 +13,13 @@
   --tblr-link-color:var(--accent);
   --tblr-font-sans-serif:var(--ui);
   --tblr-border-radius:var(--rd-radius-control);
+  /* Tabler's surface shades: unmapped, they stay light in the dark theme, so the
+     edit form's fieldset rendered white under light labels (YONDER-217). */
+  --tblr-bg-surface:var(--surface);
+  --tblr-bg-surface-secondary:var(--surface-sunk);
+  --tblr-bg-surface-tertiary:var(--surface-sunk);
+  --tblr-secondary-color:var(--ink-2);
+  --tblr-muted:var(--ink-2);
 }
 body,.page{background:var(--ground);color:var(--ink)}
 body{font-variant-numeric:tabular-nums}
@@ -54,3 +61,9 @@ a:focus-visible,button:focus-visible,.btn:focus-visible{
 .btn{border-radius:var(--rd-radius-control)}
 
 .text-muted{color:var(--ink-2)!important}
+
+/* Edit/create forms (YONDER-217): the fieldset, labels and help text on one theme. */
+.form-fieldset{background:var(--surface-sunk);border-color:var(--line);color:var(--ink)}
+.form-label,.col-form-label{color:var(--ink)}
+.form-fieldset small.text-muted,.form-hint{color:var(--ink-3)!important}
+.form-control::placeholder{color:var(--ink-3)}

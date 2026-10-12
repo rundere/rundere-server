@@ -1,7 +1,8 @@
 # SPEC (planning) — Rundere First-Party: optional integrations, per-user connections, storage posture
 
-**Status: PLANNING (2026-09-28).** Decisions D-146–D-155 are **proposed**. Nothing
-here is built yet. Tracked in Plane: YONDER-190 (first-party core + airport data),
+**Status: BUILDING (2026-10-12).** D-146–D-152 are **built** (4.8: YONDER-190,
+YONDER-192), with the choices in D-186; D-149's stopgap and D-156 are superseded by
+them. D-153–D-155 remain proposed. Tracked in Plane: YONDER-190 (first-party core + airport data),
 YONDER-191 (urgent: cross-user integration writes), YONDER-192 (per-user
 connections + secrets), YONDER-189 (journal photo references), YONDER-172
 (expenses), YONDER-179 (document capture). **Gate for making the repo public**
@@ -211,10 +212,8 @@ request forgery (SSRF) risk.
 
 ## Open questions
 
-- **Base URL scope:** per user (as proposed), or also a server-wide default for
-  "the home instance" to make the common case easier?
-- **Airport dataset:** OurAirports (public domain, no time zones, so derive them)
-  or mwgg/Airports (MIT, includes time zones)? And how often to refresh?
+- ~~**Base URL scope**~~ — per user, with an admin allowlist for LAN hosts (D-186).
+- ~~**Airport dataset**~~ — mwgg/Airports, refreshed each release (D-186).
 - **Thumbnails for photo references:** about 20 KB each. Leaning no for v1
   (YONDER-189).
 - **D-133 vs YONDER-188:** is pre-selecting a trip in the compose form consistent
@@ -224,28 +223,29 @@ request forgery (SSRF) risk.
 
 - **D-146 — Rundere is first-party; AirTrail and AdventureLog are optional
   extras.** The core works with neither configured; integrations live under
-  "Advanced". (proposed, 2026-09-28)
+  "Advanced". (built 4.8, 2026-10-12)
 - **D-147 — Rundere ships its own airport reference data.** A bundled dataset,
   with time zones derived offline where missing. AirTrail can only fill gaps, and
-  `airtrail_db_url` is retired. (proposed)
+  `airtrail_db_url` is retired. (built 4.8; see D-186 for how AirTrail works
+  without it)
 - **D-148 — `yonder.activity` is the primary write target.** External targets
   exist only for capture owners with an enabled connection. Trip matching runs
-  against Rundere trips first. (proposed)
+  against Rundere trips first. (built 4.8)
 - **D-149 — External writes are owner-scoped.** Until per-user connections
   exist, only the credential owner's captures produce AirTrail or AdventureLog
-  targets. (proposed, urgent)
+  targets. (shipped as D-156; superseded by D-150 in 4.8)
 - **D-150 — Integration connections are per user.** Each user supplies their own
   base URL and token, with no admin tokens. "Self" for RULE-10 is the capturing
   user's own traveller. `TX_*` integration env vars are deprecated and used only
-  to bootstrap the owner's connections. (proposed)
+  to bootstrap the owner's connections. (built 4.8)
 - **D-151 — Credentials are encrypted at rest with a dedicated, rotatable key.**
   AES-256-GCM with row-bound associated data and a versioned keyring.
   Credentials are write-only and never logged. With no key there are no
-  connections. (proposed)
+  connections. (built 4.8)
 - **D-152 — User-supplied URLs pass an SSRF policy.** `https` only; private,
   loopback and metadata ranges are blocked and re-checked at connect time; no
   redirects to blocked addresses; timeouts and size caps; an admin allowlist for
-  LAN hosts. (proposed)
+  LAN hosts. (built 4.8)
 - **D-153 — Rundere stores documents, per user, and never photos, audio or
   receipt images.** A new owner-scoped `documents` store. (proposed)
 - **D-154 — Journal photos are references resolved by time and place, verified
@@ -265,7 +265,10 @@ request forgery (SSRF) risk.
   as settled for the item's Logged state, so after 192 an old item needs a
   reprocess to push externally. Still open: the single-capture re-resolve
   (`_reresolve`, per-item edit path) and the Discover airport lookups read the
-  owner's accounts without this gate. (proposed)
+  owner's accounts without this gate. (superseded 2026-10-12 by D-150: every
+  path — batch and single re-resolve, commit, the trip page's AdventureLog
+  routes — now uses the capture owner's or acting person's own connection, and
+  Discover's airports come from Run·dere's table, D-147.)
 - **D-157 — Discovery does not run on a past trip.** A trip is past when its end
   date (its start date when it has no end) is before today; undated trips are
   still planning. `discover.runner.trip_has_ended` is the one check; the web full
@@ -300,3 +303,58 @@ request forgery (SSRF) risk.
   at the same minute an end comes before a start. Notes are never next up. Only the
   viewer's own activities count (traveller tags, `app/trips/who.py`).
   `app/trips/nextup.py` is the one implementation. Owner-reported bug, YONDER-177. (proposed)
+- **D-186 — How per-user connections are built (YONDER-190/192; accepted by the
+  owner 2026-10-12).**
+  - *Airports:* the bundled table is mwgg/Airports (MIT, with time zones;
+    `resolve/data/airports.json.gz`, rebuilt by `scripts/build_airports.py` each
+    release, any missing zone derived with timezonefinder). It answers every
+    lookup; an AirTrail connection only adds flown airports the table lacks.
+  - *AirTrail is API-only; `TX_AIRTRAIL_DB_URL` is gone.* Run·dere never reads
+    AirTrail's database, and there is no sidecar. Requires **AirTrail 3.13+**:
+    flights are saved with airport **codes** (AirTrail resolves them against its
+    own OurAirports-based table), the airline by its ICAO code — looked up
+    through `GET /api/v1/airlines?query=<IATA>` when the person hasn't flown it —
+    and the seat as `<USER_ID>`, which AirTrail fills in with the key's owner.
+    The key needs `flight.read.own`, `flight.create.own`, `flight.update.own`,
+    `flight.delete.own`, `reference_data.read` and `profile.read`; the
+    connection test checks the airline lookup and says which scope or version
+    is missing. A flight's booking reference goes to AirTrail only as the
+    6-character airline record locator (a GDS/Sabre PNR, letters and digits);
+    any other reference stays on Run·dere's record, because AirTrail rejects the
+    whole flight over a custom field past its limit (seen live, 2026-10-12).
+    If AirTrail ever drops this, the fallback is a sidecar in
+    AirTrail's stack that Run·dere connects to — never a database URL in Run·dere.
+  - *Base URL per user; local hosts only by server config.* Everything is public
+    `https` unless an admin lists the host in `TX_INTEGRATION_ALLOWED_HOSTS`
+    (env, not a table). The deprecated server-wide URLs' hosts stay trusted
+    while their credential is still set, for the one-time migration.
+  - *A token is never sent somewhere new:* changing a connection's URL requires
+    re-entering its token, and redirects are refused (urllib would carry the
+    credential header). Only Run·dere itself (the web session or the app's login
+    token) can add, change or remove a connection — connected apps, AI agents
+    and API tokens can't (as YONDER-101). The Connections tab has a "How to
+    connect" page with the steps and scopes for each.
+  - *Whose connection:* a capture uses its owner's. An open capture and auth-off
+    mode use the deployment owner's (the user linked to the `self` traveller,
+    else the first admin). Only a deployment with no users at all still uses the
+    deprecated variables directly. A deactivated user's connections aren't used.
+    The `TX_AIRTRAIL_*` / `TX_ADVENTURELOG_*` variables are no longer documented;
+    the code reads them only to seed the owner's connections once on upgrade.
+  - *RULE-10's "self"* is the capture owner's own traveller (`me` in
+    `resolve_travelers`); an open capture falls back to the `self` kind.
+  - *Not retroactive:* targets are decided when a capture resolves, so only
+    captures processed after someone connects go to that system. Writes skipped
+    under D-156 ("admins only") are retried by a later commit once the owner
+    connects. (built 4.8)
+- **D-187 — Each person's "now" is their own time zone (YONDER-219; owner,
+  2026-10-12).** The Travel profile has a time zone (IANA, e.g.
+  `Europe/London`) on the person's traveller, set once and independent of home
+  profiles, which change over time. Everything date-relative that person sees is
+  worked out against their own wall-clock now in that zone: Home (greeting,
+  "in N days", Next up, trip cards), the trips list's upcoming/past, the
+  Journal's default day, and `/api/v1/dashboard` when the app doesn't send its
+  own `now` (the app's device clock still wins, D-172). Two people on one server
+  each get their own today. With no zone set, the server clock is used; the
+  page offers the browser's detected zone in one click. `app/clock.py` is the
+  one implementation. Discovery runs, the PDF and capture stamps keep the
+  server clock. (built 4.8)

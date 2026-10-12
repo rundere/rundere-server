@@ -8,10 +8,10 @@
       <button type="button" class="act"
               hx-post="/review/home/lookup-airport" hx-include="#hp-iata"
               hx-target="#lookup-result" hx-swap="innerHTML">
-        {% if have_airtrail %}Verify against AirTrail{% else %}Look up{% endif %}</button>
+        Look up</button>
     </div>
     <p class="hint quiet">Required for a home airport. Verifying pulls the exact
-      coordinates{% if have_airtrail %} from AirTrail{% endif %} — no need to
+      coordinates — no need to
       type them.</p>
   </div>
 {% else %}

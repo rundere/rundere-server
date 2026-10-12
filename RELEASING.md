@@ -56,6 +56,17 @@ publishes the image for a given version — it's for rebuilding/backfilling a
 tag that predates the workflow, and deliberately does **not** touch the
 GitHub Release or README/docs.
 
+## Refreshing bundled data
+
+Before a minor release, refresh Run·dere's own airport table (SPEC-8 D-147,
+D-186) in the release PR — new airports and renamed codes land there:
+
+```bash
+uv run python scripts/build_airports.py    # rewrites resolve/data/airports.json.gz
+```
+
+Commit it only if the diff looks sane (the script prints the airport count).
+
 ## Syncing to Plane
 
 Plane (`plane.home.example`) is only reachable from inside the homelab

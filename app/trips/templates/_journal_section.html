@@ -1,0 +1,41 @@
+{# Your journal entries linked to this trip (YONDER-215). Own-only (D-134):
+   a shared trip never shows anyone else's journal. Written and edited on the
+   Journal page; this is the trip's view of them. #}
+<section class="yn-sec" id="sec-journal">
+<div class="bp-timeline-head">
+  <div class="yn-sec-title">
+    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Journal">▾</button>
+    <h2 class="bp-h2">Journal</h2>
+  </div>
+  <div class="bp-head-actions">
+    <a class="btn btn-secondary" href="/journal">Write an entry</a>
+  </div>
+</div>
+<div class="yn-sec-body">
+{% if not journal %}
+<p class="bp-empty">No journal entries on this trip yet. Link one from the
+  <a href="/journal">Journal</a> page — only you see your entries here.</p>
+{% else %}
+{% for g in journal %}
+<section class="bp-group">
+  <div class="bp-group-label">{{ g.display }}</div>
+  <div class="card blueprint bp-daycard">
+    {% for e in g.entries %}
+    <div class="yn-actrow yn-filterable yn-journal-row">
+      <div class="bp-act-main">
+        <div class="yn-journal-body">{{ e.body }}</div>
+        <div class="bp-act-sub">
+          {% if e.time %}{{ e.time }}{% endif %}{% if e.place %} · {{ e.place }}{% endif %}
+          {% for t in e.tags %} · #{{ t }}{% endfor %}
+        </div>
+      </div>
+      <a class="btn btn-ghost bp-sm" href="/journal#je-{{ e.id }}">Open</a>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+<p class="bp-trip-notes">Only you see your journal entries, even on a shared trip.</p>
+{% endif %}
+</div>
+</section>

@@ -25,6 +25,7 @@ executes them (D-14/D-22). Principles this module encodes:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -144,17 +145,26 @@ def committable(item: TravelItem) -> bool:
             and not _fully_committed(item))
 
 
-# Marker on a result for an AirTrail/AdventureLog target a non-admin's commit
-# did not attempt (YONDER-191, D-156). It counts as settled for the item's
-# Logged state, but is NOT a real write, so `_done_targets` ignores it.
-EXTERNAL_SKIP = "no external connection (admins only until per-user connections)"
+# Marker on a result for an AirTrail/AdventureLog target the commit did not
+# attempt because the capture's owner has no connection of that kind (D-150;
+# before YONDER-192: because they weren't an admin, D-156 — that older text is
+# still on stored results). It counts as settled for the item's Logged state,
+# but is NOT a real write, so `_done_targets` ignores it and a later commit,
+# once the owner connects, can still write it.
+EXTERNAL_SKIP = "no AirTrail/AdventureLog connection"
+_EXTERNAL_SKIPS = {EXTERNAL_SKIP,
+                   "no external connection (admins only until per-user connections)"}
+
+
+def is_external_skip(row: dict) -> bool:
+    return row.get("skipped") in _EXTERNAL_SKIPS
 
 
 def _done_targets(item: TravelItem) -> set[str]:
     """Targets a prior (non-dry) run already wrote, so a re-run skips them."""
     done = set()
     for r in ((item.commit or {}).get("results") or []):
-        if r.get("ok") and not r.get("dry_run") and r.get("skipped") != EXTERNAL_SKIP:
+        if r.get("ok") and not r.get("dry_run") and not is_external_skip(r):
             done.add(r.get("target"))
     return done
 
@@ -200,28 +210,46 @@ def _flight_number_combined(payload: dict) -> str:
     return f"{iata}{f.get('flight_number') or ''}"
 
 
+_PNR = re.compile(r"[A-Z0-9]{6}")
+
+
+def airline_record_locator(ref) -> str | None:
+    """A flight's booking reference as AirTrail takes it: the 6-character
+    airline record locator (the PNR a GDS such as Sabre issues), letters and
+    digits. Anything else — a booking site's longer reference — isn't a PNR:
+    it stays on Run·dere's own record and isn't sent, because AirTrail rejects
+    the whole flight over a custom field that breaks its limit (owner,
+    2026-10-12; seen live: "Booking Reference must be at most 6 characters")."""
+    v = re.sub(r"[\s-]", "", str(ref or "")).upper()
+    return v if _PNR.fullmatch(v) else None
+
+
 def build_airtrail_flight(payload: dict, *, airports: dict, airlines: dict,
                           self_uid: str | None) -> tuple[dict | None, str | None]:
     """(body, error). error is a human sentence when the flight cannot be
-    written safely — a missing airport id, airline id or self user — and the
-    committer records it rather than sending a half-resolved flight."""
+    written safely — an airport or airline whose code we can't name — and the
+    committer records it rather than sending a half-resolved flight.
+
+    Everything goes as CODES (D-186): AirTrail resolves airports by ICAO/IATA
+    against its own table, so no AirTrail database id is needed. With no
+    `self_uid`, the seat is `<USER_ID>`, which AirTrail (3.13) fills in with
+    the token's own user — the connection owner."""
     f = payload.get("flight") or {}
     dep = (f.get("departure") or {}).get("place") or {}
     arr = (f.get("arrival") or {}).get("place") or {}
     dep_iata = (dep.get("iata") or "").upper()
     arr_iata = (arr.get("iata") or "").upper()
     frm, to = airports.get(dep_iata), airports.get(arr_iata)
-    if not frm or frm.id is None:
-        return None, f"AirTrail has no airport on record for {dep_iata or '?'}"
-    if not to or to.id is None:
-        return None, f"AirTrail has no airport on record for {arr_iata or '?'}"
+    if not frm or not (frm.icao or frm.iata):
+        return None, f"no airport is known for {dep_iata or '?'}"
+    if not to or not (to.icao or to.iata):
+        return None, f"no airport is known for {arr_iata or '?'}"
     mc = f.get("marketing_carrier") or {}
     airline = airlines.get((mc.get("iata") or "").upper())
-    if not airline or airline.id is None:
-        return None, f"AirTrail has no airline on record for {mc.get('iata') or '?'}"
-    if not self_uid:
-        return None, ("No 'self' traveller is configured (Admin → Travellers), "
-                      "so AirTrail has no user to log this seat against")
+    if not airline or not (airline.icao or airline.iata):
+        return None, (f"AirTrail has no airline for {mc.get('iata') or '?'} "
+                      "(or the token lacks reference_data.read)")
+    self_uid = self_uid or "<USER_ID>"
 
     dep_dt = f.get("departure", {}).get("time")
     arr_dt = f.get("arrival", {}).get("time")
@@ -258,8 +286,9 @@ def build_airtrail_flight(payload: dict, *, airports: dict, airlines: dict,
     # e-ticket number there; both are extracted, so pass them through — a ticket
     # number in particular has no first-class AirTrail column.
     custom = {}
-    if payload.get("booking_reference"):
-        custom["booking_reference"] = payload["booking_reference"]
+    pnr = airline_record_locator(payload.get("booking_reference"))
+    if pnr:
+        custom["booking_reference"] = pnr
     ticket = next((t for t in (f.get("ticket_numbers") or []) if t), None)
     if ticket:
         custom["ticket_number"] = ticket
@@ -630,14 +659,14 @@ def _mark_cancelled(body: dict) -> dict:
 
 
 class _Resolver:
-    """Resolve an airport/airline by code: prefer AirTrail's flown-flight
-    reference (already loaded, exact ids), then a live DB lookup for anything
-    never flown before (D-50). A dict-like `.get` so build_airtrail_flight is
-    unchanged; caches misses so a never-flown code isn't queried twice."""
-    def __init__(self, flown: dict, db, kind: str):
+    """Resolve an airport/airline by code: the AirTrail flown-flight reference
+    first (already loaded), then `fallback(code)` — Run·dere's own airport table
+    for airports (D-147), AirTrail's airline search API for airlines (D-186).
+    A dict-like `.get` so build_airtrail_flight is unchanged; caches misses so
+    a code is never looked up twice."""
+    def __init__(self, flown: dict, fallback=None):
         self._flown = flown or {}
-        self._db = db
-        self._kind = kind                       # "airport" | "airline"
+        self._fallback = fallback
         self._cache: dict = {}
 
     def get(self, code):
@@ -646,39 +675,42 @@ class _Resolver:
             return None
         if code in self._flown:
             return self._flown[code]
-        if code in self._cache:
-            return self._cache[code]
-        val = getattr(self._db, self._kind)(code) if self._db else None
-        self._cache[code] = val
-        return val
-
-
-def _airtrail_db():
-    from app.config import settings
-    url = getattr(settings, "airtrail_db_url", "") or ""
-    if not url:
-        return None
-    try:
-        from adapters.targets.airtrail_db import AirTrailDB
-        return AirTrailDB(url)
-    except Exception:                           # unavailable -> flown reference only
-        log.warning("AirTrail DB configured but could not be initialised")
-        return None
+        if code not in self._cache:
+            try:
+                self._cache[code] = self._fallback(code) if self._fallback else None
+            except Exception as ex:             # a lookup failure is a miss, not a crash
+                log.warning("reference lookup for %s failed: %s", code, ex)
+                self._cache[code] = None
+        return self._cache[code]
 
 
 def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 identities=None, airports: dict | None = None,
                 airlines: dict | None = None, dry_run: bool = True,
-                external: bool = True) -> dict:
-    """Execute (or, dry, plan) every target for one item. `external=False`
-    (a non-admin, YONDER-191) writes only the first-party Run·dere target. Returns a result
-    envelope; also written to `item.commit` and reflected in `item.status`."""
+                external: bool | frozenset[str] = True,
+                self_uid: str | None = None) -> dict:
+    """Execute (or, dry, plan) every target for one item. Returns a result
+    envelope; also written to `item.commit` and reflected in `item.status`.
+
+    `external` is which external systems may be written: True = whichever
+    client is passed, False = none, or a set of "airtrail"/"adventurelog" — the
+    capture owner's connections (D-150). A target outside it is skipped, never
+    attempted; the first-party Run·dere target always runs. `self_uid` is the
+    AirTrail user a flight's seat belongs to (the owner's connection); None
+    falls back to the `self` traveller's."""
     payload = (item.extraction or {}).get("payload") or {}
     resolution = item.resolution or {}
     targets = [t for t in _ORDER if t in set(resolution.get("targets") or [])]
     airports = airports or {}
     airlines = airlines or {}
-    self_uid = self_user_id(identities)
+    self_uid = self_uid or self_user_id(identities)
+    if external is True:
+        systems = frozenset(k for k, c in (("airtrail", airtrail),
+                                           ("adventurelog", adventurelog)) if c is not None)
+    elif external is False:
+        systems = frozenset()
+    else:
+        systems = frozenset(external)
     # Always honour prior real writes — even in a dry run — so the PREVIEW shows
     # an already-written target as skipped rather than promising to create it
     # again (which execution's idempotency would then refuse).
@@ -774,7 +806,7 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
             results.append({"target": target, "operation": "skip",
                             "ok": True, "skipped": "already committed"})
             continue
-        if not external and target != "yonder.activity":
+        if target != "yonder.activity" and target.split(".", 1)[0] not in systems:
             results.append({"target": target, "operation": "skip",
                             "ok": True, "skipped": EXTERNAL_SKIP})
             continue
@@ -1307,9 +1339,10 @@ def _apply_status(item: TravelItem, results: list[dict]) -> None:
 
 # ---------------------------------------------------------------- batch
 
-def commit_pending(session: Session, adventurelog, airtrail, *,
+def commit_pending(session: Session, adventurelog=None, airtrail=None, *,
                    identities=None, dry_run: bool = True, limit: int = 0,
-                   progress=None, item_filter=None, external: bool = True) -> dict:
+                   progress=None, item_filter=None, external: bool = True,
+                   clients_for=None) -> dict:
     """Commit every approved, resolved item. Sequential (one flight at a time,
     D-06); per-item commit so one failure never blocks the rest.
 
@@ -1318,20 +1351,37 @@ def commit_pending(session: Session, adventurelog, airtrail, *,
     button passes the pressing user's, so nobody logs someone else's approved
     items (YONDER-105). None = every item (the operator CLI).
 
-    `external=False` (a non-admin, YONDER-191/D-156) commits to Run·dere only:
-    AirTrail/AdventureLog targets are skipped, never attempted."""
-    flown_airports = flown_airlines = {}
-    if airtrail is not None:
-        try:
-            flights = airtrail.list_flights()
-            flown_airports = airtrail.airport_reference()
-            flown_airlines = airtrail.airline_reference(flights)
-        except Exception as ex:
-            log.warning("AirTrail reference load failed: %s", ex)
-    # Flown reference first, AirTrail's own DB for never-flown airports (D-50).
-    db = _airtrail_db() if external else None
-    airports = _Resolver(flown_airports, db, "airport")
-    airlines = _Resolver(flown_airlines, db, "airline")
+    `clients_for(owner_id) -> integrations.Clients` gives each capture its
+    OWNER's AirTrail/AdventureLog clients (D-150): an admin logging a shared
+    user's capture writes to that user's accounts, never their own, and an
+    owner with no connection gets Run·dere only. Without it, the clients passed
+    here are used for every item (the operator CLI and tests); `external=False`
+    then skips them all."""
+    from app.integrations import Clients
+    if clients_for is None:
+        fixed = Clients(None, adventurelog=adventurelog if external else None,
+                        airtrail=airtrail if external else None)
+        clients_for = lambda _owner: fixed      # noqa: E731
+    refs: dict[int, tuple] = {}                 # per Clients: (airports, airlines)
+
+    def references(c) -> tuple:
+        if id(c) not in refs:
+            flown_airports = flown_airlines = {}
+            if c.airtrail is not None:
+                try:
+                    flights = c.airtrail.list_flights()
+                    flown_airports = c.airtrail.airport_reference()
+                    flown_airlines = c.airtrail.airline_reference(flights)
+                except Exception as ex:
+                    log.warning("AirTrail reference load failed: %s", ex)
+            # Flown reference first; then Run·dere's own airport table and
+            # AirTrail's airline search, over the API with this person's token —
+            # no AirTrail database (D-186).
+            from resolve import airports as airports_mod
+            search = getattr(c.airtrail, "search_airline", None)
+            refs[id(c)] = (_Resolver(flown_airports, airports_mod.lookup),
+                           _Resolver(flown_airlines, search))
+        return refs[id(c)]
 
     q = session.query(TravelItem)
     if item_filter is not None:
@@ -1346,12 +1396,15 @@ def commit_pending(session: Session, adventurelog, airtrail, *,
     for idx, item in enumerate(items):
         if progress:
             progress("logging", idx, total, str(item.canonical_key or item.id)[:70])
-        env = commit_item(session, item, adventurelog, airtrail,
+        c = clients_for(item.owner_id)
+        airports, airlines = references(c)
+        env = commit_item(session, item, c.adventurelog, c.airtrail,
                           identities=identities, airports=airports,
-                          airlines=airlines, dry_run=dry_run, external=external)
+                          airlines=airlines, dry_run=dry_run, external=c.external,
+                          self_uid=c.airtrail_user_id)
         summary["items"] += 1
         for r in env["results"]:
-            if r.get("skipped") == EXTERNAL_SKIP:
+            if is_external_skip(r):
                 summary["external_skipped"] = summary.get("external_skipped", 0) + 1
             elif r.get("skipped"):
                 summary["skipped"] += 1

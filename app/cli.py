@@ -20,9 +20,11 @@
     python -m app.cli process [--no-llm] [--limit N]   # extract received batches
     python -m app.cli import-home <file.json>          # bootstrap home_profiles;
                                                       # manage them in /admin after
-    python -m app.cli resolve [--no-adventurelog] [--limit N] [--redo]
+    python -m app.cli resolve [--no-adventurelog] [--no-airtrail] [--limit N] [--redo]
                                                       # keys, dedup, home,
-                                                      # collections, rules.
+                                                      # collections, rules, each
+                                                      # capture with its owner's
+                                                      # connections (D-150).
                                                       # --redo re-resolves items
                                                       # a human hasn't acted on
     python -m app.cli locate-activities [--trip ID] [--redo]
@@ -38,7 +40,12 @@
                                                       # AirTrail + AdventureLog.
                                                       # DRY-RUN by default; shows
                                                       # exact bodies. --execute
-                                                      # performs the real writes.
+                                                      # performs the real writes,
+                                                      # to each owner's connections.
+    python -m app.cli connections                      # who has which AirTrail /
+                                                      # AdventureLog connection (no secrets)
+    python -m app.cli secrets-rotate                   # re-encrypt every stored credential
+                                                      # with the newest TX_SECRETS_KEYS key (D-151)
 """
 from __future__ import annotations
 
@@ -317,32 +324,21 @@ def main(argv: list[str]) -> int:
                   + (" (llm disabled)" if llm is None else f" (model={llm.model})"))
         elif cmd == "resolve":
             from app.config import settings
+            from app.integrations import ClientCache
             from app.resolving import resolve_pending
-            client = None
-            if "--no-adventurelog" not in args:
-                from adapters.targets.adventurelog import AdventureLogClient
-                if not settings.adventurelog_api_key:
-                    print("TX_ADVENTURELOG_API_KEY is not set — either set it or "
-                          "pass --no-adventurelog (every item will then defer, "
-                          "since no existing collection can be matched)")
-                    return 1
-                client = AdventureLogClient(settings.adventurelog_url,
-                                            settings.adventurelog_api_key)
-            # AirTrail supplies airport reference data (country/coords/tz);
-            # Photon locates everything else (hotels, venues). Both optional —
-            # without them, places stay unlocated and more items go to review.
-            airtrail = None
-            if settings.airtrail_token and "--no-airtrail" not in args:
-                from adapters.targets.airtrail import AirTrailClient
-                airtrail = AirTrailClient(settings.airtrail_url, settings.airtrail_token)
+            # Each capture resolves with its owner's connections (D-150); the
+            # flags leave a system out for everyone. Photon locates hotels and
+            # venues; airports come from Run·dere's own table (D-147).
+            drop = frozenset(k for k, flag in (("adventurelog", "--no-adventurelog"),
+                                               ("airtrail", "--no-airtrail")) if flag in args)
             geocoder = None
             if "--no-geocode" not in args:
                 from resolve.geocode import PhotonGeocoder
                 geocoder = PhotonGeocoder(settings.photon_url)
             limit = int(args[args.index("--limit") + 1]) if "--limit" in args else 0
-            summary = resolve_pending(session, client, limit=limit,
-                                      airtrail=airtrail, geocoder=geocoder,
-                                      redo="--redo" in args)
+            summary = resolve_pending(session, limit=limit, geocoder=geocoder,
+                                      redo="--redo" in args,
+                                      clients_for=ClientCache(session, drop))
             print("resolve: " + (", ".join(f"{k}={v}" for k, v in sorted(summary.items()))
                                  or "nothing pending"))
         elif cmd == "locate-activities":
@@ -352,21 +348,13 @@ def main(argv: list[str]) -> int:
             print("locate-activities: " + ", ".join(f"{k}={v}" for k, v in counts.items()))
         elif cmd == "commit":
             from app.committing import commit_pending
-            from app.config import settings
+            from app.integrations import ClientCache
             from app.resolving import load_identities
             execute = "--execute" in args
-            adventurelog = airtrail = None
-            if settings.adventurelog_api_key:
-                from adapters.targets.adventurelog import AdventureLogClient
-                adventurelog = AdventureLogClient(settings.adventurelog_url,
-                                                  settings.adventurelog_api_key)
-            if settings.airtrail_token:
-                from adapters.targets.airtrail import AirTrailClient
-                airtrail = AirTrailClient(settings.airtrail_url, settings.airtrail_token)
             limit = int(args[args.index("--limit") + 1]) if "--limit" in args else 0
-            summary = commit_pending(session, adventurelog, airtrail,
-                                     identities=load_identities(session),
-                                     dry_run=not execute, limit=limit)
+            summary = commit_pending(session, identities=load_identities(session),
+                                     dry_run=not execute, limit=limit,
+                                     clients_for=ClientCache(session))
             mode = "EXECUTED" if execute else \
                 "DRY-RUN — no writes; pass --execute to commit"
             print(f"commit [{mode}]: items={summary['items']} "
@@ -381,6 +369,27 @@ def main(argv: list[str]) -> int:
                     if r.get("error"):
                         line += f" — {r['error']}"
                     print(line)
+        elif cmd == "connections":
+            from app import integrations
+            rows = integrations.admin_overview(session)
+            for r in rows:
+                state = ("off" if not r["enabled"] else
+                         {True: "ok", False: "failing", None: "untested"}[r["ok"]])
+                print(f"  {r['user']:24} {r['kind']:13} {r['host']:32} {state}")
+            if not rows:
+                print("  no connections")
+            for name in integrations.deprecated_env():
+                print(f"  deprecated: {name} is still set (SPEC-8 D-150)")
+        elif cmd == "secrets-rotate":
+            from app import integrations, secretbox
+            try:
+                n = integrations.rotate(session)
+            except (integrations.ConnectionProblem, secretbox.SecretError) as err:
+                print(f"secrets-rotate: {err}")
+                return 1
+            session.commit()
+            print(f"secrets-rotate: re-encrypted {n} credential(s) with key "
+                  f"{secretbox.keyring()[0][0]}")
         elif cmd == "purge-orphans":
             from app.trips.purge import purge_orphans
             execute = "--execute" in args

@@ -33,6 +33,7 @@ Bad input raises ValueError (the API maps it to 400).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
@@ -133,6 +134,73 @@ def discover_rate(session: Session, trip_id: str, user_id: str | None,
     return None
 
 
+# --------------------------------------------------------------------------- currency picker
+def suggested_currencies(session: Session, trip: Trip, user) -> list[str]:
+    """The currencies an expense on this trip most likely uses, best first
+    (YONDER-213): the destination's — every currency the caller's Discover
+    findings name for THIS trip, so a multi-country trip lists them all — then
+    the caller's own base currency, the trip's balance currency, and whatever
+    the caller's visible expenses on THIS trip already use. Nothing comes from
+    other trips: Morocco last year never puts MAD on the Brazil trip. One ordering for web, MCP and
+    the app; a picker lists every other ISO-4217 code after these."""
+    out: list[str] = []
+
+    def add(code) -> None:
+        c = (code or "").strip().upper()
+        if len(c) == 3 and c.isalpha() and c not in out:
+            out.append(c)
+    q = session.query(DiscoveryFinding).filter(DiscoveryFinding.trip_id == trip.id,
+                                               DiscoveryFinding.topic == "currency")
+    uid = getattr(user, "id", None)
+    if uid is not None:
+        q = q.filter(DiscoveryFinding.user_id == uid)
+    for f in q.order_by(DiscoveryFinding.place_key).all():
+        add((f.data or {}).get("currency"))
+    add(own_currency(session, user))
+    add(trip.expense_currency)
+    for e in visible_expenses(session, trip, user)[0]:
+        add(e.currency)
+    return out
+
+
+def own_currency(session: Session, user) -> str | None:
+    """The caller's base currency from their travel profile."""
+    tid = getattr(user, "traveler_id", None)
+    t = session.get(TravelerIdentity, tid) if tid is not None else None
+    return (t.base_currency or None) if t else None
+
+
+def default_currency(session: Session, trip: Trip, user) -> str | None:
+    """What a new expense starts in (YONDER-213): the person's own currency,
+    else the trip's balance currency, else the destination's."""
+    return (own_currency(session, user) or trip.expense_currency
+            or next(iter(suggested_currencies(session, trip, user)), None))
+
+
+@lru_cache(maxsize=1)
+def currency_options() -> tuple[tuple[str, str], ...]:
+    """(code, "EUR · Euro") for every currency some country uses today, by code —
+    Babel's full list also carries retired ones (pesetas, francs) nobody spends."""
+    from datetime import date
+
+    from babel import Locale
+    from babel.numbers import get_currency_name, get_territory_currencies
+    current: set[str] = set()
+    for terr in Locale.parse("en").territories:
+        if len(terr) == 2 and terr.isalpha():
+            try:
+                current.update(get_territory_currencies(terr, date.today(), tender=True))
+            except Exception:
+                continue
+    out = []
+    for c in sorted(current):
+        try:
+            out.append((c, f"{c} · {get_currency_name(c, locale='en')}"))
+        except Exception:
+            out.append((c, c))
+    return tuple(out)
+
+
 # --------------------------------------------------------------------------- shares
 def _roster(session: Session, trip_id: str) -> list[int]:
     return sorted(who.roster_ids(session, trip_id))
@@ -202,6 +270,36 @@ class ExpenseInput:
     budget_item_id: str | None = None      # D-181: the planned item this fulfils
     notes: str | None = None
     source: str = "api"
+    # Where it was logged (YONDER-212): the iOS app sends it, nothing else does.
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    place_accuracy_m: float | None = None
+
+
+PLACE_FIELDS = ("place_lat", "place_lon", "place_label", "place_accuracy_m")
+
+
+def _check_place(lat, lon, label, accuracy) -> dict:
+    """The location columns from the caller's values: both coordinates or
+    neither, in range; a label and accuracy only travel with coordinates."""
+    if lat is None and lon is None:
+        if label or accuracy is not None:
+            raise ValueError("a place needs place_lat and place_lon")
+        return dict.fromkeys(PLACE_FIELDS)
+    if lat is None or lon is None:
+        raise ValueError("send both place_lat and place_lon, or neither")
+    try:
+        lat, lon = float(lat), float(lon)
+        acc = None if accuracy is None else float(accuracy)
+    except (TypeError, ValueError):
+        raise ValueError("place_lat, place_lon and place_accuracy_m are numbers") from None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError("place_lat/place_lon are out of range")
+    if acc is not None and not 0 <= acc < 1e7:
+        raise ValueError("place_accuracy_m must be 0 or more")
+    return {"place_lat": lat, "place_lon": lon,
+            "place_label": (label or "").strip()[:256] or None, "place_accuracy_m": acc}
 
 
 def _check_budget_item(session: Session, trip_id: str, item_id: str | None) -> str | None:
@@ -278,7 +376,9 @@ def create(session: Session, user, trip: Trip, data: ExpenseInput,
                     category=category,
                     activity_id=_check_activity(session, trip.id, data.activity_id),
                     budget_item_id=_check_budget_item(session, trip.id, data.budget_item_id),
-                    notes=(data.notes or None), source=data.source or "api")
+                    notes=(data.notes or None), source=data.source or "api",
+                    **_check_place(data.place_lat, data.place_lon, data.place_label,
+                                   data.place_accuracy_m))
     _apply_rate(session, trip, e, uid, data.rate)
     session.add(e)
     session.flush()
@@ -319,6 +419,12 @@ def update(session: Session, user, trip: Trip, e: TripExpense, changes: dict) ->
         e.activity_id = _check_activity(session, trip.id, changes["activity_id"])
     if changes.get("budget_item_id") is not None:       # "" unlinks
         e.budget_item_id = _check_budget_item(session, trip.id, changes["budget_item_id"])
+    if any(k in changes for k in PLACE_FIELDS):
+        # A location is replaced as a whole (all nulls clears it); the app never
+        # re-captures on edit, so this is only an explicit correction.
+        merged = {k: changes.get(k, getattr(e, k)) for k in PLACE_FIELDS}
+        for k, v in _check_place(*(merged[k] for k in PLACE_FIELDS)).items():
+            setattr(e, k, v)
     roster = _roster(session, trip.id)
     if changes.get("payer_id") is not None:
         e.payer_id = _on_roster(changes["payer_id"], roster, "payer")

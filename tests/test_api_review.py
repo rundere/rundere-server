@@ -242,13 +242,7 @@ if DEPS:
             time.sleep(0.02)
         raise AssertionError("job never finished")
 
-    @pytest.fixture()
-    def admins_write(monkeypatch):
-        """The job-scoping tests below are about WHOSE items are logged, not who
-        may use the server-wide targets (YONDER-191, tested separately)."""
-        monkeypatch.setattr(scope, "external_writes_allowed", lambda user: True)
-
-    def test_commit_dry_run_only_covers_callers_items(w, admins_write):
+    def test_commit_dry_run_only_covers_callers_items(w):
         with SessionLocal() as s:
             s.get(TravelItem, w["flight"]).review = {"required": False, "action_taken": "approved"}
             s.commit()
@@ -261,7 +255,7 @@ if DEPS:
         with SessionLocal() as s:
             assert s.query(CommitAttempt).count() == before       # nothing written
 
-    def test_commit_execute_is_a_job_scoped_to_caller(w, admins_write):
+    def test_commit_execute_is_a_job_scoped_to_caller(w):
         with SessionLocal() as s:
             s.get(TravelItem, w["flight"]).review = {"required": False, "action_taken": "approved"}
             s.commit()
@@ -396,11 +390,12 @@ if DEPS:
         assert not jobs.visible_to(None, None)
 
 
-    # ------------------------------------------------------------------ YONDER-191
-    def test_non_admin_commit_writes_runder_only(w, monkeypatch):
-        """YONDER-191: a non-admin's commit still lands on their Run·dere trip
-        (first-party, no AirTrail/AdventureLog needed); the external targets are
-        skipped — never attempted, even with server-wide credentials set."""
+    # ------------------------------------------------------------------ YONDER-191/192
+    def test_commit_without_a_connection_writes_runder_only(w, monkeypatch):
+        """D-150 (replacing the D-156 admins-only gate): a capture owner with no
+        AirTrail/AdventureLog connection still lands on their Run·dere trip; the
+        external targets are skipped — never attempted, even with the deprecated
+        server-wide credentials set."""
         monkeypatch.setattr(settings, "adventurelog_api_key", "k")
         monkeypatch.setattr(settings, "airtrail_token", "t")
         with SessionLocal() as s:
@@ -414,11 +409,11 @@ if DEPS:
         r = client.post("/api/v1/review/commit", headers=h, json={})
         assert r.status_code == 200
         res = {x["target"]: x for p in r.json()["summary"]["plans"] for x in p["results"]}
-        assert res["adventurelog.note"]["skipped"].startswith("no external connection")
+        assert res["adventurelog.note"]["skipped"] == "no AirTrail/AdventureLog connection"
         r = client.post("/api/v1/review/commit", headers=h, json={"dry_run": False})
         assert r.status_code == 202
         j = _wait(r.json()["id"], h)
-        assert "skipped (admins only" in (j["toast"] or "") and not j.get("error")
+        assert "skipped (not connected)" in (j["toast"] or "") and not j.get("error")
         with SessionLocal() as s:
             acts = s.query(TripActivity).filter(TripActivity.trip_id == w["trip"],
                                                 TripActivity.source_item_key == "rv57-event").all()
@@ -434,36 +429,42 @@ if DEPS:
         r = client.post("/api/v1/review/commit", headers=H(w["alice"]), json={})
         assert r.status_code == 200 and r.json()["dry_run"] is True
 
-    def test_target_clients_withheld_from_non_admin(w, monkeypatch):
-        from app.review import routes
+    def test_no_admin_tokens(w, monkeypatch):
+        """D-150: nobody — admin or not — gets the server-wide credentials; each
+        person gets only their own connections."""
+        from app import integrations
         monkeypatch.setattr(settings, "adventurelog_api_key", "k")
         monkeypatch.setattr(settings, "airtrail_token", "t")
         with SessionLocal() as s:
-            alice, admin = s.get(User, w["alice"]), s.get(User, w["bob"])
-            admin.is_admin = True
-            assert routes._target_clients(alice) == (None, None)
-            assert all(c is not None for c in routes._target_clients(admin))
-            assert all(c is not None for c in routes._target_clients(None))   # auth off / CLI
+            s.get(User, w["bob"]).is_admin = True
+            s.commit()
+            for uid in (w["alice"], w["bob"]):
+                c = integrations.clients_for_user(s, uid)
+                assert c.adventurelog is None and c.airtrail is None and not c.external
 
-    def test_web_external_routes_refuse_non_admin(w, monkeypatch):
-        """Same gate on the web side: commit, create-collection and the sync
-        page/push/pull never touch the server-wide targets for a non-admin."""
-        from app.trips import routes as trip_routes
+    def test_web_external_routes_need_your_own_connection(w, monkeypatch):
+        """Commit, create-collection and the sync page/push/pull use the acting
+        person's own AdventureLog connection; without one they refuse and never
+        build a client from the server-wide settings."""
+        from app import integrations
         monkeypatch.setattr(settings, "auth_required", True)     # web routes resolve a user
         monkeypatch.setattr(settings, "adventurelog_api_key", "k")
         monkeypatch.setattr(settings, "airtrail_token", "t")
-        monkeypatch.setattr(trip_routes, "_adventurelog",
-                            lambda: pytest.fail("AdventureLog client built for a non-admin"))
+        monkeypatch.setattr(integrations, "_legacy_clients",
+                            lambda: pytest.fail("server-wide client built for a user"))
         with SessionLocal() as s:
             tok = authn.issue_access_token(s.get(User, w["alice"]))
             s.get(Trip, w["trip"]).adventurelog_collection_id = "col-1"
             s.commit()
         ck = {settings.auth_cookie_name: tok}
         t = w["trip"]
-        assert "limited to admins" in client.post(f"/trips/{t}/adventurelog/push", cookies=ck).text
-        assert "limited to admins" in client.post(f"/trips/{t}/adventurelog/pull", cookies=ck).text
+        assert "Connect your AdventureLog" in client.post(f"/trips/{t}/adventurelog/push",
+                                                          cookies=ck).text
+        assert "Connect your AdventureLog" in client.post(f"/trips/{t}/adventurelog/pull",
+                                                          cookies=ck).text
         assert client.get(f"/trips/{t}/adventurelog", cookies=ck).status_code == 403
         with SessionLocal() as s:
             s.get(Trip, t).adventurelog_collection_id = None
             s.commit()
-        assert "limited to admins" in client.post(f"/trips/{t}/push-adventurelog", cookies=ck).text
+        assert "Connect your AdventureLog" in client.post(f"/trips/{t}/push-adventurelog",
+                                                          cookies=ck).text

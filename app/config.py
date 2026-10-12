@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 600
 
     # Targets. Facts confirmed by the A4 probe live in the adapters.
+    #
+    # DEPRECATED (SPEC-8 D-150, YONDER-192): AirTrail and AdventureLog are now
+    # per-user connections (Settings → Connections). These server-wide values
+    # are read only to seed the deployment owner's connections on first boot
+    # (app/integrations.py), and their hosts stay trusted for the outbound
+    # policy while set. Remove them once the owner's connections exist.
     adventurelog_url: str = "http://adventurelog-server:80"
     adventurelog_api_key: str = ""
     # Browser-facing AdventureLog base (the one above is the internal container
@@ -45,12 +51,20 @@ class Settings(BaseSettings):
     adventurelog_public_url: str = ""
     airtrail_url: str = "http://airtrail:3000"
     airtrail_token: str = ""
-    # AirTrail's own Postgres (READ-ONLY) — its `airport`/`airline` tables are the
-    # only complete source of airport ids/coords/tz for airports never flown
-    # before, which the flight-save endpoint needs (D-50). Optional: unset falls
-    # back to the flown-airport reference. e.g.
-    # postgresql://airtrail:...@airtrail_db:5432/airtrail
-    airtrail_db_url: str = ""
+
+    # Per-user connection credentials are encrypted at rest (SPEC-8 D-151).
+    # A key is 32 random bytes, base64 or hex (`openssl rand -base64 32`).
+    # TX_SECRETS_KEYS="v2:<key>,v1:<key>" is a keyring for rotation (the first
+    # encrypts, any decrypts); TX_SECRETS_KEY / TX_SECRETS_KEY_FILE (a Docker
+    # secret) is one key named v1. No key = connections can't be saved. Back the
+    # key up separately from the database.
+    secrets_keys: str = ""
+    secrets_key: str = ""
+    secrets_key_file: str = ""
+    # Outbound policy for user-supplied URLs (D-152): https and public addresses
+    # only, except these hosts (host or host:port, comma-separated), which may be
+    # on the LAN and use http — e.g. "airtrail:3000,adventurelog-server".
+    integration_allowed_hosts: str = ""
 
     # Geocoding (D-22: Photon on travel-net, avoids Google Maps quota)
     photon_url: str = "http://photon:2322"

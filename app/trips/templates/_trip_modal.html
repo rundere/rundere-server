@@ -22,11 +22,16 @@
         <label>Notes</label>
         <textarea class="input" name="notes" rows="3" placeholder="High level notes about this trip">{{ form.notes }}</textarea>
       </div>
-      <div class="field">
+      {# AdventureLog is an optional extra (SPEC-8 D-146): only for people who
+         connected it, or a trip that's already linked (so saving keeps the link). #}
+      {% if show_al or form.collection_id %}
+      <details class="field" {% if form.collection_id %}open{% endif %}>
+        <summary>Advanced</summary>
         <label>AdventureLog collection id</label>
         <input class="input" name="adventurelog_collection_id" value="{{ form.collection_id }}"
                placeholder="optional — links this trip to an AdventureLog collection">
-      </div>
+      </details>
+      {% endif %}
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" hx-get="/trips/close" hx-target="#modal-root">Cancel</button>
         <button type="submit" class="btn btn-primary">Save trip</button>

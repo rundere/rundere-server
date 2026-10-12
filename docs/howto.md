@@ -13,12 +13,13 @@
   (e.g., Traefik). The Run·dere container must reach the proxy and any tools it
   calls; put it on whatever existing Docker network(s) those use — one or several.
 - Google account for the Gmail/Calendar add-ons
-- Optional external targets: AirTrail (flights), AdventureLog (trips/places).
-  Without them Run·dere still records everything to its own built-in trips.
+- Optional external targets: AirTrail 3.13+ (flights), AdventureLog
+  (trips/places). Each person connects their own under **Settings →
+  Connections**; without them Run·dere still records everything to its own
+  built-in trips.
 - Optional services: Ollama + an LLM model (extractor for free-form text, and
   Discovery's LLM tier), Photon (geocoder), SearXNG (Discovery's LLM-tier web
-  search), AirTrail's read-only Postgres (flights to never-flown airports),
-  CrowdSec (hardens `/ingest`)
+  search), CrowdSec (hardens `/ingest`)
 
 > _[screenshot: Run·dere stack overview]_
 
@@ -54,8 +55,8 @@ One `/ingest` API key per capture client; it is printed once, so keep it safe.
 ## 5 Set up travellers
 
 - Define traveller identities in **Administer → Travellers** (self or guest).
-- On a flight, pick who flew. Only a *self* traveller logs to AirTrail; guests
-  never do.
+- On a flight, pick who flew. A flight logs to your AirTrail only when you're
+  on it (your account's own traveller); someone else's booking never does.
 - A traveller can carry a nationality (used by Discovery's visa resolver) and
   is the person a Discovery/Packing profile ultimately hangs off of.
 

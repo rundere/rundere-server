@@ -141,10 +141,8 @@ keep Run·dere fully local.
 ### How to find each prerequisite / credential
 
 - **Docker network reachability** — Run·dere must share a Docker network with your reverse proxy and with each target/tool it calls (AdventureLog, AirTrail, Photon, Ollama). Put it on whatever external network(s) those already use — check with `docker network ls`; the stack joins them, so `docker network create <name>` any that are missing. Whether that's one network or several (the reference stack uses `traefik-net` + `travel-net`) is up to your setup.
-- **AdventureLog API key** (`TX_ADVENTURELOG_API_KEY`) — in the AdventureLog web UI → **Settings → Integrations / API tokens** → generate a token.
-- **AirTrail token** (`TX_AIRTRAIL_TOKEN`) — in the AirTrail UI → your **account / API settings** → create an API token.
-- **AirTrail DB URL** (`TX_AIRTRAIL_DB_URL`) — read the Postgres user/password/db from AirTrail's own compose file; it looks like
-  `postgresql://airtrail:<password>@airtrail_db:5432/airtrail`. Run·dere's container must share a Docker network with that DB.
+- **Secrets key** (`TX_SECRETS_KEY`) — `openssl rand -base64 32`. Encrypts the per-user AirTrail / AdventureLog tokens at rest (SPEC-8 D-151). Back it up apart from the database. Without it, connections can't be saved; Run·dere itself works fine.
+- **AirTrail / AdventureLog (optional, per person)** — nothing to configure on the server. Each person connects their own under **Settings → Connections**, which walks through creating a token in that app. Run·dere works fully without either (D-146). AirTrail needs 3.13 or newer; Run·dere talks to it only through its API. If they run on your LAN, list their hosts in `TX_INTEGRATION_ALLOWED_HOSTS` (e.g. `airtrail:3000,adventurelog-server`); anything else has to be public https (D-152).
 - **Ollama** — `docker`-run Ollama on `travel-net`/`traefik-net`, then `ollama pull qwen3:14b`. Point `TX_OLLAMA_URL` at it.
 - **Photon** — self-host the Photon container with an OpenStreetMap index; point `TX_PHOTON_URL` at it.
 - **SearXNG** — self-host with its JSON API enabled (`search.formats: [html, json]` in `settings.yml`); point `TX_SEARXNG_URL` at it. Needed only for Discovery's LLM-tier topics (visa/safety/events/food/regional language) — it also requires Ollama.
@@ -186,8 +184,8 @@ locally instead, `docker build -t yonder:latest .` still works.
 **2. Deploy the stack.** [`portainer-stack.yml`](portainer-stack.yml) is a
 reference Compose/stack definition — use it with `docker compose`, Portainer,
 or any orchestrator you prefer. Set the two `CHANGE_ME_DB_PASSWORD` occurrences,
-and fill in the target env vars (`TX_ADVENTURELOG_*`, `TX_AIRTRAIL_*`, etc.) with
-the credentials from the section above. The reference stack declares env vars
+set `TX_SECRETS_KEY` and `TX_JWT_SECRET`, and fill in the rest from the section above.
+AirTrail and AdventureLog are connected per person in the app, not here. The reference stack declares env vars
 inline (some orchestrators can't interpolate `.env` files); adapt to your setup.
 
 **Two routes, split by exposure** (the reference stack wires these with Traefik
@@ -331,12 +329,9 @@ deployment stack.
 | `TX_OLLAMA_URL` | `http://ollama:11434` | Local LLM extractor endpoint |
 | `TX_OLLAMA_MODEL` | `qwen3:14b` | LLM model (OQ-08) |
 | `TX_LLM_TIMEOUT_SECONDS` | `600` | LLM call timeout |
-| `TX_ADVENTURELOG_URL` | `http://adventurelog-server:80` | AdventureLog base URL (internal, container-to-container) |
-| `TX_ADVENTURELOG_API_KEY` | `""` | AdventureLog API token |
-| `TX_ADVENTURELOG_PUBLIC_URL` | `""` | AdventureLog's browser-facing base URL, used to link directly to a trip's collection from the Run·dere UI. Empty = no link rendered |
-| `TX_AIRTRAIL_URL` | `http://airtrail:3000` | AirTrail base URL |
-| `TX_AIRTRAIL_TOKEN` | `""` | AirTrail API token |
-| `TX_AIRTRAIL_DB_URL` | `""` | AirTrail Postgres, read-only (D-50) |
+| `TX_SECRETS_KEY` | `""` | 32 random bytes (base64 or hex) that encrypt per-user connection tokens (D-151). Empty = connections can't be saved. `TX_SECRETS_KEY_FILE` reads it from a Docker secret |
+| `TX_SECRETS_KEYS` | `""` | Keyring for rotation, `v2:<key>,v1:<key>`: the first encrypts, any decrypts. Then `python -m app.cli secrets-rotate` |
+| `TX_INTEGRATION_ALLOWED_HOSTS` | `""` | Hosts (or host:port) a connection may reach on the LAN, over http (D-152). Everything else must be public https |
 | `TX_PHOTON_URL` | `http://photon:2322` | Self-hosted geocoder (D-22) |
 | `TX_DISCOVERY_BASE_CURRENCIES` | `USD` | Always-on base currencies Discovery's resolver/calculator convert FROM (D-65); unioned with each traveller's own travel-profile pick, so these stay visible (e.g. USD for a closed-currency destination) alongside a per-traveller currency. Defaults to USD when unset; set to your home currencies, e.g. `CAD,USD` |
 | `TX_FRANKFURTER_URL` | `https://api.frankfurter.dev/v2` | Currency-rate source for Discovery (public, keyless; overridable for a self-hosted mirror) |
@@ -427,7 +422,7 @@ resolve/        keys.py (A5 canonical keys), collections.py (A6 ladder)
 discover/       Discovery (v3.0-3.2): deterministic + LLM resolvers per topic,
                 location derivation, the durable run/finding pipeline
 planning/       Planning (v3.1): the Packing Plan engine, catalog, profiles
-adapters/       target writers: adventurelog.py, airtrail.py, airtrail_db.py
+adapters/       target writers: adventurelog.py, airtrail.py (HTTP APIs only)
 rules.py        rule registry + engine (57 rules, tri-state toggles — D-25)
 validation.py   schema gate (real jsonschema)
 schemas/        travel-item (canonical) + travel-extraction (derived, D-09)

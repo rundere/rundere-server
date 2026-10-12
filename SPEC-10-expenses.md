@@ -122,7 +122,27 @@ people up and make the trip's actual cost.
   `research_trip_budget` prompt.
 - iOS: a Costs segment with Plan and Actual (list, balances, add/edit, settle up,
   keep drafts, log a planned item as spent) and the Log Expense shortcut.
-- Web UI: follow-up item.
+- Web UI (YONDER-212): a Costs tab on the trip page (`app/trips/costs.py`) —
+  balances, suggested payments with "Mark paid", the expense list, an add/edit
+  form (equal or exact split), comments, the balance currency, and planned vs
+  spent by category. Same rules and gates as the API (D-174, D-183).
+- Location (YONDER-212): an actual records where it was logged —
+  `place_lat`/`place_lon`/`place_label`/`place_accuracy_m`, named like the
+  journal's. Only the iOS app captures it; the API takes it as optional and the
+  web shows it (label or an OpenStreetMap link) without ever capturing or
+  editing it. It's visible exactly where the expense is (D-183).
+
+- Currency picker (YONDER-213): `ExpensesOut.suggested_currencies` is the one
+  ordering for web, MCP and the app — the destination currencies from the
+  caller's Discover findings, then their own base currency, the trip's balance
+  currency, and those already used on this trip's expenses (nothing from other
+  trips) — with every other current ISO-4217 code
+  after. `default_currency` (the person's own, else the trip's, else the
+  destination's) is what a new expense starts in. `/api/v1/auth/me` carries the
+  person's `base_currency` (and `timezone`, D-187). Pickers show only the
+  suggested currencies plus "Other currency…", which opens the full list for the
+  rare unplanned one (a layover, a trip Discover hasn't run on) — owner,
+  2026-10-12. The iOS screens move over in the app repo.
 
 ## Cleanup
 

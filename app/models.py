@@ -221,6 +221,38 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class UserIntegration(Base):
+    """A user's own connection to an AirTrail or AdventureLog instance
+    (SPEC-8 D-150, YONDER-192). One per user and kind. Writes from a capture use
+    the capture OWNER's connection, never anyone else's or a server-wide token.
+
+    `credential_ct` is AES-256-GCM ciphertext bound to this row (D-151,
+    app/secretbox.py) and is write-only: no page, API or MCP tool returns it;
+    `credential_hint` (last 4 characters) is all that's shown. `base_url` passed
+    the outbound policy when saved and is re-checked at every connect (D-152).
+    `remote_user_id` is who this is on the other side — the AirTrail user id a
+    flight's seat is written for. `user_id` is a soft link (house rule 3);
+    deleting the user deletes their connections."""
+    __tablename__ = "user_integrations"
+    __table_args__ = (UniqueConstraint("user_id", "kind", name="uq_user_integration_kind"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    kind: Mapped[str] = mapped_column(String(16))                 # airtrail | adventurelog
+    base_url: Mapped[str] = mapped_column(String(512))
+    public_url: Mapped[str | None] = mapped_column(String(512))   # browser links (AdventureLog)
+    credential_ct: Mapped[str | None] = mapped_column(Text)
+    credential_hint: Mapped[str | None] = mapped_column(String(8))
+    remote_user_id: Mapped[str | None] = mapped_column(String(128))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_check_ok: Mapped[bool | None] = mapped_column(Boolean)
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class AccountEvent(Base):
     """4.1 audit trail of account actions taken by someone OTHER than the account
     holder (an admin resetting a password, changing a role...) plus sharing
@@ -405,6 +437,10 @@ class TravelerIdentity(Base):
     # profile choice (ISO-4217, e.g. "GBP"), independent of nationality and home.
     # NULL = fall back to the deployment default (TX_DISCOVERY_BASE_CURRENCIES).
     base_currency: Mapped[str | None] = mapped_column(String(3))
+    # This person's own time zone (IANA, e.g. "Europe/London"): their "now" for
+    # everything date-relative — Home, countdowns, Next up, upcoming/past
+    # (YONDER-219, D-187). Set on the Travel profile; NULL = the server clock.
+    timezone: Mapped[str | None] = mapped_column(String(64))
     # 3.2 (D-100): a generic guest is a roster placeholder — "someone is coming"
     # — NOT a modelled person. Minted by the trip "add a guest" quick-add. It
     # carries no profile/nationality and is deliberately EXCLUDED from discovery
@@ -1033,6 +1069,12 @@ class TripExpense(Base):
     budget_item_id: Mapped[str | None] = mapped_column(String(36), index=True)
     notes: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(16), default="api")        # ios | web | mcp | api
+    # Where the person was when they logged it (YONDER-212). Captured by the iOS
+    # app only; web, MCP and agents send none. Same names as JournalEntry.
+    place_lat: Mapped[float | None] = mapped_column(Float)
+    place_lon: Mapped[float | None] = mapped_column(Float)
+    place_label: Mapped[str | None] = mapped_column(String(256))
+    place_accuracy_m: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)

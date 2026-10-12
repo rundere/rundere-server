@@ -9,8 +9,9 @@ Facts confirmed by probing the live API, not assumptions:
     fromId/toId, carrying iata, icao, lat, lon, tz, country, municipality
   - flights carry a native datePrecision field (all existing rows = "day")
 
-Read side only for now. The commit stage adds writes, and must send flights
-ONE AT A TIME — AirTrail aborts an entire batch on a single bad record (D-06).
+Writes send flights ONE AT A TIME — AirTrail aborts an entire batch on a
+single bad record (D-06). Everything goes through AirTrail's HTTP API with the
+connection owner's token; Run·dere never reads AirTrail's database (D-186).
 """
 from __future__ import annotations
 
@@ -22,6 +23,16 @@ from dataclasses import dataclass
 
 class AirTrailError(Exception):
     pass
+
+
+def _read_capped(resp, max_bytes: int | None) -> str:
+    """The body as text, refusing one larger than `max_bytes` (D-152)."""
+    if max_bytes is None:
+        return resp.read().decode("utf-8", errors="replace")
+    data = resp.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise OSError(f"response larger than {max_bytes} bytes")
+    return data.decode("utf-8", errors="replace")
 
 
 def _digits(value: str) -> str:
@@ -56,10 +67,18 @@ class Airline:
 
 
 class AirTrailClient:
-    def __init__(self, base_url: str, token: str, timeout: int = 30):
+    def __init__(self, base_url: str, token: str, timeout: int = 30, *,
+                 opener=None, max_bytes: int | None = None):
         self.base = (base_url or "").rstrip("/")
         self.token = token
         self.timeout = timeout
+        # A per-user connection passes the SSRF-guarded opener and a response
+        # size cap (app/netpolicy.py, D-152); the operator's own defaults don't.
+        self._open = opener.open if opener is not None else urllib.request.urlopen
+        self.max_bytes = max_bytes
+
+    def __repr__(self) -> str:                  # never the token (D-151)
+        return f"AirTrailClient({self.base!r})"
 
     def _request(self, method: str, path: str,
                  body: dict | None = None) -> tuple[int, dict | list | None, str]:
@@ -70,11 +89,11 @@ class AirTrailClient:
             "Content-Type": "application/json",
         })
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                raw = resp.read().decode("utf-8", errors="replace")
+            with self._open(req, timeout=self.timeout) as resp:
+                raw = _read_capped(resp, self.max_bytes)
                 status = resp.status
         except urllib.error.HTTPError as ex:
-            raw = ex.read().decode("utf-8", errors="replace")
+            raw = _read_capped(ex, self.max_bytes)
             status = ex.code
         except (urllib.error.URLError, TimeoutError, OSError) as ex:
             raise AirTrailError(f"{method} {url}: {ex}") from ex
@@ -132,22 +151,24 @@ class AirTrailClient:
                                 icao=a.get("icao"), name=a.get("name"))
         return out
 
-    def lookup_airport(self, code: str) -> Airport | None:
-        """Authoritative airport data for an IATA/ICAO code, from AirTrail's own
-        records. AirTrail has a full airport table but no stable REST lookup
-        for it (the tRPC route uses superjson and is fragile to couple to), so
-        this reads the airports embedded in existing flights — which is every
-        airport the user has flown, home airport included. A code never flown
-        is not here; the caller falls back to Photon (D-22 clean seam)."""
+    def search_airline(self, code: str) -> Airline | None:
+        """One airline by IATA or ICAO code from AirTrail's own table, via the
+        REST API (3.13+: GET /api/v1/airlines?query=, scope reference_data.read).
+        Flight save names the airline by its ICAO code, and a ticket only prints
+        the IATA one, so this is how an airline never flown before is resolved —
+        no database access (D-186). None when AirTrail doesn't know the code."""
         code = (code or "").strip().upper()
         if not code:
             return None
-        ref = self.airport_reference()
-        if code in ref:
-            return ref[code]
-        for a in ref.values():                 # allow ICAO too
-            if a.icao and a.icao.upper() == code:
-                return a
+        from urllib.parse import quote
+        status, parsed, raw = self._request("GET", f"/api/v1/airlines?query={quote(code)}")
+        if status >= 400:
+            raise AirTrailError(f"search_airline: HTTP {status}")
+        rows = (parsed or {}).get("data") if isinstance(parsed, dict) else None
+        for a in rows or []:
+            if code in ((a.get("iata") or "").upper(), (a.get("icao") or "").upper()):
+                return Airline(id=a.get("id"), iata=a.get("iata"), icao=a.get("icao"),
+                               name=a.get("name"))
         return None
 
     def find_duplicate(self, *, carrier_iata: str | None, flight_number: str,

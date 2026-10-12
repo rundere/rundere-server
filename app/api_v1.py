@@ -668,13 +668,17 @@ def api_dashboard(now: Annotated[str | None, Query(
 
     from app.dashboard import (_capture_activity, _next_trip, _pipeline_counts,
                                _trip_status, viewer_moments)
+    from app import clock
     from app.trips import nextup, who
-    today = date.today().isoformat()
+    # The app's own clock when it sends one; else the caller's travel-profile
+    # time zone; else the server's (D-172, D-187).
+    now = now or nextup.now_key(clock.now_for(session, user))
+    today = now[:10]
     trips = session.query(Trip).filter(scope.trip_filter(session, user)).all()
     nxt = _next_trip(trips, today)
     upcoming = sum(1 for t in trips
                    if t.start_date and _trip_status(t, today) == "upcoming")
-    moment, under_way = viewer_moments(session, trips, now or nextup.now_key(), user)
+    moment, under_way = viewer_moments(session, trips, now, user)
     names = {t.id: t.name for t in trips}
     tags = who.activity_map(session, [m.activity.id for m in [moment, *under_way] if m])
 
@@ -900,25 +904,20 @@ def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
     from app.committing import commit_pending
     from app.db import SessionLocal
     from app.resolving import load_identities
-    from app.review.routes import _target_clients
+    from app.integrations import ClientCache
     mine = scope.capture_filter(user)
-    # YONDER-191/D-156: non-admins commit to Run·dere only; external targets skipped.
-    external = scope.external_writes_allowed(user)
-    juser = scope.snapshot(user)
+    # Each capture logs to its OWNER's connections (D-150); an owner with none
+    # gets Run·dere only, the AirTrail/AdventureLog targets skipped.
     if body.dry_run:
-        adventurelog, airtrail = _target_clients(user)
-        summary = commit_pending(session, adventurelog, airtrail,
-                                 identities=load_identities(session), dry_run=True,
-                                 item_filter=mine, external=external)
+        summary = commit_pending(session, identities=load_identities(session), dry_run=True,
+                                 item_filter=mine, clients_for=ClientCache(session))
         return {"dry_run": True, "summary": summary}
 
     def work(progress):
         with SessionLocal() as s:
-            adventurelog, airtrail = _target_clients(juser)
-            summary = commit_pending(s, adventurelog, airtrail,
-                                     identities=load_identities(s), dry_run=False,
+            summary = commit_pending(s, identities=load_identities(s), dry_run=False,
                                      progress=progress, item_filter=mine,
-                                     external=external)
+                                     clients_for=ClientCache(s))
             parts = [f"logged {summary['writes_ok']} write(s) across {summary['items']} item(s)"]
             if summary["writes_failed"]:
                 parts.append(f"{summary['writes_failed']} failed")
@@ -926,7 +925,7 @@ def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
                 parts.append(f"{summary['skipped']} already present")
             if summary.get("external_skipped"):
                 parts.append(f"{summary['external_skipped']} AirTrail/AdventureLog "
-                             "write(s) skipped (admins only for now)")
+                             "write(s) skipped (not connected)")
             details = [f"{plan['headline']} · {r['target']}: {r['error']}"
                        for plan in summary["plans"] for r in plan["results"]
                        if not r.get("ok") and r.get("error")]
@@ -1849,6 +1848,11 @@ class ExpenseOut(BaseModel):
     owner_id: str | None = None
     created_at: datetime | None = None
     comments: list[ExpenseCommentOut] = []  # the discussion, oldest first (D-185)
+    # Where it was logged (YONDER-212). Visible exactly where the expense is (D-183).
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    place_accuracy_m: float | None = None
 
 
 class BudgetItemOut(BaseModel):
@@ -1932,6 +1936,10 @@ class ExpensesOut(BaseModel):
     unconverted: list[str] = []            # expense ids with no rate (left out of balances)
     categories: list[str] = list(expenses_svc.CATEGORIES)
     plan: PlanOut | None = None            # the planned budget (D-178)
+    # The currency picker's order (YONDER-213): destination first, then yours,
+    # the trip's and those already used; list every other code after these.
+    suggested_currencies: list[str] = []
+    default_currency: str | None = None    # what a new expense starts in
 
 
 class ExpenseIn(BaseModel):
@@ -1953,6 +1961,11 @@ class ExpenseIn(BaseModel):
     budget_item_id: str | None = None      # log it against a planned item (D-181)
     notes: str | None = None
     source: str = "api"
+    # Where it was logged (YONDER-212): the app captures it; optional everywhere.
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    place_accuracy_m: float | None = None
 
 
 class ExpensePatch(BaseModel):
@@ -1971,6 +1984,11 @@ class ExpensePatch(BaseModel):
     activity_id: str | None = None
     budget_item_id: str | None = None      # "" unlinks
     notes: str | None = None
+    # Replaces the stored location as a whole; send nulls to clear it.
+    place_lat: float | None = None
+    place_lon: float | None = None
+    place_label: str | None = None
+    place_accuracy_m: float | None = None
 
 
 class BudgetItemIn(BaseModel):
@@ -2075,7 +2093,8 @@ def _expense_out(e, shares, nm: dict[int, str], trip_currency: str | None,
                                 amount=s.amount) for s in shares],
         category=e.category, activity_id=e.activity_id, budget_item_id=e.budget_item_id,
         notes=e.notes, owner_id=e.owner_id, created_at=e.created_at,
-        comments=comments or [])
+        comments=comments or [], place_lat=e.place_lat, place_lon=e.place_lon,
+        place_label=e.place_label, place_accuracy_m=e.place_accuracy_m)
 
 
 def _one_expense_out(session: Session, trip: Trip, e, user=None) -> ExpenseOut:
@@ -2111,7 +2130,9 @@ def expenses_overview(session: Session, trip: Trip, user=None) -> ExpensesOut:
                                to_name=nm.get(b, ""), amount=f(amt))
                    for a, b, amt in summ.transfers],
         unconverted=summ.unconverted,
-        plan=plan_out(session, trip, user, rows))
+        plan=plan_out(session, trip, user, rows),
+        suggested_currencies=expenses_svc.suggested_currencies(session, trip, user),
+        default_currency=expenses_svc.default_currency(session, trip, user))
 
 
 def _budget_out(line, actual: str = "0", nm: dict[int, str] | None = None) -> BudgetItemOut:
