@@ -1,4 +1,4 @@
-{# The Costs tab (YONDER-212, YONDER-221, SPEC-10). Two parts (D-178): the
+{# The Costs tab (YONDER-212, YONDER-221, YONDER-223, SPEC-10). Two parts (D-178): the
    Plan — what the trip should cost — and Actual — what was really spent. Every
    figure comes from app/expenses.py; the caller only sees the costs they're on
    or entered (D-183). #}
@@ -11,10 +11,10 @@
   </div>
   {% if costs.can_edit and costs.has_roster %}
   <div class="bp-head-actions">
-    <button class="btn btn-primary yn-costs-act" data-for="actual"
-            hx-get="/trips/{{ trip.id }}/costs/new" hx-target="#modal-root">Add expense</button>
     <button class="btn btn-primary yn-costs-act" data-for="plan"
             hx-get="/trips/{{ trip.id }}/costs/plan/new" hx-target="#modal-root">Plan a cost</button>
+    <button class="btn btn-primary yn-costs-act" data-for="actual"
+            hx-get="/trips/{{ trip.id }}/costs/new" hx-target="#modal-root">Add expense</button>
   </div>
   {% endif %}
 </div>
@@ -23,11 +23,13 @@
 <p class="bp-empty">Add the trip's travellers first — costs are for the people on the trip.</p>
 {% else %}
 
+{# Plan | Actual, in the order the work happens (YONDER-223); which one opens
+   follows the trip's dates (D-188, costs.default_sub). #}
 <div class="yn-subtabs" role="tablist" aria-label="Plan or actual">
-  <button type="button" role="tab" class="yn-subtab" data-sub="actual" onclick="ynCostsSub('actual')">
-    Actual{% if costs.total %} · {{ costs.total }}{% endif %}</button>
   <button type="button" role="tab" class="yn-subtab" data-sub="plan" onclick="ynCostsSub('plan')">
     Plan{% if costs.planned %} · {{ costs.planned }}{% endif %}</button>
+  <button type="button" role="tab" class="yn-subtab" data-sub="actual" onclick="ynCostsSub('actual')">
+    Actual{% if costs.total %} · {{ costs.total }}{% endif %}</button>
 </div>
 
 {# ---------------------------------------------------------------- Actual #}
