@@ -1,7 +1,7 @@
 {# Add / edit one expense (YONDER-212). Location is shown, never captured or
    edited here — the iOS app records it (D-183 decides who sees it). #}
 <div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
-  <div class="dialog blueprint" onclick="event.stopPropagation()">
+  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
     <div class="dialog-title">{% if expense is none %}Add expense{% elif settlement %}Settle-up{% else %}Expense{% endif %}</div>
     {% if error %}<div class="bp-error">{{ error }}</div>{% endif %}
     <form class="dialog-body"

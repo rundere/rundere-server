@@ -654,6 +654,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 /* Costs tab (YONDER-212). */
 .yn-costs-summary { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px;
   padding: 14px 16px; justify-content: space-between; }
+.yn-costs-total { margin-right: auto; text-align: left; }
 .yn-costs-figure { font-size: 24px; font-weight: 600; }
 .yn-costs-currency { display: flex; align-items: center; gap: 8px; }
 .yn-costs-currency .input { width: 5em; text-transform: uppercase; }

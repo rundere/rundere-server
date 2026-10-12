@@ -103,7 +103,8 @@ def costs_context(session: Session, trip, user) -> dict:
         "currency": cur, "total": _money(ov.total, cur) if cur else None,
         "rows": rows, "balances": balances, "transfers": transfers,
         "unconverted": len(ov.unconverted),
-        "planned": _money(plan.planned, cur) if plan and cur else None,
+        "planned": (_money(plan.planned, cur)
+                    if plan and cur and Decimal(plan.planned) else None),
         "by_category": by_category,
         "can_edit": can_edit,
         "has_roster": bool(expenses_svc._roster(session, trip.id)),
