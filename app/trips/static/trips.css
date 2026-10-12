@@ -679,3 +679,18 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-profile-card textarea.input { width: 100%; box-sizing: border-box; }
 .yn-tz-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .yn-tz-row select { flex: 1 1 260px; }
+
+/* Costs: Plan | Actual sub-tabs (YONDER-221). The open one is the section's
+   data-sub, so a server refresh lands on the same sub-tab. */
+.yn-subtabs { display: inline-flex; gap: 4px; padding: 4px; margin: 4px 0 12px;
+  border: 1px solid var(--rd-border-subtle); border-radius: var(--rd-radius-control, 10px); }
+.yn-subtab { background: none; border: 0; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+  color: var(--rd-text-muted); font: inherit; min-height: 32px; }
+#costs-section[data-sub="actual"] .yn-subtab[data-sub="actual"],
+#costs-section[data-sub="plan"] .yn-subtab[data-sub="plan"] {
+  background: var(--rd-surface-raised, var(--color-accent-100)); color: var(--rd-text); font-weight: 600; }
+.yn-subpanel { display: none; }
+#costs-section[data-sub="actual"] .yn-subpanel[data-sub="actual"],
+#costs-section[data-sub="plan"] .yn-subpanel[data-sub="plan"] { display: block; }
+#costs-section[data-sub="actual"] .yn-costs-act[data-for="plan"],
+#costs-section[data-sub="plan"] .yn-costs-act[data-for="actual"] { display: none; }

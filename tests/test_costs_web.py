@@ -76,6 +76,17 @@ if DEPS:
                        for n, u in users.items()}
             return t.id, people, cookies, headers
 
+    def _closed(r):
+        """A save answers with the refreshed Costs section and closes the dialog
+        in place — never a redirect to /trips/{id}#costs, which from that same
+        page only changed the fragment and left the dialog open (YONDER-220)."""
+        assert r.status_code == 200, r.text
+        assert "HX-Redirect" not in r.headers
+        assert r.headers.get("HX-Retarget") == "#costs-section"
+        assert r.headers.get("HX-Reswap") == "outerHTML"
+        assert 'id="costs-section"' in r.text
+        assert '<div id="modal-root" hx-swap-oob="innerHTML"></div>' in r.text
+
     def _form(people, **over):
         data = {"title": "Dinner", "amount": "30", "currency": "EUR", "spent_on": "2031-05-02",
                 "payer_id": str(people["Ana"]), "split": "equal", "category": "food",
@@ -137,13 +148,13 @@ if DEPS:
     def test_costs_tab_renders_on_the_trip_page():
         tid, p, ck, _ = _setup()
         html = client.get(f"/trips/{tid}", cookies=ck["Ana"]).text
-        assert 'data-tab="costs"' in html and "No expenses yet." in html
+        assert 'data-tab="costs"' in html and "Nothing spent yet." in html
         assert f'hx-get="/trips/{tid}/costs/new"' in html
 
     def test_add_an_expense_from_the_web_and_see_the_balances():
         tid, p, ck, _ = _setup()
         r = client.post(f"/trips/{tid}/costs", cookies=ck["Ana"], data=_form(p))
-        assert r.status_code == 200 and r.headers.get("HX-Redirect") == f"/trips/{tid}#costs"
+        _closed(r)
         with SessionLocal() as s:
             e = s.query(TripExpense).filter_by(trip_id=tid).one()
             assert (e.amount, e.source, e.place_lat) == ("30", "web", None)
@@ -156,7 +167,7 @@ if DEPS:
         tid, p, ck, _ = _setup()
         r = client.post(f"/trips/{tid}/costs", cookies=ck["Ana"],
                         data=_form(p, amount="-4"))
-        assert r.status_code == 200 and "HX-Redirect" not in r.headers
+        assert r.status_code == 200 and "HX-Retarget" not in r.headers
         assert "bp-error" in r.text and 'value="-4"' in r.text
         with SessionLocal() as s:
             assert s.query(TripExpense).filter_by(trip_id=tid).count() == 0
@@ -166,7 +177,7 @@ if DEPS:
         data = _form(p, split="exact", amount="10")
         data.update({f"share_{p['Ana']}": "7", f"share_{p['Ben']}": "3"})
         r = client.post(f"/trips/{tid}/costs", cookies=ck["Ana"], data=data)
-        assert r.headers.get("HX-Redirect"), r.text
+        _closed(r)
         with SessionLocal() as s:
             e = s.query(TripExpense).filter_by(trip_id=tid).one()
             assert e.split == "exact"
@@ -192,7 +203,7 @@ if DEPS:
         assert "Logged at" in modal and "place_lat" not in modal   # shown, not editable
         r = client.post(f"/trips/{tid}/costs/{eid}", cookies=ck["Ana"],
                         data=_form(p, title="Taxi home", amount="9"))
-        assert r.headers.get("HX-Redirect"), r.text
+        _closed(r)
         with SessionLocal() as s:
             e = s.get(TripExpense, eid)
             assert (e.title, e.place_label, e.place_lat) == ("Taxi home", "Plaça de Catalunya",
@@ -211,7 +222,7 @@ if DEPS:
         eid = client.post(f"/api/v1/trips/{tid}/expenses", headers=h["Ana"], json={
             "amount": "9", "currency": "EUR", "payer_id": p["Ana"]}).json()["id"]
         r = client.post(f"/trips/{tid}/costs/{eid}/delete", cookies=ck["Ana"])
-        assert r.headers.get("HX-Redirect")
+        _closed(r)
         with SessionLocal() as s:
             assert s.get(TripExpense, eid) is None
 
@@ -325,7 +336,7 @@ if DEPS:
         assert '<template id="ex-cur-all">' in modal and 'value="JPY"' in modal
         # A picked placeholder never becomes an expense currency.
         r = client.post(f"/trips/{tid}/costs", cookies=ck["Ana"], data=_form(p, currency="__more"))
-        assert "not a currency code" in r.text and "HX-Redirect" not in r.headers
+        assert "not a currency code" in r.text and "HX-Retarget" not in r.headers
 
     def test_me_carries_your_own_currency_and_time_zone():
         tid, p, _, h = _setup()
@@ -335,3 +346,148 @@ if DEPS:
             s.commit()
         me = client.get("/api/v1/auth/me", headers=h["Ana"]).json()
         assert (me["base_currency"], me["timezone"]) == ("CAD", "America/Toronto")
+
+    # ------------------------------------------------------------ YONDER-220 / 221
+
+    def _budget_form(people, **over):
+        data = {"title": "Hotel Alfama Azul", "amount": "600", "currency": "EUR",
+                "category": "lodging", "traveler_ids": [str(people["Ana"]), str(people["Ben"])]}
+        data.update(over)
+        return data
+
+    def test_the_dialog_closes_and_the_save_lands_once():
+        tid, p, ck, _ = _setup()
+        r = client.post(f"/trips/{tid}/costs", cookies=ck["Ana"], data=_form(p))
+        _closed(r)
+        assert "Dinner" in r.text                         # the refreshed list
+        with SessionLocal() as s:
+            assert s.query(TripExpense).filter_by(trip_id=tid).count() == 1
+        modal = client.get(f"/trips/{tid}/costs/new", cookies=ck["Ana"]).text
+        assert 'hx-disabled-elt="find button[type=submit]"' in modal   # no double-submit
+
+    def test_rate_names_both_currencies():
+        tid, p, ck, _ = _setup()
+        client.post(f"/trips/{tid}/costs", cookies=ck["Ana"], data=_form(p, currency="USD"))
+        modal = client.get(f"/trips/{tid}/costs/new", cookies=ck["Ana"]).text
+        assert 'data-trip-cur="USD"' in modal and "' = ? ' + trip" in modal
+
+    def test_plan_and_actual_tabs_always_show():
+        tid, p, ck, _ = _setup()
+        html = client.get(f"/trips/{tid}/costs", cookies=ck["Ana"]).text
+        assert 'data-sub="actual"' in html and 'data-sub="plan"' in html
+        assert "Nothing spent yet." in html and "No plan yet." in html
+        assert "Plan a cost" in html and "Add expense" in html
+
+    def test_plan_a_cost_edit_and_delete_it():
+        from app.models import TripBudgetItem
+        tid, p, ck, _ = _setup()
+        r = client.post(f"/trips/{tid}/costs/plan", cookies=ck["Ana"], data=_budget_form(p))
+        _closed(r)
+        assert 'data-sub="plan"' in r.text and "Hotel Alfama Azul" in r.text
+        with SessionLocal() as s:
+            b = s.query(TripBudgetItem).filter_by(trip_id=tid).one()
+            assert (b.amount, b.status, b.source) == ("600", "kept", "web")
+            bid = b.id
+        r = client.post(f"/trips/{tid}/costs/plan/{bid}", cookies=ck["Ana"],
+                        data=_budget_form(p, amount="650"))
+        _closed(r)
+        with SessionLocal() as s:
+            assert s.get(TripBudgetItem, bid).amount == "650"
+        _closed(client.post(f"/trips/{tid}/costs/plan/{bid}/delete", cookies=ck["Ana"]))
+        with SessionLocal() as s:
+            assert s.get(TripBudgetItem, bid) is None
+
+    def test_keep_an_agents_draft():
+        from app import expenses as ex
+        from app.models import TripBudgetItem
+        tid, p, ck, _ = _setup()
+        with SessionLocal() as s:
+            trip, ana = s.get(Trip, tid), _ana(tid)
+            b = ex.create_budget(s, ana, trip, ex.BudgetInput(
+                amount="40", currency="EUR", title="Day of food", category="food",
+                traveler_ids=[p["Ana"]], source="mcp"), status=ex.DRAFT)
+            s.commit()
+            bid = b.id
+        html = client.get(f"/trips/{tid}/costs", cookies=ck["Ana"]).text
+        assert "draft" in html and f"/costs/plan/{bid}/keep" in html
+        client.post(f"/trips/{tid}/costs/plan/{bid}/keep", cookies=ck["Ana"])
+        with SessionLocal() as s:
+            assert s.get(TripBudgetItem, bid).status == "kept"
+
+    def test_log_a_planned_cost_as_spent_links_it():
+        from app.models import TripBudgetItem
+        tid, p, ck, _ = _setup()
+        client.post(f"/trips/{tid}/costs/plan", cookies=ck["Ana"], data=_budget_form(p))
+        with SessionLocal() as s:
+            bid = s.query(TripBudgetItem).filter_by(trip_id=tid).one().id
+        modal = client.get(f"/trips/{tid}/costs/new?plan={bid}", cookies=ck["Ana"]).text
+        assert 'value="Hotel Alfama Azul"' in modal and f'value="{bid}" selected' in modal
+        _closed(client.post(f"/trips/{tid}/costs", cookies=ck["Ana"],
+                            data=_form(p, title="Hotel Alfama Azul", amount="620",
+                                       budget_item_id=bid)))
+        with SessionLocal() as s:
+            e = s.query(TripExpense).filter_by(trip_id=tid).one()
+            assert e.budget_item_id == bid
+        assert "spent" in client.get(f"/trips/{tid}/costs", cookies=ck["Ana"]).text
+
+    def test_an_actual_can_link_a_timeline_item():
+        from app.models import TripActivity
+        tid, p, ck, _ = _setup()
+        with SessionLocal() as s:
+            a = TripActivity(trip_id=tid, type="restaurant", values={"name": "Cervejaria Ramiro"},
+                             starts_at="2031-05-02T20:00")
+            s.add(a)
+            s.commit()
+            aid = a.id
+        modal = client.get(f"/trips/{tid}/costs/new", cookies=ck["Ana"]).text
+        assert f'value="{aid}"' in modal and "Timeline item" in modal
+        _closed(client.post(f"/trips/{tid}/costs", cookies=ck["Ana"],
+                            data=_form(p, activity_id=aid)))
+        with SessionLocal() as s:
+            assert s.query(TripExpense).filter_by(trip_id=tid).one().activity_id == aid
+
+    def test_planned_costs_are_only_for_the_people_on_them():
+        """D-183 on the plan: Ana's cost for herself is a 404 to Ben, and a
+        view-only member can't plan."""
+        from app.models import TripBudgetItem
+        tid, p, ck, _ = _setup()
+        client.post(f"/trips/{tid}/costs/plan", cookies=ck["Ana"],
+                    data=_budget_form(p, traveler_ids=[str(p["Ana"])]))
+        with SessionLocal() as s:
+            bid = s.query(TripBudgetItem).filter_by(trip_id=tid).one().id
+        for call in (lambda: client.get(f"/trips/{tid}/costs/plan/{bid}/edit", cookies=ck["Ben"]),
+                     lambda: client.post(f"/trips/{tid}/costs/plan/{bid}", cookies=ck["Ben"],
+                                         data=_budget_form(p)),
+                     lambda: client.post(f"/trips/{tid}/costs/plan/{bid}/delete", cookies=ck["Ben"]),
+                     lambda: client.get(f"/trips/{tid}/costs/new?plan={bid}", cookies=ck["Ben"])):
+            assert call().status_code == 404
+        assert "Hotel Alfama Azul" not in client.get(f"/trips/{tid}/costs", cookies=ck["Ben"]).text
+        assert client.post(f"/trips/{tid}/costs/plan", cookies=ck["Vi"],
+                           data=_budget_form(p)).status_code == 403
+
+    def test_a_solo_trip_has_nothing_to_settle():
+        """Owner, 2026-10-12: with one person on the trip, balances only repeat
+        the total, so neither they nor the split are shown."""
+        tag = uuid.uuid4().hex[:6]
+        with SessionLocal() as s:
+            ti = TravelerIdentity(display_name=f"Cw Solo {tag}", kind="guest")
+            s.add(ti)
+            s.flush()
+            u = User(username=f"cw-solo-{tag}", auth_source="local", traveler_id=ti.id)
+            s.add(u)
+            s.flush()
+            t = Trip(name=f"Cw solo {tag}", source="manual", owner_id=u.id,
+                     start_date="2031-05-01", end_date="2031-05-09")
+            s.add(t)
+            s.flush()
+            s.add(TripTraveler(trip_id=t.id, traveler_id=ti.id))
+            s.commit()
+            tid, me, ck = t.id, ti.id, {settings.auth_cookie_name: authn.issue_access_token(u)}
+        modal = client.get(f"/trips/{tid}/costs/new", cookies=ck).text
+        assert 'class="field yn-split"' not in modal
+        _closed(client.post(f"/trips/{tid}/costs", cookies=ck, data={
+            "title": "Flight Cost", "amount": "1000", "currency": "CAD", "payer_id": str(me),
+            "split": "equal", "traveler_ids": [str(me)], "category": "transport"}))
+        html = client.get(f"/trips/{tid}/costs", cookies=ck).text
+        assert "Flight Cost" in html and "1,000.00 CAD" in html
+        assert "Balances" not in html and "To settle up" not in html

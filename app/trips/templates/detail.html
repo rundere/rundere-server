@@ -263,6 +263,12 @@
 {% endif %}
 
 <script>
+// Costs: Plan | Actual (YONDER-221). The section's data-sub picks the panel and
+// the matching Add button; the server sets it too, so a refresh keeps it.
+function ynCostsSub(sub) {
+  var sec = document.getElementById('costs-section');
+  if (sec) sec.setAttribute('data-sub', sub);
+}
 // Currency pickers (YONDER-213) list only this trip's currencies; picking
 // "Other currency…" swaps in every other one from the <template> beside it.
 function ynMoreCurrencies(sel) {

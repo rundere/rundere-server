@@ -1,6 +1,8 @@
-{# The Costs tab (YONDER-212, SPEC-10). Every figure comes from app/expenses.py;
-   the caller only sees the costs they're on or entered (D-183). #}
-<div id="costs-section" class="yn-sec">
+{# The Costs tab (YONDER-212, YONDER-221, SPEC-10). Two parts (D-178): the
+   Plan — what the trip should cost — and Actual — what was really spent. Every
+   figure comes from app/expenses.py; the caller only sees the costs they're on
+   or entered (D-183). #}
+<div id="costs-section" class="yn-sec" data-sub="{{ costs.sub }}">
 <span id="sec-costs" class="yn-anchor"></span>
 <div class="bp-timeline-head">
   <div class="yn-sec-title">
@@ -9,29 +11,41 @@
   </div>
   {% if costs.can_edit and costs.has_roster %}
   <div class="bp-head-actions">
-    <button class="btn btn-primary" hx-get="/trips/{{ trip.id }}/costs/new"
-            hx-target="#modal-root">Add expense</button>
+    <button class="btn btn-primary yn-costs-act" data-for="actual"
+            hx-get="/trips/{{ trip.id }}/costs/new" hx-target="#modal-root">Add expense</button>
+    <button class="btn btn-primary yn-costs-act" data-for="plan"
+            hx-get="/trips/{{ trip.id }}/costs/plan/new" hx-target="#modal-root">Plan a cost</button>
   </div>
   {% endif %}
 </div>
 <div class="yn-sec-body">
 {% if not costs.has_roster %}
-<p class="bp-empty">Add the trip's travellers first — expenses are split between them.</p>
-{% elif not costs.rows %}
-<p class="bp-empty">No expenses yet.{% if costs.can_edit %} Add one, or log them on the go in the app.{% endif %}</p>
+<p class="bp-empty">Add the trip's travellers first — costs are for the people on the trip.</p>
 {% else %}
 
+<div class="yn-subtabs" role="tablist" aria-label="Plan or actual">
+  <button type="button" role="tab" class="yn-subtab" data-sub="actual" onclick="ynCostsSub('actual')">
+    Actual{% if costs.total %} · {{ costs.total }}{% endif %}</button>
+  <button type="button" role="tab" class="yn-subtab" data-sub="plan" onclick="ynCostsSub('plan')">
+    Plan{% if costs.planned %} · {{ costs.planned }}{% endif %}</button>
+</div>
+
+{# ---------------------------------------------------------------- Actual #}
+<div class="yn-subpanel" data-sub="actual">
+{% if not costs.rows %}
+<p class="bp-empty">Nothing spent yet.{% if costs.can_edit %} Add an expense, or log them on the go in the app.{% endif %}</p>
+{% else %}
 <section class="bp-group">
   <div class="card blueprint bp-daycard yn-costs-summary">
     <div class="yn-costs-total">
       <div class="bp-group-label">Spent</div>
       <div class="yn-costs-figure">{{ costs.total }}</div>
-      {% if costs.planned %}<div class="bp-act-sub">Planned {{ costs.planned }}</div>{% endif %}
+      {% if costs.planned %}<div class="bp-act-sub">of {{ costs.planned }} planned</div>{% endif %}
     </div>
     {% if costs.can_edit %}
     <form class="yn-costs-currency" hx-post="/trips/{{ trip.id }}/costs/currency"
           hx-target="#costs-section" hx-swap="outerHTML">
-      <label class="bp-muted" for="costs-cur">Show balances in</label>
+      <label class="bp-muted" for="costs-cur">Show totals in</label>
       <select id="costs-cur" class="input" name="currency" required onchange="ynMoreCurrencies(this)">
         {% for code, label in costs.currency_choices.suggested %}<option value="{{ code }}" {% if code == costs.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
         <option value="__more">Other currency…</option>
@@ -43,12 +57,14 @@
     {% if costs.unconverted %}
     <p class="bp-muted">{{ costs.unconverted }} expense{{ 's' if costs.unconverted != 1 }}
       in another currency {{ 'have' if costs.unconverted != 1 else 'has' }} no rate yet and
-      {{ 'are' if costs.unconverted != 1 else 'is' }} left out of the balances. Add a rate to include
+      {{ 'are' if costs.unconverted != 1 else 'is' }} left out of the totals. Add a rate to include
       {{ 'them' if costs.unconverted != 1 else 'it' }}.</p>
     {% endif %}
   </div>
 </section>
 
+{% if costs.shared %}
+{# Only with two or more people: alone, a balance is just the total again. #}
 <section class="bp-group">
   <div class="bp-group-label">Balances</div>
   <div class="card blueprint bp-daycard">
@@ -81,6 +97,7 @@
   </div>
   {% endif %}
 </section>
+{% endif %}
 
 <section class="bp-group">
   <div class="bp-group-label">Expenses</div>
@@ -91,7 +108,7 @@
       <div class="bp-act-main">
         <div class="bp-act-title">{{ r.title }}</div>
         <div class="bp-act-sub">
-          {% if r.spent_on %}{{ r.spent_on }} · {% endif %}{{ r.payer }} paid{% if r.kind == 'expense' %} · for {{ r.for }}{% else %} {{ r.for }}{% endif %}
+          {% if r.spent_on %}{{ r.spent_on }} · {% endif %}{{ r.payer }} paid{% if costs.shared %}{% if r.kind == 'expense' %} · for {{ r.for }}{% else %} {{ r.for }}{% endif %}{% endif %}
           {% if r.place_link %} · <a href="{{ r.place_link }}" target="_blank" rel="noopener">{{ r.place_label or 'Where it was logged' }}</a>{% endif %}
           {% if r.comments %} · {{ r.comments }} comment{{ 's' if r.comments != 1 }}{% endif %}
         </div>
@@ -107,6 +124,58 @@
     {% endfor %}
   </div>
 </section>
+{% endif %}
+</div>
+
+{# ---------------------------------------------------------------- Plan #}
+<div class="yn-subpanel" data-sub="plan">
+{% if not costs.lines %}
+<p class="bp-empty">No plan yet.{% if costs.can_edit %} Plan a cost — a flight, the hotel, a day's food —
+  or have an agent research the trip's budget; its suggestions land here as drafts.{% endif %}</p>
+{% else %}
+<section class="bp-group">
+  <div class="card blueprint bp-daycard yn-costs-summary">
+    <div class="yn-costs-total">
+      <div class="bp-group-label">Planned</div>
+      <div class="yn-costs-figure">{{ costs.planned or '—' }}</div>
+      <div class="bp-act-sub">{% if costs.spent_vs_plan %}{{ costs.spent_vs_plan }} spent so far{% endif %}
+        {% if costs.drafts %} · {{ costs.drafts }} in drafts to review{% endif %}</div>
+    </div>
+  </div>
+</section>
+
+<section class="bp-group">
+  <div class="bp-group-label">Planned costs</div>
+  <div class="card blueprint bp-daycard">
+    {% for b in costs.lines %}
+    <div class="yn-actrow yn-filterable">
+      <span class="tag tag-chip bp-typetag">{{ b.category }}</span>
+      <div class="bp-act-main">
+        <div class="bp-act-title">{{ b.title }}{% if b.draft %} <span class="tag tag-chip">draft</span>{% endif %}</div>
+        <div class="bp-act-sub">
+          {% if costs.shared and b.for %}for {{ b.for }}{% endif %}{% if b.when %}{% if costs.shared and b.for %} · {% endif %}{{ b.when }}{% endif %}
+          {% if b.actual %} · {{ b.actual }} spent{% endif %}
+        </div>
+      </div>
+      <div class="yn-costs-amt">
+        <div>{{ b.amount }}</div>
+        {% if b.total %}<div class="bp-act-sub">≈ {{ b.total }}</div>{% endif %}
+      </div>
+      {% if costs.can_edit %}
+      {% if b.draft %}
+      <button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/costs/plan/{{ b.id }}/keep"
+              hx-target="#costs-section" hx-swap="outerHTML" hx-disabled-elt="this">Keep</button>
+      {% else %}
+      <button class="btn btn-ghost bp-sm" hx-get="/trips/{{ trip.id }}/costs/new?plan={{ b.id }}"
+              hx-target="#modal-root">Log as spent</button>
+      {% endif %}
+      {% endif %}
+      <button class="btn btn-ghost bp-sm" hx-get="/trips/{{ trip.id }}/costs/plan/{{ b.id }}/edit"
+              hx-target="#modal-root">{{ 'Edit' if costs.can_edit else 'View' }}</button>
+    </div>
+    {% endfor %}
+  </div>
+</section>
 
 {% if costs.by_category %}
 <section class="bp-group">
@@ -115,12 +184,14 @@
     {% for c in costs.by_category %}
     <div class="yn-actrow">
       <div class="bp-act-main"><div class="bp-act-title">{{ c.label }}</div></div>
-      <div class="yn-costs-amt"><div>{{ c.actual }}</div><div class="bp-act-sub">of {{ c.planned }}</div></div>
+      <div class="yn-costs-amt"><div>{{ c.actual }}</div><div class="bp-act-sub">{% if c.planned %}of {{ c.planned }}{% else %}not planned{% endif %}</div></div>
     </div>
     {% endfor %}
   </div>
 </section>
 {% endif %}
+{% endif %}
+</div>
 {% endif %}
 </div>
 </div>

@@ -6,7 +6,8 @@
     {% if error %}<div class="bp-error">{{ error }}</div>{% endif %}
     <form class="dialog-body"
           hx-post="/trips/{{ trip.id }}/costs{% if expense %}/{{ expense.id }}{% endif %}"
-          hx-target="#modal-root" hx-swap="innerHTML">
+          hx-target="#modal-root" hx-swap="innerHTML"
+          hx-disabled-elt="find button[type=submit]">
       {% if not settlement %}
       <div class="field">
         <label for="ex-title">What for</label>
@@ -28,7 +29,8 @@
           {% set known = cc.suggested | map(attribute=0) | list %}
           {# Only the currencies that matter for this trip (YONDER-213); the full
              list is one pick away under "Other currency…". #}
-          <select id="ex-cur" class="input" name="currency" required onchange="ynMoreCurrencies(this)">
+          <select id="ex-cur" class="input" name="currency" required
+                  onchange="ynMoreCurrencies(this); ynRateLabel()">
             {% if not form.currency %}<option value="" selected disabled>Choose…</option>{% endif %}
             {% for code, label in cc.suggested %}<option value="{{ code }}" {% if code == form.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
             {% if form.currency and form.currency not in known %}<option value="{{ form.currency }}" selected>{{ form.currency }}</option>{% endif %}
@@ -43,8 +45,10 @@
           <label for="ex-date">Date</label>
           <input id="ex-date" class="input" type="date" name="spent_on" value="{{ form.spent_on }}">
         </div>
-        <div class="field">
-          <label for="ex-rate">Rate to the trip currency</label>
+        {# The rate names both currencies (YONDER-220): "1 CAD = ? USD". It's only
+           asked for when the expense isn't in the trip's own currency. #}
+        <div class="field" id="ex-rate-field" data-trip-cur="{{ trip_currency or '' }}">
+          <label for="ex-rate" id="ex-rate-label">Exchange rate</label>
           <input id="ex-rate" class="input" name="rate" value="{{ form.rate }}" inputmode="decimal"
                  placeholder="blank = your Discover rates">
         </div>
@@ -64,6 +68,29 @@
           </select>
         </div>
       </div>
+      {% if timeline or plan_items %}
+      <div class="bp-row2">
+        {% if timeline %}
+        <div class="field">
+          <label for="ex-act">Timeline item <span class="yn-help">— optional</span></label>
+          <select id="ex-act" class="input" name="activity_id">
+            <option value="">— none —</option>
+            {% for id, label in timeline %}<option value="{{ id }}" {% if id == form.activity_id %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        {% if plan_items %}
+        <div class="field">
+          <label for="ex-plan">Pays for a planned cost <span class="yn-help">— optional</span></label>
+          <select id="ex-plan" class="input" name="budget_item_id">
+            <option value="">— none —</option>
+            {% for id, label in plan_items %}<option value="{{ id }}" {% if id == form.budget_item_id %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if roster | length > 1 %}
       <fieldset class="field yn-split">
         <legend>Split</legend>
         <label><input type="radio" name="split" value="equal" {% if form.split != 'exact' %}checked{% endif %}> Equally between</label>
@@ -78,6 +105,11 @@
         </div>
         {% endfor %}
       </fieldset>
+      {% else %}
+      {# One person on the trip: nothing to split (owner, 2026-10-12). #}
+      <input type="hidden" name="split" value="equal">
+      {% for p in roster %}<input type="hidden" name="traveler_ids" value="{{ p.id }}">{% endfor %}
+      {% endif %}
       {% endif %}
       <div class="field">
         <label for="ex-notes">Notes</label>
@@ -118,3 +150,18 @@
     {% endif %}
   </div>
 </div>
+<script>
+  // "1 CAD = ? USD", and no rate at all when the expense is in the trip's own
+  // currency (or the trip has none yet: the first expense sets it). YONDER-220.
+  function ynRateLabel() {
+    var f = document.getElementById('ex-rate-field');
+    var cur = document.getElementById('ex-cur');
+    if (!f || !cur) return;
+    var trip = f.getAttribute('data-trip-cur'), c = cur.value;
+    var need = trip && c && c !== '__more' && c !== trip;
+    f.hidden = !need;
+    if (need) document.getElementById('ex-rate-label').textContent =
+      'Exchange rate · 1 ' + c + ' = ? ' + trip;
+  }
+  ynRateLabel();
+</script>
