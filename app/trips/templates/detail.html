@@ -11,7 +11,7 @@
       {% if trip.has_notes %}<p class="bp-trip-notes">{{ trip.notes }}</p>{% endif %}
     </div>
     <div class="bp-trip-actions">
-      {% if trip.adventurelog_collection_id or al_show_push %}
+      {% if (trip.adventurelog_collection_id and al_connected) or al_show_push %}
       {# Optional AdventureLog integration lives under Advanced — Run·dere is the
          first-party system (SPEC-8 D-146). #}
       <details class="yn-menu">

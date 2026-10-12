@@ -24,6 +24,16 @@ class AirTrailError(Exception):
     pass
 
 
+def _read_capped(resp, max_bytes: int | None) -> str:
+    """The body as text, refusing one larger than `max_bytes` (D-152)."""
+    if max_bytes is None:
+        return resp.read().decode("utf-8", errors="replace")
+    data = resp.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise OSError(f"response larger than {max_bytes} bytes")
+    return data.decode("utf-8", errors="replace")
+
+
 def _digits(value: str) -> str:
     """"AC9338" / "8721" / "AC 8721" -> "8721". AirTrail stores the carrier
     prefix inside flightNumber (A4 Q1), so comparing raw strings would miss
@@ -56,10 +66,18 @@ class Airline:
 
 
 class AirTrailClient:
-    def __init__(self, base_url: str, token: str, timeout: int = 30):
+    def __init__(self, base_url: str, token: str, timeout: int = 30, *,
+                 opener=None, max_bytes: int | None = None):
         self.base = (base_url or "").rstrip("/")
         self.token = token
         self.timeout = timeout
+        # A per-user connection passes the SSRF-guarded opener and a response
+        # size cap (app/netpolicy.py, D-152); the operator's own defaults don't.
+        self._open = opener.open if opener is not None else urllib.request.urlopen
+        self.max_bytes = max_bytes
+
+    def __repr__(self) -> str:                  # never the token (D-151)
+        return f"AirTrailClient({self.base!r})"
 
     def _request(self, method: str, path: str,
                  body: dict | None = None) -> tuple[int, dict | list | None, str]:
@@ -70,11 +88,11 @@ class AirTrailClient:
             "Content-Type": "application/json",
         })
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                raw = resp.read().decode("utf-8", errors="replace")
+            with self._open(req, timeout=self.timeout) as resp:
+                raw = _read_capped(resp, self.max_bytes)
                 status = resp.status
         except urllib.error.HTTPError as ex:
-            raw = ex.read().decode("utf-8", errors="replace")
+            raw = _read_capped(ex, self.max_bytes)
             status = ex.code
         except (urllib.error.URLError, TimeoutError, OSError) as ex:
             raise AirTrailError(f"{method} {url}: {ex}") from ex

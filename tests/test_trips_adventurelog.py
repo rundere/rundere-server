@@ -83,20 +83,6 @@ def _sync_push_all(tid):
     return client.post(f"/trips/{tid}/adventurelog/push", data={"item_ids": ids})
 
 
-class FakeAirport:
-    def __init__(self, iata, lat, lon, icao=None):
-        self.iata, self.lat, self.lon, self.icao = iata, lat, lon, icao
-
-
-class FakeAirTrail:
-    """A canned airport_reference() — no network, no real AirTrail."""
-    def __init__(self, airports=None):
-        self._airports = airports or {}
-
-    def airport_reference(self):
-        return self._airports
-
-
 class FakePhoton:
     """Records every geocode_freeform query; returns a canned result (or None)."""
     def __init__(self, result=None):
@@ -109,10 +95,19 @@ class FakePhoton:
 
 
 def _no_geocoding(monkeypatch):
-    """Push tests that don't care about coordinates get this: no AirTrail, no
-    Photon hit — keeps them off the network and deterministic."""
-    monkeypatch.setattr(trips_routes, "_airtrail", lambda: None)
+    """Push tests that don't care about coordinates get this: no Photon hit —
+    keeps them off the network and deterministic (airports come from Run·dere's
+    own table, D-147)."""
     monkeypatch.setattr(trips_routes, "_photon", lambda: FakePhoton(None))
+
+
+def _connect(monkeypatch, fake, public_url=None):
+    """The viewer has their own AdventureLog connection (D-150): the trip page
+    uses `fake` as their client."""
+    from app.integrations import Clients
+    monkeypatch.setattr(trips_routes, "_al_clients",
+                        lambda session, user: Clients(None, adventurelog=fake,
+                                                      public_url=public_url))
 
 
 def _mk_trip(name, start=None, end=None, collection_id=None):
@@ -131,7 +126,7 @@ def test_push_creates_public_collection_and_links(monkeypatch):
         return
     tid = _mk_trip("Iceland", "2026-09-01", "2026-09-10")
     fake = FakeAL((201, {"id": "col_1"}, ""))
-    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    _connect(monkeypatch, fake)
     r = client.post(f"/trips/{tid}/push-adventurelog")
     assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
     assert fake.calls and fake.calls[0]["is_public"] is True     # PUBLIC (owner req.)
@@ -150,7 +145,7 @@ def test_push_seeds_flight_as_transportation(monkeypatch):
         "airline": "Air Canada", "flightNumber": "AC4826", "from": "YYZ", "to": "KEF",
         "confirmation": "ABC123", "sourceLink": "https://example.com/eticket"})
     fake = FakeAL((201, {"id": "col_flight"}, ""))
-    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    _connect(monkeypatch, fake)
     _no_geocoding(monkeypatch)
     r = _sync_push_all(tid)
     assert r.status_code == 200
@@ -179,7 +174,7 @@ def test_push_seeds_lodging_and_note(monkeypatch):
         "activity_kind": "event", "when": "2026-09-02T20:00", "name": "Northern lights tour",
         "venue": "Reykjavik"})
     fake = FakeAL((201, {"id": "col_stay"}, ""))
-    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    _connect(monkeypatch, fake)
     _no_geocoding(monkeypatch)
     r = _sync_push_all(tid)
     assert r.status_code == 200
@@ -212,7 +207,7 @@ def test_push_activity_failure_does_not_block_others(monkeypatch):
         fake.transportations.append(body)
         return (201, {"id": "trans_ok"}, "")
     fake.create_transportation = flaky_create_transportation
-    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    _connect(monkeypatch, fake)
     _no_geocoding(monkeypatch)
     r = _sync_push_all(tid)
     assert r.status_code == 200                                  # one bad item doesn't abort
@@ -227,22 +222,18 @@ def test_push_resolves_transportation_coordinates(monkeypatch):
         "activity_kind": "flight", "when": "2026-09-01T09:00", "flightNumber": "AC4826",
         "from": "YYZ", "to": "KEF"})
     fake = FakeAL((201, {"id": "col_geo"}, ""))
-    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
-    # YYZ is "flown" (known to AirTrail); KEF is not, so it falls back to Photon.
-    monkeypatch.setattr(trips_routes, "_airtrail",
-                        lambda: FakeAirTrail({"YYZ": FakeAirport("YYZ", 43.68, -79.63)}))
-    from resolve.geocode import GeocodeResult
-    photon_result = GeocodeResult(lat=63.98, lon=-22.61, country="IS", city="Keflavik",
-                                  name="Keflavik", confidence="verified")
-    fake_photon = FakePhoton(photon_result)
+    _connect(monkeypatch, fake)
+    # Both airports come from Run·dere's own table (D-147): no AirTrail, no Photon.
+    fake_photon = FakePhoton(None)
     monkeypatch.setattr(trips_routes, "_photon", lambda: fake_photon)
 
     r = _sync_push_all(tid)
     assert r.status_code == 200
     body = fake.transportations[0]
-    assert body["origin_latitude"] == 43.68 and body["origin_longitude"] == -79.63
-    assert body["destination_latitude"] == 63.98 and body["destination_longitude"] == -22.61
-    assert fake_photon.queries == ["KEF airport"]   # AirTrail-known YYZ never hit Photon
+    assert body["origin_latitude"] == 43.6772 and body["origin_longitude"] == -79.6306
+    assert round(body["destination_latitude"], 1) == 64.0
+    assert round(body["destination_longitude"], 1) == -22.6
+    assert fake_photon.queries == []                # never needed Photon
 
 
 def test_push_requires_dates(monkeypatch):
@@ -250,7 +241,7 @@ def test_push_requires_dates(monkeypatch):
         return
     tid = _mk_trip("No dates", None, None)
     fake = FakeAL((201, {"id": "x"}, ""))
-    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    _connect(monkeypatch, fake)
     r = client.post(f"/trips/{tid}/push-adventurelog")
     assert "HX-Redirect" not in r.headers
     assert "start and end date" in r.text.lower()
@@ -264,7 +255,7 @@ def test_push_is_idempotent_when_already_linked(monkeypatch):
         return
     tid = _mk_trip("Linked", "2026-01-01", "2026-01-05", collection_id="existing")
     fake = FakeAL((201, {"id": "new"}, ""))
-    monkeypatch.setattr(trips_routes, "_adventurelog", lambda: fake)
+    _connect(monkeypatch, fake)
     r = client.post(f"/trips/{tid}/push-adventurelog")
     assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
     assert fake.calls == []                                       # no second collection
@@ -276,8 +267,7 @@ def test_push_reports_adventurelog_rejection(monkeypatch):
     if not DEPS:
         return
     tid = _mk_trip("Rejected", "2026-01-01", "2026-01-05")
-    monkeypatch.setattr(trips_routes, "_adventurelog",
-                        lambda: FakeAL((400, {"detail": "bad"}, "bad")))
+    _connect(monkeypatch, FakeAL((400, {"detail": "bad"}, "bad")))
     r = client.post(f"/trips/{tid}/push-adventurelog")
     assert "HX-Redirect" not in r.headers and "400" in r.text
     with SessionLocal() as s:
@@ -300,7 +290,7 @@ def test_manual_collection_id_persists():
 def test_detail_renders_link_when_public_url_set(monkeypatch):
     if not DEPS:
         return
-    monkeypatch.setattr(settings, "adventurelog_public_url", "https://al.example.com")
+    _connect(monkeypatch, FakeAL((200, {}, "")), public_url="https://al.example.com")
     tid = _mk_trip("Linked view", "2026-01-01", "2026-01-05", collection_id="col_9")
     html = client.get(f"/trips/{tid}").text
     # A linked trip now leads with the managed sync page, plus a direct "View".
@@ -311,8 +301,7 @@ def test_detail_renders_link_when_public_url_set(monkeypatch):
 def test_push_button_disabled_without_dates(monkeypatch):
     if not DEPS:
         return
-    monkeypatch.setattr(settings, "adventurelog_api_key", "k")   # "configured"
-    monkeypatch.setattr(settings, "adventurelog_public_url", "")
+    _connect(monkeypatch, FakeAL((200, {}, "")))                  # connected
     tid = _mk_trip("Needs dates", None, None)
     html = client.get(f"/trips/{tid}").text
     assert "Push to AdventureLog" in html and "disabled" in html
@@ -338,15 +327,14 @@ def test_adventurelog_actions_sit_under_advanced(monkeypatch):
     if not DEPS:
         return
     import re
-    monkeypatch.setattr(settings, "adventurelog_public_url", "https://al.example.com")
+    _connect(monkeypatch, FakeAL((200, {}, "")), public_url="https://al.example.com")
     tid = _mk_trip("Advanced linked", "2026-01-01", "2026-01-05", collection_id="col_adv")
     html = client.get(f"/trips/{tid}").text
     menu = re.search(r'<details class="yn-menu">\s*<summary[^>]*>Advanced</summary>(.*?)</details>',
                      html, re.S)
     assert menu and "AdventureLog sync" in menu.group(1) and "View in AdventureLog" in menu.group(1)
     assert html.count("AdventureLog sync") == 1               # not also a header button
-    # Unlinked + configured: Push is under Advanced too.
-    monkeypatch.setattr(settings, "adventurelog_api_key", "k")
+    # Unlinked + connected: Push is under Advanced too.
     tid2 = _mk_trip("Advanced unlinked", "2026-01-01", "2026-01-05")
     html2 = client.get(f"/trips/{tid2}").text
     menu2 = re.search(r'<summary[^>]*>Advanced</summary>(.*?)</details>', html2, re.S)
@@ -359,3 +347,6 @@ def test_no_advanced_menu_without_the_integration(monkeypatch):
     monkeypatch.setattr(settings, "adventurelog_api_key", "")
     tid = _mk_trip("Plain trip", "2026-01-01", "2026-01-05")
     assert ">Advanced</summary>" not in client.get(f"/trips/{tid}").text
+    # Linked to a collection, but this viewer has no AdventureLog: still nothing.
+    tid2 = _mk_trip("Linked, not mine", "2026-01-01", "2026-01-05", collection_id="col_x")
+    assert ">Advanced</summary>" not in client.get(f"/trips/{tid2}").text

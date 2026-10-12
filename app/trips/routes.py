@@ -351,6 +351,7 @@ def timeline_day_groups(session: Session, trip: Trip) -> list[dict]:
 
 
 def _detail_context(session: Session, trip: Trip, user=None) -> dict:
+    al = _al_clients(session, user)
     day_groups = timeline_day_groups(session, trip)
     acts = [a for g in day_groups for a in g["activities"]]
     notes = (trip.notes or "").strip()
@@ -361,12 +362,13 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
             "end_display": fmt_date(trip.end_date) or "—",
             "notes": notes, "has_notes": bool(notes),
             "adventurelog_collection_id": trip.adventurelog_collection_id,
-            "adventurelog_url": _collection_url(trip.adventurelog_collection_id),
+            "adventurelog_url": _collection_url(trip.adventurelog_collection_id,
+                                                al.public_url),
         },
         "day_groups": day_groups,
         "has_activities": bool(acts),
         "linked_captures": _linked_captures(session, trip.id),
-        **_push_state(trip),
+        **_push_state(trip, al),
         **_travelers_context(session, trip.id),
         **_discovery_context(session, trip.id, user.id if user else None),
         **_packing_context(session, trip.id, user.id if user else None),
@@ -486,22 +488,18 @@ def _travelers_context(session: Session, trip_id: str) -> dict:
     }
 
 
-def _adventurelog():
-    """The AdventureLog client, or None when the deployment hasn't configured
-    one — same seam as review's _target_clients."""
-    if not settings.adventurelog_api_key:
-        return None
-    from adapters.targets.adventurelog import AdventureLogClient
-    return AdventureLogClient(settings.adventurelog_url,
-                              settings.adventurelog_api_key)
+def _al_clients(session: Session, user):
+    """The acting person's own integration clients (SPEC-8 D-150) — the trip
+    page's AdventureLog push / sync / pull use their connection, never a
+    server-wide one."""
+    from app import integrations
+    return integrations.clients_for_user(session, getattr(user, "id", None))
 
 
-def _airtrail():
-    """AirTrail client, or None when unconfigured — same seam as _adventurelog."""
-    if not settings.airtrail_token:
-        return None
-    from adapters.targets.airtrail import AirTrailClient
-    return AirTrailClient(settings.airtrail_url, settings.airtrail_token)
+def _adventurelog(session: Session, request: Request):
+    """The acting person's AdventureLog client, or None when they haven't
+    connected AdventureLog (Settings → Connections)."""
+    return _al_clients(session, scope.user_of(request)).adventurelog
 
 
 def _photon():
@@ -510,65 +508,39 @@ def _photon():
 
 
 def _airport_resolver():
-    """A complete `(code) -> Airport | None` lookup for location derivation
-    (discover/places.py). AirTrail's flown-airport reference is checked first
-    (free, in-memory), then its complete read-only airport DB (D-50) so a
-    never-before-flown destination airport still resolves. Both are optional;
-    with neither configured, airport codes simply drop and geocoding carries the
-    rest — same graceful degradation as the push path's _resolve_coords."""
-    airports: dict = {}
-    at = _airtrail()
-    if at is not None:
-        try:
-            airports = at.airport_reference()
-        except Exception:
-            airports = {}
-    db = None
-    if settings.airtrail_db_url:
-        from adapters.targets.airtrail_db import AirTrailDB
-        db = AirTrailDB(settings.airtrail_db_url)
-
-    def resolve(code: str):
-        key = (code or "").strip().upper()
-        if not key:
-            return None
-        ap = airports.get(key)
-        if ap is None:
-            ap = next((a for a in airports.values()
-                       if a.icao and a.icao.upper() == key), None)
-        if ap is None and db is not None:
-            try:
-                ap = db.airport(key)
-            except Exception:
-                ap = None
-        return ap
-
-    return resolve
+    """A `(code) -> Airport | None` lookup for location derivation
+    (discover/places.py): Run·dere's own airport table (D-147), which needs no
+    integration and covers every IATA airport. An unknown code drops and
+    geocoding carries the rest."""
+    from resolve import airports as airports_mod
+    return airports_mod.lookup
 
 
-def _collection_url(collection_id: str | None) -> str | None:
-    """Browser-facing link to a collection, or None when either the public base
-    isn't set or the trip isn't linked."""
-    base = (settings.adventurelog_public_url or "").rstrip("/")
+def _collection_url(collection_id: str | None, base: str | None) -> str | None:
+    """Browser-facing link to a collection on the viewer's AdventureLog (their
+    connection's browser address), or None when either isn't there."""
+    base = (base or "").rstrip("/")
     if not (base and collection_id):
         return None
     return f"{base}/collections/{collection_id}"
 
 
-def _push_state(trip: Trip) -> dict:
+def _push_state(trip: Trip, clients) -> dict:
     """What the detail header shows for AdventureLog: a link if already pushed,
-    a Push button if we can, or a disabled button + reason if we can't yet."""
+    a Push button if the viewer has an AdventureLog connection (D-146: the whole
+    menu stays hidden for everyone else), or a disabled button + reason."""
     linked = bool(trip.adventurelog_collection_id)
-    configured = bool(settings.adventurelog_api_key)
+    configured = clients.adventurelog is not None
     has_dates = bool(trip.start_date and trip.end_date)
     reason = ""
     if not linked:
         if not configured:
-            reason = "AdventureLog isn't configured on this server."
+            reason = _NOT_CONNECTED
         elif not has_dates:
             reason = "Add a start and end date first — AdventureLog needs both."
     return {
         "al_linked": linked,
+        "al_connected": configured,
         "al_show_push": configured and not linked,
         "al_can_push": configured and not linked and has_dates,
         "al_push_reason": reason,
@@ -620,11 +592,18 @@ def close_modal():
     return HTMLResponse("")
 
 
+def _show_al_field(session: Session, request: Request) -> bool:
+    """The trip form's AdventureLog collection field is for people who connected
+    AdventureLog (D-146: an optional extra, never asked of anyone else)."""
+    return _adventurelog(session, request) is not None
+
+
 @router.get("/new", response_class=HTMLResponse)
-def new_trip(request: Request, next: str = "/trips"):
+def new_trip(request: Request, next: str = "/trips",
+             session: Session = Depends(get_session)):
     return templates.TemplateResponse(request, "_trip_modal.html", {
         "request": request, "mode": "create", "title": "New trip",
-        "action": "/trips", "next": next,
+        "action": "/trips", "next": next, "show_al": _show_al_field(session, request),
         "form": {"name": "", "start": "", "end": "", "notes": "",
                  "collection_id": ""}, "error": None})
 
@@ -2211,6 +2190,7 @@ def edit_trip(trip_id: str, request: Request, next: str = "",
     return templates.TemplateResponse(request, "_trip_modal.html", {
         "request": request, "mode": "edit", "title": "Edit trip",
         "action": f"/trips/{trip.id}", "next": next or f"/trips/{trip.id}",
+        "show_al": _show_al_field(session, request),
         "form": {"name": trip.name, "start": trip.start_date or "",
                  "end": trip.end_date or "", "notes": trip.notes or "",
                  "collection_id": trip.adventurelog_collection_id or ""},
@@ -2220,26 +2200,28 @@ def edit_trip(trip_id: str, request: Request, next: str = "",
 # ----------------------------------------------------------------- trip writes
 
 def _save_trip_fields(trip: Trip, name: str, start: str, end: str, notes: str,
-                      collection_id: str = ""):
+                      collection_id: str | None = None):
     trip.name = name.strip()
     trip.start_date = start.strip() or None
     trip.end_date = end.strip() or None
     trip.notes = notes.strip() or None
-    trip.adventurelog_collection_id = collection_id.strip() or None
+    if collection_id is not None:       # None: the form didn't show the field
+        trip.adventurelog_collection_id = collection_id.strip() or None
 
 
 @router.post("", response_class=HTMLResponse)
 def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
                 end: str = Form(""), notes: str = Form(""),
-                adventurelog_collection_id: str = Form(""),
+                adventurelog_collection_id: str | None = Form(None),
                 next: str = Form("/trips"),
                 session: Session = Depends(get_session)):
     if not name.strip():
         return templates.TemplateResponse(request, "_trip_modal.html", {
             "request": request, "mode": "create", "title": "New trip",
             "action": "/trips", "next": next,
+            "show_al": adventurelog_collection_id is not None,
             "form": {"name": name, "start": start, "end": end, "notes": notes,
-                     "collection_id": adventurelog_collection_id},
+                     "collection_id": adventurelog_collection_id or ""},
             "error": "A trip needs a name."})
     trip = Trip(source="manual")
     # Phase 2 (D-121): a hand-made trip is owned by its creator. NULL when auth
@@ -2257,7 +2239,7 @@ def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
 @router.post("/{trip_id}", response_class=HTMLResponse)
 def update_trip(trip_id: str, request: Request, name: str = Form(""),
                 start: str = Form(""), end: str = Form(""), notes: str = Form(""),
-                adventurelog_collection_id: str = Form(""),
+                adventurelog_collection_id: str | None = Form(None),
                 next: str = Form(""), session: Session = Depends(get_session)):
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
@@ -2267,8 +2249,9 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
         return templates.TemplateResponse(request, "_trip_modal.html", {
             "request": request, "mode": "edit", "title": "Edit trip",
             "action": f"/trips/{trip.id}", "next": dest,
+            "show_al": adventurelog_collection_id is not None,
             "form": {"name": name, "start": start, "end": end, "notes": notes,
-                     "collection_id": adventurelog_collection_id},
+                     "collection_id": adventurelog_collection_id or ""},
             "error": "A trip needs a name."})
     _save_trip_fields(trip, name, start, end, notes, adventurelog_collection_id)
     session.commit()
@@ -2360,8 +2343,7 @@ def remove_traveler(trip_id: str, traveler_id: int, request: Request,
     return _travelers_section(request, session, trip_id)
 
 
-_EXTERNAL_DENIED = ("AdventureLog sync is limited to admins until per-user "
-                    "connections are available (YONDER-191).")
+_NOT_CONNECTED = ("Connect your AdventureLog first (Settings → Connections).")
 
 
 def _push_msg(text: str) -> HTMLResponse:
@@ -2525,14 +2507,8 @@ def _push_activities(client, collection_id: str, trip_id: str,
     """Best-effort: the collection is already created and linked by the time
     this runs, so one bad activity logs and moves on rather than losing the
     ones that would otherwise succeed."""
-    airtrail = _airtrail()
-    airports = {}
-    if airtrail is not None:
-        try:
-            airports = airtrail.airport_reference()
-        except Exception:
-            log.warning("push-adventurelog: AirTrail airport reference unavailable "
-                       "for trip %s, falling back to Photon for every endpoint", trip_id)
+    from resolve import airports as airports_mod
+    airports = airports_mod.reference()             # Run·dere's own table (D-147)
     photon = _photon()
     coord_cache: dict = {}
     create = {"transportation": client.create_transportation,
@@ -2572,11 +2548,9 @@ def push_adventurelog(trip_id: str, request: Request, session: Session = Depends
         return HTMLResponse("", status_code=404)
     if trip.adventurelog_collection_id:
         return _redirect(f"/trips/{trip_id}")           # already linked
-    if not scope.external_writes_allowed(scope.user_of(request)):
-        return _push_msg(_EXTERNAL_DENIED)
-    client = _adventurelog()
+    client = _adventurelog(session, request)
     if client is None:
-        return _push_msg("AdventureLog isn't configured on this server.")
+        return _push_msg(_NOT_CONNECTED)
     if not (trip.start_date and trip.end_date):
         return _push_msg("Add a start and end date first — AdventureLog needs both.")
     try:
@@ -2717,17 +2691,12 @@ def _al_record_to_activity(rec: dict, kind: str, trip_id: str) -> TripActivity:
 
 
 def _al_airports_photon():
-    airtrail = _airtrail()
-    airports = {}
-    if airtrail is not None:
-        try:
-            airports = airtrail.airport_reference()
-        except Exception:
-            log.warning("adventurelog-sync: AirTrail airport reference unavailable")
-    return airports, _photon(), {}
+    from resolve import airports as airports_mod
+    return airports_mod.reference(), _photon(), {}      # Run·dere's own table (D-147)
 
 
-def _al_sync_ctx(session: Session, trip: Trip, client, uid: str | None = None) -> dict:
+def _al_sync_ctx(session: Session, trip: Trip, client, uid: str | None = None,
+                 public_url: str | None = None) -> dict:
     """Everything the sync page renders: pushable Yonder items (with a per-item
     'already there?' flag) and pullable AdventureLog records."""
     cid = trip.adventurelog_collection_id
@@ -2768,7 +2737,7 @@ def _al_sync_ctx(session: Session, trip: Trip, client, uid: str | None = None) -
                               "detail": rec.get("location") or ""})
     return {"trip": {"id": trip.id, "name": trip.name},
             "push_items": push_items, "pull_rows": pull_rows,
-            "adventurelog_url": _collection_url(cid)}
+            "adventurelog_url": _collection_url(cid, public_url)}
 
 
 @router.get("/{trip_id}/adventurelog", response_class=HTMLResponse)
@@ -2777,13 +2746,12 @@ def adventurelog_sync_page(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return _redirect(f"/trips/{trip_id}")
-    if not scope.external_writes_allowed(scope.user_of(request)):
-        return HTMLResponse(_EXTERNAL_DENIED, status_code=403)
-    client = _adventurelog()
+    clients = _al_clients(session, scope.user_of(request))
+    client = clients.adventurelog
     if client is None:
-        return HTMLResponse("AdventureLog isn't configured on this server.",
-                            status_code=503)
-    ctx = {"request": request, **_al_sync_ctx(session, trip, client, _viewer_uid(request))}
+        return HTMLResponse(_NOT_CONNECTED, status_code=403)
+    ctx = {"request": request, **_al_sync_ctx(session, trip, client, _viewer_uid(request),
+                                              public_url=clients.public_url)}
     return templates.TemplateResponse(request, "adventurelog.html", ctx)
 
 
@@ -2827,11 +2795,9 @@ def adventurelog_push(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
-    if not scope.external_writes_allowed(scope.user_of(request)):
-        return _push_msg(_EXTERNAL_DENIED)
-    client = _adventurelog()
+    client = _adventurelog(session, request)
     if client is None:
-        return _push_msg("AdventureLog isn't configured on this server.")
+        return _push_msg(_NOT_CONNECTED)
     cid = trip.adventurelog_collection_id
     index = _al_collection_index(client, cid)
     airports, photon, cache = _al_airports_photon()
@@ -2885,11 +2851,9 @@ def adventurelog_pull(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None or not trip.adventurelog_collection_id:
         return HTMLResponse("", status_code=404)
-    if not scope.external_writes_allowed(scope.user_of(request)):
-        return _push_msg(_EXTERNAL_DENIED)
-    client = _adventurelog()
+    client = _adventurelog(session, request)
     if client is None:
-        return _push_msg("AdventureLog isn't configured on this server.")
+        return _push_msg(_NOT_CONNECTED)
     try:
         status, data, raw = client.get_collection(trip.adventurelog_collection_id)
     except Exception as ex:

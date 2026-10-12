@@ -590,7 +590,7 @@ def test_al_trip_picker_stores_the_pick_as_capture_context(monkeypatch):
     re-resolves so the item files into that collection."""
     def run():
         from app.review import routes
-        monkeypatch.setattr(routes, "_list_trips", lambda: [
+        monkeypatch.setattr(routes, "_list_trips", lambda session, owner_id: [
             {"id": "col-1", "name": "Trip", "start_date": "", "end_date": ""}])
         with SessionLocal() as s:
             item_id = _add(s, _flight_payload(), resolve_state="needs_review").id
@@ -607,7 +607,7 @@ def test_al_trip_picker_rejects_an_unknown_collection(monkeypatch):
     """An id that names no known AdventureLog trip is ignored, not trusted."""
     def run():
         from app.review import routes
-        monkeypatch.setattr(routes, "_list_trips", lambda: [])
+        monkeypatch.setattr(routes, "_list_trips", lambda session, owner_id: [])
         with SessionLocal() as s:
             item_id = _add(s, _flight_payload(), resolve_state="needs_review").id
         r = client.post(f"/review/item/{item_id}/assign",

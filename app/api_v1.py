@@ -900,25 +900,20 @@ def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
     from app.committing import commit_pending
     from app.db import SessionLocal
     from app.resolving import load_identities
-    from app.review.routes import _target_clients
+    from app.integrations import ClientCache
     mine = scope.capture_filter(user)
-    # YONDER-191/D-156: non-admins commit to Run·dere only; external targets skipped.
-    external = scope.external_writes_allowed(user)
-    juser = scope.snapshot(user)
+    # Each capture logs to its OWNER's connections (D-150); an owner with none
+    # gets Run·dere only, the AirTrail/AdventureLog targets skipped.
     if body.dry_run:
-        adventurelog, airtrail = _target_clients(user)
-        summary = commit_pending(session, adventurelog, airtrail,
-                                 identities=load_identities(session), dry_run=True,
-                                 item_filter=mine, external=external)
+        summary = commit_pending(session, identities=load_identities(session), dry_run=True,
+                                 item_filter=mine, clients_for=ClientCache(session))
         return {"dry_run": True, "summary": summary}
 
     def work(progress):
         with SessionLocal() as s:
-            adventurelog, airtrail = _target_clients(juser)
-            summary = commit_pending(s, adventurelog, airtrail,
-                                     identities=load_identities(s), dry_run=False,
+            summary = commit_pending(s, identities=load_identities(s), dry_run=False,
                                      progress=progress, item_filter=mine,
-                                     external=external)
+                                     clients_for=ClientCache(s))
             parts = [f"logged {summary['writes_ok']} write(s) across {summary['items']} item(s)"]
             if summary["writes_failed"]:
                 parts.append(f"{summary['writes_failed']} failed")
@@ -926,7 +921,7 @@ def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
                 parts.append(f"{summary['skipped']} already present")
             if summary.get("external_skipped"):
                 parts.append(f"{summary['external_skipped']} AirTrail/AdventureLog "
-                             "write(s) skipped (admins only for now)")
+                             "write(s) skipped (not connected)")
             details = [f"{plan['headline']} · {r['target']}: {r['error']}"
                        for plan in summary["plans"] for r in plan["results"]
                        if not r.get("ok") and r.get("error")]

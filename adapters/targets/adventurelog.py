@@ -27,6 +27,16 @@ class AdventureLogError(Exception):
     pass
 
 
+def _read_capped(resp, max_bytes: int | None) -> str:
+    """The body as text, refusing one larger than `max_bytes` (D-152)."""
+    if max_bytes is None:
+        return resp.read().decode("utf-8", errors="replace")
+    data = resp.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise OSError(f"response larger than {max_bytes} bytes")
+    return data.decode("utf-8", errors="replace")
+
+
 @dataclass(frozen=True)
 class Collection:
     id: str
@@ -36,10 +46,27 @@ class Collection:
 
 
 class AdventureLogClient:
-    def __init__(self, base_url: str, api_key: str, timeout: int = 30):
+    def __init__(self, base_url: str, api_key: str, timeout: int = 30, *,
+                 opener=None, max_bytes: int | None = None):
         self.base = (base_url or "").rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        # A per-user connection passes the SSRF-guarded opener and a response
+        # size cap (app/netpolicy.py, D-152); the operator's own defaults don't.
+        self._open = opener.open if opener is not None else urllib.request.urlopen
+        self.max_bytes = max_bytes
+
+    def __repr__(self) -> str:                  # never the key (D-151)
+        return f"AdventureLogClient({self.base!r})"
+
+    def _on_base(self, url: str) -> str:
+        """A server-built absolute URL as a path under self.base."""
+        parts = urllib.parse.urlsplit(url)
+        path = parts.path
+        prefix = urllib.parse.urlsplit(self.base).path.rstrip("/")
+        if prefix and path.startswith(prefix + "/"):
+            path = path[len(prefix):]
+        return path + (f"?{parts.query}" if parts.query else "")
 
     def _request(self, method: str, path: str, body: dict | None = None) -> tuple[int, dict | list | None, str]:
         url = path if path.startswith("http") else f"{self.base}{path}"
@@ -49,11 +76,11 @@ class AdventureLogClient:
             "Content-Type": "application/json",
         })
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                raw = resp.read().decode("utf-8", errors="replace")
+            with self._open(req, timeout=self.timeout) as resp:
+                raw = _read_capped(resp, self.max_bytes)
                 status = resp.status
         except urllib.error.HTTPError as ex:
-            raw = ex.read().decode("utf-8", errors="replace")
+            raw = _read_capped(ex, self.max_bytes)
             status = ex.code
         except (urllib.error.URLError, TimeoutError, OSError) as ex:
             raise AdventureLogError(f"{method} {url}: {ex}") from ex
@@ -88,7 +115,9 @@ class AdventureLogClient:
                     end_date=(r.get("end_date") or None)))
             if not nxt:
                 break
-            path = nxt
+            # Follow pagination on the configured server only (the key goes
+            # with every request): keep the next link's path and query.
+            path = self._on_base(nxt)
         return out
 
     def country_names(self) -> dict[str, str]:
@@ -114,7 +143,9 @@ class AdventureLogClient:
                     out[str(r["country_code"]).upper()] = str(r["name"])
             if not nxt:
                 break
-            path = nxt
+            # Follow pagination on the configured server only (the key goes
+            # with every request): keep the next link's path and query.
+            path = self._on_base(nxt)
         return out
 
     def find_locations_near(self, query: str, lat: float | None, lon: float | None,

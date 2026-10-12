@@ -144,17 +144,26 @@ def committable(item: TravelItem) -> bool:
             and not _fully_committed(item))
 
 
-# Marker on a result for an AirTrail/AdventureLog target a non-admin's commit
-# did not attempt (YONDER-191, D-156). It counts as settled for the item's
-# Logged state, but is NOT a real write, so `_done_targets` ignores it.
-EXTERNAL_SKIP = "no external connection (admins only until per-user connections)"
+# Marker on a result for an AirTrail/AdventureLog target the commit did not
+# attempt because the capture's owner has no connection of that kind (D-150;
+# before YONDER-192: because they weren't an admin, D-156 — that older text is
+# still on stored results). It counts as settled for the item's Logged state,
+# but is NOT a real write, so `_done_targets` ignores it and a later commit,
+# once the owner connects, can still write it.
+EXTERNAL_SKIP = "no AirTrail/AdventureLog connection"
+_EXTERNAL_SKIPS = {EXTERNAL_SKIP,
+                   "no external connection (admins only until per-user connections)"}
+
+
+def is_external_skip(row: dict) -> bool:
+    return row.get("skipped") in _EXTERNAL_SKIPS
 
 
 def _done_targets(item: TravelItem) -> set[str]:
     """Targets a prior (non-dry) run already wrote, so a re-run skips them."""
     done = set()
     for r in ((item.commit or {}).get("results") or []):
-        if r.get("ok") and not r.get("dry_run") and r.get("skipped") != EXTERNAL_SKIP:
+        if r.get("ok") and not r.get("dry_run") and not is_external_skip(r):
             done.add(r.get("target"))
     return done
 
@@ -669,16 +678,30 @@ def _airtrail_db():
 def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 identities=None, airports: dict | None = None,
                 airlines: dict | None = None, dry_run: bool = True,
-                external: bool = True) -> dict:
-    """Execute (or, dry, plan) every target for one item. `external=False`
-    (a non-admin, YONDER-191) writes only the first-party Run·dere target. Returns a result
-    envelope; also written to `item.commit` and reflected in `item.status`."""
+                external: bool | frozenset[str] = True,
+                self_uid: str | None = None) -> dict:
+    """Execute (or, dry, plan) every target for one item. Returns a result
+    envelope; also written to `item.commit` and reflected in `item.status`.
+
+    `external` is which external systems may be written: True = whichever
+    client is passed, False = none, or a set of "airtrail"/"adventurelog" — the
+    capture owner's connections (D-150). A target outside it is skipped, never
+    attempted; the first-party Run·dere target always runs. `self_uid` is the
+    AirTrail user a flight's seat belongs to (the owner's connection); None
+    falls back to the `self` traveller's."""
     payload = (item.extraction or {}).get("payload") or {}
     resolution = item.resolution or {}
     targets = [t for t in _ORDER if t in set(resolution.get("targets") or [])]
     airports = airports or {}
     airlines = airlines or {}
-    self_uid = self_user_id(identities)
+    self_uid = self_uid or self_user_id(identities)
+    if external is True:
+        systems = frozenset(k for k, c in (("airtrail", airtrail),
+                                           ("adventurelog", adventurelog)) if c is not None)
+    elif external is False:
+        systems = frozenset()
+    else:
+        systems = frozenset(external)
     # Always honour prior real writes — even in a dry run — so the PREVIEW shows
     # an already-written target as skipped rather than promising to create it
     # again (which execution's idempotency would then refuse).
@@ -774,7 +797,7 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
             results.append({"target": target, "operation": "skip",
                             "ok": True, "skipped": "already committed"})
             continue
-        if not external and target != "yonder.activity":
+        if target != "yonder.activity" and target.split(".", 1)[0] not in systems:
             results.append({"target": target, "operation": "skip",
                             "ok": True, "skipped": EXTERNAL_SKIP})
             continue
@@ -1307,9 +1330,10 @@ def _apply_status(item: TravelItem, results: list[dict]) -> None:
 
 # ---------------------------------------------------------------- batch
 
-def commit_pending(session: Session, adventurelog, airtrail, *,
+def commit_pending(session: Session, adventurelog=None, airtrail=None, *,
                    identities=None, dry_run: bool = True, limit: int = 0,
-                   progress=None, item_filter=None, external: bool = True) -> dict:
+                   progress=None, item_filter=None, external: bool = True,
+                   clients_for=None) -> dict:
     """Commit every approved, resolved item. Sequential (one flight at a time,
     D-06); per-item commit so one failure never blocks the rest.
 
@@ -1318,20 +1342,37 @@ def commit_pending(session: Session, adventurelog, airtrail, *,
     button passes the pressing user's, so nobody logs someone else's approved
     items (YONDER-105). None = every item (the operator CLI).
 
-    `external=False` (a non-admin, YONDER-191/D-156) commits to Run·dere only:
-    AirTrail/AdventureLog targets are skipped, never attempted."""
-    flown_airports = flown_airlines = {}
-    if airtrail is not None:
-        try:
-            flights = airtrail.list_flights()
-            flown_airports = airtrail.airport_reference()
-            flown_airlines = airtrail.airline_reference(flights)
-        except Exception as ex:
-            log.warning("AirTrail reference load failed: %s", ex)
-    # Flown reference first, AirTrail's own DB for never-flown airports (D-50).
-    db = _airtrail_db() if external else None
-    airports = _Resolver(flown_airports, db, "airport")
-    airlines = _Resolver(flown_airlines, db, "airline")
+    `clients_for(owner_id) -> integrations.Clients` gives each capture its
+    OWNER's AirTrail/AdventureLog clients (D-150): an admin logging a shared
+    user's capture writes to that user's accounts, never their own, and an
+    owner with no connection gets Run·dere only. Without it, the clients passed
+    here are used for every item (the operator CLI and tests); `external=False`
+    then skips them all."""
+    from app.integrations import Clients
+    if clients_for is None:
+        fixed = Clients(None, adventurelog=adventurelog if external else None,
+                        airtrail=airtrail if external else None)
+        clients_for = lambda _owner: fixed      # noqa: E731
+    refs: dict[int, tuple] = {}                 # per Clients: (airports, airlines)
+
+    def references(c) -> tuple:
+        if id(c) not in refs:
+            flown_airports = flown_airlines = {}
+            if c.airtrail is not None:
+                try:
+                    flights = c.airtrail.list_flights()
+                    flown_airports = c.airtrail.airport_reference()
+                    flown_airlines = c.airtrail.airline_reference(flights)
+                except Exception as ex:
+                    log.warning("AirTrail reference load failed: %s", ex)
+            # Flown reference first; AirTrail's own DB for never-flown airports
+            # (D-50) only for the deployment owner's AirTrail, whose database the
+            # operator configured (TX_AIRTRAIL_DB_URL, D-186).
+            db = _airtrail_db() if (c.airtrail is not None
+                                    and _is_deployment_owner(session, c.user_id)) else None
+            refs[id(c)] = (_Resolver(flown_airports, db, "airport"),
+                           _Resolver(flown_airlines, db, "airline"))
+        return refs[id(c)]
 
     q = session.query(TravelItem)
     if item_filter is not None:
@@ -1346,12 +1387,15 @@ def commit_pending(session: Session, adventurelog, airtrail, *,
     for idx, item in enumerate(items):
         if progress:
             progress("logging", idx, total, str(item.canonical_key or item.id)[:70])
-        env = commit_item(session, item, adventurelog, airtrail,
+        c = clients_for(item.owner_id)
+        airports, airlines = references(c)
+        env = commit_item(session, item, c.adventurelog, c.airtrail,
                           identities=identities, airports=airports,
-                          airlines=airlines, dry_run=dry_run, external=external)
+                          airlines=airlines, dry_run=dry_run, external=c.external,
+                          self_uid=c.airtrail_user_id)
         summary["items"] += 1
         for r in env["results"]:
-            if r.get("skipped") == EXTERNAL_SKIP:
+            if is_external_skip(r):
                 summary["external_skipped"] = summary.get("external_skipped", 0) + 1
             elif r.get("skipped"):
                 summary["skipped"] += 1
@@ -1365,3 +1409,11 @@ def commit_pending(session: Session, adventurelog, airtrail, *,
         if not dry_run:
             session.commit()
     return summary
+
+
+def _is_deployment_owner(session: Session, user_id: str | None) -> bool:
+    """None (no users: the single-user deployment) counts as the owner."""
+    if user_id is None:
+        return True
+    from app.integrations import owner_user_id
+    return owner_user_id(session) == user_id

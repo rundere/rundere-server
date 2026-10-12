@@ -541,10 +541,9 @@ def assign_trip(item_id: str, request: Request, collection_id: str = Form(""),
         return HTMLResponse("", status_code=404)
 
     cid = (collection_id or "").strip()
-    # YONDER-191: the picker lists the server owner's AdventureLog trips, so a
-    # non-admin can't pick one (nothing to confirm the id against).
-    if cid and (not scope.external_writes_allowed(scope.user_of(request))
-                or cid not in {t["id"] for t in _list_trips()}):
+    # The picker lists the capture OWNER's AdventureLog trips (D-150): an owner
+    # with no AdventureLog connection has none to pick.
+    if cid and cid not in {t["id"] for t in _list_trips(session, item.owner_id)}:
         # An id that names no known trip is ignored rather than trusted — never
         # file into a collection the resolver couldn't confirm exists.
         return _detail_response(request, session, item, bucket=bucket, saved=False)
@@ -575,11 +574,13 @@ def assign_trip(item_id: str, request: Request, collection_id: str = Form(""),
                             saved=True, oob_counts=True)
 
 
-def _list_trips() -> list[dict]:
-    """Existing AdventureLog trips for the picker, newest first. Best-effort: an
-    empty list when AdventureLog isn't configured or can't be reached (the picker
-    then simply doesn't render)."""
-    adventurelog, _ = _target_clients()
+def _list_trips(session: Session, owner_id: str | None) -> list[dict]:
+    """The capture owner's AdventureLog trips for the picker, newest first
+    (their own connection, D-150). Best-effort: an empty list when they have no
+    AdventureLog connection or it can't be reached (the picker then simply
+    doesn't render)."""
+    from app import integrations
+    adventurelog = integrations.clients_for_user(session, owner_id).adventurelog
     if adventurelog is None:
         return []
     try:
@@ -601,12 +602,10 @@ def _trip_context(session: Session, item: TravelItem, view: dict,
     contain the item, then the rest newest-first."""
     if view["bucket"] not in ("attention", "waiting", "ready"):
         return None
-    if not scope.external_writes_allowed(user):        # YONDER-191
-        return None
     payload = view["payload"]
     if (item.resolution or {}).get("within_home_radius"):
         return None
-    trips = _list_trips()
+    trips = _list_trips(session, item.owner_id)
     if not trips:
         return None
     from resolve.targets import item_date_span
@@ -695,30 +694,35 @@ def _yonder_trip_context(session: Session, item: TravelItem,
 def _reresolve(session: Session, item: TravelItem) -> None:
     """Resolve this one item in place, reusing the full resolver so the review
     path and the batch path can never diverge."""
+    from app import integrations
     from app.config import settings
     from app.resolving import (load_enablement, load_homes_for_user, resolve_item)
+    from resolve import airports as airports_mod, countries as countries_mod
     from resolve.collections import CollectionRef
 
+    # The capture owner's own connections (D-150), like the batch path.
+    clients = integrations.clients_for_user(session, item.owner_id)
     collections: list[CollectionRef] = []
-    country_names: dict[str, str] = {}
-    airports: dict = {}
+    flown: dict = {}
     try:
-        if settings.adventurelog_api_key:
-            from adapters.targets.adventurelog import AdventureLogClient
-            al = AdventureLogClient(settings.adventurelog_url,
-                                    settings.adventurelog_api_key)
+        if clients.adventurelog is not None:
             collections = [CollectionRef(id=c.id, name=c.name,
                                          start_date=c.start_date or "",
                                          end_date=c.end_date or "")
-                           for c in al.list_collections()
+                           for c in clients.adventurelog.list_collections()
                            if c.start_date and c.end_date]
-            country_names = al.country_names()
-        if settings.airtrail_token:
-            from adapters.targets.airtrail import AirTrailClient
-            airports = AirTrailClient(settings.airtrail_url,
-                                      settings.airtrail_token).airport_reference()
     except Exception:
-        log.warning("re-resolve ran without target lookups", exc_info=True)
+        # Resolving as if they had no trips would mint a duplicate: leave it.
+        log.warning("re-resolve skipped: AdventureLog unreachable", exc_info=True)
+        return
+    if clients.airtrail is not None:
+        try:
+            flown = clients.airtrail.airport_reference()
+        except Exception:
+            log.warning("re-resolve ran without AirTrail's flown airports", exc_info=True)
+    # Run·dere's own airport table and CLDR names (D-147, D-148).
+    airports = airports_mod.reference(flown)
+    country_names = countries_mod.country_names()
 
     # Photon too, as the batch path uses it: an edited From/To address or city
     # is only useful if the re-resolve can locate it (YONDER-121).
@@ -730,7 +734,8 @@ def _reresolve(session: Session, item: TravelItem) -> None:
         resolve_item(session, item, load_homes_for_user(session, item.owner_id), collections,
                      load_enablement(session), airports=airports,
                      geocoder=geocoder, country_names=country_names,
-                     identities=load_identities(session))  # self/guest needs these
+                     identities=load_identities(session),  # self/guest needs these
+                     external=clients.external)
         session.commit()
     except Exception:
         session.rollback()
@@ -865,17 +870,18 @@ def _run_extract_resolve(session: Session, progress=None, user=None
         summary = process_pending(session, llm, progress=progress,
                                   batch_filter=batch_filter)
 
+        from app.integrations import ClientCache
         from app.resolving import resolve_pending
-        adventurelog, airtrail = _target_clients(user)
         geocoder = None
         try:
             from resolve.geocode import PhotonGeocoder
             geocoder = PhotonGeocoder(settings.photon_url)
         except Exception:                       # geocoding is optional
             geocoder = None
-        resolved = resolve_pending(session, adventurelog, airtrail=airtrail,
-                                   geocoder=geocoder, progress=progress,
-                                   item_filter=item_filter)
+        # Each capture resolves with its owner's connections (D-150).
+        resolved = resolve_pending(session, geocoder=geocoder, progress=progress,
+                                   item_filter=item_filter,
+                                   clients_for=ClientCache(session))
     except Exception as ex:
         log.exception("extract/resolve run failed")
         return summary, resolved, str(ex)
@@ -966,20 +972,26 @@ def reprocess(request: Request, bucket: str = "attention",
             protected = {i.batch_id for i in items if _is_logged(i)}
             # Also protect batches whose items already exist in AirTrail/
             # AdventureLog even without a DB commit record (D-60): re-extracting
-            # then re-logging them would duplicate. Best-effort — if the targets
-            # can't be reached, fall back to the DB-only protection above.
-            adventurelog, airtrail = _target_clients(user)
-            flights = []
-            if airtrail is not None:
-                try:
-                    flights = airtrail.list_flights()
-                except Exception:
-                    flights = []
+            # then re-logging them would duplicate. Checked in each capture
+            # owner's own accounts (D-150). Best-effort — if the targets can't be
+            # reached, fall back to the DB-only protection above.
+            from app.integrations import ClientCache
+            clients_for = ClientCache(s)
+            flights_by: dict = {}
             al_cache: dict = {}
+
+            def present(i) -> bool:
+                c = clients_for(i.owner_id)
+                if c.airtrail is not None and id(c) not in flights_by:
+                    try:
+                        flights_by[id(c)] = c.airtrail.list_flights()
+                    except Exception:
+                        flights_by[id(c)] = []
+                return _externally_present(i, c.airtrail, c.adventurelog,
+                                           al_cache.setdefault(id(c), {}),
+                                           flights_by.get(id(c), []))
             protected |= {i.batch_id for i in items
-                          if i.batch_id not in protected
-                          and _externally_present(i, airtrail, adventurelog,
-                                                  al_cache, flights)}
+                          if i.batch_id not in protected and present(i)}
             doomed = [i.id for i in items
                       if not _is_logged(i) and i.batch_id not in protected]
             if doomed:
@@ -1009,24 +1021,6 @@ def _owner_id(request) -> str | None:
     return user.id if user is not None else None
 
 
-def _target_clients(user=None):
-    """The AdventureLog / AirTrail clients, or (None, None) for a user who may
-    not use the server-wide credentials (YONDER-191 — admins only until
-    per-user connections, YONDER-192). `user=None` is the operator/auth-off path."""
-    from app.config import settings
-    adventurelog = airtrail = None
-    if not scope.external_writes_allowed(user):
-        return adventurelog, airtrail
-    if settings.adventurelog_api_key:
-        from adapters.targets.adventurelog import AdventureLogClient
-        adventurelog = AdventureLogClient(settings.adventurelog_url,
-                                          settings.adventurelog_api_key)
-    if settings.airtrail_token:
-        from adapters.targets.airtrail import AirTrailClient
-        airtrail = AirTrailClient(settings.airtrail_url, settings.airtrail_token)
-    return adventurelog, airtrail
-
-
 @router.post("/commit", response_class=HTMLResponse)
 def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged"),
            session: Session = Depends(get_session)):
@@ -1044,9 +1038,8 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
     execute = confirm == "1"
     b = bucket if bucket in BUCKETS else "staged"
     user = scope.user_of(request)
-    # YONDER-191/D-156: a non-admin commits to Run·dere only; the AirTrail /
-    # AdventureLog targets are the server owner's accounts and are skipped.
-    external = scope.external_writes_allowed(user)
+    # Each capture logs to its OWNER's connections (D-150); an owner with none
+    # gets Run·dere only, the AirTrail/AdventureLog targets skipped.
     # Only the captures this person may log — their own (an admin also
     # ownerless ones and those of users who share). Never someone else's approvals (YONDER-105).
     mine = scope.capture_filter(scope.user_of(request))
@@ -1054,14 +1047,14 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
     if not execute:
         # PREVIEW stays synchronous — it only reads (target refs + dedup) and is
         # quick; the operator needs the plan back immediately to decide.
-        adventurelog, airtrail = _target_clients(user)
+        from app.integrations import ClientCache
         error = None
         summary = {"items": 0, "writes_ok": 0, "writes_failed": 0,
                    "skipped": 0, "plans": []}
         try:
-            summary = commit_pending(session, adventurelog, airtrail,
-                                     identities=load_identities(session), dry_run=True,
-                                     item_filter=mine, external=external)
+            summary = commit_pending(session, identities=load_identities(session),
+                                     dry_run=True, item_filter=mine,
+                                     clients_for=ClientCache(session))
         except Exception as ex:
             log.exception("commit preview failed")
             error = str(ex)
@@ -1072,15 +1065,12 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
     if jobs.current_running():
         return _job_panel(request, jobs.current_running(), b)
 
-    juser = scope.snapshot(user)
-
     def work(progress):
+        from app.integrations import ClientCache
         with SessionLocal() as s:
-            adventurelog, airtrail = _target_clients(juser)
-            summary = commit_pending(s, adventurelog, airtrail,
-                                     identities=load_identities(s),
+            summary = commit_pending(s, identities=load_identities(s),
                                      dry_run=False, progress=progress,
-                                     item_filter=mine, external=external)
+                                     item_filter=mine, clients_for=ClientCache(s))
             n = summary["items"]
             parts = [f"logged {summary['writes_ok']} write(s) across {n} item(s)"]
             if summary["writes_failed"]:
@@ -1089,7 +1079,7 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
                 parts.append(f"{summary['skipped']} already present")
             if summary.get("external_skipped"):
                 parts.append(f"{summary['external_skipped']} AirTrail/AdventureLog "
-                             "write(s) skipped (admins only for now)")
+                             "write(s) skipped (not connected)")
             toast = "Done — " + ", ".join(parts) + "."
             # Surface the exact reason each write failed, so the operator sees it
             # in the job panel instead of having to open the CommitAttempts log.

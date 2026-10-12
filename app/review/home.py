@@ -45,13 +45,6 @@ KINDS = [
 ]
 
 
-def _airtrail():
-    if not settings.airtrail_token:
-        return None
-    from adapters.targets.airtrail import AirTrailClient
-    return AirTrailClient(settings.airtrail_url, settings.airtrail_token)
-
-
 def _photon():
     from resolve.geocode import PhotonGeocoder
     return PhotonGeocoder(settings.photon_url)
@@ -94,7 +87,6 @@ def _page_ctx(session: Session, tid, *, edit: HomeProfile | None = None,
         "edit_id": edit.id if edit else None,
         "form": form if form is not None else _profile_to_form(edit),
         "error": error,
-        "have_airtrail": bool(settings.airtrail_token),
         "have_photon": True,
     }
 
@@ -125,7 +117,7 @@ def kind_fields(request: Request, kind: str = "home_airport"):
     """Swap the conditional part of the form when the kind changes."""
     return templates.TemplateResponse(request, "_home_kind_fields.html", {
         "form": {"kind": kind, "radius_km": "50"},
-        "have_airtrail": bool(settings.airtrail_token), "have_photon": True,
+        "have_photon": True,
     })
 
 
@@ -134,19 +126,14 @@ def lookup_airport(request: Request, iata: str = Form("")):
     code = (iata or "").strip().upper()
     if not code:
         return _lookup_result(request, error="Enter an airport code first.")
-    at = _airtrail()
-    if at is not None:
-        try:
-            a = at.lookup_airport(code)
-        except Exception as ex:                 # AirTrail down: fall through
-            log.warning("airport lookup failed: %s", ex)
-            a = None
-        if a is not None:
-            return _lookup_result(
-                request, found={"label": f"{a.name or code} ({a.iata})",
-                                "iata": a.iata, "lat": a.lat, "lon": a.lon,
-                                "country": a.country, "source": "AirTrail"})
-    # Fallback: Photon for a code AirTrail has never seen flown.
+    from resolve import airports as airports_mod
+    a = airports_mod.lookup(code)                       # Run·dere's own table (D-147)
+    if a is not None:
+        return _lookup_result(
+            request, found={"label": f"{a.name or code} ({a.iata})",
+                            "iata": a.iata, "lat": a.lat, "lon": a.lon,
+                            "country": a.country, "source": "Run·dere airports"})
+    # Fallback: Photon for a code the table doesn't have (a new or tiny field).
     res = _photon().geocode_freeform(f"{code} airport")
     if res is not None:
         return _lookup_result(

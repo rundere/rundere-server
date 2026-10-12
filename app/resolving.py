@@ -26,6 +26,7 @@ from app.models import ItemKey, RuleSetting, TravelItem
 from extract.normalize import normalize_payload
 from resolve import keys as keys_mod
 from resolve import revision as rev_mod
+from resolve import airports as airports_mod, countries as countries_mod
 from resolve.collections import (CollectionRef, Resolution, collection_name,
                                  resolve_collection)
 from resolve.home import (HomeProfileRef, annotate_place, match_place,
@@ -482,8 +483,14 @@ def resolve_item(session: Session, item: TravelItem,
                  airports: dict | None = None,
                  geocoder: PhotonGeocoder | None = None,
                  country_names: dict[str, str] | None = None,
-                 identities: list[Identity] | None = None) -> str:
-    """Resolve one item; returns the new status.resolve value."""
+                 identities: list[Identity] | None = None,
+                 external: frozenset[str] = frozenset()) -> str:
+    """Resolve one item; returns the new status.resolve value.
+
+    `external` is the set of integrations the capture's owner has connected
+    ("airtrail", "adventurelog"). Run·dere comes first (D-148): with none, the
+    item's only target is its Run·dere trip (`yonder.activity`), and that trip —
+    not an AdventureLog collection — is what settles it."""
     now = datetime.now(timezone.utc).isoformat()
     payload = (item.extraction or {}).get("payload") or {}
     if not payload:
@@ -635,8 +642,9 @@ def resolve_item(session: Session, item: TravelItem,
     self_on_booking = True
     if payload.get("item_type") == "flight":
         if identities:
-            tr = resolve_travelers(payload, identities,
-                                   default=_capturer_identity(session, item, identities))
+            capturer = _capturer_identity(session, item, identities)
+            # RULE-10 per user (D-150): "self" is the capture owner's traveller.
+            tr = resolve_travelers(payload, identities, default=capturer, me=capturer)
             payload["travelers"] = tr.travelers
             self_on_booking = tr.self_on_booking
             needs_traveler_review = tr.inferred
@@ -652,7 +660,8 @@ def resolve_item(session: Session, item: TravelItem,
         has_collection=has_collection, unsuppressed_places=unsuppressed,
         # Only the minter writes the collection; an attach leg references it.
         creating_collection=bool(coll and coll.collection_action == "created"
-                                 and is_minter))
+                                 and is_minter),
+        external=external)
     if decision.action == "no_change":
         targets = []                           # nothing to write (D-13)
 
@@ -667,6 +676,12 @@ def resolve_item(session: Session, item: TravelItem,
         targets = targets + ["yonder.activity"]
 
     outcome = "ignored" if home_only else (coll.outcome if coll else "needs_review")
+    if (outcome in ("deferred", "needs_review") and "adventurelog" not in external
+            and not home_only and (item.trip_id or mint_yonder_trip)):
+        # D-148: without AdventureLog the collection ladder has nothing to match,
+        # so it always "defers". The Run·dere trip this item is filed under (or
+        # the one its journey mints) IS its trip — nothing is left to settle.
+        outcome = "resolved"
     if decision.review_required:
         outcome = "needs_review"
 
@@ -836,10 +851,11 @@ def _sync_keys(session: Session, item: TravelItem, key_result) -> None:
                             kind="primary" if key == key_result.primary else "alternate"))
 
 
-def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
+def resolve_pending(session: Session, adventurelog: AdventureLogClient | None = None,
                     limit: int = 0, airtrail=None,
                     geocoder: PhotonGeocoder | None = None,
-                    redo: bool = False, progress=None, item_filter=None) -> dict:
+                    redo: bool = False, progress=None, item_filter=None,
+                    clients_for=None) -> dict:
     """Resolve every pending item (only those matching `item_filter`, a
     TravelItem predicate such as scope.capture_filter(user), when given —
     YONDER-113). Per-item commit so one failure never blocks
@@ -850,40 +866,55 @@ def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
     _find_prior anchors on created_at, so the same input yields the same
     outcome however many passes run. Items a human has already acted on are
     left alone; their decision is not the resolver's to overwrite.
+
+    Each capture is resolved with its OWNER's connections (D-148, D-150):
+    `clients_for(owner_id) -> integrations.Clients`. AdventureLog collections
+    are matched only for an owner with an AdventureLog connection, and only
+    against their own; AirTrail/AdventureLog targets only for the systems they
+    connected. Without `clients_for`, the clients passed here apply to every
+    item (the operator CLI and tests). An owner whose AdventureLog can't be
+    listed is skipped this run (left pending) rather than resolved as if they
+    had no trips, which would mint duplicates.
     """
+    from app.integrations import Clients
+    per_owner = clients_for is not None
+    if not per_owner:
+        fixed = Clients(None, adventurelog=adventurelog, airtrail=airtrail)
+        clients_for = lambda _owner: fixed      # noqa: E731
     profiles = load_home_profiles(session)
     enablement = load_enablement(session)
     identities = load_identities(session)
-    collections: list[CollectionRef] = []
-    if adventurelog is not None:
-        try:
-            collections = [CollectionRef(id=c.id, name=c.name,
-                                         start_date=c.start_date or "",
-                                         end_date=c.end_date or "")
-                           for c in adventurelog.list_collections()
-                           if c.start_date and c.end_date]
-        except AdventureLogError as ex:
-            log.error("could not list AdventureLog collections: %s", ex)
-            raise
+    # Country names come from CLDR, airports from Run·dere's own table (D-147,
+    # D-148): neither needs an integration.
+    country_names = countries_mod.country_names()
+    lookups: dict[int, tuple | None] = {}       # per Clients: (collections, airports)
 
-    # AirTrail's own airport table gives country/coords/tz for every airport
-    # the user has flown — free, exact, and no second dataset to maintain.
-    # Non-fatal: without it, airport places stay unlocated and more items
-    # land in review rather than being mislocated.
-    country_names: dict[str, str] = {}
-    if adventurelog is not None:
-        try:
-            country_names = adventurelog.country_names()
-        except Exception as ex:          # falls back to raw ISO codes
-            log.warning("could not load AdventureLog country names: %s", ex)
-
-    airports: dict = {}
-    if airtrail is not None:
-        try:
-            airports = airtrail.airport_reference()
-            log.info("airport reference: %d airports from AirTrail", len(airports))
-        except Exception as ex:
-            log.warning("could not load AirTrail airport reference: %s", ex)
+    def owner_lookups(c) -> tuple | None:
+        if id(c) in lookups:
+            return lookups[id(c)]
+        collections: list[CollectionRef] = []
+        if c.adventurelog is not None:
+            try:
+                collections = [CollectionRef(id=x.id, name=x.name,
+                                             start_date=x.start_date or "",
+                                             end_date=x.end_date or "")
+                               for x in c.adventurelog.list_collections()
+                               if x.start_date and x.end_date]
+            except AdventureLogError as ex:
+                log.error("could not list AdventureLog collections: %s", ex)
+                if per_owner:
+                    lookups[id(c)] = None           # skip this owner's items
+                    return None
+                raise
+        # An AirTrail connection only adds flown airports the table lacks.
+        flown: dict = {}
+        if c.airtrail is not None:
+            try:
+                flown = c.airtrail.airport_reference()
+            except Exception as ex:
+                log.warning("could not load AirTrail airport reference: %s", ex)
+        lookups[id(c)] = (collections, airports_mod.reference(flown))
+        return lookups[id(c)]
 
     # JSON path comparison differs between JSONB and SQLite's JSON, and this
     # table stays small (homelab scale), so filter in Python rather than carry
@@ -920,6 +951,12 @@ def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
         if progress:
             progress("resolving", idx, total,
                      str(item.canonical_key or item.id)[:70])
+        c = clients_for(item.owner_id)
+        found = owner_lookups(c)
+        if found is None:                       # their AdventureLog is unreachable
+            summary["skipped_unreachable"] = summary.get("skipped_unreachable", 0) + 1
+            continue
+        collections, airports = found
         try:
             # A capture is judged against the homes of whoever captured it.
             if item.owner_id not in homes_by_owner:
@@ -928,7 +965,7 @@ def resolve_pending(session: Session, adventurelog: AdventureLogClient | None,
                                  collections, enablement,
                                  airports=airports, geocoder=geocoder,
                                  country_names=country_names,
-                                 identities=identities)
+                                 identities=identities, external=c.external)
             session.commit()
         except Exception as ex:                       # never poison the whole run
             session.rollback()

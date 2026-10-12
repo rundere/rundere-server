@@ -279,6 +279,13 @@ def startup() -> None:
             except Exception:               # pragma: no cover
                 log.exception("ownerless-row check failed")
         try:
+            # SPEC-8 D-150: move the deprecated server-wide AirTrail/AdventureLog
+            # settings into the deployment owner's own connections, once.
+            from app.integrations import seed_from_env
+            seed_from_env(session)
+        except Exception:                   # pragma: no cover
+            log.exception("connection migration failed; integrations stay as they were")
+        try:
             from planning.catalog import seed_catalog
             seed_catalog(session)
         except Exception:                   # pragma: no cover

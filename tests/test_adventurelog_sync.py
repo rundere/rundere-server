@@ -148,8 +148,9 @@ def _fresh_trip(collection_id="99"):
 
 
 def _wire(monkeypatch, fake):
-    monkeypatch.setattr(R, "_adventurelog", lambda: fake)
-    monkeypatch.setattr(R, "_airtrail", lambda: None)
+    from app.integrations import Clients
+    monkeypatch.setattr(R, "_al_clients",
+                        lambda session, user: Clients(None, adventurelog=fake))
     monkeypatch.setattr(R, "_photon", lambda: None)
 
 

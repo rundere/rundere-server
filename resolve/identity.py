@@ -93,7 +93,8 @@ class TravelerResolution:
 
 
 def resolve_travelers(payload: dict, identities: list[Identity],
-                      default: Identity | None = None) -> TravelerResolution:
+                      default: Identity | None = None,
+                      me: Identity | None = None) -> TravelerResolution:
     """Assign role/match_source/match_confidence to each traveler.
 
     An empty passenger list means the document never named anyone. Policy
@@ -102,13 +103,24 @@ def resolve_travelers(payload: dict, identities: list[Identity],
     assumed (4.1): `default`, the traveller of the user who captured it, so a
     companion's unnamed booking is theirs, not the deployment owner's (and so
     never lands in the owner's AirTrail). Without one, the `self` traveller.
+
+    `me` makes "self" per user (SPEC-8 D-150): the capture owner's own
+    traveller. `self_on_booking` — the RULE-10 gate for writing the flight to
+    AirTrail, now the owner's own AirTrail — is then "is the owner on this
+    booking", not "is the deployment's single `self` traveller on it". Without
+    `me` (an open capture), the `self` kind decides as before.
     """
     raw = payload.get("travelers") or []
     selves = [i for i in identities if i.kind == "self"]
 
+    def is_me(ident: Identity | None) -> bool:
+        if me is not None:
+            return ident is not None and ident.id == me.id
+        return ident is None or ident.kind == "self"
+
     if not raw:
-        assumed = default or (selves[0] if selves else None)
-        is_self = assumed is None or assumed.kind == "self"
+        assumed = default or me or (selves[0] if selves else None)
+        is_self = is_me(assumed)
         return TravelerResolution(
             travelers=[{"raw_name": assumed.display_name if assumed else "self",
                         "role": "self" if is_self else assumed.kind,
@@ -127,7 +139,7 @@ def resolve_travelers(payload: dict, identities: list[Identity],
         else:
             entry.update({"role": ident.kind, "match_source": source,
                           "match_confidence": confidence})
-            if ident.kind == "self":
+            if is_me(ident):
                 found_self = True
         out.append(entry)
     return TravelerResolution(travelers=out, self_on_booking=found_self)
