@@ -345,7 +345,9 @@ def seed_from_env(session: Session) -> list[str]:
     if created:
         session.commit()
         log.warning("moved the server-wide %s settings to %s's connections; the TX_* "
-                    "variables are deprecated and can be removed (SPEC-8 D-150)",
+                    "variables are deprecated and can be removed (SPEC-8 D-150) — first "
+                    "add their LAN hosts to TX_INTEGRATION_ALLOWED_HOSTS, which keeps "
+                    "trusting them once the old variables are gone",
                     " and ".join(LABELS[k] for k in created), user.username)
     return created
 

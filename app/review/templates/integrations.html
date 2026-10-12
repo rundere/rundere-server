@@ -117,7 +117,9 @@
       {% if deprecated %}
       <div class="toast err show" role="alert">Deprecated server-wide settings are still set:
         {{ deprecated | join(', ') }}. The owner's connections are created from them once;
-        after that, remove them from the stack (SPEC-8 D-150).</div>
+        after that, remove them from the stack (SPEC-8 D-150). Their hosts are trusted
+        only while they're set: add any LAN host (e.g. <code>airtrail:3000</code>) to
+        <code>TX_INTEGRATION_ALLOWED_HOSTS</code> first.</div>
       {% endif %}
       <p class="why">Who has which connection. Tokens are never shown, to admins either.
         Hosts allowed on the local network:
