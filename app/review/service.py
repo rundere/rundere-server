@@ -180,3 +180,46 @@ def ignore(session: Session, item: TravelItem, *, resolved_by: str = "review-ui"
     item.review, item.resolution, item.status = review, resolution, status
     _mark(item, "review", "resolution", "status")
     session.commit()
+
+
+# Review reasons that only say "which trip?" — a capture held for nothing else is
+# one a new or re-dated trip can settle.
+_TRIP_ONLY_REASONS = {"no_collection_match", "ambiguous_collection"}
+
+
+def recheck_for_trip(session: Session, trip, user) -> int:
+    """Re-check the captures waiting for a trip that `trip` now covers, right
+    after it is created or its dates change (YONDER-222). Before this, a hotel
+    captured ahead of its trip sat in "Waiting for a trip" until its TTL sweep
+    even though the trip now existed.
+
+    Only `user`'s own captures (scope.capture_filter) that are unlinked and
+    unpinned, not yet approved / ignored / logged, held only for want of a trip,
+    and whose dates fall inside the trip's. Re-resolving is deterministic and
+    safe to repeat; the resolver still links only when EXACTLY one of the
+    capture owner's own trips contains it, so a new overlapping trip never
+    guesses. Returns how many were re-checked."""
+    from app import scope
+    from app.review.routes import _is_logged, _reresolve
+    from resolve.targets import item_date_span
+    start, end = (trip.start_date or "")[:10], (trip.end_date or "")[:10]
+    if not (start and end):
+        return 0
+    rows = (session.query(TravelItem)
+            .filter(scope.capture_filter(user), TravelItem.trip_id.is_(None))
+            .all())
+    n = 0
+    for item in rows:
+        review = item.review or {}
+        if review.get("trip_pinned") or review.get("action_taken") in ("approved", "ignored"):
+            continue
+        reasons = set(review.get("reasons") or [])
+        waiting = (item.status or {}).get("resolve") == "deferred"
+        if not (waiting or (reasons and reasons <= _TRIP_ONLY_REASONS)) or _is_logged(item):
+            continue
+        s, e = item_date_span((item.extraction or {}).get("payload") or {})
+        if not (s and e and start <= s and e <= end):
+            continue
+        _reresolve(session, item)
+        n += 1
+    return n
