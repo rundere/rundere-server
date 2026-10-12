@@ -25,17 +25,16 @@
           <input id="ex-cur" class="input" name="currency" value="{{ form.currency }}" readonly>
           {% else %}
           {% set cc = currency_choices %}
-          <select id="ex-cur" class="input" name="currency" required>
+          {% set known = cc.suggested | map(attribute=0) | list %}
+          {# Only the currencies that matter for this trip (YONDER-213); the full
+             list is one pick away under "Other currency…". #}
+          <select id="ex-cur" class="input" name="currency" required onchange="ynMoreCurrencies(this)">
             {% if not form.currency %}<option value="" selected disabled>Choose…</option>{% endif %}
-            {% if cc.suggested %}
-            <optgroup label="For this trip">
-              {% for code, label in cc.suggested %}<option value="{{ code }}" {% if code == form.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            </optgroup>
-            {% endif %}
-            <optgroup label="All currencies">
-              {% for code, label in cc.rest %}<option value="{{ code }}" {% if code == form.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            </optgroup>
+            {% for code, label in cc.suggested %}<option value="{{ code }}" {% if code == form.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            {% if form.currency and form.currency not in known %}<option value="{{ form.currency }}" selected>{{ form.currency }}</option>{% endif %}
+            <option value="__more">Other currency…</option>
           </select>
+          <template id="ex-cur-all">{% for code, label in cc.rest %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</template>
           {% endif %}
         </div>
       </div>

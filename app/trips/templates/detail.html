@@ -263,6 +263,22 @@
 {% endif %}
 
 <script>
+// Currency pickers (YONDER-213) list only this trip's currencies; picking
+// "Other currency…" swaps in every other one from the <template> beside it.
+function ynMoreCurrencies(sel) {
+  if (sel.value !== '__more') return;
+  var tpl = document.getElementById(sel.id + '-all');
+  sel.querySelector('option[value="__more"]').remove();
+  if (tpl) {
+    var group = document.createElement('optgroup');
+    group.label = 'Other currencies';
+    group.appendChild(tpl.content.cloneNode(true));
+    sel.appendChild(group);
+  }
+  sel.selectedIndex = -1;
+  sel.focus();
+  if (sel.showPicker) { try { sel.showPicker(); } catch (e) {} }
+}
 // Collapse one section (the caret on its header).
 function ynSec(btn) {
   var s = btn.closest('.yn-sec');

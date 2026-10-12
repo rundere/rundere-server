@@ -32,12 +32,11 @@
     <form class="yn-costs-currency" hx-post="/trips/{{ trip.id }}/costs/currency"
           hx-target="#costs-section" hx-swap="outerHTML">
       <label class="bp-muted" for="costs-cur">Show balances in</label>
-      <select id="costs-cur" class="input" name="currency" required>
+      <select id="costs-cur" class="input" name="currency" required onchange="ynMoreCurrencies(this)">
         {% for code, label in costs.currency_choices.suggested %}<option value="{{ code }}" {% if code == costs.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        <optgroup label="All currencies">
-          {% for code, label in costs.currency_choices.rest %}<option value="{{ code }}" {% if code == costs.currency %}selected{% endif %}>{{ code }}</option>{% endfor %}
-        </optgroup>
+        <option value="__more">Other currency…</option>
       </select>
+      <template id="costs-cur-all">{% for code, label in costs.currency_choices.rest %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</template>
       <button class="btn btn-ghost bp-sm" type="submit">Change</button>
     </form>
     {% endif %}

@@ -138,8 +138,10 @@ people up and make the trip's actual cost.
   currency, and those already used — with every other current ISO-4217 code
   after. `default_currency` (the person's own, else the trip's, else the
   destination's) is what a new expense starts in. `/api/v1/auth/me` carries the
-  person's `base_currency` (and `timezone`, D-187). The web uses a picker; the
-  iOS screens move over in the app repo.
+  person's `base_currency` (and `timezone`, D-187). Pickers show only the
+  suggested currencies plus "Other currency…", which opens the full list for the
+  rare unplanned one (a layover, a trip Discover hasn't run on) — owner,
+  2026-10-12. The iOS screens move over in the app repo.
 
 ## Cleanup
 

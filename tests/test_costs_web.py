@@ -295,10 +295,16 @@ if DEPS:
             s.commit()
         _destination(tid, _ana(tid).id, "EUR")
         modal = client.get(f"/trips/{tid}/costs/new", cookies=ck["Ana"]).text
-        assert '<select id="ex-cur"' in modal and 'optgroup label="For this trip"' in modal
-        assert modal.index('value="EUR"') < modal.index('value="CAD"')   # destination first
-        assert 'value="CAD" selected' in modal                            # yours by default
-        assert 'value="JPY"' in modal                                     # and every other code
+        select = modal[modal.index('<select id="ex-cur"'):modal.index("</select>",
+                                                                    modal.index('id="ex-cur"'))]
+        assert select.index('value="EUR"') < select.index('value="CAD"')  # destination first
+        assert 'value="CAD" selected' in select                           # yours by default
+        # Only what's relevant up front; every other currency one pick away.
+        assert 'value="JPY"' not in select and 'value="__more"' in select
+        assert '<template id="ex-cur-all">' in modal and 'value="JPY"' in modal
+        # A picked placeholder never becomes an expense currency.
+        r = client.post(f"/trips/{tid}/costs", cookies=ck["Ana"], data=_form(p, currency="__more"))
+        assert "not a currency code" in r.text and "HX-Redirect" not in r.headers
 
     def test_me_carries_your_own_currency_and_time_zone():
         tid, p, _, h = _setup()
