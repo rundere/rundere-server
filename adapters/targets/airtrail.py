@@ -9,8 +9,9 @@ Facts confirmed by probing the live API, not assumptions:
     fromId/toId, carrying iata, icao, lat, lon, tz, country, municipality
   - flights carry a native datePrecision field (all existing rows = "day")
 
-Read side only for now. The commit stage adds writes, and must send flights
-ONE AT A TIME — AirTrail aborts an entire batch on a single bad record (D-06).
+Writes send flights ONE AT A TIME — AirTrail aborts an entire batch on a
+single bad record (D-06). Everything goes through AirTrail's HTTP API with the
+connection owner's token; Run·dere never reads AirTrail's database (D-186).
 """
 from __future__ import annotations
 
@@ -150,22 +151,24 @@ class AirTrailClient:
                                 icao=a.get("icao"), name=a.get("name"))
         return out
 
-    def lookup_airport(self, code: str) -> Airport | None:
-        """Authoritative airport data for an IATA/ICAO code, from AirTrail's own
-        records. AirTrail has a full airport table but no stable REST lookup
-        for it (the tRPC route uses superjson and is fragile to couple to), so
-        this reads the airports embedded in existing flights — which is every
-        airport the user has flown, home airport included. A code never flown
-        is not here; the caller falls back to Photon (D-22 clean seam)."""
+    def search_airline(self, code: str) -> Airline | None:
+        """One airline by IATA or ICAO code from AirTrail's own table, via the
+        REST API (3.13+: GET /api/v1/airlines?query=, scope reference_data.read).
+        Flight save names the airline by its ICAO code, and a ticket only prints
+        the IATA one, so this is how an airline never flown before is resolved —
+        no database access (D-186). None when AirTrail doesn't know the code."""
         code = (code or "").strip().upper()
         if not code:
             return None
-        ref = self.airport_reference()
-        if code in ref:
-            return ref[code]
-        for a in ref.values():                 # allow ICAO too
-            if a.icao and a.icao.upper() == code:
-                return a
+        from urllib.parse import quote
+        status, parsed, raw = self._request("GET", f"/api/v1/airlines?query={quote(code)}")
+        if status >= 400:
+            raise AirTrailError(f"search_airline: HTTP {status}")
+        rows = (parsed or {}).get("data") if isinstance(parsed, dict) else None
+        for a in rows or []:
+            if code in ((a.get("iata") or "").upper(), (a.get("icao") or "").upper()):
+                return Airline(id=a.get("id"), iata=a.get("iata"), icao=a.get("icao"),
+                               name=a.get("name"))
         return None
 
     def find_duplicate(self, *, carrier_iata: str | None, flight_number: str,

@@ -1,6 +1,6 @@
 """YONDER-190 — Run·dere works on its own data (SPEC-8 D-146–D-148).
 
-With no AirTrail, no AdventureLog and no AirTrail database, a flight capture
+With no AirTrail and no AdventureLog, a flight capture
 resolves its airports (with time zones) from Run·dere's own table, attaches to a
 Run·dere trip, is approved and appears on the timeline. External targets exist
 only for systems the capture's owner connected, and RULE-10's "self" is the
@@ -98,7 +98,7 @@ def test_flight_to_timeline_with_nothing_connected(monkeypatch):
                             TravelItem, Trip, TripActivity, User)
     from app.resolving import load_identities, resolve_pending
     Base.metadata.create_all(engine)
-    for name in ("airtrail_token", "adventurelog_api_key", "airtrail_db_url"):
+    for name in ("airtrail_token", "adventurelog_api_key"):
         monkeypatch.setattr(settings, name, "")
 
     tag = uuid.uuid4().hex[:6]

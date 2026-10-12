@@ -24,8 +24,8 @@
       <h2 class="settings-h">Advanced: your own connections</h2>
       <p class="why" style="margin:-4px 0 10px">Optional. Connect your own AirTrail or
         AdventureLog and your captures are logged there too, with your own token —
-        only what your account there is allowed to do. Create a dedicated, revocable
-        "Run·dere" token in that app for this.</p>
+        only what your account there is allowed to do.
+        <a href="/settings/integrations/guide">How to connect →</a></p>
       {% if key_problem %}
       <div class="toast err show" role="alert">Connections are off on this server: {{ key_problem }}
         {% if admin %}Set <code>TX_SECRETS_KEY</code> (32 random bytes, e.g.
@@ -94,7 +94,7 @@
               </div>
               {% else %}
               <div class="field">
-                <label for="at-user">Your AirTrail user id (optional)</label>
+                <label for="at-user">AirTrail user id (optional — blank means the key's owner)</label>
                 <input id="at-user" class="input" name="remote_user_id"
                        value="{{ card.form.remote_user_id if card.form else ((c.remote_user_id or '') if c else '') }}"
                        placeholder="whose seat your flights are logged as">

@@ -49,7 +49,6 @@ if DEPS:
         monkeypatch.setattr(settings, "integration_allowed_hosts", "")
         monkeypatch.setattr(settings, "airtrail_token", "")
         monkeypatch.setattr(settings, "adventurelog_api_key", "")
-        monkeypatch.setattr(settings, "airtrail_db_url", "")
         _clear_ring()
         yield
         _clear_ring()
@@ -401,3 +400,59 @@ if DEPS:
             s.query(CommitAttempt).filter(CommitAttempt.item_id == iid).delete()
             s.delete(s.get(TravelItem, iid))
             s.commit()
+
+    # ------------------------------------------------------------ AirTrail over the API (D-186)
+
+    def _airtrail_with(responses):
+        """A real AirTrailClient whose HTTP answers come from `responses`
+        ({path prefix: (status, body)}); records what it asked for."""
+        import json
+
+        from adapters.targets.airtrail import AirTrailClient
+        asked = []
+
+        class _Opener:
+            def open(self, req, timeout=None):
+                path = req.full_url.split("example.com", 1)[1]
+                asked.append(path)
+                for prefix, (status, body) in responses.items():
+                    if path.startswith(prefix):
+                        if status >= 400:
+                            import io
+                            import urllib.error
+                            raise urllib.error.HTTPError(req.full_url, status, "x", {},
+                                                         io.BytesIO(json.dumps(body).encode()))
+                        return _FakeResp(status, json.dumps(body).encode())
+                raise AssertionError(f"unexpected {path}")
+        return AirTrailClient("https://at.example.com", TOKEN, opener=_Opener()), asked
+
+    def test_airline_search_uses_the_rest_api():
+        cl, asked = _airtrail_with({"/api/v1/airlines": (200, {"data": [
+            {"id": 3, "name": "Lufthansa Cargo", "iata": "LH", "icao": "GEC"},
+            {"id": 4, "name": "Lufthansa", "iata": "LH", "icao": "DLH"}]})})
+        a = cl.search_airline("lh")
+        assert a.iata == "LH" and a.icao in ("GEC", "DLH")             # exact code match
+        assert asked == ["/api/v1/airlines?query=LH"]
+        cl, _ = _airtrail_with({"/api/v1/airlines": (200, {"data": []})})
+        assert cl.search_airline("ZZ") is None
+
+    def test_connection_test_flags_a_missing_airline_scope(monkeypatch):
+        _public_dns(monkeypatch)
+        u = _user()
+        cid = _save(u)
+        for status, expect_ok, words in ((200, True, "connected · 2 flights"),
+                                         (403, False, "reference_data.read"),
+                                         (404, False, "3.13")):
+            cl, _ = _airtrail_with({"/api/flight/list": (200, {"flights": [{}, {}]}),
+                                    "/api/v1/airlines": (status, {"data": []})})
+            monkeypatch.setattr(integrations, "client", lambda c, _cl=cl: _cl)
+            with SessionLocal() as s:
+                ok, msg = integrations.check(s, s.get(UserIntegration, cid))
+            assert ok is expect_ok and words in msg, msg
+
+    def test_guide_page_is_linked_and_names_the_scopes():
+        page = client.get("/settings/integrations").text
+        assert 'href="/settings/integrations/guide"' in page
+        guide = client.get("/settings/integrations/guide").text
+        assert "Settings → Security" in guide and "reference_data.read" in guide
+        assert "flight.create.own" in guide and "AI agents" in guide

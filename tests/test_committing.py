@@ -199,33 +199,30 @@ def test_utc_conversion_and_date_only_synthesis():
     assert val == "2026-11-20" and synth is True
 
 
-def test_resolver_prefers_flown_then_db_then_caches():
-    """D-50: airport/airline resolution prefers AirTrail's flown-flight
-    reference (exact ids, already loaded), falls back to a live DB lookup for a
-    never-flown code, and caches both hits and misses so it never queries twice.
-    With no DB, only flown codes resolve (a never-flown airport is then refused
-    at commit)."""
+def test_resolver_prefers_flown_then_fallback_then_caches():
+    """D-186: airport/airline resolution prefers AirTrail's flown-flight
+    reference, then a fallback — Run·dere's airport table, or AirTrail's airline
+    search API — and caches hits and misses so it never asks twice. No AirTrail
+    database. A failing lookup is a miss, not a crash."""
     _skip()
     from app.committing import _Resolver
 
-    class FakeDB:
-        def __init__(self):
-            self.calls = []
-        def airport(self, code):
-            self.calls.append(code)
-            return Airport(99, code) if code == "MUC" else None
+    calls = []
 
-    flown = {"YYZ": Airport(21292, "YYZ")}
-    db = FakeDB()
-    r = _Resolver(flown, db, "airport")
-    assert r.get("YYZ").id == 21292 and db.calls == []            # flown, no DB
-    assert r.get("MUC").id == 99 and db.calls == ["MUC"]          # DB fallback
-    assert r.get("MUC").id == 99 and db.calls == ["MUC"]          # cached hit
-    assert r.get("ZZZ") is None and db.calls == ["MUC", "ZZZ"]    # miss...
-    assert r.get("ZZZ") is None and db.calls == ["MUC", "ZZZ"]    # ...cached too
+    def search(code):
+        calls.append(code)
+        if code == "BOOM":
+            raise OSError("down")
+        return Airline(7, code, "Lufthansa", icao="DLH") if code == "LH" else None
 
-    nodb = _Resolver(flown, None, "airport")
-    assert nodb.get("YYZ").id == 21292 and nodb.get("MUC") is None
+    flown = {"AC": Airline(49, "AC", "Air Canada", icao="ACA")}
+    r = _Resolver(flown, search)
+    assert r.get("AC").icao == "ACA" and calls == []               # flown, no lookup
+    assert r.get("LH").icao == "DLH" and calls == ["LH"]           # API fallback
+    assert r.get("LH").icao == "DLH" and calls == ["LH"]           # cached hit
+    assert r.get("ZZ") is None and r.get("ZZ") is None and calls == ["LH", "ZZ"]
+    assert r.get("BOOM") is None                                   # error -> miss
+    assert _Resolver(flown).get("LH") is None                      # no fallback
 
 
 def test_airtrail_flight_carries_custom_fields():
@@ -382,10 +379,25 @@ def test_build_airtrail_flight_refuses_when_unresolved():
     body, err = C.build_airtrail_flight(p, airports={}, airlines={}, self_uid="u1")
     assert body is None and "airport" in err
     airports = {"YYZ": Airport(1, "YYZ"), "DCA": Airport(2, "DCA")}
-    body, err = C.build_airtrail_flight(p, airports=airports,
-                                        airlines={"AC": Airline(49, "AC", "Air Canada")},
-                                        self_uid=None)
-    assert body is None and "self" in err.lower()
+    body, err = C.build_airtrail_flight(p, airports=airports, airlines={}, self_uid="u1")
+    assert body is None and "airline" in err
+
+
+def test_airtrail_flight_needs_no_airtrail_ids_and_defaults_the_seat():
+    """D-186: codes are all AirTrail needs, so an airport from Run·dere's own
+    table (no AirTrail id) is fine; with no AirTrail user id the seat is
+    <USER_ID>, which AirTrail 3.13 fills in with the key's owner."""
+    _skip()
+    from resolve import airports as airports_mod
+    p = _flight_payload()
+    airports = {"YYZ": airports_mod.lookup("YYZ"), "DCA": airports_mod.lookup("DCA")}
+    assert airports["YYZ"].id is None
+    body, err = C.build_airtrail_flight(
+        p, airports=airports, airlines={"AC": Airline(49, "AC", "Air Canada", icao="ACA")},
+        self_uid=None)
+    assert err is None
+    assert (body["from"], body["to"], body["airline"]) == ("CYYZ", "KDCA", "ACA")
+    assert body["seats"][0]["userId"] == "<USER_ID>"
 
 
 # ---------------------------------------------------------------- dry run

@@ -71,6 +71,13 @@ def integrations_page(request: Request, session: Session = Depends(get_session))
         session, scope.user_of(request)))
 
 
+@router.get("/settings/integrations/guide", response_class=HTMLResponse)
+def integrations_guide(request: Request):
+    """How to create the tokens and connect (D-150, D-186)."""
+    return templates.TemplateResponse(request, "integrations_guide.html",
+                                      {"me": scope.user_of(request)})
+
+
 def _connections_user(request: Request, session: Session):
     """The signed-in person changing their own connections, from Run·dere itself:
     a connected app or agent token may use their data but never handle their

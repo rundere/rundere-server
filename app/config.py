@@ -51,12 +51,6 @@ class Settings(BaseSettings):
     adventurelog_public_url: str = ""
     airtrail_url: str = "http://airtrail:3000"
     airtrail_token: str = ""
-    # AirTrail's own Postgres (READ-ONLY) — its `airport`/`airline` tables are the
-    # only complete source of airport ids/coords/tz for airports never flown
-    # before, which the flight-save endpoint needs (D-50). Optional: unset falls
-    # back to the flown-airport reference. e.g.
-    # postgresql://airtrail:...@airtrail_db:5432/airtrail
-    airtrail_db_url: str = ""
 
     # Per-user connection credentials are encrypted at rest (SPEC-8 D-151).
     # A key is 32 random bytes, base64 or hex (`openssl rand -base64 32`).

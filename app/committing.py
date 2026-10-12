@@ -212,25 +212,29 @@ def _flight_number_combined(payload: dict) -> str:
 def build_airtrail_flight(payload: dict, *, airports: dict, airlines: dict,
                           self_uid: str | None) -> tuple[dict | None, str | None]:
     """(body, error). error is a human sentence when the flight cannot be
-    written safely — a missing airport id, airline id or self user — and the
-    committer records it rather than sending a half-resolved flight."""
+    written safely — an airport or airline whose code we can't name — and the
+    committer records it rather than sending a half-resolved flight.
+
+    Everything goes as CODES (D-186): AirTrail resolves airports by ICAO/IATA
+    against its own table, so no AirTrail database id is needed. With no
+    `self_uid`, the seat is `<USER_ID>`, which AirTrail (3.13) fills in with
+    the token's own user — the connection owner."""
     f = payload.get("flight") or {}
     dep = (f.get("departure") or {}).get("place") or {}
     arr = (f.get("arrival") or {}).get("place") or {}
     dep_iata = (dep.get("iata") or "").upper()
     arr_iata = (arr.get("iata") or "").upper()
     frm, to = airports.get(dep_iata), airports.get(arr_iata)
-    if not frm or frm.id is None:
-        return None, f"AirTrail has no airport on record for {dep_iata or '?'}"
-    if not to or to.id is None:
-        return None, f"AirTrail has no airport on record for {arr_iata or '?'}"
+    if not frm or not (frm.icao or frm.iata):
+        return None, f"no airport is known for {dep_iata or '?'}"
+    if not to or not (to.icao or to.iata):
+        return None, f"no airport is known for {arr_iata or '?'}"
     mc = f.get("marketing_carrier") or {}
     airline = airlines.get((mc.get("iata") or "").upper())
-    if not airline or airline.id is None:
-        return None, f"AirTrail has no airline on record for {mc.get('iata') or '?'}"
-    if not self_uid:
-        return None, ("No 'self' traveller is configured (Admin → Travellers), "
-                      "so AirTrail has no user to log this seat against")
+    if not airline or not (airline.icao or airline.iata):
+        return None, (f"AirTrail has no airline for {mc.get('iata') or '?'} "
+                      "(or the token lacks reference_data.read)")
+    self_uid = self_uid or "<USER_ID>"
 
     dep_dt = f.get("departure", {}).get("time")
     arr_dt = f.get("arrival", {}).get("time")
@@ -639,14 +643,14 @@ def _mark_cancelled(body: dict) -> dict:
 
 
 class _Resolver:
-    """Resolve an airport/airline by code: prefer AirTrail's flown-flight
-    reference (already loaded, exact ids), then a live DB lookup for anything
-    never flown before (D-50). A dict-like `.get` so build_airtrail_flight is
-    unchanged; caches misses so a never-flown code isn't queried twice."""
-    def __init__(self, flown: dict, db, kind: str):
+    """Resolve an airport/airline by code: the AirTrail flown-flight reference
+    first (already loaded), then `fallback(code)` — Run·dere's own airport table
+    for airports (D-147), AirTrail's airline search API for airlines (D-186).
+    A dict-like `.get` so build_airtrail_flight is unchanged; caches misses so
+    a code is never looked up twice."""
+    def __init__(self, flown: dict, fallback=None):
         self._flown = flown or {}
-        self._db = db
-        self._kind = kind                       # "airport" | "airline"
+        self._fallback = fallback
         self._cache: dict = {}
 
     def get(self, code):
@@ -655,24 +659,13 @@ class _Resolver:
             return None
         if code in self._flown:
             return self._flown[code]
-        if code in self._cache:
-            return self._cache[code]
-        val = getattr(self._db, self._kind)(code) if self._db else None
-        self._cache[code] = val
-        return val
-
-
-def _airtrail_db():
-    from app.config import settings
-    url = getattr(settings, "airtrail_db_url", "") or ""
-    if not url:
-        return None
-    try:
-        from adapters.targets.airtrail_db import AirTrailDB
-        return AirTrailDB(url)
-    except Exception:                           # unavailable -> flown reference only
-        log.warning("AirTrail DB configured but could not be initialised")
-        return None
+        if code not in self._cache:
+            try:
+                self._cache[code] = self._fallback(code) if self._fallback else None
+            except Exception as ex:             # a lookup failure is a miss, not a crash
+                log.warning("reference lookup for %s failed: %s", code, ex)
+                self._cache[code] = None
+        return self._cache[code]
 
 
 def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
@@ -1365,13 +1358,13 @@ def commit_pending(session: Session, adventurelog=None, airtrail=None, *,
                     flown_airlines = c.airtrail.airline_reference(flights)
                 except Exception as ex:
                     log.warning("AirTrail reference load failed: %s", ex)
-            # Flown reference first; AirTrail's own DB for never-flown airports
-            # (D-50) only for the deployment owner's AirTrail, whose database the
-            # operator configured (TX_AIRTRAIL_DB_URL, D-186).
-            db = _airtrail_db() if (c.airtrail is not None
-                                    and _is_deployment_owner(session, c.user_id)) else None
-            refs[id(c)] = (_Resolver(flown_airports, db, "airport"),
-                           _Resolver(flown_airlines, db, "airline"))
+            # Flown reference first; then Run·dere's own airport table and
+            # AirTrail's airline search, over the API with this person's token —
+            # no AirTrail database (D-186).
+            from resolve import airports as airports_mod
+            search = getattr(c.airtrail, "search_airline", None)
+            refs[id(c)] = (_Resolver(flown_airports, airports_mod.lookup),
+                           _Resolver(flown_airlines, search))
         return refs[id(c)]
 
     q = session.query(TravelItem)
@@ -1409,11 +1402,3 @@ def commit_pending(session: Session, adventurelog=None, airtrail=None, *,
         if not dry_run:
             session.commit()
     return summary
-
-
-def _is_deployment_owner(session: Session, user_id: str | None) -> bool:
-    """None (no users: the single-user deployment) counts as the owner."""
-    if user_id is None:
-        return True
-    from app.integrations import owner_user_id
-    return owner_user_id(session) == user_id

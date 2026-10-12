@@ -226,7 +226,8 @@ request forgery (SSRF) risk.
   "Advanced". (built 4.8, 2026-10-12)
 - **D-147 — Rundere ships its own airport reference data.** A bundled dataset,
   with time zones derived offline where missing. AirTrail can only fill gaps, and
-  `airtrail_db_url` is retired. (built 4.8 — except `airtrail_db_url`, see D-186)
+  `airtrail_db_url` is retired. (built 4.8; see D-186 for how AirTrail works
+  without it)
 - **D-148 — `yonder.activity` is the primary write target.** External targets
   exist only for capture owners with an enabled connection. Trip matching runs
   against Rundere trips first. (built 4.8)
@@ -302,33 +303,42 @@ request forgery (SSRF) risk.
   at the same minute an end comes before a start. Notes are never next up. Only the
   viewer's own activities count (traveller tags, `app/trips/who.py`).
   `app/trips/nextup.py` is the one implementation. Owner-reported bug, YONDER-177. (proposed)
-- **D-186 — How per-user connections are built (YONDER-190/192, 2026-10-12).**
+- **D-186 — How per-user connections are built (YONDER-190/192; accepted by the
+  owner 2026-10-12).**
   - *Airports:* the bundled table is mwgg/Airports (MIT, with time zones;
     `resolve/data/airports.json.gz`, rebuilt by `scripts/build_airports.py` each
     release, any missing zone derived with timezonefinder). It answers every
     lookup; an AirTrail connection only adds flown airports the table lacks.
-  - *`TX_AIRTRAIL_DB_URL` stays, operator-only,* contrary to D-147's "retired":
-    AirTrail's flight-save needs AirTrail's own airport/airline **ids** for an
-    airport never flown, which neither the table nor the API gives. It is used
-    only for the deployment owner's AirTrail; other people's flights to a
-    never-flown airport are refused at commit, as before (D-50). Retire it once
-    the adapter sends airport codes, which newer AirTrail accepts (follow-up).
-  - *Base URL per user,* plus `TX_INTEGRATION_ALLOWED_HOSTS` as the admin
-    allowlist (env, not a table). The hosts of the deprecated server-wide URLs
-    stay trusted while their credential is set, so the migrated owner
-    connections keep working on the LAN.
+  - *AirTrail is API-only; `TX_AIRTRAIL_DB_URL` is gone.* Run·dere never reads
+    AirTrail's database, and there is no sidecar. Requires **AirTrail 3.13+**:
+    flights are saved with airport **codes** (AirTrail resolves them against its
+    own OurAirports-based table), the airline by its ICAO code — looked up
+    through `GET /api/v1/airlines?query=<IATA>` when the person hasn't flown it —
+    and the seat as `<USER_ID>`, which AirTrail fills in with the key's owner.
+    The key needs `flight.read.own`, `flight.create.own`, `flight.update.own`,
+    `flight.delete.own`, `reference_data.read` and `profile.read`; the
+    connection test checks the airline lookup and says which scope or version
+    is missing. If AirTrail ever drops this, the fallback is a sidecar in
+    AirTrail's stack that Run·dere connects to — never a database URL in Run·dere.
+  - *Base URL per user; local hosts only by server config.* Everything is public
+    `https` unless an admin lists the host in `TX_INTEGRATION_ALLOWED_HOSTS`
+    (env, not a table). The deprecated server-wide URLs' hosts stay trusted
+    while their credential is still set, for the one-time migration.
   - *A token is never sent somewhere new:* changing a connection's URL requires
-    re-entering its token. Only Run·dere itself (the web session or the app's
-    login token) can add, change or remove a connection — connected apps and
-    API tokens can't (as YONDER-101). Redirects are refused outright, because
-    urllib would carry the credential header to the new host.
+    re-entering its token, and redirects are refused (urllib would carry the
+    credential header). Only Run·dere itself (the web session or the app's login
+    token) can add, change or remove a connection — connected apps, AI agents
+    and API tokens can't (as YONDER-101). The Connections tab has a "How to
+    connect" page with the steps and scopes for each.
   - *Whose connection:* a capture uses its owner's. An open capture and auth-off
     mode use the deployment owner's (the user linked to the `self` traveller,
     else the first admin). Only a deployment with no users at all still uses the
     deprecated variables directly. A deactivated user's connections aren't used.
+    The `TX_AIRTRAIL_*` / `TX_ADVENTURELOG_*` variables are no longer documented;
+    the code reads them only to seed the owner's connections once on upgrade.
   - *RULE-10's "self"* is the capture owner's own traveller (`me` in
     `resolve_travelers`); an open capture falls back to the `self` kind.
-  - *Skipped targets:* a target for a system the owner hasn't connected is
-    skipped ("no AirTrail/AdventureLog connection") and counts as settled, as
-    under D-156; once they connect, a commit retries it (both skip texts are
-    recognised). (built 4.8)
+  - *Not retroactive:* targets are decided when a capture resolves, so only
+    captures processed after someone connects go to that system. Writes skipped
+    under D-156 ("admins only") are retried by a later commit once the owner
+    connects. (built 4.8)

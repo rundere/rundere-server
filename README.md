@@ -142,9 +142,7 @@ keep Run·dere fully local.
 
 - **Docker network reachability** — Run·dere must share a Docker network with your reverse proxy and with each target/tool it calls (AdventureLog, AirTrail, Photon, Ollama). Put it on whatever external network(s) those already use — check with `docker network ls`; the stack joins them, so `docker network create <name>` any that are missing. Whether that's one network or several (the reference stack uses `traefik-net` + `travel-net`) is up to your setup.
 - **Secrets key** (`TX_SECRETS_KEY`) — `openssl rand -base64 32`. Encrypts the per-user AirTrail / AdventureLog tokens at rest (SPEC-8 D-151). Back it up apart from the database. Without it, connections can't be saved; Run·dere itself works fine.
-- **AirTrail / AdventureLog (optional, per user)** — each person connects their own under **Settings → Connections**, with their own URL and a token they create in that app (AdventureLog: **Settings → Integrations / API tokens**; AirTrail: **account / API settings**). Run·dere works fully without either (D-146). Hosts on your LAN must be listed in `TX_INTEGRATION_ALLOWED_HOSTS`; anything else has to be public https (D-152). The old server-wide `TX_ADVENTURELOG_*` / `TX_AIRTRAIL_*` settings are deprecated: on first boot they become the owner's connections, then you can remove them.
-- **AirTrail DB URL** (`TX_AIRTRAIL_DB_URL`, optional, operator-only) — only for logging the owner's flights to airports AirTrail has never seen flown (D-50, D-186). Read the Postgres user/password/db from AirTrail's own compose file; it looks like
-  `postgresql://airtrail:<password>@airtrail_db:5432/airtrail`. Run·dere's container must share a Docker network with that DB.
+- **AirTrail / AdventureLog (optional, per person)** — nothing to configure on the server. Each person connects their own under **Settings → Connections**, which walks through creating a token in that app. Run·dere works fully without either (D-146). AirTrail needs 3.13 or newer; Run·dere talks to it only through its API. If they run on your LAN, list their hosts in `TX_INTEGRATION_ALLOWED_HOSTS` (e.g. `airtrail:3000,adventurelog-server`); anything else has to be public https (D-152).
 - **Ollama** — `docker`-run Ollama on `travel-net`/`traefik-net`, then `ollama pull qwen3:14b`. Point `TX_OLLAMA_URL` at it.
 - **Photon** — self-host the Photon container with an OpenStreetMap index; point `TX_PHOTON_URL` at it.
 - **SearXNG** — self-host with its JSON API enabled (`search.formats: [html, json]` in `settings.yml`); point `TX_SEARXNG_URL` at it. Needed only for Discovery's LLM-tier topics (visa/safety/events/food/regional language) — it also requires Ollama.
@@ -334,9 +332,6 @@ deployment stack.
 | `TX_SECRETS_KEY` | `""` | 32 random bytes (base64 or hex) that encrypt per-user connection tokens (D-151). Empty = connections can't be saved. `TX_SECRETS_KEY_FILE` reads it from a Docker secret |
 | `TX_SECRETS_KEYS` | `""` | Keyring for rotation, `v2:<key>,v1:<key>`: the first encrypts, any decrypts. Then `python -m app.cli secrets-rotate` |
 | `TX_INTEGRATION_ALLOWED_HOSTS` | `""` | Hosts (or host:port) a connection may reach on the LAN, over http (D-152). Everything else must be public https |
-| `TX_ADVENTURELOG_URL` / `_API_KEY` / `_PUBLIC_URL` | | **Deprecated** (D-150): copied into the owner's own AdventureLog connection on first boot, then remove |
-| `TX_AIRTRAIL_URL` / `_TOKEN` | | **Deprecated** (D-150): copied into the owner's own AirTrail connection on first boot, then remove |
-| `TX_AIRTRAIL_DB_URL` | `""` | AirTrail Postgres, read-only (D-50): AirTrail's ids for never-flown airports, for the owner's AirTrail only (D-186) |
 | `TX_PHOTON_URL` | `http://photon:2322` | Self-hosted geocoder (D-22) |
 | `TX_DISCOVERY_BASE_CURRENCIES` | `USD` | Always-on base currencies Discovery's resolver/calculator convert FROM (D-65); unioned with each traveller's own travel-profile pick, so these stay visible (e.g. USD for a closed-currency destination) alongside a per-traveller currency. Defaults to USD when unset; set to your home currencies, e.g. `CAD,USD` |
 | `TX_FRANKFURTER_URL` | `https://api.frankfurter.dev/v2` | Currency-rate source for Discovery (public, keyless; overridable for a self-hosted mirror) |
@@ -427,7 +422,7 @@ resolve/        keys.py (A5 canonical keys), collections.py (A6 ladder)
 discover/       Discovery (v3.0-3.2): deterministic + LLM resolvers per topic,
                 location derivation, the durable run/finding pipeline
 planning/       Planning (v3.1): the Packing Plan engine, catalog, profiles
-adapters/       target writers: adventurelog.py, airtrail.py, airtrail_db.py
+adapters/       target writers: adventurelog.py, airtrail.py (HTTP APIs only)
 rules.py        rule registry + engine (57 rules, tri-state toggles — D-25)
 validation.py   schema gate (real jsonschema)
 schemas/        travel-item (canonical) + travel-extraction (derived, D-09)

@@ -282,7 +282,20 @@ def _probe(c: UserIntegration) -> tuple[bool, str]:
     if c.kind == AIRTRAIL:
         if not isinstance(parsed, dict) or "flights" not in parsed:
             return False, "that doesn't look like AirTrail's API"
-        return True, f"connected · {len(parsed.get('flights') or [])} flights"
+        n = len(parsed.get("flights") or [])
+        # Airlines you haven't flown are looked up through AirTrail's REST API
+        # (3.13+, scope reference_data.read) — no database (D-186).
+        try:
+            st, _, _ = cl._request("GET", "/api/v1/airlines?query=ACA")
+        except Exception as err:
+            return False, f"flights OK, but the airline lookup failed ({_reason(err)})"
+        if st in (401, 403):
+            return False, ("flights OK, but the token can't look up airlines: "
+                           "give it the reference_data.read scope")
+        if st >= 400:
+            return False, (f"flights OK, but airline lookup gave HTTP {st} — "
+                           "AirTrail 3.13 or newer is needed")
+        return True, f"connected · {n} flights"
     if not isinstance(parsed, (dict, list)):
         return False, "that doesn't look like AdventureLog's API"
     n = parsed.get("count") if isinstance(parsed, dict) else len(parsed)
@@ -307,8 +320,6 @@ def deprecated_env() -> list[str]:
         names.append("TX_AIRTRAIL_TOKEN")
     if settings.adventurelog_api_key:
         names.append("TX_ADVENTURELOG_API_KEY")
-    if settings.airtrail_db_url:
-        names.append("TX_AIRTRAIL_DB_URL")
     return names
 
 
