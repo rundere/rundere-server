@@ -806,6 +806,8 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                     who.clear_activity(session, existing.id)
                     from discover import items as discovery_items
                     discovery_items.unlink_activity(session, existing.id)
+                    from app import expenses as expenses_svc
+                    expenses_svc.unlink_activity(session, existing.id)   # SPEC-10: keep the expense, unlinked
                     session.delete(existing)
                 _record(target, "cancel", {"trip_id": tid},
                         None if dry_run else (200, {}, ""), extra=extra)

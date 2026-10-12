@@ -11,6 +11,7 @@ into Run·dere's Discover tab, using the Run·dere MCP connector
 | [`local-phrases`](local-phrases/SKILL.md) | Discover → Language → Local phrases | `save_phrases` |
 | [`safety-and-transport`](safety-and-transport/SKILL.md) | Discover → Safety & Transport | `save_safety` |
 | [`visa-and-entry`](visa-and-entry/SKILL.md) | Discover → Practical → Visa | `save_research(topic="visa")` |
+| [`trip-budget`](trip-budget/SKILL.md) | Costs → Plan (planned costs, SPEC-10) | `save_budget` |
 
 Every kit starts from `get_trip`, researches with the person's
 `discovery_profile` (dietary needs, cuisines to avoid, budget, interests,
@@ -23,7 +24,7 @@ they locked is refused. With a blank profile, the kits ask the person first.
 1. **As MCP prompts (easiest in Claude).** The Run·dere connector serves each kit
    as a prompt — `research_food_and_drink`, `research_events_and_activities`,
    `research_local_phrases`, `research_safety_and_transport`,
-   `research_visa_and_entry` — taking the trip id and optionally a city key. Pick
+   `research_visa_and_entry`, `research_trip_budget` — taking the trip id and optionally a city key. Pick
    it from the connector's prompts and send.
 2. **As a skill.** Each folder is a skill: `SKILL.md` with a `name` and
    `description` header. Download it as a zip (`GET /api/v1/research-kits/<kit>.zip`)

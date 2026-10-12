@@ -44,8 +44,24 @@ struct NextTrip: Codable, Hashable, Sendable {
     let days_until: Int?
 }
 
+/// One moment on the viewer's timeline (server 4.7.1, YONDER-177, D-172): an
+/// activity's start or end. `at` is its wall-clock time as stored; `label` is
+/// what it's called ("Check-in", "Drop-off", "Departure").
+struct MomentOut: Codable, Hashable, Sendable {
+    let edge: String              // "start" | "end"
+    let at: String
+    let label: String
+    let trip_id: String
+    let trip_name: String?
+    let activity: ActivityOut
+}
+
 struct Dashboard: Codable, Sendable {
     let next_trip: NextTrip?
+    /// D-172: the soonest moment still ahead, and what's under way now (each as
+    /// its end moment). Optional: pre-4.7.1 servers and older caches omit them.
+    let next_activity: MomentOut?
+    let in_progress: [MomentOut]?
     let counts: [String: Int]
     let capture: [String: Int]
     let trip_count: Int
@@ -62,6 +78,9 @@ struct TripSummary: Codable, Identifiable, Hashable, Sendable {
     let source: String
     let owner_id: String?
     let activity_count: Int
+    /// The airport codes the trip's flights visit, in order (server 4.7.1,
+    /// YONDER-177). Optional: older servers and caches omit it.
+    let airports: [String]?
 }
 
 struct ActivityOut: Codable, Identifiable, Hashable, Sendable {
@@ -179,8 +198,53 @@ struct TripSnapshot: Codable, Hashable, Sendable {
     let travelers: [TravelerOut]
     let places: [PlaceOut]
     let discovery: [FindingOut]
+    /// Discovery 2.0 (server 4.5): the Food & Drink / Events & Activities rows,
+    /// and the person's likes/dislikes. Optional: older servers and caches.
+    let discovery_items: [DiscoveryItemOut]?
+    let discovery_profile: JSONValue?
     var packing: PackingOut?
     let captures: [CaptureLite]
+}
+
+/// A place, event or activity inside a Food & Drink or Events & Activities
+/// finding (server 4.5, YONDER-147). `finding_id` ties it to its city.
+struct DiscoveryItemOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let finding_id: String
+    let topic: String            // food | events
+    let place_key: String
+    let kind: String             // restaurant|cafe|bar|…|event|activity
+    let name: String
+    let neighbourhood: String?
+    let address: String?
+    let lat: Double?
+    let lon: Double?
+    let website: String?
+    let what_to_get: String?
+    let price_tier: Int?
+    let starts_on: String?
+    let ends_on: String?
+    let when_text: String?
+    let venue: String?
+    let details: String?
+    let duration: String?
+    let booking: Bool?
+    let sources: JSONValue?
+    let extra: JSONValue?
+    let origin: String?
+    let agent: String?
+    let hidden: Bool?
+    let hidden_reason: String?
+    let edited: Bool?
+    /// Set once it's on the timeline.
+    let activity_id: String?
+}
+
+/// POST /api/v1/trips/{id}/discovery-items/{item}/timeline (server 4.5).
+struct ItemToTimelineIn: Codable, Sendable {
+    var starts_at: String?        // YYYY-MM-DDTHH:MM local; nil = the event's date
+    var traveler_ids: [Int]?      // nil / [] = everyone
+    var notes: String?
 }
 
 // MARK: - Review
@@ -469,4 +533,210 @@ struct JournalPatch: Codable, Sendable {
 
 struct APIErrorBody: Codable, Sendable {
     let detail: String?
+}
+
+// MARK: - Expenses (server 4.8, SPEC-10, YONDER-172)
+// Amounts and rates are decimal strings ("42.50"), as the server sends them, so
+// no float rounding creeps into who owes whom. The server does the arithmetic.
+
+struct ExpenseShareOut: Codable, Hashable, Sendable {
+    let traveler_id: Int
+    let name: String
+    let amount: String               // in the expense's currency
+}
+
+struct ExpenseOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let trip_id: String
+    let kind: String                 // expense | settlement
+    let title: String
+    let amount: String
+    let currency: String
+    let rate: String?                // trip currency per 1 unit; nil = unconverted
+    let rate_source: String?         // same | entered | discover
+    let amount_in_trip_currency: String?
+    let spent_on: String?
+    let payer_id: Int
+    let payer_name: String
+    let split: String                // equal | exact
+    let shares: [ExpenseShareOut]
+    let category: String
+    let activity_id: String?
+    /// The planned item this paid for (D-181). Optional: early 4.8 builds omit it.
+    let budget_item_id: String?
+    let notes: String?
+    let owner_id: String?
+    let created_at: String?
+    /// The discussion on it, oldest first (D-185). Optional: earlier 4.8 builds omit it.
+    let comments: [ExpenseCommentOut]?
+}
+
+struct ExpenseCommentOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let author_id: String?
+    let author_name: String
+    let body: String
+    let created_at: String?
+    let mine: Bool                   // you wrote it (and can delete it)
+}
+
+struct ExpenseCommentIn: Codable, Sendable {
+    var body: String
+}
+
+/// A planned cost (D-178/D-179/D-184): one estimated amount for the travellers
+/// tagged on it — never multiplied by people or days (a room for two is one cost).
+struct BudgetItemOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let trip_id: String
+    let title: String
+    let category: String
+    let amount: String               // the estimate, in `currency`
+    let currency: String
+    /// Who it's for (D-184). Optional: earlier 4.8 builds omit these.
+    let traveler_ids: [Int]?
+    let traveler_names: [String]?
+    let start_date: String?
+    let end_date: String?            // when it applies, if not the whole trip
+    let total: String?               // trip currency; nil = no rate
+    let rate: String?
+    let rate_source: String?
+    let status: String               // draft (an agent's suggestion) | kept
+    let place_key: String?
+    let activity_id: String?
+    let notes: String?
+    let sources: [JSONValue]
+    let source: String
+    let actual: String               // logged against it so far (trip currency)
+    let owner_id: String?
+}
+
+struct CategoryPlanOut: Codable, Hashable, Sendable {
+    let category: String
+    let planned: String
+    let drafts: String
+    let actual: String
+}
+
+/// One traveller's budget beside their share of actual spending (D-184).
+struct TravelerPlanOut: Codable, Hashable, Sendable {
+    let traveler_id: Int
+    let name: String
+    let planned: String
+    let actual: String
+}
+
+/// The budget beside what was spent. Only actuals settle up (D-178).
+struct PlanOut: Codable, Sendable {
+    let people: Int
+    let days: Int?                   // nil = the trip has no dates yet
+    let planned: String
+    let drafts: String
+    let actual: String
+    let items: [BudgetItemOut]
+    let by_category: [CategoryPlanOut]
+    let by_traveler: [TravelerPlanOut]?
+    let unconverted: [String]
+}
+
+struct BalanceOut: Codable, Hashable, Sendable {
+    let traveler_id: Int
+    let name: String
+    let paid: String
+    let share: String
+    let net: String                  // + is owed money, − owes money
+}
+
+struct TransferOut: Codable, Hashable, Sendable {
+    let from_id: Int
+    let from_name: String
+    let to_id: Int
+    let to_name: String
+    let amount: String
+}
+
+struct ExpensesOut: Codable, Sendable {
+    let currency: String?            // nil until the first expense
+    let total: String
+    let expenses: [ExpenseOut]
+    let balances: [BalanceOut]
+    let transfers: [TransferOut]
+    let unconverted: [String]
+    let categories: [String]
+    /// The planned side of Costs (D-178). Optional: early 4.8 builds omit it.
+    let plan: PlanOut?
+}
+
+struct ExpenseIn: Codable, Sendable {
+    var amount: String
+    var currency: String
+    var payer_id: Int
+    var title: String = ""
+    var spent_on: String?
+    var split: String = "equal"
+    var traveler_ids: [Int]?         // equal split; nil/[] = everyone on the trip
+    var shares: [String: String]?    // exact split: traveller id (as text) → amount
+    var category: String = "other"
+    var rate: String?                // blank = the server uses your Discover rates
+    var activity_id: String?
+    var budget_item_id: String?      // the planned item it fulfils (D-181)
+    var notes: String?
+    var source: String = "ios"
+}
+
+/// Only the fields set are sent (nil keys are omitted by JSONEncoder).
+struct ExpensePatch: Codable, Sendable {
+    var amount: String?
+    var currency: String?
+    var payer_id: Int?
+    var title: String?
+    var spent_on: String?
+    var split: String?
+    var traveler_ids: [Int]?
+    var shares: [String: String]?
+    var category: String?
+    var rate: String?
+    var activity_id: String?
+    var budget_item_id: String?      // "" unlinks
+    var notes: String?
+}
+
+struct BudgetItemIn: Codable, Sendable {
+    var amount: String
+    var currency: String
+    var title: String = ""
+    var category: String = "other"
+    var traveler_ids: [Int]?         // who it's for; nil = you (D-184)
+    var start_date: String?
+    var end_date: String?
+    var rate: String?
+    var notes: String?
+    var source: String = "ios"
+}
+
+/// Editing a planned item keeps it; `status: "kept"` keeps a draft as it is.
+struct BudgetItemPatch: Codable, Sendable {
+    var amount: String?
+    var currency: String?
+    var title: String?
+    var category: String?
+    var traveler_ids: [Int]?
+    var start_date: String?          // "" clears it
+    var end_date: String?
+    var rate: String?
+    var notes: String?
+    var status: String?
+}
+
+struct SettlementIn: Codable, Sendable {
+    var from_id: Int
+    var to_id: Int
+    var amount: String
+    var currency: String?
+    var spent_on: String?
+    var source: String = "ios"
+}
+
+struct ExpenseCurrencyIn: Codable, Sendable {
+    var currency: String
 }

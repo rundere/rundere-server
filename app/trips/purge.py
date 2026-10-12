@@ -6,7 +6,7 @@ sweep each one explicitly. Two kinds of child:
 
 - **Trip-only data — deleted:** the timeline (activities and who each is for),
   the traveller roster, sharing, Discover (runs, findings, items, excluded
-  places) and packing (plans and items).
+  places), packing (plans and items) and expenses with their shares (SPEC-10).
 - **The person's own content — kept, unlinked:** captured booking emails and
   journal entries exist on their own, so they lose the trip link and stay in
   Review / the Journal, where they can be filed again.
@@ -25,6 +25,8 @@ def purge_trip(session: Session, trip) -> None:
     from app.trips import who
 
     tid = trip.id
+    from app import expenses as expenses_svc
+    expenses_svc.purge_trip(session, tid)
     who.clear_activities(session, [a.id for a in session.query(TripActivity.id)
                                    .filter(TripActivity.trip_id == tid).all()])
     for model in (TripActivity, TripTraveler, TripMember,
@@ -64,6 +66,18 @@ def purge_orphans(session: Session, *, execute: bool = False) -> dict[str, int]:
         counts[model.__tablename__] = q.count()
         if execute and counts[model.__tablename__]:
             q.delete(synchronize_session=False)
+    from app.models import TripExpense, TripExpenseShare
+    gone_exp = [e for (e,) in session.query(TripExpense.id)
+                .filter(~TripExpense.trip_id.in_(live)).all()]
+    counts["trip_expense_shares"] = (
+        session.query(TripExpenseShare)
+        .filter(TripExpenseShare.expense_id.in_(gone_exp)).count() if gone_exp else 0)
+    counts["trip_expenses"] = len(gone_exp)
+    if execute and gone_exp:
+        session.query(TripExpenseShare).filter(
+            TripExpenseShare.expense_id.in_(gone_exp)).delete(synchronize_session=False)
+        session.query(TripExpense).filter(
+            TripExpense.id.in_(gone_exp)).delete(synchronize_session=False)
     for model in (TravelItem, JournalEntry):
         q = session.query(model).filter(model.trip_id.isnot(None),
                                         ~model.trip_id.in_(live))

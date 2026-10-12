@@ -452,6 +452,9 @@ class Trip(Base):
     # a manual trip is owned by its creator; a resolver-minted trip stays NULL
     # (D-119, no user context). Sharing is via TripMember. See app/scope.py.
     owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    # SPEC-10 (D-176): the ISO-4217 currency the trip's expense balances are shown
+    # in. NULL = not chosen yet; the first expense's currency is used and saved.
+    expense_currency: Mapped[str | None] = mapped_column(String(3))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
@@ -996,3 +999,106 @@ class SavedPlace(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripExpense(Base):
+    """Run·dere 4.8 — an expense or a settle-up payment on a trip (SPEC-10,
+    YONDER-172, D-173).
+
+    Follows the trip's sharing (D-174): whoever can view the trip sees it, whoever
+    can edit the trip can change it; `owner_id` records who entered it. `payer_id`
+    is a TravelerIdentity id on the trip's roster (D-175), so an off-platform guest
+    can pay. Amounts are decimal strings in the expense's own `currency`; `rate`
+    is units of the trip's expense currency per 1 unit of `currency` (D-176), NULL
+    when unknown (then it's left out of the balances). A settlement (D-177) is the
+    same row with kind="settlement": the payer paid the one share's traveller.
+    Soft links on trip_id and activity_id (house rule 3)."""
+    __tablename__ = "trip_expenses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    kind: Mapped[str] = mapped_column(String(12), default="expense")      # expense | settlement
+    title: Mapped[str] = mapped_column(String(200), default="")
+    amount: Mapped[str] = mapped_column(String(32))                       # decimal string
+    currency: Mapped[str] = mapped_column(String(3))
+    rate: Mapped[str | None] = mapped_column(String(32))                  # trip currency per 1 unit
+    rate_source: Mapped[str | None] = mapped_column(String(12))           # same | entered | discover
+    spent_on: Mapped[str | None] = mapped_column(String(10), index=True)  # ISO date
+    payer_id: Mapped[int] = mapped_column(Integer)
+    split: Mapped[str] = mapped_column(String(8), default="equal")        # equal | exact
+    category: Mapped[str] = mapped_column(String(16), default="other")
+    activity_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    # D-181: the planned item this actual fulfils (soft link), for plan vs actual.
+    budget_item_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), default="api")        # ios | web | mcp | api
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripBudgetItem(Base):
+    """A PLANNED cost on a trip — the budget (SPEC-10, D-178/D-179). Separate from
+    TripExpense on purpose: only actuals feed balances, settle-up and the trip's
+    actual cost (D-178). One estimated amount for the travellers tagged on it
+    (TripBudgetTraveler, D-184) — never multiplied by people or days; a room
+    for two is one cost. Research agents save `draft` rows
+    (D-180); the person keeps them (`kept`), and agents never overwrite a kept
+    row. Same sharing as expenses (D-174). Soft links (house rule 3)."""
+    __tablename__ = "trip_budget_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    category: Mapped[str] = mapped_column(String(16), default="other")
+    amount: Mapped[str] = mapped_column(String(32))                       # estimate, decimal string
+    currency: Mapped[str] = mapped_column(String(3))
+    rate: Mapped[str | None] = mapped_column(String(32))
+    rate_source: Mapped[str | None] = mapped_column(String(12))
+    status: Mapped[str] = mapped_column(String(8), default="kept")        # draft | kept
+    # D-184: when it applies for these travellers, if not the whole trip (no multiplying).
+    start_date: Mapped[str | None] = mapped_column(String(10))
+    end_date: Mapped[str | None] = mapped_column(String(10))
+    place_key: Mapped[str | None] = mapped_column(String(128))            # "JP:Tokyo", optional
+    activity_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+    sources: Mapped[list | None] = mapped_column(JsonCol)                 # [{title, url}]
+    source: Mapped[str] = mapped_column(String(16), default="api")        # ios | web | mcp | api
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripBudgetTraveler(Base):
+    """Who a planned cost is for (D-184): it counts only for these travellers, and
+    only they (and whoever entered it) can see it (D-183). Soft link, no DB FK."""
+    __tablename__ = "trip_budget_travelers"
+
+    budget_item_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    traveler_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+
+class TripExpenseComment(Base):
+    """A comment on an actual expense, so the people on it can talk it through
+    (D-185). Visible exactly where the expense is (D-183). Soft links."""
+    __tablename__ = "trip_expense_comments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    expense_id: Mapped[str] = mapped_column(String(36), index=True)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    author_id: Mapped[str | None] = mapped_column(String(36), index=True)   # users.id
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class TripExpenseShare(Base):
+    """Who an expense is for, and their part of it in the expense's currency
+    (SPEC-10, D-175). Always stored explicitly — an equal split too — so a later
+    roster change never rewrites a past expense. Soft link, no DB FK."""
+    __tablename__ = "trip_expense_shares"
+
+    expense_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    traveler_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    amount: Mapped[str] = mapped_column(String(32))
