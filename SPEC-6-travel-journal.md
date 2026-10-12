@@ -83,7 +83,9 @@ recorded — the floor for any entry, on any surface.
 
 **Geo is the differentiator, best-effort.** When the device offers a location
 fix and the user has permitted it, the entry stores `place_lat`/`place_lon` (and
-later a reverse-geocoded `place_label`). Geo is what makes the journal an
+later a reverse-geocoded `place_label`), plus the fix's accuracy in metres
+(`place_accuracy_m`) — the same four fields an actual expense records
+(YONDER-212), so the app captures both with one routine and one permission. Geo is what makes the journal an
 **in-the-moment, stream-of-consciousness** surface — "where I was when I thought
 this" — and ties naturally into the map feature and the post-mortem's day
 reconstruction. By surface:

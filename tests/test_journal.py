@@ -99,6 +99,23 @@ if DEPS:
                         json={"body": "sunset", "place_lat": 36.7, "place_lon": -121.9})
         assert r.status_code == 201
         assert r.json()["place_lat"] == 36.7
+        assert r.json()["place_accuracy_m"] is None
+        _cleanup("journ_a")
+
+    def test_geo_accuracy_is_stored_like_an_expenses():
+        """Parity with expenses (YONDER-212 follow-up): the GPS accuracy in
+        metres rides along with the coordinates, kept on duplicate, edit-able,
+        and never negative."""
+        u = _user("journ_a")
+        h = _bearer(u)
+        r = client.post("/api/v1/journal", headers=h, json={
+            "body": "harbour", "place_lat": 36.6, "place_lon": -121.9, "place_accuracy_m": 12.5})
+        assert r.status_code == 201 and r.json()["place_accuracy_m"] == 12.5
+        eid = r.json()["id"]
+        r = client.patch(f"/api/v1/journal/{eid}", headers=h, json={"place_accuracy_m": 30})
+        assert r.json()["place_accuracy_m"] == 30
+        assert client.post("/api/v1/journal", headers=h, json={
+            "body": "x", "place_accuracy_m": -1}).status_code == 400
         _cleanup("journ_a")
 
     # ------------------------------------------------------------------ isolation (D-134)

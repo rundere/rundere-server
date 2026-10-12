@@ -1474,6 +1474,7 @@ class JournalOut(BaseModel):
     place_lat: float | None = None
     place_lon: float | None = None
     place_label: str | None = None
+    place_accuracy_m: float | None = None   # metres (parity with expenses)
     source: str = "api"
     duplicated_from: str | None = None
 
@@ -1487,6 +1488,7 @@ class JournalCreate(BaseModel):
     place_lat: float | None = None
     place_lon: float | None = None
     place_label: str | None = None
+    place_accuracy_m: float | None = None   # metres (parity with expenses)
     source: str = "api"
 
 
@@ -1499,6 +1501,7 @@ class JournalPatch(BaseModel):
     place_lat: float | None = None
     place_lon: float | None = None
     place_label: str | None = None
+    place_accuracy_m: float | None = None   # metres (parity with expenses)
     attach_trip: bool = False              # set true to apply trip_id (incl. null=detach)
 
 
@@ -1511,6 +1514,7 @@ def _journal_out(e: JournalEntry) -> JournalOut:
         id=e.id, entry_date=e.entry_date, captured_at=e.captured_at,
         trip_id=e.trip_id, body=e.body or "", values=e.values or {},
         place_lat=e.place_lat, place_lon=e.place_lon, place_label=e.place_label,
+        place_accuracy_m=e.place_accuracy_m,
         source=e.source or "api", duplicated_from=e.duplicated_from)
 
 
@@ -1526,7 +1530,8 @@ def api_journal_create(body: JournalCreate, user=Depends(authn.current_user),
             session, user, entry_date=body.entry_date, captured_at=body.captured_at,
             body=body.body, trip_id=body.trip_id, values=body.values,
             place_lat=body.place_lat, place_lon=body.place_lon,
-            place_label=body.place_label, source=body.source)
+            place_label=body.place_label, place_accuracy_m=body.place_accuracy_m,
+            source=body.source)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return _journal_out(e)
@@ -1569,6 +1574,8 @@ def api_journal_update(entry_id: str, body: JournalPatch,
         kw["place_lon"] = body.place_lon
     if body.place_label is not None:
         kw["place_label"] = body.place_label
+    if body.place_accuracy_m is not None:
+        kw["place_accuracy_m"] = body.place_accuracy_m
     if body.attach_trip:
         kw["trip_id"] = body.trip_id
     try:

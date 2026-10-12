@@ -984,6 +984,8 @@ class JournalEntry(Base):
     place_lat: Mapped[float | None] = mapped_column(Float)
     place_lon: Mapped[float | None] = mapped_column(Float)
     place_label: Mapped[str | None] = mapped_column(String(256))
+    # GPS accuracy in metres, as for expenses (parity, YONDER-212 follow-up).
+    place_accuracy_m: Mapped[float | None] = mapped_column(Float)
     source: Mapped[str] = mapped_column(String(16), default="api")  # mobile|web|share|api
     duplicated_from: Mapped[str | None] = mapped_column(String(36), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
