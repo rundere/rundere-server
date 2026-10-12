@@ -1936,6 +1936,10 @@ class ExpensesOut(BaseModel):
     unconverted: list[str] = []            # expense ids with no rate (left out of balances)
     categories: list[str] = list(expenses_svc.CATEGORIES)
     plan: PlanOut | None = None            # the planned budget (D-178)
+    # The currency picker's order (YONDER-213): destination first, then yours,
+    # the trip's and those already used; list every other code after these.
+    suggested_currencies: list[str] = []
+    default_currency: str | None = None    # what a new expense starts in
 
 
 class ExpenseIn(BaseModel):
@@ -2126,7 +2130,9 @@ def expenses_overview(session: Session, trip: Trip, user=None) -> ExpensesOut:
                                to_name=nm.get(b, ""), amount=f(amt))
                    for a, b, amt in summ.transfers],
         unconverted=summ.unconverted,
-        plan=plan_out(session, trip, user, rows))
+        plan=plan_out(session, trip, user, rows),
+        suggested_currencies=expenses_svc.suggested_currencies(session, trip, user),
+        default_currency=expenses_svc.default_currency(session, trip, user))
 
 
 def _budget_out(line, actual: str = "0", nm: dict[int, str] | None = None) -> BudgetItemOut:

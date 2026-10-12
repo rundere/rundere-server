@@ -33,6 +33,7 @@ Bad input raises ValueError (the API maps it to 400).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
@@ -131,6 +132,72 @@ def discover_rate(session: Session, trip_id: str, user_id: str | None,
         if frm in table and to in table:
             return (table[to] / table[frm]).quantize(_RATE_Q, rounding=ROUND_HALF_UP)
     return None
+
+
+# --------------------------------------------------------------------------- currency picker
+def suggested_currencies(session: Session, trip: Trip, user) -> list[str]:
+    """The currencies an expense on this trip most likely uses, best first
+    (YONDER-213): the destination's — every currency the caller's Discover
+    findings name for the trip, so a multi-country trip lists them all — then
+    the caller's own base currency, the trip's balance currency, and whatever
+    the caller's visible expenses already use. One ordering for web, MCP and
+    the app; a picker lists every other ISO-4217 code after these."""
+    out: list[str] = []
+
+    def add(code) -> None:
+        c = (code or "").strip().upper()
+        if len(c) == 3 and c.isalpha() and c not in out:
+            out.append(c)
+    q = session.query(DiscoveryFinding).filter(DiscoveryFinding.trip_id == trip.id,
+                                               DiscoveryFinding.topic == "currency")
+    uid = getattr(user, "id", None)
+    if uid is not None:
+        q = q.filter(DiscoveryFinding.user_id == uid)
+    for f in q.order_by(DiscoveryFinding.place_key).all():
+        add((f.data or {}).get("currency"))
+    add(own_currency(session, user))
+    add(trip.expense_currency)
+    for e in visible_expenses(session, trip, user)[0]:
+        add(e.currency)
+    return out
+
+
+def own_currency(session: Session, user) -> str | None:
+    """The caller's base currency from their travel profile."""
+    tid = getattr(user, "traveler_id", None)
+    t = session.get(TravelerIdentity, tid) if tid is not None else None
+    return (t.base_currency or None) if t else None
+
+
+def default_currency(session: Session, trip: Trip, user) -> str | None:
+    """What a new expense starts in (YONDER-213): the person's own currency,
+    else the trip's balance currency, else the destination's."""
+    return (own_currency(session, user) or trip.expense_currency
+            or next(iter(suggested_currencies(session, trip, user)), None))
+
+
+@lru_cache(maxsize=1)
+def currency_options() -> tuple[tuple[str, str], ...]:
+    """(code, "EUR · Euro") for every currency some country uses today, by code —
+    Babel's full list also carries retired ones (pesetas, francs) nobody spends."""
+    from datetime import date
+
+    from babel import Locale
+    from babel.numbers import get_currency_name, get_territory_currencies
+    current: set[str] = set()
+    for terr in Locale.parse("en").territories:
+        if len(terr) == 2 and terr.isalpha():
+            try:
+                current.update(get_territory_currencies(terr, date.today(), tender=True))
+            except Exception:
+                continue
+    out = []
+    for c in sorted(current):
+        try:
+            out.append((c, f"{c} · {get_currency_name(c, locale='en')}"))
+        except Exception:
+            out.append((c, c))
+    return tuple(out)
 
 
 # --------------------------------------------------------------------------- shares

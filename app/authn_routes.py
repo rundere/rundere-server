@@ -48,6 +48,11 @@ class UserOut(BaseModel):
     share_with_admins: bool = True
     sharing_prompt: bool = False
     opt_out_blocker: str = ""
+    # From the person's own travel profile — theirs alone, so only on their own
+    # payload: the currency an expense defaults to (YONDER-213) and the zone
+    # their "now" runs on (D-187).
+    base_currency: str | None = None
+    timezone: str | None = None
 
 
 class TokenOut(BaseModel):
@@ -63,7 +68,16 @@ def _user_public(u: User) -> dict:
     (YONDER-101, SPEC-4.2 §3.3) let the app ask the first-sign-in sharing
     question and show the Settings toggle with the web's exact rules."""
     from app.accounts_routes import opt_out_blocker
-    return {"id": u.id, "username": u.username, "is_admin": bool(u.is_admin),
+    base_currency = tz = None
+    if u.traveler_id is not None:
+        from app.db import SessionLocal
+        from app.models import TravelerIdentity
+        with SessionLocal() as s:
+            t = s.get(TravelerIdentity, u.traveler_id)
+            if t is not None:
+                base_currency, tz = t.base_currency, t.timezone
+    return {"base_currency": base_currency, "timezone": tz,
+            "id": u.id, "username": u.username, "is_admin": bool(u.is_admin),
             "auth_source": u.auth_source, "traveler_id": u.traveler_id,
             "email": u.email, "share_with_admins": bool(u.share_with_admins),
             "sharing_prompt": bool(u.sharing_prompt),

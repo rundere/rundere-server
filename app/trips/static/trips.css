@@ -657,7 +657,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-costs-total { margin-right: auto; text-align: left; }
 .yn-costs-figure { font-size: 24px; font-weight: 600; }
 .yn-costs-currency { display: flex; align-items: center; gap: 8px; }
-.yn-costs-currency .input { width: 5em; text-transform: uppercase; }
+.yn-costs-currency .input { width: auto; max-width: 16em; }
 .yn-costs-amt { text-align: right; white-space: nowrap; margin-left: auto; }
 .yn-costs-net { white-space: nowrap; font-weight: 600; }
 .yn-costs-net.is-owed { color: var(--rd-success); }

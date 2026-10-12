@@ -132,6 +132,15 @@ people up and make the trip's actual cost.
   web shows it (label or an OpenStreetMap link) without ever capturing or
   editing it. It's visible exactly where the expense is (D-183).
 
+- Currency picker (YONDER-213): `ExpensesOut.suggested_currencies` is the one
+  ordering for web, MCP and the app — the destination currencies from the
+  caller's Discover findings, then their own base currency, the trip's balance
+  currency, and those already used — with every other current ISO-4217 code
+  after. `default_currency` (the person's own, else the trip's, else the
+  destination's) is what a new expense starts in. `/api/v1/auth/me` carries the
+  person's `base_currency` (and `timezone`, D-187). The web uses a picker; the
+  iOS screens move over in the app repo.
+
 ## Cleanup
 
 Deleting a trip deletes its expenses, shares, comments, planned items and their

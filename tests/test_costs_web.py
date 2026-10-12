@@ -24,8 +24,8 @@ if DEPS:
     from app.config import settings
     from app.db import SessionLocal, engine
     from app.main import app
-    from app.models import (Base, TravelerIdentity, Trip, TripExpense, TripMember,
-                            TripTraveler, User)
+    from app.models import (Base, DiscoveryFinding, TravelerIdentity, Trip, TripExpense,
+                            TripMember, TripTraveler, User)
     from app.trips.purge import purge_trip
 
     Base.metadata.create_all(engine)
@@ -37,6 +37,7 @@ if DEPS:
         yield
         with SessionLocal() as s:
             for t in s.query(Trip).filter(Trip.name.like("Cw %")).all():
+                s.query(DiscoveryFinding).filter_by(trip_id=t.id).delete()
                 purge_trip(s, t)
             s.query(TravelerIdentity).filter(
                 TravelerIdentity.display_name.like("Cw %")).delete(synchronize_session=False)
@@ -254,3 +255,56 @@ if DEPS:
             ck = {settings.auth_cookie_name: authn.issue_access_token(u)}
         assert client.get(f"/trips/{tid}/costs", cookies=ck).status_code == 404
         assert client.post(f"/trips/{tid}/costs", cookies=ck, data=_form(p)).status_code == 404
+
+    # ------------------------------------------------------------ currency picker (YONDER-213)
+
+    def _destination(tid, user_id, *codes):
+        with SessionLocal() as s:
+            for i, c in enumerate(codes):
+                s.add(DiscoveryFinding(trip_id=tid, user_id=user_id, topic="currency",
+                                       scope="country", place_key=f"P{i}",
+                                       data={"currency": c, "rates": {}}))
+            s.commit()
+
+    def _ana(tid):
+        with SessionLocal() as s:
+            return s.query(User).join(Trip, Trip.owner_id == User.id).filter(Trip.id == tid).one()
+
+    def test_currencies_are_suggested_destination_first_then_yours():
+        tid, p, ck, h = _setup()
+        ana = _ana(tid)
+        with SessionLocal() as s:
+            s.get(TravelerIdentity, p["Ana"]).base_currency = "CAD"
+            s.commit()
+        _destination(tid, ana.id, "PTE", "EUR")             # a two-country trip, odd code first
+        client.post(f"/api/v1/trips/{tid}/expenses", headers=h["Ana"], json={
+            "amount": "5", "currency": "GBP", "payer_id": p["Ana"]})
+        ov = client.get(f"/api/v1/trips/{tid}/expenses", headers=h["Ana"]).json()
+        # Destination (both), then Ana's own, then the trip's (GBP, set by the first
+        # expense) — no duplicates.
+        assert ov["suggested_currencies"] == ["PTE", "EUR", "CAD", "GBP"]
+        assert ov["default_currency"] == "CAD"              # her own currency
+        # Another traveller's Discover findings aren't Ana's suggestions.
+        assert "PTE" not in client.get(f"/api/v1/trips/{tid}/expenses",
+                                       headers=h["Ben"]).json()["suggested_currencies"]
+
+    def test_the_web_form_is_a_picker_defaulting_to_your_currency():
+        tid, p, ck, _ = _setup()
+        with SessionLocal() as s:
+            s.get(TravelerIdentity, p["Ana"]).base_currency = "CAD"
+            s.commit()
+        _destination(tid, _ana(tid).id, "EUR")
+        modal = client.get(f"/trips/{tid}/costs/new", cookies=ck["Ana"]).text
+        assert '<select id="ex-cur"' in modal and 'optgroup label="For this trip"' in modal
+        assert modal.index('value="EUR"') < modal.index('value="CAD"')   # destination first
+        assert 'value="CAD" selected' in modal                            # yours by default
+        assert 'value="JPY"' in modal                                     # and every other code
+
+    def test_me_carries_your_own_currency_and_time_zone():
+        tid, p, _, h = _setup()
+        with SessionLocal() as s:
+            t = s.get(TravelerIdentity, p["Ana"])
+            t.base_currency, t.timezone = "CAD", "America/Toronto"
+            s.commit()
+        me = client.get("/api/v1/auth/me", headers=h["Ana"]).json()
+        assert (me["base_currency"], me["timezone"]) == ("CAD", "America/Toronto")

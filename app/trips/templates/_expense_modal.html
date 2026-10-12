@@ -21,8 +21,22 @@
         </div>
         <div class="field">
           <label for="ex-cur">Currency</label>
-          <input id="ex-cur" class="input" name="currency" value="{{ form.currency }}" maxlength="3"
-                 pattern="[A-Za-z]{3}" placeholder="e.g. EUR" required {% if settlement %}readonly{% endif %}>
+          {% if settlement %}
+          <input id="ex-cur" class="input" name="currency" value="{{ form.currency }}" readonly>
+          {% else %}
+          {% set cc = currency_choices %}
+          <select id="ex-cur" class="input" name="currency" required>
+            {% if not form.currency %}<option value="" selected disabled>Choose…</option>{% endif %}
+            {% if cc.suggested %}
+            <optgroup label="For this trip">
+              {% for code, label in cc.suggested %}<option value="{{ code }}" {% if code == form.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </optgroup>
+            {% endif %}
+            <optgroup label="All currencies">
+              {% for code, label in cc.rest %}<option value="{{ code }}" {% if code == form.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </optgroup>
+          </select>
+          {% endif %}
         </div>
       </div>
       <div class="bp-row2">

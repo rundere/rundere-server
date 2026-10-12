@@ -108,7 +108,17 @@ def costs_context(session: Session, trip, user) -> dict:
         "by_category": by_category,
         "can_edit": can_edit,
         "has_roster": bool(expenses_svc._roster(session, trip.id)),
+        "currency_choices": _currency_choices(session, trip, user) if can_edit else None,
     }}
+
+
+def _currency_choices(session: Session, trip, user) -> dict:
+    """The picker (YONDER-213): the suggested codes first (destination, yours,
+    the trip's, already used), then every ISO-4217 currency by code."""
+    names = dict(expenses_svc.currency_options())
+    first = expenses_svc.suggested_currencies(session, trip, user)
+    return {"suggested": [(c, names.get(c, c)) for c in first],
+            "rest": [(c, n) for c, n in names.items() if c not in set(first)]}
 
 
 def _section(request: Request, session: Session, trip) -> HTMLResponse:
@@ -138,7 +148,9 @@ def _form_view(session: Session, trip, user, e=None, form=None) -> dict:
     if form is not None:
         return form
     if e is None:
-        return {"title": "", "amount": "", "currency": trip.expense_currency or "",
+        # The person's own currency first (YONDER-213), then the trip's.
+        return {"title": "", "amount": "",
+                "currency": expenses_svc.default_currency(session, trip, user) or "",
                 "spent_on": "", "payer_id": me if me in ids else (ids[0] if ids else None),
                 "split": "equal", "traveler_ids": ids, "shares": {},
                 "category": "other", "rate": "", "notes": ""}
@@ -166,6 +178,7 @@ def _modal(request: Request, session: Session, trip, *, e=None, form=None,
         "roster": _roster(session, trip.id),
         "categories": [(c, _CATEGORY_LABELS.get(c, c)) for c in expenses_svc.CATEGORIES],
         "place": place, "comments": comments,
+        "currency_choices": _currency_choices(session, trip, user),
         "can_edit": scope.can_edit_trip(session, user, trip),
         "settlement": e is not None and e.kind == expenses_svc.SETTLEMENT,
     })
