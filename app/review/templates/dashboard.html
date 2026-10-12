@@ -6,7 +6,17 @@
 
     <div class="dash-hero">
       <div>
-        <h1>{{ greeting }}</h1>
+        <h1 id="dash-greeting" data-name="{{ greeting_name }}">{{ greeting }}</h1>
+        <script>
+          // The server may run on UTC: greet by the viewer's own clock (YONDER-218).
+          (function () {
+            var el = document.getElementById('dash-greeting');
+            var h = new Date().getHours();
+            var part = h < 12 ? 'morning' : (h < 18 ? 'afternoon' : 'evening');
+            var name = el.getAttribute('data-name');
+            el.textContent = 'Good ' + part + (name ? ', ' + name : '');
+          })();
+        </script>
         <p>Capture a booking, review what Run·dere found, then watch your trips fill in.</p>
       </div>
       <div class="dash-hero-actions">

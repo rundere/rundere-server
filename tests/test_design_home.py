@@ -32,13 +32,32 @@ def test_home_has_greeting_search_queue_and_trips_not_old_tiles():
 
 def test_greeting_by_hour_and_name():
     from datetime import datetime
-    from types import SimpleNamespace
 
     from app.dashboard import _greeting
-    u = SimpleNamespace(username="ada")
-    assert _greeting(u, datetime(2026, 1, 1, 9)) == "Good morning, ada"
-    assert _greeting(u, datetime(2026, 1, 1, 14)) == "Good afternoon, ada"
-    assert _greeting(None, datetime(2026, 1, 1, 21)) == "Good evening"
+    assert _greeting("Ada", datetime(2026, 1, 1, 9)) == "Good morning, Ada"
+    assert _greeting("Ada", datetime(2026, 1, 1, 14)) == "Good afternoon, Ada"
+    assert _greeting("", datetime(2026, 1, 1, 21)) == "Good evening"
+
+
+def test_greeting_uses_the_traveller_name_and_the_viewers_clock():
+    """YONDER-218: "Daniel", not "admin"; and the page re-reads the hour from the
+    browser, because the server may run on UTC."""
+    import uuid
+    from types import SimpleNamespace
+
+    from app.dashboard import greeting_name
+    from app.db import SessionLocal
+    from app.models import TravelerIdentity
+    with SessionLocal() as s:
+        t = TravelerIdentity(display_name=f"Daniel Okafor{uuid.uuid4().hex[:4]}", kind="guest")
+        s.add(t)
+        s.flush()
+        assert greeting_name(s, SimpleNamespace(username="admin", traveler_id=t.id)) == "Daniel"
+        assert greeting_name(s, SimpleNamespace(username="admin", traveler_id=None)) == "admin"
+        assert greeting_name(s, None) == ""
+        s.rollback()
+    html = _fixture().get("/").text
+    assert 'id="dash-greeting"' in html and "new Date().getHours()" in html
 
 
 def test_home_trip_card_shows_packing_progress_per_user():
