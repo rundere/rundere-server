@@ -13,6 +13,8 @@
   <b>Why this is held back</b>
   <ul>{% for v in violations %}<li><code>{{ v }}</code></li>{% endfor %}</ul>
 </div>
+{% elif approve_refused and i.bucket not in ('ready', 'staged') %}
+<div class="saved-note">Not approved yet. {{ i.note or 'It still needs a look — see below.' }}</div>
 {% elif saved %}
 <div class="saved-note">Saved. {{ i.note or 'This is ready to approve.' }}</div>
 {% endif %}
@@ -70,7 +72,7 @@
       </select>
       <button type="submit" class="act">Link</button>
     </div>
-    <p class="hint quiet">• dates fall inside this trip. <a href="/trips" target="_blank" rel="noopener">Manage trips</a></p>
+    <p class="hint quiet">• dates fall inside this trip. Linking re-checks the item. <a href="/trips" target="_blank" rel="noopener">Manage trips</a></p>
     {% else %}
     <p class="hint">No Run·dere trips yet. <a href="/trips" target="_blank" rel="noopener">Create one</a>, then reopen this item.</p>
     {% endif %}

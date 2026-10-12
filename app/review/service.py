@@ -128,10 +128,12 @@ def apply_edits(session: Session, item: TravelItem, *, fields: dict[str, str] | 
 
 def approve(session: Session, item: TravelItem, *, resolved_by: str = "review-ui") -> bool:
     """Stage the item for logging. Only a RESOLVED item (resolve == ok) stages;
-    an item that was never resolved is re-resolved first. Returns whether it
-    was approved (False = still needs attention; see its reasons)."""
+    an item that isn't resolved is re-resolved first, so an approval always
+    judges the item as it stands NOW — e.g. a hotel deferred before its trip
+    existed, then linked to it (YONDER-222). Returns whether it was approved
+    (False = still needs attention; see its reasons)."""
     from app.review.routes import _reresolve
-    if not (item.resolution or {}).get("outcome"):
+    if (item.status or {}).get("resolve") != "ok":
         _reresolve(session, item)
         session.refresh(item)
     if (item.status or {}).get("resolve") != "ok":

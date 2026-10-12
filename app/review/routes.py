@@ -520,8 +520,11 @@ async def save(item_id: str, request: Request, bucket: str = "attention",
         resp.headers["HX-Reswap"] = "innerHTML"
         return resp
 
+    # Asked to approve but it couldn't be (still not resolved): say so and why,
+    # instead of a silent no-op that reads as "the button is broken".
     return _detail_response(request, session, final,
-                            bucket=bucket, saved=bool(changed), oob_counts=True)
+                            bucket=bucket, saved=bool(changed), oob_counts=True,
+                            approve_refused="and_approve" in form)
 
 
 @router.post("/item/{item_id}/assign", response_class=HTMLResponse)
@@ -631,12 +634,14 @@ def _trip_context(session: Session, item: TravelItem, view: dict,
 def assign_yonder_trip(item_id: str, request: Request, trip_id: str = Form(""),
                        bucket: str = "attention",
                        session: Session = Depends(get_session)):
-    """Link this item to an in-house Yonder Trip (or clear the link).
+    """Link this item to an in-house Run·dere trip (or clear the link).
 
-    Independent of the AdventureLog collection: Yonder trips are their own trip
-    system, so this does NOT touch resolution, targets, or the commit — it only
-    records the association (item.trip_id), which the Yonder trip page surfaces
-    as a linked capture. No re-resolve needed; the item's bucket is unchanged.
+    Independent of the AdventureLog collection, but NOT of resolution: since
+    D-148 the Run·dere trip is what settles a capture (`yonder.activity` is its
+    primary target), so a deferred hotel becomes approvable the moment it is
+    linked. The item is re-resolved here, as the AdventureLog picker does —
+    without it the link was stored but the item sat in "Waiting for a trip"
+    until its TTL sweep (YONDER-222).
     """
     from app.models import Trip
     item = scope.capture_or_none(session, request, item_id)
@@ -654,7 +659,18 @@ def assign_yonder_trip(item_id: str, request: Request, trip_id: str = Form(""),
     item.review = review
     flag_modified(item, "review")
     session.commit()
-    return _detail_response(request, session, item, bucket=bucket, saved=True)
+    # A logged item is done and an ignored one is off the pipeline: re-resolving
+    # either would only churn state, so the link is recorded and nothing else.
+    if not _is_logged(item) and review.get("action_taken") != "ignored":
+        status = dict(item.status or {})
+        status["resolve"] = "pending"
+        item.status = status
+        flag_modified(item, "status")
+        session.commit()
+        _reresolve(session, item)
+    final = scope.capture_or_none(session, request, item_id)
+    return _detail_response(request, session, final, bucket=bucket,
+                            saved=True, oob_counts=True)
 
 
 def _yonder_trip_context(session: Session, item: TravelItem,
@@ -802,7 +818,7 @@ def default_traveler(session: Session, item: TravelItem) -> int | None:
 
 def _detail_response(request: Request, session: Session, item: TravelItem,
                      *, bucket: str = "attention", saved: bool = False,
-                     oob_counts: bool = False):
+                     oob_counts: bool = False, approve_refused: bool = False):
     view = _view(item)
     violations = []
     if item.extraction:
@@ -811,6 +827,7 @@ def _detail_response(request: Request, session: Session, item: TravelItem,
                       rules_module.check_item(_rule_shape(item),
                                               load_enablement(session))]
     ctx = {"i": view, "violations": violations, "saved": saved, "bucket": bucket,
+           "approve_refused": approve_refused,
            "pax": _passenger_context(session, view["payload"]),
            "who": _who_context(session, item, view["payload"]),
            # Two independent trip pickers (2.1.2): the AdventureLog collection the
