@@ -46,6 +46,32 @@
       </select></div>
   </div>
 
+  <div class="field"><label for="tp-tz">Time zone <span class="yn-help">— your "now": greetings, countdowns, Next up and which trips are upcoming</span></label>
+    <div class="yn-tz-row">
+      <select id="tp-tz" class="input" name="timezone">
+        <option value="">— the server's clock —</option>
+        {% for z in zones %}
+        <option value="{{ z }}" {% if trav.timezone == z %}selected{% endif %}>{{ z | replace('_', ' ') }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" class="btn btn-ghost bp-sm" id="tp-tz-detect" hidden>Use this device's</button>
+    </div>
+    <p class="yn-help" style="margin:4px 0 0">Set it once — it doesn't follow your home profiles,
+      so change it if you move.</p>
+  </div>
+  <script>
+    // Offer the browser's own zone in one click (it's only a suggestion until saved).
+    (function () {
+      var z; try { z = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return; }
+      var sel = document.getElementById('tp-tz'), btn = document.getElementById('tp-tz-detect');
+      if (!z || !sel || sel.value === z) return;
+      if (![].some.call(sel.options, function (o) { return o.value === z; })) return;
+      btn.textContent = "Use this device's (" + z.replace(/_/g, ' ') + ")";
+      btn.hidden = false;
+      btn.onclick = function () { sel.value = z; btn.hidden = true; };
+    })();
+  </script>
+
   <div class="field"><label for="tp-alias">Name-on-ticket aliases <span class="yn-help">— one per line; matches flights printed under name variants</span></label>
     <textarea id="tp-alias" class="input" name="aliases" rows="3"
               placeholder="e.g. OKAFOR/DANIEL MR">{{ (trav.aliases or []) | join('\n') }}</textarea></div>

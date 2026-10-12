@@ -677,3 +677,5 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 /* Travel profile (YONDER-216): the read-only name, styled like a field value. */
 .yn-readonly { padding: 8px 0; font-size: 15px; font-weight: 500; }
 .yn-profile-card textarea.input { width: 100%; box-sizing: border-box; }
+.yn-tz-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.yn-tz-row select { flex: 1 1 260px; }

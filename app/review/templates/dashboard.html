@@ -7,8 +7,10 @@
     <div class="dash-hero">
       <div>
         <h1 id="dash-greeting" data-name="{{ greeting_name }}">{{ greeting }}</h1>
+        {% if not greeting_tz_set %}
         <script>
-          // The server may run on UTC: greet by the viewer's own clock (YONDER-218).
+          // No time zone on the travel profile, and the server may run on UTC:
+          // greet by the browser's clock instead (YONDER-218/219).
           (function () {
             var el = document.getElementById('dash-greeting');
             var h = new Date().getHours();
@@ -17,6 +19,7 @@
             el.textContent = 'Good ' + part + (name ? ', ' + name : '');
           })();
         </script>
+        {% endif %}
         <p>Capture a booking, review what Run·dere found, then watch your trips fill in.</p>
       </div>
       <div class="dash-hero-actions">

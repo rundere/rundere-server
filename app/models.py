@@ -437,6 +437,10 @@ class TravelerIdentity(Base):
     # profile choice (ISO-4217, e.g. "GBP"), independent of nationality and home.
     # NULL = fall back to the deployment default (TX_DISCOVERY_BASE_CURRENCIES).
     base_currency: Mapped[str | None] = mapped_column(String(3))
+    # This person's own time zone (IANA, e.g. "Europe/London"): their "now" for
+    # everything date-relative — Home, countdowns, Next up, upcoming/past
+    # (YONDER-219, D-187). Set on the Travel profile; NULL = the server clock.
+    timezone: Mapped[str | None] = mapped_column(String(64))
     # 3.2 (D-100): a generic guest is a roster placeholder — "someone is coming"
     # — NOT a modelled person. Minted by the trip "add a guest" quick-add. It
     # carries no profile/nationality and is deliberately EXCLUDED from discovery

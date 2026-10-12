@@ -188,7 +188,8 @@ def _trip_display(t: Trip, activities=(), today: str | None = None, packing=None
 
 
 def _list_context(session: Session, q: str, status: str, user=None) -> dict:
-    today = date.today().isoformat()
+    from app import clock
+    today = clock.today_for(session, user)          # the viewer's own date (D-187)
     tab = "past" if status == "past" else "upcoming"   # always default: Upcoming
     # Phase 2: only trips the user may see (own + open + shared); no-op when
     # auth is off or the user is admin.
@@ -1963,6 +1964,11 @@ def save_packing_profile(request: Request,
                                       _profile_form_ctx(request, session, saved=True))
 
 
+def _zones() -> list[str]:
+    from app.clock import zone_names
+    return zone_names()
+
+
 def _currency_options() -> list[tuple[str, str]]:
     """(code, "CAD — Canadian Dollar") for every ISO-4217 currency Babel knows,
     for the travel-profile base-currency picker. Sorted by code."""
@@ -1989,12 +1995,13 @@ def edit_travel_profile(request: Request, session: Session = Depends(get_session
     trav = acting.traveler
     return templates.TemplateResponse(request, "travel_profile.html",
         {"request": request, "trav": trav, "no_traveller": trav is None,
-         "acting": acting, "currencies": _currency_options(), "saved": False})
+         "acting": acting, "currencies": _currency_options(), "zones": _zones(),
+         "saved": False})
 
 
 @router.post("/settings/travel-profile", response_class=HTMLResponse)
 def save_travel_profile(request: Request, nationality: str = Form(""),
-                        base_currency: str = Form(""),
+                        base_currency: str = Form(""), timezone: str = Form(""),
                         aliases: str = Form(""), airtrail_user_id: str = Form(""),
                         notes: str = Form(""), session: Session = Depends(get_session)):
     from sqlalchemy.orm.attributes import flag_modified
@@ -2005,11 +2012,13 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
     if trav is None:
         return templates.TemplateResponse(request, "travel_profile.html",
             {"request": request, "trav": None, "no_traveller": True, "acting": acting,
-             "currencies": _currency_options(), "saved": False})
+             "currencies": _currency_options(), "zones": _zones(), "saved": False})
     audit_if_other(session, request, acting, "travel profile")
     trav.nationality = (nationality or "").strip().upper()[:2] or None
     bc = (base_currency or "").strip().upper()
     trav.base_currency = bc if bc in set(list_currencies()) else None
+    from app.clock import valid_zone
+    trav.timezone = valid_zone(timezone)            # their own "now" (YONDER-219, D-187)
     trav.aliases = [a.strip() for a in (aliases or "").splitlines() if a.strip()]
     flag_modified(trav, "aliases")
     trav.airtrail_user_id = (airtrail_user_id or "").strip() or None
@@ -2018,7 +2027,7 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
     session.refresh(trav)
     return templates.TemplateResponse(request, "travel_profile.html",
         {"request": request, "trav": trav, "no_traveller": False, "acting": acting,
-         "currencies": _currency_options(), "saved": True})
+         "currencies": _currency_options(), "zones": _zones(), "saved": True})
 
 
 # ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------

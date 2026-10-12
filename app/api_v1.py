@@ -668,13 +668,17 @@ def api_dashboard(now: Annotated[str | None, Query(
 
     from app.dashboard import (_capture_activity, _next_trip, _pipeline_counts,
                                _trip_status, viewer_moments)
+    from app import clock
     from app.trips import nextup, who
-    today = date.today().isoformat()
+    # The app's own clock when it sends one; else the caller's travel-profile
+    # time zone; else the server's (D-172, D-187).
+    now = now or nextup.now_key(clock.now_for(session, user))
+    today = now[:10]
     trips = session.query(Trip).filter(scope.trip_filter(session, user)).all()
     nxt = _next_trip(trips, today)
     upcoming = sum(1 for t in trips
                    if t.start_date and _trip_status(t, today) == "upcoming")
-    moment, under_way = viewer_moments(session, trips, now or nextup.now_key(), user)
+    moment, under_way = viewer_moments(session, trips, now, user)
     names = {t.id: t.name for t in trips}
     tags = who.activity_map(session, [m.activity.id for m in [moment, *under_way] if m])
 

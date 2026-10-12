@@ -67,7 +67,8 @@ def _panel_ctx(request: Request, session: Session) -> dict:
             # Nearest-to-this-entry's-day first (YONDER-188); its own trip stays selected.
             "trips": journal_svc.rank_trips(trips, e.entry_date),
         })
-    today = date.today().isoformat()
+    from app import clock
+    today = clock.today_for(session, user)          # the person's own date (D-187)
     return {"request": request, "groups": groups, "today": today,
             "trips": journal_svc.rank_trips(trips, today),
             "default_trip": journal_svc.default_trip_id(trips, today),
@@ -94,7 +95,8 @@ def journal_trip_options(request: Request, entry_date: str = "", picked: str = "
     try:
         day = journal_svc.normalize_entry_date(entry_date or None)
     except ValueError:
-        day = date.today().isoformat()
+        from app import clock
+        day = clock.today_for(session, scope.user_of(request))
     ids = {t["id"] for t in trips}
     selected = picked if picked in ids else journal_svc.default_trip_id(trips, day)
     return templates.TemplateResponse(request, "_journal_trip_options.html", {

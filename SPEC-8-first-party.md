@@ -342,3 +342,15 @@ request forgery (SSRF) risk.
     captures processed after someone connects go to that system. Writes skipped
     under D-156 ("admins only") are retried by a later commit once the owner
     connects. (built 4.8)
+- **D-187 — Each person's "now" is their own time zone (YONDER-219; owner,
+  2026-10-12).** The Travel profile has a time zone (IANA, e.g.
+  `Europe/London`) on the person's traveller, set once and independent of home
+  profiles, which change over time. Everything date-relative that person sees is
+  worked out against their own wall-clock now in that zone: Home (greeting,
+  "in N days", Next up, trip cards), the trips list's upcoming/past, the
+  Journal's default day, and `/api/v1/dashboard` when the app doesn't send its
+  own `now` (the app's device clock still wins, D-172). Two people on one server
+  each get their own today. With no zone set, the server clock is used; the
+  page offers the browser's detected zone in one click. `app/clock.py` is the
+  one implementation. Discovery runs, the PDF and capture stamps keep the
+  server clock. (built 4.8)

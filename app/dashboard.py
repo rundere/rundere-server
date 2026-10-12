@@ -232,16 +232,23 @@ def _capture_activity(session: Session, today: str, user=None) -> dict:
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, session: Session = Depends(get_session)):
-    today = date.today().isoformat()
+    from app import clock
+    from app.trips import nextup
     user = scope.user_of(request)
+    # Everything here runs on the viewer's own clock (YONDER-219, D-187).
+    now = clock.now_for(session, user)
+    today = now.date().isoformat()
     trips = session.query(Trip).filter(scope.trip_filter(session, user)).all()
     upcoming_count = sum(1 for t in trips
                          if t.start_date and _trip_status(t, today) == "upcoming")
     return templates.TemplateResponse(request, "dashboard.html", {
         "next_trip": _next_trip(trips, today),
-        "next_up": _next_up(session, trips, today, user),
-        "greeting": _greeting(greet_name := greeting_name(session, user)),
+        "next_up": _next_up(session, trips, today, user, now=nextup.now_key(now)),
+        "greeting": _greeting(greet_name := greeting_name(session, user), now),
         "greeting_name": greet_name,
+        # With a profile time zone the server's greeting is right; without one,
+        # the page corrects it from the browser's clock.
+        "greeting_tz_set": clock.zone_for(session, user) is not None,
         "queue": _queue_preview(session, user),
         "trip_cards": _trip_cards(session, trips, today, user=user),
         "counts": _pipeline_counts(session, user),
