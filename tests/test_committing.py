@@ -1082,3 +1082,21 @@ def test_commit_only_logs_the_committers_own_approvals():
     s.query(TravelItem).delete()
     s.query(User).filter(User.id.in_([me.id, sis.id])).delete(synchronize_session=False)
     s.commit(); s.close()
+
+
+def test_only_a_six_character_record_locator_goes_to_airtrail():
+    """Owner, 2026-10-12: a flight's booking reference is the 6-character
+    airline record locator (Sabre PNR). Anything else stays on Run·dere's own
+    record and isn't sent — AirTrail rejected a whole flight over a longer one."""
+    _skip()
+    assert C.airline_record_locator(" bcq-dta ") == "JMVRLE"
+    assert C.airline_record_locator("AB12CD") == "AB12CD"
+    for bad in ("1234567890", "BOOKING-12345", "ABC12", "", None, "AB 12 CD 9"):
+        assert C.airline_record_locator(bad) is None, bad
+    p = _flight_payload()
+    p["booking_reference"] = "HB-4471929902"                  # a booking site's
+    airports = {"YYZ": Airport(1, "YYZ", icao="CYYZ"), "DCA": Airport(2, "DCA", icao="KDCA")}
+    body, err = C.build_airtrail_flight(
+        p, airports=airports, airlines={"AC": Airline(49, "AC", "AC", icao="ACA")},
+        self_uid="u1")
+    assert err is None and "booking_reference" not in (body.get("customFields") or {})

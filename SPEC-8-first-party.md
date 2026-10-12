@@ -318,7 +318,11 @@ request forgery (SSRF) risk.
     The key needs `flight.read.own`, `flight.create.own`, `flight.update.own`,
     `flight.delete.own`, `reference_data.read` and `profile.read`; the
     connection test checks the airline lookup and says which scope or version
-    is missing. If AirTrail ever drops this, the fallback is a sidecar in
+    is missing. A flight's booking reference goes to AirTrail only as the
+    6-character airline record locator (a GDS/Sabre PNR, letters and digits);
+    any other reference stays on Run·dere's record, because AirTrail rejects the
+    whole flight over a custom field past its limit (seen live, 2026-10-12).
+    If AirTrail ever drops this, the fallback is a sidecar in
     AirTrail's stack that Run·dere connects to — never a database URL in Run·dere.
   - *Base URL per user; local hosts only by server config.* Everything is public
     `https` unless an admin lists the host in `TX_INTEGRATION_ALLOWED_HOSTS`

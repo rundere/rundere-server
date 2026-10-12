@@ -25,6 +25,7 @@ executes them (D-14/D-22). Principles this module encodes:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -209,6 +210,20 @@ def _flight_number_combined(payload: dict) -> str:
     return f"{iata}{f.get('flight_number') or ''}"
 
 
+_PNR = re.compile(r"[A-Z0-9]{6}")
+
+
+def airline_record_locator(ref) -> str | None:
+    """A flight's booking reference as AirTrail takes it: the 6-character
+    airline record locator (the PNR a GDS such as Sabre issues), letters and
+    digits. Anything else — a booking site's longer reference — isn't a PNR:
+    it stays on Run·dere's own record and isn't sent, because AirTrail rejects
+    the whole flight over a custom field that breaks its limit (owner,
+    2026-10-12; seen live: "Booking Reference must be at most 6 characters")."""
+    v = re.sub(r"[\s-]", "", str(ref or "")).upper()
+    return v if _PNR.fullmatch(v) else None
+
+
 def build_airtrail_flight(payload: dict, *, airports: dict, airlines: dict,
                           self_uid: str | None) -> tuple[dict | None, str | None]:
     """(body, error). error is a human sentence when the flight cannot be
@@ -271,8 +286,9 @@ def build_airtrail_flight(payload: dict, *, airports: dict, airlines: dict,
     # e-ticket number there; both are extracted, so pass them through — a ticket
     # number in particular has no first-class AirTrail column.
     custom = {}
-    if payload.get("booking_reference"):
-        custom["booking_reference"] = payload["booking_reference"]
+    pnr = airline_record_locator(payload.get("booking_reference"))
+    if pnr:
+        custom["booking_reference"] = pnr
     ticket = next((t for t in (f.get("ticket_numbers") or []) if t), None)
     if ticket:
         custom["ticket_number"] = ticket
