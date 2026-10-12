@@ -8,6 +8,11 @@ anything. Example:
    12 °C in Gondar; rain on 2 of 18 days."
 
 plus short packing hints ("a warm layer for the evenings").
+
+D-189 (YONDER-211): when the findings carry them, feels-like, humidity and
+altitude shape the line and the hints too ("feels near 3 °C at dawn", "very
+dry", "high altitude in Phoenix") — older findings without them read as
+before.
 """
 from __future__ import annotations
 
@@ -53,6 +58,27 @@ def summarize(cities: list[tuple[str, dict]]) -> dict | None:
         parts.append(f"freezing nights, down to {lo_min} °C{where}")
     elif lo_min <= 12 and avg_high >= 20:
         parts.append(f"cool nights down to {lo_min} °C{where}")
+    # What it FEELS like at dawn, when that's noticeably colder than the air.
+    felt = [(label, d["feels_low_c"]) for label, d in rows
+            if isinstance(d.get("feels_low_c"), (int, float))]
+    feel_min = min((f for _, f in felt), default=None)
+    if feel_min is not None and feel_min <= lo_min - 2:
+        at = next(label for label, f in felt if f == feel_min)
+        parts.append(f"feels near {feel_min} °C at dawn"
+                     + (f" in {at}" if len(rows) > 1 else ""))
+    dry = [label for label, d in rows if d.get("humidity_band") in ("very dry", "dry")]
+    humid = [label for label, d in rows if d.get("humidity_band") in ("humid", "very humid")]
+    if dry:
+        very = all(d.get("humidity_band") == "very dry" for label, d in rows if label in dry)
+        parts.append(("very dry air" if very else "dry air")
+                     + (f" in {', '.join(dry)}" if len(rows) > 1 else ""))
+    if humid:
+        parts.append("humid" + (f" in {', '.join(humid)}" if len(rows) > 1 else ""))
+    high = [(label, d.get("elevation_m")) for label, d in rows if d.get("high_altitude")]
+    if high:
+        parts.append("high altitude in " + ", ".join(
+            f"{label} (~{m:,} m)" if isinstance(m, (int, float)) else label
+            for label, m in high))
     if days:
         parts.append(f"rain on {rain} of {days} days" if rain else "no rain expected")
     line = f"{head} — " + "; ".join(parts) + "."
@@ -60,12 +86,19 @@ def summarize(cities: list[tuple[str, dict]]) -> dict | None:
     hints = []
     if avg_high >= 28 or hi_max >= 32:
         hints.append("sun protection and light clothing")
-    if lo_min <= 0 or avg_high < 17:
+    cold = min(lo_min, feel_min) if feel_min is not None else lo_min
+    if cold <= 0 or avg_high < 17:
         hints.append("warm clothes")
-    elif lo_min <= 12:
+    elif cold <= 12:
         hints.append("a warm layer for the evenings")
     if share >= 0.2:
         hints.append("a rain layer or umbrella")
+    if dry:
+        hints.append("lip balm, moisturiser and extra water")
+    if humid:
+        hints.append("breathable clothes")
+    if high:
+        hints.append("sunscreen, and take day 1 easy at altitude")
     # All from last year's weather for the same dates → "typical", not a forecast.
     seasonal = all(str(d.get("mode") or "") == "seasonal" for _, d in rows)
     return {"line": line, "hints": hints, "band": band, "seasonal": seasonal}

@@ -45,6 +45,26 @@ def test_variable_trip_names_the_extremes():
     assert "sun protection and light clothing" in s["hints"] and "warm clothes" in s["hints"]
 
 
+def test_high_dry_city_hints_d189():
+    """YONDER-211: feels-like, dryness and altitude reach the line and the hints."""
+    d = {**_w(18, 3, 0, 4), "feels_low_c": -1, "humidity_band": "very dry",
+         "elevation_m": 1620, "high_altitude": True}
+    s = summarize([("Phoenix", d)])
+    assert "feels near -1 °C at dawn" in s["line"]
+    assert "very dry air" in s["line"] and "high altitude in Phoenix (~1,620 m)" in s["line"]
+    assert "warm clothes" in s["hints"]
+    assert "lip balm, moisturiser and extra water" in s["hints"]
+    assert "sunscreen, and take day 1 easy at altitude" in s["hints"]
+
+
+def test_feels_like_alone_turns_on_the_warm_layer():
+    """Air lows of 14 °C wouldn't ask for a layer; feeling like 9 °C does."""
+    s = summarize([("Lima", {**_w(22, 14, 0, 3), "feels_low_c": 9,
+                             "humidity_band": "humid"})])
+    assert "a warm layer for the evenings" in s["hints"]
+    assert "breathable clothes" in s["hints"] and "humid" in s["line"]
+
+
 def test_no_usable_data():
     assert summarize([]) is None
     assert summarize([("X", {"mode": "forecast"})]) is None

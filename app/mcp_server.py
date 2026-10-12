@@ -589,7 +589,9 @@ def save_research(trip_id: TripId,
     shown as written by the app you connected as. A finding the user LOCKED
     (see `locked` in get_trip) is refused — tell them instead.
     For restaurants/bars or events/activities as rows, use save_city_guide;
-    for local phrases, use save_phrases; for Safety & Transport, save_safety."""
+    for local phrases, use save_phrases; for Safety & Transport, save_safety.
+    When you write about weather (e.g. in research or packing), give what it
+    feels like, the humidity and the altitude — never air temperature alone (D-189)."""
     body = api_v1.FindingIn(topic=topic, title=title, body_md=body_md, place_key=place_key,
                             sources=[api_v1.SourceIn(**s) for s in (sources or [])
                                      if isinstance(s, dict) and s.get("url")])

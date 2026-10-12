@@ -164,3 +164,53 @@ def test_weather_skips_placeless_city():
 def test_build_deterministic_wires_all_topics():
     topics = {r.topic for r in build_deterministic()}
     assert topics == {"plugs", "currency", "weather", "language"}
+
+
+# ---------------------------------------------------------------- D-189, YONDER-211
+
+def _abq_daily():
+    """A stubbed Open-Meteo answer for a high, dry city (Phoenix-like)."""
+    return {"elevation": 1620.0, "daily": {
+        "temperature_2m_max": [18, 18], "temperature_2m_min": [3, 3],
+        "precipitation_sum": [0, 0],
+        "apparent_temperature_max": [16, 16], "apparent_temperature_min": [-1, -1],
+        "relative_humidity_2m_mean": [20, 20],
+        "relative_humidity_2m_min": [10, 10], "relative_humidity_2m_max": [35, 35]}}
+
+
+def test_weather_high_dry_city_carries_feels_like_humidity_and_altitude(monkeypatch):
+    captured = {}
+    def fake_get_json(url, timeout=12):
+        captured["url"] = url
+        return _abq_daily()
+    monkeypatch.setattr(weather_mod, "get_json", fake_get_json)
+    f = WeatherResolver().resolve(DerivedPlace("US", "Phoenix", 35.08, -106.65),
+                                  _ctx(start_date="2026-08-20", end_date="2026-08-21",
+                                       today="2026-08-14"))
+    for var in ("apparent_temperature_max", "relative_humidity_2m_mean"):
+        assert var in captured["url"]                       # asked for in the same call
+    d = f.data
+    assert (d["feels_high_c"], d["feels_low_c"]) == (16, -1)
+    assert (d["humidity_pct"], d["humidity_band"]) == (20, "very dry")
+    assert d["elevation_m"] == 1620 and d["high_altitude"] is True
+    assert d["swing_c"] == 15
+    assert "Feels like ~16°C by day and ~-1°C at dawn." in f.body_md
+    assert "very dry" in f.body_md and "high altitude" in f.body_md
+    assert "Big day/night swing" in f.body_md
+
+
+def test_weather_archive_modes_carry_the_new_fields_too(monkeypatch):
+    """Seasonal (prior-year archive) carries them as well as forecast does."""
+    monkeypatch.setattr(weather_mod, "get_json", lambda url, timeout=12: _abq_daily())
+    f = WeatherResolver().resolve(DerivedPlace("US", "Phoenix", 35.08, -106.65), _ctx())
+    assert f.data["mode"] == "seasonal" and f.data["humidity_band"] == "very dry"
+
+
+def test_weather_without_the_new_fields_reads_as_before(monkeypatch):
+    monkeypatch.setattr(weather_mod, "get_json",
+                        lambda url, timeout=12: _daily([25], [15], [0]))
+    f = WeatherResolver().resolve(DerivedPlace("CH", "Geneva", 46.2, 6.1),
+                                  _ctx(start_date="2026-08-20", end_date="2026-08-22",
+                                       today="2026-08-14"))
+    assert set(f.data) == {"mode", "high_c", "low_c", "rain_days", "days"}
+    assert "Feels like" not in f.body_md and "Humidity" not in f.body_md

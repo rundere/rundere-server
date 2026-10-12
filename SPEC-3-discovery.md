@@ -356,6 +356,18 @@ restart. So: **keep the pattern, change the backing store.**
   but a non-home city in the home country still gets weather/events/food. What was
   suppressed is recorded on the run and shown in the derived-locations viewer.
 
+- **D-189 — Weather is more than air temperature (YONDER-211; owner,
+  2026-10-05; built 2026-10-12).** The weather finding also carries the daily
+  **feels-like** high/low (Open-Meteo `apparent_temperature_*`, never AccuWeather's
+  trademarked "RealFeel"), **humidity** (mean and range, banded very dry → very
+  humid), the city's **elevation** (from the same response, flagged at
+  ≥1,500 m: thinner air, stronger sun, faster dehydration, colder mornings) and a
+  **day/night swing** of ≥15 °C. All three modes (forecast, seasonal, past) ask
+  for them in the same call; any field Open-Meteo doesn't return is left out, and
+  older findings read as before. The trip summary (YONDER-167) uses them for its
+  line and packing hints. Deterministic: nothing is inferred beyond the API's
+  numbers. Code: `discover/resolvers/weather.py`, `discover/weather_summary.py`.
+
 ## 11. Phasing
 
 **Delivered in 3.0 (this PR):**
