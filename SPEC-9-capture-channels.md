@@ -193,11 +193,21 @@ The page's own capture box is not a tab, because it needs no setup.
   - *Exactly once:* `inbox_messages.message_key` = sha256(Message-ID, or the raw bytes, +
     user) is unique, so a re-forward, a second poll or a second worker never captures twice.
   - *Mailbox housekeeping:* captured mail moves to `TX_INBOX_DONE_FOLDER`, everything else
-    to `TX_INBOX_DROPPED_FOLDER` (IMAP MOVE, or copy + expunge). One poller thread per
-    process, every `TX_INBOX_POLL_SECONDS`. Admins see its last read, last error and a
-    7-day count on the Email tab.
-  - *Not in v1:* a "got it" reply email, an IMAP IDLE push, and a webhook front door for
-    mail services that push instead of being polled.
+    to `TX_INBOX_DROPPED_FOLDER` (IMAP MOVE, or copy + expunge). Admins see the read mode, the
+    last read, the last error and a 7-day count on the Email tab.
+  - *Real time (owner, 2026-10-12):* one reader thread per process holds an **IMAP IDLE**
+    (RFC 2177), so the mail server tells Run·dere about new mail and it is read within
+    seconds. The reader re-IDLEs every 20 minutes and reconnects after a drop. A server
+    without IDLE, or `TX_INBOX_IDLE=false`, falls back to reading every
+    `TX_INBOX_POLL_SECONDS`. Email is the only channel that needs this. Every other channel
+    (the add-ons, the bookmarklet, the capture box, the API, MCP) is an HTTP request *to*
+    Run·dere, answered at once. After capture, processing is the same for all (D-158).
+  - *"Got it" (owner, 2026-10-12):* as soon as a forward is captured, an email goes to the
+    capture owner's **own account address**, never to the sender, which nobody verified, so a
+    forged sender can't make Run·dere mail a stranger. It needs SMTP and an email on the
+    account; the Email tab says which address it goes to, or asks for one.
+    `TX_INBOX_ACKNOWLEDGE=false` turns it off.
+  - *Not in v1:* a webhook front door for mail services that push mail over HTTP.
 
 ## 6. Proposed: iOS Share Extension feedback (D-163)
 
@@ -263,7 +273,14 @@ points that share one parser (`extract/place_url.py`) and one category table:
 - **D-158** — Capture-page captures start processing immediately; approval stays human (D-31).
 - **D-159** — The bookmarklet hands the page over by `window.open` + `postMessage`.
 - **D-160** — The capture page is the always-used capture box plus a click-through guide with a
-  tab per channel; each tab is an instruction manual with status.
+  tab per channel; each tab is an instruction manual with status. *Layout revised by D-191.*
+- **D-191 — The capture page shows every guide as a card (owner, 2026-10-12).** The single
+  "See the guides" link was easy to miss, and reaching one guide took three clicks. Now the
+  left column holds the capture box with **Recent captures as a second tab** (linkable as
+  `#recent`). The right column is a prominent **"Other ways to capture"** with one card per
+  channel: what it is, its status (last capture, "Coming soon", or "Needs your server's
+  mailbox"), the person's email-forward address when they have one, and a link **straight to
+  that channel's guide tab**. The guides themselves stay on `/capture/setup`, as D-160 set out.
 - **D-162** — Email forward uses a server-generated per-user plus address.
 - **D-163** — The iOS Share Extension confirms receipt with a notification at minimum.
 - **D-164** — The Gmail add-on no longer moves labels and no longer asks for `gmail.modify`;

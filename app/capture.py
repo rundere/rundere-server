@@ -240,7 +240,9 @@ _POLL_MS = 1500
 _POLL_MAX = 80                       # ~2 minutes, then "still working — it will appear"
 _BUCKET_LABELS = {"attention": "Needs you", "waiting": "Waiting for a trip",
                   "ready": "Ready to approve", "staged": "Approved", "logged": "Logged",
-                  "ignored": "Ignored"}
+                  "ignored": "Ignored",
+                  # resolve hasn't settled yet (pending): it's still being read
+                  "all": "Being read"}
 
 
 def _captured(request: Request, batch_id: str, user):
@@ -300,7 +302,8 @@ def capture_page(request: Request, session: Session = Depends(get_session)):
     user = authn.resolve_user(session, request)
     trips = _filing_trips(session, user)
     return templates.TemplateResponse(request, "capture.html", {
-        "trips": trips, "recent": _recent_captures(session, user)})
+        "trips": trips, "recent": _recent_captures(session, user),
+        "channels": _channel_cards(session, user)})
 
 
 def _own_batches(session: Session, user, limit: int):
@@ -350,7 +353,39 @@ _CHANNELS = [  # (tab key, label, capture_channel values it produces)
     ("ios", "iPhone and iPad", ()),
     ("mcp", "AI assistants (MCP)", ()),
 ]
+# One line per channel for the capture page's "Other ways to capture" cards, so
+# each guide is one click from /capture (owner, 2026-10-12).
+_CHANNEL_BLURBS = {
+    "gmail": "Capture the email you're reading, from Gmail's side panel.",
+    "calendar": "Capture an event from Google Calendar.",
+    "bookmarklet": "One click on any booking page in your browser.",
+    "email": "Forward confirmations to your own address, from any email account.",
+    "ios": "Share from Safari or Mail on iPhone and iPad.",
+    "mcp": "Ask Claude or another AI assistant to capture a link for you.",
+}
+_CHANNEL_SOON = {"ios"}            # guides that describe something not built yet
 _CAPTURE_DIR = Path(__file__).resolve().parent.parent / "capture"
+
+
+def _channel_cards(session: Session, user) -> list[dict]:
+    """The "Other ways to capture" cards: what each channel is, whether anything
+    has come in through it, and a link straight to its guide."""
+    from app import inbox
+    last = _last_capture_by_channel(session, user)
+    cards = []
+    for key, label, chans in _CHANNELS:
+        times = [last[c] for c in chans if c in last]
+        card = {"key": key, "label": label, "blurb": _CHANNEL_BLURBS.get(key, ""),
+                "href": f"/capture/setup?tab={key}",
+                "status": ("Last capture " + _ago(max(times))) if times else "",
+                "soon": key in _CHANNEL_SOON, "detail": None}
+        if key == "email":
+            if not inbox.configured():
+                card["note"] = "Needs your server's mailbox set up"
+            elif user is not None:
+                card["detail"] = inbox.user_address(session, user, create=False)
+        cards.append(card)
+    return cards
 
 
 def _addon_file(addon: str, name: str) -> str | None:
@@ -437,10 +472,12 @@ def capture_setup(request: Request, tab: str = "gmail", session: Session = Depen
 def _inbox_context(session: Session, user) -> dict:
     """The Email forward tab (D-162, D-190): the person's own address, and for an
     admin how the poller is doing. The address is made the first time it's shown."""
-    from app import inbox, scope
-    ctx = {"configured": inbox.configured(), "address": None, "admin": None}
+    from app import email as mail, inbox, scope
+    ctx = {"configured": inbox.configured(), "address": None, "admin": None, "ack": None}
     if ctx["configured"]:
         ctx["address"] = inbox.user_address(session, user)
+        if user is not None and settings.inbox_acknowledge and mail.email_configured():
+            ctx["ack"] = {"to": getattr(user, "email", None)}
     if user is not None and scope.is_admin(user):
         ctx["admin"] = {"mailbox": settings.inbox_address or None,
                         "host": settings.inbox_imap_host or None,
@@ -448,6 +485,7 @@ def _inbox_context(session: Session, user) -> dict:
                         "done": settings.inbox_done_folder,
                         "dropped": settings.inbox_dropped_folder,
                         "every": max(30, settings.inbox_poll_seconds),
+                        "mode": inbox.status.get("mode"),
                         "last_poll": _ago(inbox.status["last_poll_at"]),
                         "last_error": inbox.status["last_error"],
                         "week": inbox.recent_counts(session)}

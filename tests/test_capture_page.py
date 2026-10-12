@@ -39,11 +39,56 @@ if DEPS:
             s.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
             s.commit()
 
-    def test_capture_page_is_the_box_and_a_link_not_the_guides():
+    def test_capture_page_is_the_box_and_a_card_per_guide_not_the_guides():
+        """Each guide is one click away (owner, 2026-10-12): a card per channel
+        links straight to its tab; the guides' contents stay on /capture/setup."""
         html = client.get("/capture").text
-        assert "Capture something" in html and 'href="/capture/setup"' in html
-        assert "script.google.com" not in html and "Apps Script" not in html   # guides live on /capture/setup
-        assert 'name="content"' in html and "More options" in html
+        assert "Capture something" in html and 'name="content"' in html and "More options" in html
+        for key in ("gmail", "calendar", "bookmarklet", "email", "ios", "mcp"):
+            assert f'href="/capture/setup?tab={key}"' in html, key
+        assert "Other ways to capture" in html and "Coming soon" in html          # iOS isn't built
+        assert "script.google.com" not in html and "Apps Script" not in html
+
+    def test_recent_captures_is_a_tab_beside_the_capture_box():
+        html = client.get("/capture").text
+        assert 'data-pane="recent"' in html and 'role="tab"' in html
+        assert '<div class="cap-pane" data-pane="recent" role="tabpanel" hidden>' in html
+
+    def test_a_capture_still_being_read_says_so_not_all(monkeypatch):
+        """Regression: a capture whose item hadn't settled showed a pill reading "all"."""
+        from app.models import TravelItem
+        monkeypatch.setattr(settings, "auth_required", True)
+        u_id, ck = _user("cp-read")
+        try:
+            with SessionLocal() as s:
+                b = IngestBatch(api_key_id="x", user_id=u_id, status="extracted",
+                                payload={"capture_channel": "web"})
+                s.add(b); s.flush()
+                s.add(TravelItem(batch_id=b.id, owner_id=u_id, item_type="lodging",
+                                 extraction={"payload": {"item_type": "lodging"}},
+                                 status={"extract": "ok", "resolve": "pending"}))
+                s.commit()
+            html = client.get("/capture", cookies=ck).text
+            assert "Being read</span>" in html and ">all</span>" not in html
+        finally:
+            _cleanup("cp-read")
+
+    def test_email_card_shows_my_address_once_i_have_one(monkeypatch):
+        from app import inbox
+        monkeypatch.setattr(settings, "auth_required", True)
+        monkeypatch.setattr(settings, "inbox_address", "trips@example.test")
+        monkeypatch.setattr(settings, "inbox_imap_host", "imap.example.test")
+        monkeypatch.setattr(settings, "inbox_imap_user", "trips@example.test")
+        u_id, ck = _user("cp-mail")
+        try:
+            with SessionLocal() as s:
+                from app.models import User
+                addr = inbox.user_address(s, s.get(User, u_id))
+            assert addr in client.get("/capture", cookies=ck).text
+            monkeypatch.setattr(settings, "inbox_imap_host", "")
+            assert "Needs your server" in client.get("/capture", cookies=ck).text
+        finally:
+            _cleanup("cp-mail")
 
     def test_every_tab_is_an_instruction_manual():
         marks = {"gmail": ["script.google.com", "Install add-on", "DEFAULT_INGEST_URL", "Check it works"],
@@ -130,8 +175,10 @@ if DEPS:
             mine = client.get("/capture/setup?tab=gmail", cookies=a).text
             theirs = client.get("/capture/setup?tab=gmail", cookies=b).text
             assert 'class="cap-tab-st">just now' in mine and 'class="cap-tab-st"' not in theirs
-            assert "Page waiting to be read" in client.get("/capture", cookies=a).text
-            assert "Page waiting to be read" not in client.get("/capture", cookies=b).text
+            page_a, page_b = (client.get("/capture", cookies=a).text,
+                              client.get("/capture", cookies=b).text)
+            assert "Page waiting to be read" in page_a and "Page waiting to be read" not in page_b
+            assert "Last capture just now" in page_a and "Last capture" not in page_b   # the cards
         finally:
             _cleanup("cp-a", "cp-b")
 

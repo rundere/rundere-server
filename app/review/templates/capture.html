@@ -10,8 +10,14 @@
 
   <div class="cap-wrap cap-main">
     {# The one reusable interface (SPEC-9 D-160): used every time, so it is the only thing here. #}
-    <section class="cap-card">
-      <h2 class="cap-h">Capture something</h2>
+    <section class="cap-card cap-left">
+      {# Capture | Recent captures (owner, 2026-10-12): what you came to do, and what came of it,
+         side by side in one place; the right-hand column is for the other ways in. #}
+      <nav class="cap-tabs cap-ltabs" role="tablist" aria-label="Capture">
+        <button type="button" role="tab" class="cap-tab on" data-pane="capture" aria-selected="true">Capture something</button>
+        <button type="button" role="tab" class="cap-tab" data-pane="recent" aria-selected="false">Recent captures{% if recent %}<span class="cap-tab-st">{{ recent|length }}</span>{% endif %}</button>
+      </nav>
+      <div class="cap-pane" data-pane="capture" role="tabpanel">
       <p class="why">
         Paste a link, a page's source, or a Google or Apple Maps directions link. Run·dere reads it
         and puts it in your review queue to approve. A Google or Apple Maps <em>place</em> link is
@@ -86,18 +92,9 @@
         </div>
       </form>
       <div id="cap-result" aria-live="polite"></div>
-    </section>
+      </div>
 
-    <aside class="cap-side">
-      <section class="cap-card">
-        <h2 class="cap-h">Other ways to capture</h2>
-        <p class="why">Set up once, then bookings come in without opening this page: Gmail,
-          Calendar, a bookmark, email forwarding, your phone, an AI assistant.</p>
-        <a class="act" href="/capture/setup">See the guides →</a>
-      </section>
-
-      <section class="cap-card">
-        <h2 class="cap-h">Recent captures</h2>
+      <div class="cap-pane" data-pane="recent" role="tabpanel" hidden>
         {% if recent %}
         <ul class="cap-recent">
           {% for r in recent %}
@@ -114,11 +111,53 @@
         {% else %}
         <p class="why">Nothing captured yet.</p>
         {% endif %}
-      </section>
+      </div>
+    </section>
+
+    <aside class="cap-ways" aria-labelledby="cap-ways-h">
+      <h2 class="cap-ways-h" id="cap-ways-h">Other ways to capture</h2>
+      <p class="why">Set up once, and bookings reach your review queue from where you already are.</p>
+      <ul class="cap-ways-list">
+        {% for c in channels %}
+        <li>
+          <a class="cap-way" href="{{ c.href }}">
+            <span class="cap-way-top">
+              <span class="cap-way-head">{{ c.label }}</span>
+              {% if c.soon %}<span class="pill">Coming soon</span>
+              {% elif c.status %}<span class="pill ok">{{ c.status }}</span>{% endif %}
+            </span>
+            <span class="cap-way-sub">{{ c.blurb }}</span>
+            {% if c.detail %}<code class="cap-way-detail">{{ c.detail }}</code>{% endif %}
+            {% if c.note %}<span class="cap-way-note">{{ c.note }}</span>{% endif %}
+            <span class="cap-way-go">{{ 'Read about it' if c.soon else 'Open the guide' }} →</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
     </aside>
   </div>
 </div>
 <script>
+  // Capture | Recent captures. #recent opens the second tab, so it can be linked to.
+  (function () {
+    var tabs = document.querySelectorAll('.cap-ltabs .cap-tab'),
+        panes = document.querySelectorAll('.cap-left .cap-pane');
+    function show(name) {
+      tabs.forEach(function (t) {
+        var on = t.dataset.pane === name;
+        t.classList.toggle('on', on); t.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      panes.forEach(function (p) { p.hidden = p.dataset.pane !== name; });
+    }
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        show(t.dataset.pane);
+        history.replaceState(null, '', t.dataset.pane === 'recent' ? '#recent' : location.pathname);
+      });
+    });
+    if (location.hash === '#recent') show('recent');
+  })();
+
   // A directions link needs a travel date (a route carries none): show those fields and require
   // the date while the box holds one. Progressive enhancement only — the backend validates.
   (function () {
