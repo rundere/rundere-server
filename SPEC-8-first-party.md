@@ -2,7 +2,8 @@
 
 **Status: BUILDING (2026-10-12).** D-146–D-152 are **built** (4.8: YONDER-190,
 YONDER-192), with the choices in D-186; D-149's stopgap and D-156 are superseded by
-them. D-153–D-155 remain proposed. Tracked in Plane: YONDER-190 (first-party core + airport data),
+them. D-153–D-155 remain proposed; D-196 (owner, 2026-10-13) settles D-153's
+storage, limits, retention and scanning for YONDER-179. Tracked in Plane: YONDER-190 (first-party core + airport data),
 YONDER-191 (urgent: cross-user integration writes), YONDER-192 (per-user
 connections + secrets), YONDER-189 (journal photo references), YONDER-172
 (expenses), YONDER-179 (document capture). **Gate for making the repo public**
@@ -167,7 +168,7 @@ request forgery (SSRF) risk.
 - User-facing errors show a status code and a short reason, never the raw
   response body.
 
-## 8. Storage posture (D-153, D-154, D-155)
+## 8. Storage posture (D-153, D-154, D-155, D-196)
 
 - **D-153: Rundere stores documents, per user.** It stores files tied to the
   capture surface (PDF, .ics, .eml; YONDER-179). It never stores photos, audio or
@@ -198,6 +199,78 @@ request forgery (SSRF) risk.
   or statement imports, aggregators, or vision-based extraction. Expenses
   (YONDER-172) are entered by hand or pre-filled from prices in booking captures.
   Rundere isn't a corporate expense system.
+- **D-196: the documents store's limits, retention and safety (YONDER-179;
+  owner, 2026-10-13).** This makes D-153 concrete. Sizing from production on
+  2026-10-13: 32 captures since 2026-08-04 total about 3.3 MB, and booking PDFs
+  are usually 0.1–2 MB, so a heavy traveller stores roughly 150 MB a year.
+  - **Where:** a local folder named by `TX_DOCUMENTS_DIR`, set by the hoster.
+    Empty means file capture is off, and everything else works as before. The
+    README leaves the location open: any local disk works. A network share
+    works too, but a hard-mounted NFS share hangs uploads while the NAS is
+    away, so a local folder backed up to the NAS is the recommended setup. The
+    owner's deployment uses a folder on `/media/user/1TB_Vol21`. Bytes live
+    at `<dir>/<owner_id>/<sha256>`, as in D-153.
+  - **What:** PDF, .ics and .eml only. The type is decided from the file's
+    content, never its name. Nothing else is stored; D-153's "no photos, audio
+    or receipt images" stands.
+  - **Limits:** at most **25 MB per file** and **1 GB per user**. The default is
+    `TX_DOCUMENT_QUOTA_MB=1024`, and an admin can raise it for one user. Usage
+    counts each of that user's distinct files once. At the limit, new files are
+    refused with a clear message saying how much is used. Nothing is ever
+    deleted to make room.
+  - **Retention:** a file is kept for the life of its trip, and its stored copy
+    is deleted **12 months after the trip ends** (its end date, else its start
+    date). What was extracted from the file stays: the capture, the timeline
+    items and the review record. A file filed to no trip is deleted 12 months
+    after it was uploaded. Deleting a trip or an account deletes its files at
+    once, as in D-153. A daily job does the purge and logs counts only. Each
+    file shows the date it will be removed.
+  - **Safety:** every file goes through YONDER-243's scanner before it is
+    stored or parsed:
+    - ClamAV (`TX_CLAMAV_URL`) must be configured, or file capture stays off.
+      If the scanner is unreachable, the upload is refused rather than stored
+      unscanned. Infected files are refused.
+    - PDFs get the static checks. Launch, ImportData and GoToE actions, XFA,
+      rich media, encryption, malformed files, and anything over 25 MB or 200
+      pages are refused. JavaScript and embedded files are noted.
+    - An .eml's attachments are checked the same way. Only its PDF and .ics
+      attachments are ever parsed.
+  - **Who sees a file:** only the person who uploaded it, as with the journal
+    (D-134). Travellers on a shared trip see what was extracted from it, never
+    the file itself.
+  - **Serving a file back:** download only, with `Content-Disposition:
+    attachment` and `X-Content-Type-Options: nosniff`. A file is never shown
+    inside a Rundere page, so a PDF's scripts can never run in the app.
+  - **Raw captures follow the same 12 months (amends D-15; owner,
+    2026-10-13):** *"It needs to be archived and deleted after a while."*
+    - D-15's "kept" now means kept for the life of the trip plus 12 months,
+      not forever.
+    - After that, a capture's raw payload is deleted: the whole email
+      (`raw_message_base64`) with its attachments, and a web capture's HTML.
+    - The row stays as a tombstone: its sha256 content address, when it
+      arrived, its owner, and the subject and sender. Everything extracted
+      from it stays: the capture, the timeline items and the review record.
+    - Re-processing a purged capture is no longer possible, and the review
+      screen says so.
+    - A capture filed to no trip is purged 12 months after it arrived.
+      Captures still waiting in review are never purged.
+  - **The mailbox copies (owner, 2026-10-13).** The inbox poller files each
+    handled email into `Rundere/Captured` or `Rundere/Dropped` in the hoster's
+    mailbox. Rundere clears only those two folders, never anything else in the
+    mailbox:
+    - **Captured:** moved to Trash on the same day Rundere deletes its own copy,
+      12 months after the trip ends (or after arrival, when the capture has no
+      trip). The message is matched through `inbox_messages`.
+    - **Dropped** (unknown address, too large or rate-limited, so never
+      captured): moved to Trash after **30 days**. That's long enough to notice
+      a misdirected booking and forward it again.
+    - **Deletion moves mail to Trash** (`TX_INBOX_TRASH_FOLDER`, default
+      `Trash`), so it can be recovered until the mail provider empties the
+      Trash. Rundere never expunges mail permanently.
+    - The daily retention job does this when the inbox is configured, and logs
+      counts only.
+  - **Settings for other hosters:** `TX_RETENTION_MONTHS` (default 12) and
+    `TX_INBOX_DROPPED_DAYS` (default 30).
 
 ## Build order
 
@@ -208,7 +281,8 @@ request forgery (SSRF) risk.
 4. **D-150–D-152 per-user connections, secrets and URL safety** (YONDER-192).
    This replaces the D-149 stopgap.
 5. **D-153/D-154 documents store and photo references** (YONDER-179,
-   YONDER-189), following the capture and journal roadmaps.
+   YONDER-189), following the capture and journal roadmaps. YONDER-243
+   (attachment scanning) ships first; YONDER-179 builds on it under D-196.
 
 ## Open questions
 
