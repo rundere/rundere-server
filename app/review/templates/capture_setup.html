@@ -156,6 +156,7 @@
         <p class="why"><code>{{ inbox.admin.mailbox }}</code> on <code>{{ inbox.admin.host }}</code>, folder
           <code>{{ inbox.admin.folder }}</code>,
           {% if inbox.admin.mode == 'push' %}read the moment mail arrives (IMAP IDLE){% elif inbox.admin.mode == 'polling' %}read every {{ inbox.admin.every }} s (the server doesn’t offer IMAP IDLE){% elif inbox.admin.last_error %}not connected{% else %}connecting…{% endif %}.
+          TLS certificate: {% if inbox.admin.tls == 'verified' %}verified{% elif inbox.admin.tls == 'pinned' %}pinned to <code>TX_INBOX_IMAP_CA_FILE</code>{% else %}<b>not verified</b> (<code>TX_INBOX_IMAP_VERIFY=false</code>){% endif %}.
           Last read: {{ inbox.admin.last_poll or 'not yet' }}.{% if inbox.admin.last_error %}
           <br><b>Last error:</b> <code>{{ inbox.admin.last_error }}</code>{% endif %}</p>
         <p class="why">Captured mail is filed in <code>{{ inbox.admin.done }}</code>; mail to an unknown address, too

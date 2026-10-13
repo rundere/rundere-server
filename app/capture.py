@@ -486,6 +486,7 @@ def _inbox_context(session: Session, user) -> dict:
                         "dropped": settings.inbox_dropped_folder,
                         "every": max(30, settings.inbox_poll_seconds),
                         "mode": inbox.status.get("mode"),
+                        "tls": inbox.tls_mode(),
                         "last_poll": _ago(inbox.status["last_poll_at"]),
                         "last_error": inbox.status["last_error"],
                         "week": inbox.recent_counts(session)}

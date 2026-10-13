@@ -419,3 +419,52 @@ if DEPS:
         monkeypatch.setattr(inbox, "_connect", lambda: fake)
         assert inbox.listen(SessionLocal) is False
         assert inbox.status["mode"] == "polling"
+
+    # ------------------------------------------------------------- TLS (YONDER-229)
+    def test_the_mailbox_certificate_is_verified_by_default():
+        import ssl
+        ctx = inbox._tls_context()
+        assert inbox.tls_mode() == "verified"
+        assert ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname is True
+
+    def test_a_pinned_certificate_is_the_only_one_trusted(monkeypatch, tmp_path):
+        """Proton Bridge's self-signed cert: trust exactly that file; its name
+        (127.0.0.1) can't match the container's route to Bridge."""
+        import ssl
+        seen = {}
+        real = ssl.create_default_context
+        def spy(*a, **kw):
+            seen.update(kw)
+            return real()                      # no real file needed for the test
+        monkeypatch.setattr(ssl, "create_default_context", spy)
+        monkeypatch.setattr(settings, "inbox_imap_ca_file", str(tmp_path / "bridge.pem"))
+        ctx = inbox._tls_context()
+        assert inbox.tls_mode() == "pinned"
+        assert seen == {"cafile": str(tmp_path / "bridge.pem")}
+        assert ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname is False
+
+    def test_verification_can_only_be_turned_off_explicitly(monkeypatch):
+        import ssl
+        monkeypatch.setattr(settings, "inbox_imap_verify", False)
+        ctx = inbox._tls_context()
+        assert inbox.tls_mode() == "unverified" and ctx.verify_mode == ssl.CERT_NONE
+
+    def test_connect_passes_the_checked_context_both_ways(monkeypatch):
+        """Never imaplib's own default context (which checks nothing)."""
+        seen = []
+
+        class Conn:
+            capabilities = ()
+            def __init__(self, *a, **kw):
+                seen.append(("ssl", kw.get("ssl_context")))
+            def starttls(self, ssl_context=None):
+                seen.append(("starttls", ssl_context))
+            def login(self, *a):
+                return "OK", []
+        monkeypatch.setattr(imaplib, "IMAP4_SSL", Conn)
+        monkeypatch.setattr(imaplib, "IMAP4", Conn)
+        inbox._connect()
+        monkeypatch.setattr(settings, "inbox_imap_ssl", False)
+        inbox._connect()
+        assert seen[0][0] == "ssl" and seen[0][1] is not None
+        assert seen[-1][0] == "starttls" and seen[-1][1] is not None

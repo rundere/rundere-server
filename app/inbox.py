@@ -32,6 +32,7 @@ import json
 import logging
 import secrets
 import select
+import ssl
 import threading
 import time
 import uuid
@@ -265,13 +266,48 @@ def handle_message(session: Session, raw: bytes) -> list[Handled]:
 
 
 # --------------------------------------------------------------------- IMAP
+def tls_mode() -> str:
+    """How the mailbox's certificate is checked: "verified" (the system's CAs and
+    the hostname), "pinned" (exactly the certificate in TX_INBOX_IMAP_CA_FILE),
+    or "unverified" (TX_INBOX_IMAP_VERIFY=false)."""
+    if not settings.inbox_imap_verify:
+        return "unverified"
+    return "pinned" if settings.inbox_imap_ca_file else "verified"
+
+
+def _tls_context() -> ssl.SSLContext:
+    """The TLS context for the mailbox (YONDER-229). imaplib's own default checks
+    neither the certificate nor the hostname, which would let anyone in the
+    middle collect the mailbox password — so it is never used.
+
+    - verified: the system's trusted CAs, with the hostname checked.
+    - pinned: ONLY the certificate in TX_INBOX_IMAP_CA_FILE is trusted — e.g.
+      Proton Bridge's self-signed one, exported from Bridge. Its name (127.0.0.1)
+      can't match how the container reaches Bridge, so the hostname isn't
+      checked; trusting just that one certificate is the stronger guarantee.
+    - unverified: an explicit opt-out for a link you trust; logged every connect."""
+    mode = tls_mode()
+    if mode == "unverified":
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        log.warning("inbox: TLS certificate NOT verified (TX_INBOX_IMAP_VERIFY=false)")
+        return ctx
+    if mode == "pinned":
+        ctx = ssl.create_default_context(cafile=settings.inbox_imap_ca_file)
+        ctx.check_hostname = False
+        return ctx
+    return ssl.create_default_context()
+
+
 def _connect() -> imaplib.IMAP4:
+    ctx = _tls_context()
     if settings.inbox_imap_ssl:
         conn = imaplib.IMAP4_SSL(settings.inbox_imap_host, settings.inbox_imap_port,
-                                 timeout=30)
+                                 ssl_context=ctx, timeout=30)
     else:
         conn = imaplib.IMAP4(settings.inbox_imap_host, settings.inbox_imap_port, timeout=30)
-        conn.starttls()
+        conn.starttls(ssl_context=ctx)
     conn.login(settings.inbox_imap_user, settings.inbox_imap_password)
     return conn
 

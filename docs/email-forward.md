@@ -37,7 +37,9 @@ queue a few minutes later. Nothing is filed until they approve it.
 | `TX_INBOX_ADDRESS` | `""` | The mailbox's address, e.g. `trips@example.com`. People's addresses are built from it. |
 | `TX_INBOX_IMAP_HOST` | `""` | IMAP server, e.g. `imap.gmail.com`. Empty = email forward off. |
 | `TX_INBOX_IMAP_PORT` | `993` | |
-| `TX_INBOX_IMAP_SSL` | `true` | `false` = a plain connection upgraded with STARTTLS (usually port 143). |
+| `TX_INBOX_IMAP_SSL` | `true` | `false` = a plain connection upgraded with STARTTLS (usually port 143; Proton Bridge's 1143). |
+| `TX_INBOX_IMAP_CA_FILE` | `""` | Trust exactly this certificate (PEM) instead of the system's CAs, e.g. Proton Bridge's self-signed one. The hostname isn't checked then: the pinned certificate is the guarantee. |
+| `TX_INBOX_IMAP_VERIFY` | `true` | `false` turns certificate checks off entirely. Only for a link you trust; prefer `TX_INBOX_IMAP_CA_FILE`. |
 | `TX_INBOX_IMAP_USER` / `TX_INBOX_IMAP_PASSWORD` | `""` | The login. Use an app password. It's read from the environment only, never stored in the database or logged. |
 | `TX_INBOX_FOLDER` | `INBOX` | Where forwarded mail arrives. |
 | `TX_INBOX_DONE_FOLDER` | `Rundere/Captured` | Captured mail is moved here. Created if missing. |
@@ -71,6 +73,46 @@ TX_INBOX_IMAP_PASSWORD=<app password>
 ```
 
 Gmail shows the done and dropped folders as labels.
+
+The server's TLS certificate is always checked (the system's trusted CAs and
+the hostname), so the mailbox password can't be collected by anyone in the
+middle. The admin panel shows which mode is in use.
+
+## Example: Proton Mail through Proton Bridge
+
+Proton has no plain IMAP; [Proton Bridge](https://proton.me/mail/bridge) provides
+it, and plus addressing works on Proton addresses, custom domains included.
+Three things trip people up:
+
+1. **Bridge only listens on its own machine's `127.0.0.1`.** Inside the
+   Rundere container, `127.0.0.1` is the container itself, so pointing
+   `TX_INBOX_IMAP_HOST` there gives *connection refused*. Make Bridge reachable
+   from the container — either:
+   - **Run Bridge in its own container** on the same Docker network (a
+     community image that wraps the official Bridge package; sign in once with
+     its CLI). Use that container's name as `TX_INBOX_IMAP_HOST` and the IMAP
+     port its README gives. This keeps working after a reboot without anyone
+     signed in to a desktop.
+   - **Keep the desktop Bridge and relay its port** to the Docker host, e.g. a
+     `socat TCP-LISTEN:1143,bind=172.17.0.1,fork TCP:127.0.0.1:1143` service, add
+     `extra_hosts: ["host.docker.internal:host-gateway"]` to the stack, and set
+     `TX_INBOX_IMAP_HOST=host.docker.internal`. The desktop Bridge only runs while
+     you're signed in to that desktop.
+2. **Bridge's IMAP port uses STARTTLS**, so set `TX_INBOX_IMAP_SSL=false`.
+3. **Bridge's certificate is self-signed.** In Bridge, *Settings → Advanced →
+   Export TLS certificates*, mount `cert.pem` into the container, and set
+   `TX_INBOX_IMAP_CA_FILE` to its path. Use the **Bridge password** Bridge shows
+   for the account, not your Proton password.
+
+```
+TX_INBOX_ADDRESS=trips@example.com
+TX_INBOX_IMAP_HOST=host.docker.internal      # or the Bridge container's name
+TX_INBOX_IMAP_PORT=1143
+TX_INBOX_IMAP_SSL=false
+TX_INBOX_IMAP_CA_FILE=/data/proton-bridge-cert.pem
+TX_INBOX_IMAP_USER=trips@example.com
+TX_INBOX_IMAP_PASSWORD=<Bridge password>
+```
 
 ## Check it
 
