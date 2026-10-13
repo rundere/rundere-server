@@ -17,5 +17,7 @@ os.environ.setdefault("TX_INGEST_RATE_LIMIT", "5")
 os.environ.setdefault("TX_AUTO_PROCESS", "false")
 # No live road routing in tests (resolve/routing.py); tests stub it.
 os.environ.setdefault("TX_OSRM_URL", "")
+# No live exchange rates (app/rates.py, D-195); tests stub rates.fetch.
+os.environ.setdefault("TX_FRANKFURTER_URL", "")
 # …nor live map tiles (app/trips/maps.py draws a schematic background instead).
 os.environ.setdefault("TX_MAP_TILE_URL", "")

@@ -1872,7 +1872,8 @@ class ExpenseOut(BaseModel):
     amount: str                            # decimal string, e.g. "42.50"
     currency: str
     rate: str | None = None                # trip currency per 1 unit; None = unconverted
-    rate_source: str | None = None         # same | entered | discover
+    rate_source: str | None = None         # same | entered | frankfurter | discover
+    rate_date: str | None = None           # the day the rate is for (D-195)
     amount_in_trip_currency: str | None = None
     spent_on: str | None = None
     payer_id: int
@@ -1910,6 +1911,7 @@ class BudgetItemOut(BaseModel):
     total: str | None = None               # in the trip currency; None = no rate
     rate: str | None = None
     rate_source: str | None = None
+    rate_date: str | None = None           # D-195
     status: str                            # draft (an agent's suggestion) | kept
     place_key: str | None = None
     activity_id: str | None = None
@@ -1983,8 +1985,8 @@ class ExpensesOut(BaseModel):
 class ExpenseIn(BaseModel):
     """Record an expense. `traveler_ids` is who it's split equally between
     ([]/omitted = everyone on the trip); for `split: "exact"` send `shares`
-    ({traveler_id: amount}) adding up to `amount`. Leave `rate` blank to use your
-    Discover currency rates for the trip; give it to override."""
+    ({traveler_id: amount}) adding up to `amount`. Leave `rate` blank to use the
+    trip's rate for that day (D-195); give it to override."""
     amount: str
     currency: str
     payer_id: int
@@ -2094,6 +2096,23 @@ class ExpenseCommentIn(BaseModel):
     body: str
 
 
+class TripRateOut(BaseModel):
+    """One row of the trip's shared rate table (D-195): 1 `currency` = `rate`
+    `quote` for `rate_date`; `as_of` is the day the feed published it."""
+    currency: str
+    quote: str
+    rate_date: str
+    rate: str
+    as_of: str | None = None
+    source: str                            # frankfurter | discover
+    fetched_at: datetime | None = None
+
+
+class RateRefreshOut(BaseModel):
+    rate: TripRateOut
+    applied: list[str] = []                # your costs that had no rate and now do
+
+
 def _comments_out(comments, user, users: dict[str, str]) -> list[ExpenseCommentOut]:
     me = getattr(user, "id", None)
     return [ExpenseCommentOut(id=c.id, author_id=c.author_id,
@@ -2124,7 +2143,7 @@ def _expense_out(e, shares, nm: dict[int, str], trip_currency: str | None,
                            .quantize(q, rounding=ROUND_HALF_UP).normalize(), "f")
     return ExpenseOut(
         id=e.id, trip_id=e.trip_id, kind=e.kind, title=e.title, amount=e.amount,
-        currency=e.currency, rate=e.rate, rate_source=e.rate_source,
+        currency=e.currency, rate=e.rate, rate_source=e.rate_source, rate_date=e.rate_date,
         amount_in_trip_currency=converted, spent_on=e.spent_on, payer_id=e.payer_id,
         payer_name=nm.get(e.payer_id, ""), split=e.split,
         shares=[ExpenseShareOut(traveler_id=s.traveler_id, name=nm.get(s.traveler_id, ""),
@@ -2182,7 +2201,7 @@ def _budget_out(line, actual: str = "0", nm: dict[int, str] | None = None) -> Bu
         traveler_names=[nm.get(t, "") for t in line.traveler_ids],
         start_date=b.start_date, end_date=b.end_date,
         total=None if line.total is None else format(line.total.normalize(), "f"),
-        rate=b.rate, rate_source=b.rate_source, status=b.status, place_key=b.place_key,
+        rate=b.rate, rate_source=b.rate_source, rate_date=b.rate_date, status=b.status, place_key=b.place_key,
         activity_id=b.activity_id, notes=b.notes, sources=b.sources or [], source=b.source,
         actual=actual, owner_id=b.owner_id)
 
@@ -2285,11 +2304,37 @@ def api_record_settlement(trip_id: str, body: SettlementIn, user=Depends(authn.c
     return _one_expense_out(session, trip, e, user)
 
 
+@router.post("/trips/{trip_id}/rates/{code}/refresh", response_model=RateRefreshOut)
+def api_refresh_rate(trip_id: str, code: str, date: str | None = None,
+                     user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """Fetch ONE currency's rate for a day (default today) onto the trip's shared
+    rate table (YONDER-237/242, D-195), then convert your costs in that currency
+    that had no rate yet. Costs that already have a rate keep it. 409 once the
+    trip has ended (enter the rate by hand); 422 when no rate can be had."""
+    from app import rates as rates_svc
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    cur = _valueerror_400(lambda: expenses_svc.currency_code(code))
+    try:
+        row = rates_svc.refresh(session, trip, user.id, cur, date)
+    except rates_svc.RatesFrozen as err:
+        raise HTTPException(409, str(err)) from None
+    except ValueError as err:
+        status = 400 if "not a date" in str(err) else 422
+        raise HTTPException(status, str(err)) from None
+    applied = expenses_svc.apply_to_unconverted(session, trip, user, cur)
+    session.commit()
+    return RateRefreshOut(rate=TripRateOut(
+        currency=row.currency, quote=row.quote, rate_date=row.rate_date, rate=row.rate,
+        as_of=row.as_of, source=row.source, fetched_at=row.fetched_at), applied=applied)
+
+
 @router.put("/trips/{trip_id}/expenses/currency", response_model=ExpensesOut)
 def api_set_expense_currency(trip_id: str, body: ExpenseCurrencyIn,
                              user=Depends(authn.current_user),
                              session: Session = Depends(get_session)):
-    """Change the currency balances are shown in (D-176). Rates you entered were
+    """Change the currency balances are shown in (D-176, D-195): costs convert
+    again from the trip's rate table at their own day. Rates you entered were
     against the old currency, so they are cleared and need entering again."""
     trip = scope.require_trip(session, user, trip_id, edit=True)
     _valueerror_400(lambda: expenses_svc.set_trip_currency(session, user, trip, body.currency))

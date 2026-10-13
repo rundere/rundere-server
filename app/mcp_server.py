@@ -259,7 +259,7 @@ def add_expense(trip_id: TripId, amount: Amount,
                                   "fees", "other"] = "other",
                 rate: Annotated[str | None, Field(
                     description="Trip-currency units per 1 unit of `currency`; omit to use "
-                                "the user's Discover rates")] = None,
+                                "the trip's rate for that day")] = None,
                 activity_id: Annotated[str | None, Field(
                     description="Timeline item it belongs to (get_trip)")] = None,
                 budget_item_id: Annotated[str | None, Field(

@@ -206,6 +206,24 @@ struct TripSnapshot: Codable, Hashable, Sendable {
     let captures: [CaptureLite]
 }
 
+/// One row of the trip's shared rate table (D-195, YONDER-237).
+struct TripRateOut: Codable, Hashable, Sendable {
+    let currency: String
+    let quote: String
+    let rate_date: String
+    let rate: String
+    let as_of: String?
+    let source: String               // frankfurter | discover
+    let fetched_at: String?
+}
+
+/// POST /trips/{id}/rates/{code}/refresh?date= (YONDER-242): the fetched rate
+/// and the caller's costs it converted. 409 = trip ended; 422 = no rate to get.
+struct RateRefreshOut: Codable, Hashable, Sendable {
+    let rate: TripRateOut
+    let applied: [String]
+}
+
 /// A place, event or activity inside a Food & Drink or Events & Activities
 /// finding (server 4.5, YONDER-147). `finding_id` ties it to its city.
 struct DiscoveryItemOut: Codable, Identifiable, Hashable, Sendable {
@@ -553,7 +571,10 @@ struct ExpenseOut: Codable, Identifiable, Hashable, Sendable {
     let amount: String
     let currency: String
     let rate: String?                // trip currency per 1 unit; nil = unconverted
-    let rate_source: String?         // same | entered | discover
+    let rate_source: String?         // same | entered | frankfurter | discover
+    /// The day the rate is for ("1 USD = 0.92 EUR · 12 Oct"), D-195. Optional:
+    /// older servers omit it.
+    let rate_date: String?
     let amount_in_trip_currency: String?
     let spent_on: String?
     let payer_id: Int
@@ -601,6 +622,7 @@ struct BudgetItemOut: Codable, Identifiable, Hashable, Sendable {
     let total: String?               // trip currency; nil = no rate
     let rate: String?
     let rate_source: String?
+    let rate_date: String?           // D-195; optional for older servers
     let status: String               // draft (an agent's suggestion) | kept
     let place_key: String?
     let activity_id: String?
