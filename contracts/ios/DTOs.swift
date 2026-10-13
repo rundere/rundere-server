@@ -212,6 +212,35 @@ struct TripSnapshot: Codable, Hashable, Sendable {
     let captures: [CaptureLite]
 }
 
+/// The caller's own Discovery run on a trip (YONDER-238): POST
+/// /trips/{id}/discover starts it (optionally targeted, see DiscoverIn) (409 on an ended trip, D-157), GET
+/// /trips/{id}/discover/status polls it. Reload the trip once `running` is false.
+struct DiscoveryStatusOut: Codable, Hashable, Sendable {
+    let running: Bool
+    let phase: String?
+    let done: Int
+    let total: Int
+    let pct: Int
+    let ended: Bool
+    let ended_message: String?
+    /// running | done | failed | cancelled; nil = never run.
+    let last_status: String?
+    let last_started_at: String?
+    let last_finished_at: String?
+    /// What the latest run covered: nil = the whole suite, else one topic (and
+    /// one place) — a targeted refresh.
+    let last_topic: String?
+    let last_place_key: String?
+}
+
+/// POST /trips/{id}/discover body — omit it for the whole suite, or refresh
+/// one `topic` ("weather"), or one topic for one place ("PT:Lisbon", as on the
+/// finding). Unknown topic or a place without a topic → 400.
+struct DiscoverIn: Codable, Hashable, Sendable {
+    let topic: String?
+    let place_key: String?
+}
+
 /// A place, event or activity inside a Food & Drink or Events & Activities
 /// finding (server 4.5, YONDER-147). `finding_id` ties it to its city.
 struct DiscoveryItemOut: Codable, Identifiable, Hashable, Sendable {
