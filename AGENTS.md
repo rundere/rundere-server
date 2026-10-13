@@ -73,7 +73,8 @@ python3 rules.py --docs > RULES.md    # regenerate after ANY change to rules.py
    are plain indexed columns (house convention, see `TravelItem.trip_id` and
    `JournalEntry.trip_id`). Delete routes clear dangling links.
 4. **Keep the pipeline invariants.**
-   - Raw captures are content-addressed and kept (D-15).
+   - Raw captures are content-addressed and kept for the life of their trip
+     plus 12 months; the hash stays as a tombstone (D-15, amended by D-196).
    - Schema validation runs before rules.
    - Rules are toggleable (`enforce` / `audit` / `off`, D-25). Don't weaken a
      **critical** rule (RULE-01..07 encode real past failures).

@@ -241,10 +241,24 @@ request forgery (SSRF) risk.
   - **Serving a file back:** download only, with `Content-Disposition:
     attachment` and `X-Content-Type-Options: nosniff`. A file is never shown
     inside a Rundere page, so a PDF's scripts can never run in the app.
-  - **Open:** raw email captures are kept forever under D-15, attachments
-    included, inside `ingest_batches.payload`. Whether the 12-month rule should
-    also strip attachments from those raw payloads, which would amend a
-    critical pipeline invariant, is the owner's call before YONDER-179 ships.
+  - **Raw captures follow the same 12 months (amends D-15; owner,
+    2026-10-13):** *"It needs to be archived and deleted after a while."*
+    - D-15's "kept" now means kept for the life of the trip plus 12 months,
+      not forever.
+    - After that, a capture's raw payload is deleted: the whole email
+      (`raw_message_base64`) with its attachments, and a web capture's HTML.
+    - The row stays as a tombstone: its sha256 content address, when it
+      arrived, its owner, and the subject and sender. Everything extracted
+      from it stays: the capture, the timeline items and the review record.
+    - Re-processing a purged capture is no longer possible, and the review
+      screen says so.
+    - A capture filed to no trip is purged 12 months after it arrived.
+      Captures still waiting in review are never purged.
+  - **The mailbox copies.** The inbox poller files each handled email into
+    `Rundere/Captured` or `Rundere/Dropped` in the hoster's mailbox, where it
+    stays. Rundere can clear only those two folders, never anything else in
+    the mailbox. The exact rule is pending the owner's answer before
+    YONDER-179 ships.
 
 ## Build order
 
