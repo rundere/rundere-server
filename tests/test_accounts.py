@@ -227,7 +227,10 @@ if DEPS:
             def __init__(self, *a, **k): used.append(type(self).__name__)
             def __enter__(self): return self
             def __exit__(self, *a): return False
-            def starttls(self): used.append("starttls")
+            def starttls(self, context=None):
+                # YONDER-229: always a verifying context, never smtplib's default
+                assert context is not None and context.check_hostname
+                used.append("starttls")
             def login(self, *a): pass
             def send_message(self, m): used.append("sent")
 

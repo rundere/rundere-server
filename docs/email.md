@@ -1,8 +1,13 @@
-# Email (password-reset links)
+# Email (password-reset links and "Got it" emails)
 
-Run·dere sends one kind of email: a one-time password-reset link. It talks to
-**any SMTP server**; nothing is tied to a provider. Without SMTP, reset still
-works — an admin copies a link from **Settings → Users → Reset link**.
+Run·dere sends two kinds of email: a one-time password-reset link, and a "Got
+it" note when someone's forwarded booking arrives ([email-forward.md](email-forward.md)).
+It talks to **any SMTP server**; nothing is tied to a provider. Without SMTP,
+reset still works — an admin copies a link from **Settings → Users → Reset
+link** — and forwards are still captured, just without the "Got it".
+
+The server's TLS certificate is always verified (its hostname too), so the SMTP
+password can't be collected by anyone in the middle.
 
 ## Settings
 
@@ -34,12 +39,33 @@ TX_PUBLIC_BASE_URL=https://yonder.example.net
 (Port 465 also works with `TX_SMTP_SSL=true`.) Gmail rewrites the sender to
 the authenticated account, so keep `TX_SMTP_FROM` the same address.
 
+**Match the port and the TLS mode.** Port 587 starts plain and upgrades with
+STARTTLS (`TX_SMTP_SSL=false`); port 465 is TLS from the first byte
+(`TX_SMTP_SSL=true`). Mixing them (587 with `SSL=true`) fails with
+"wrong version number" — Server mail names this mix-up when it sees it.
+
+## Example: Proton Mail
+
+Proton's SMTP submission takes an **SMTP token** (Proton settings → IMAP/SMTP →
+SMTP tokens) for an address on your own domain, not your Proton password:
+
+```
+TX_SMTP_HOST=smtp.protonmail.ch
+TX_SMTP_PORT=587
+TX_SMTP_SSL=false
+TX_SMTP_USER=trips@example.com
+TX_SMTP_PASSWORD=<SMTP token>
+TX_SMTP_FROM=trips@example.com
+```
+
 Any other provider or a local relay works the same way — only the host, port
 and login change.
 
 ## Check it
 
 1. Set your email under **Settings → Account**.
-2. **Settings → Users → Email delivery → Send test.** A failure shows the
-   server's actual error.
+2. **Settings → Server mail.** *Check connection* connects, secures the
+   connection and signs in without sending anything; *Send test email* sends
+   one. The page also shows the last attempt and its error in plain words, and
+   the email-forward inbox's status beside it.
 3. Sign out and use **Forgot password** to receive a real reset link.

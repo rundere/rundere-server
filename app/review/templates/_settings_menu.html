@@ -23,7 +23,9 @@
 ] %}
 {% set admin_all = [
   {"title": "Users", "href": "/users", "match": "/users", "needs_user": true,
-   "desc": "Accounts, roles, password resets, email delivery."},
+   "desc": "Accounts, roles and password resets."},
+  {"title": "Server mail", "href": "/settings/mail", "match": "/settings/mail", "needs_user": false,
+   "desc": "Outgoing email (SMTP) and the email-forward inbox: status and checks."},
   {"title": "Travellers", "href": "/admin/traveler-identity/list", "match": "/admin/traveler-identity", "needs_user": false,
    "desc": "The roster accounts link to."},
   {"title": "Rules", "href": "/admin/rule-setting/list", "match": "/admin/rule-setting", "needs_user": false,

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Server mail{% endblock %}
+{% block content %}
+{# Outgoing and incoming mail in one admin page (owner, 2026-10-12): each with its
+   status and a check, so an email that never arrives shows up here, not only in
+   the logs. Settings come from TX_SMTP_* / TX_INBOX_*; nothing secret is shown. #}
+<div class="app">
+  <div class="ops"><div class="ops-row"><span class="pagetitle">Server mail</span></div></div>
+  <div class="mail-wrap">
+
+  <section class="mail-card">
+    <h2 class="cap-h">Outgoing — SMTP</h2>
+    <p class="why">Password-reset links and the "Got it" email for each forwarded booking.</p>
+    {% if smtp_msg %}<div class="saved-note">{{ smtp_msg }}</div>{% endif %}
+    {% if smtp_err %}<div class="violations">{{ smtp_err }}</div>{% endif %}
+    {% if not smtp.configured %}
+      <p class="why"><b>Not configured.</b> Set <code>TX_SMTP_HOST</code>, <code>TX_SMTP_PORT</code>,
+        <code>TX_SMTP_USER</code>, <code>TX_SMTP_PASSWORD</code> and <code>TX_SMTP_FROM</code>. Port 587 uses
+        STARTTLS (<code>TX_SMTP_SSL=false</code>); port 465 uses SSL (<code>TX_SMTP_SSL=true</code>).</p>
+    {% else %}
+      <dl class="mail-dl">
+        <dt>Server</dt><dd><code>{{ smtp.summary }}</code></dd>
+        <dt>Last attempt</dt><dd>{% if smtp.last_at %}{{ smtp.last_at }} —
+          {% if smtp.last_ok %}<span class="pill ok">worked</span>{% else %}<span class="pill warn">failed</span>{% endif %}
+          ({{ 'connection check' if smtp.last_kind == 'check' else 'sending' }}){% else %}nothing since the server started{% endif %}</dd>
+        {% if smtp.last_error %}<dt>Last error</dt><dd><code>{{ smtp.last_error }}</code></dd>{% endif %}
+        <dt>TLS certificate</dt><dd>verified</dd>
+      </dl>
+      <div class="mail-actions">
+        <form method="post" action="/settings/mail/check-smtp">
+          <button class="act" type="submit">Check connection</button>
+        </form>
+        <form method="post" action="/settings/mail/test" class="lookup-row">
+          <input name="to" type="email" aria-label="Send a test to" placeholder="{{ me.email or 'send a test to…' }}">
+          <button class="act" type="submit">Send test email</button>
+        </form>
+      </div>
+      <p class="hint quiet">Check connection signs in and hangs up without sending anything.</p>
+    {% endif %}
+  </section>
+
+  <section class="mail-card">
+    <h2 class="cap-h">Incoming — email-forward inbox</h2>
+    <p class="why">The mailbox people forward booking confirmations to (<a href="/capture/setup?tab=email">Email forward</a>).</p>
+    {% if inbox_msg %}<div class="saved-note">{{ inbox_msg }}</div>{% endif %}
+    {% if inbox_err %}<div class="violations">{{ inbox_err }}</div>{% endif %}
+    {% if not inbox %}
+      <p class="why"><b>Not configured.</b> Set <code>TX_INBOX_ADDRESS</code>, <code>TX_INBOX_IMAP_HOST</code>,
+        <code>TX_INBOX_IMAP_USER</code> and <code>TX_INBOX_IMAP_PASSWORD</code>; see <code>docs/email-forward.md</code>.</p>
+    {% else %}
+      <dl class="mail-dl">
+        <dt>Mailbox</dt><dd><code>{{ inbox.mailbox }}</code> on <code>{{ inbox.host }}:{{ inbox.port }}</code></dd>
+        <dt>Folders</dt><dd>reads <code>{{ inbox.folder }}</code>; files into <code>{{ inbox.done }}</code> /
+          <code>{{ inbox.dropped }}</code></dd>
+        <dt>Reading</dt><dd>{% if inbox.mode == 'push' %}<span class="pill ok">instant</span> (IMAP IDLE){% elif inbox.mode == 'polling' %}every {{ inbox.every }} s (no IMAP IDLE){% elif inbox.last_error %}<span class="pill warn">not connected</span>{% else %}connecting…{% endif %}
+          {% if inbox.last_read %} · last read {{ inbox.last_read }}{% endif %}</dd>
+        {% if inbox.last_error %}<dt>Last error</dt><dd><code>{{ inbox.last_error }}</code></dd>{% endif %}
+        <dt>TLS certificate</dt><dd>{% if inbox.tls == 'verified' %}verified{% elif inbox.tls == 'pinned' %}pinned (<code>TX_INBOX_IMAP_CA_FILE</code>){% else %}<b>not verified</b>{% endif %}</dd>
+        <dt>Last 7 days</dt><dd>{% for k, v in inbox.week|dictsort %}{{ v }} {{ k.replace('_', ' ') }}{% if not loop.last %} · {% endif %}{% else %}nothing yet{% endfor %}</dd>
+      </dl>
+      <div class="mail-actions">
+        <form method="post" action="/settings/mail/check-inbox">
+          <button class="act" type="submit">Check connection</button>
+        </form>
+      </div>
+      <p class="hint quiet">Signs in and opens the folder read-only; nothing is read or moved.</p>
+    {% endif %}
+  </section>
+  </div>
+</div>
+{% endblock %}

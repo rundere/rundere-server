@@ -147,6 +147,7 @@
       {% if inbox and inbox.admin %}
       <div class="cap-admin">
         <h3 class="cap-h">Server mailbox (admins)</h3>
+        <p class="why">Checks for this mailbox and outgoing mail are on <a href="/settings/mail">Server mail</a>.</p>
         {% if not inbox.configured %}
         <p class="why">Set <code>TX_INBOX_ADDRESS</code> (e.g. <code>trips@example.com</code>), <code>TX_INBOX_IMAP_HOST</code>,
           <code>TX_INBOX_IMAP_USER</code> and <code>TX_INBOX_IMAP_PASSWORD</code> (an app password), then restart. The mailbox must
