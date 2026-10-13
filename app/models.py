@@ -288,7 +288,8 @@ class RefreshToken(Base):
 class OAuthClient(Base):
     """YONDER-107: an OAuth 2.1 client (claude.ai, Claude Code, the iOS app).
     Registered dynamically (RFC 7591, `source="dcr"`) or pre-registered with
-    `app.cli oauth-client create` (`source="cli"`). Registering grants nothing by
+    `app.cli oauth-client create` (`source="cli"`); the iOS app's client is
+    built in (`source="builtin"`, D-194). Registering grants nothing by
     itself — every user still signs in and consents. `secret_hash` (sha256) is
     set only for confidential clients; public clients rely on PKCE."""
     __tablename__ = "oauth_clients"
@@ -297,7 +298,11 @@ class OAuthClient(Base):
     name: Mapped[str] = mapped_column(String(128))
     redirect_uris: Mapped[list] = mapped_column(JsonCol)
     secret_hash: Mapped[str | None] = mapped_column(String(64))
-    source: Mapped[str] = mapped_column(String(8), default="dcr")      # dcr | cli
+    source: Mapped[str] = mapped_column(String(8), default="dcr")      # dcr | cli | builtin
+    # The built-in Run·dere app client (D-194, YONDER-235): its tokens count as
+    # first-party and it skips the consent screen. Only startup sets it, never
+    # registration (DCR or CLI).
+    first_party: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_by: Mapped[str | None] = mapped_column(String(36))         # user id (None = DCR/CLI)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

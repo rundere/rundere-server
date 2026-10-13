@@ -71,6 +71,10 @@ a small script can flag drift. (Rescopes YONDER-58 — its description wrongly
 mentions drf-spectacular, a Django library; Yonder is FastAPI.)
 
 ### 3.2 OIDC in the app (YONDER-77, needs YONDER-92 live first)
+> **Superseded by SPEC-8 D-194 (2026-10-13).** The app signs in through
+> Run·dere's own OAuth server with the built-in `rundere-ios` client instead of
+> this handoff; nothing below was built. App brief:
+> [`docs/handoff/YONDER-175-ios-oauth-sign-in.md`](docs/handoff/YONDER-175-ios-oauth-sign-in.md).
 Server-brokered PKCE handoff — the app never talks to Authentik directly:
 1. App makes `code_verifier`/`code_challenge`, opens
    `ASWebAuthenticationSession` at

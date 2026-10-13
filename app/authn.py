@@ -352,14 +352,21 @@ def current_user_optional(request: "Request") -> "User | None":
 
 
 def is_first_party(request) -> bool:
-    """Was this request made by Yonder itself — the web session cookie, or the
-    app's own login token (`typ="access"`, from /api/v1/auth/login|refresh)?
-    Connected apps / agents (OAuth tokens), personal API tokens and CLI-minted
-    API tokens are NOT: they may use the user's data, but must not change the
-    account's own settings (sharing with admins, email). YONDER-101."""
+    """Was this request made by Yonder itself — the web session cookie, the
+    app's own login token (`typ="access"`, from /api/v1/auth/login|refresh), or
+    an OAuth token issued to the built-in app client (D-194, YONDER-235)?
+    Connected apps / agents (other OAuth clients), personal API tokens and
+    CLI-minted API tokens are NOT: they may use the user's data, but must not
+    change the account's own settings (sharing with admins, email). YONDER-101.
+    This only classifies the credential; validity is current_user's job."""
     authz = request.headers.get("authorization", "")
     if authz[:7].lower() == "bearer ":
         claims = jwt_decode(authz[7:].strip()) or {}
+        if claims.get("typ") == "oauth":
+            from app import oauth
+            from app.db import SessionLocal
+            with SessionLocal() as session:
+                return oauth.first_party_client(session, claims.get("cid"))
         return claims.get("typ") == "access"
     return bool(request.cookies.get(settings.auth_cookie_name))
 

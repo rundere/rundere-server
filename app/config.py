@@ -232,6 +232,11 @@ class Settings(BaseSettings):
     oauth_register_rate_window_seconds: int = 3600          # …per hour
     oauth_token_rate_limit: int = 60                        # /oauth/token calls per IP…
     oauth_token_rate_window_seconds: int = 60               # …per minute
+    # The Run·dere iOS app's built-in OAuth client (D-194, YONDER-235): client
+    # id `rundere-ios`, public (PKCE), on every server with no setup. Its
+    # redirect URIs are https universal links (comma-separated); only a fork
+    # that ships its own app bundle needs to change them. Empty = no app client.
+    oauth_app_redirect_uris: str = "https://rundere.app/auth/callback"
 
     app_version: str = "4.9.3"
 

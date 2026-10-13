@@ -286,6 +286,12 @@ def startup() -> None:
         except Exception:                   # pragma: no cover
             log.exception("connection migration failed; integrations stay as they were")
         try:
+            # D-194: the iOS app's built-in OAuth client, on every server.
+            from app.oauth import ensure_app_client
+            ensure_app_client(session)
+        except Exception:                   # pragma: no cover
+            log.exception("app OAuth client seed failed; the app can still use passwords")
+        try:
             from planning.catalog import seed_catalog
             seed_catalog(session)
         except Exception:                   # pragma: no cover

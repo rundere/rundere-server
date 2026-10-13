@@ -251,6 +251,24 @@ request forgery (SSRF) risk.
   The extractor is told to use `taxi` (prompt v3); a booked taxi keys on its
   reference like a rental, otherwise on its endpoints. In review, the ground
   *Kind* is a dropdown the reviewer can correct. AdventureLog gets `car`.
+- **D-194 — The iOS app signs in with the server's own OAuth; password stays
+  (owner, 2026-10-13).** A server supports password sign-in, OAuth/OIDC sign-in,
+  or both, per host, and the app uses whatever the host it's pointed at offers
+  (`/api/v1/auth/methods`). The app's OAuth runs against **Run·dere's own OAuth
+  2.1 server** (YONDER-107), never the IdP directly: `/oauth/authorize` opens
+  in `ASWebAuthenticationSession` and shows that host's normal sign-in, so a
+  password-only LAN host and an SSO-forced public host both work through it.
+  Every server has a **built-in public client `rundere-ios`** (PKCE, upserted at
+  startup, redirect `https://rundere.app/auth/callback` — the universal link in
+  rundere.app's AASA — set by `TX_OAUTH_APP_REDIRECT_URIS`), so self-hosters
+  need no setup. It is **first-party**: no consent screen (signing in is the
+  consent), and its tokens may change account settings (sharing, email) like
+  the app's password token; registration (DCR or CLI) can never make a client
+  first-party. Each signed-in phone appears under Account → Connected apps as a
+  "signed-in device" you can disconnect. `/api/v1/auth/methods` names the client
+  (`oauth_client_id`); null means "password only" to the app. Supersedes the
+  server-brokered OIDC handoff in SPEC-4.2 §3.2 (YONDER-77/104, cancelled).
+  (YONDER-235 server side; app side YONDER-175)
 - **D-149 — External writes are owner-scoped.** Until per-user connections
   exist, only the credential owner's captures produce AirTrail or AdventureLog
   targets. (shipped as D-156; superseded by D-150 in 4.8)

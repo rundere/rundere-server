@@ -147,6 +147,10 @@ def authorize_page(request: Request, session: Session = Depends(get_session)):
     if getattr(user, "sharing_prompt", False):
         return RedirectResponse(f"/account/sharing?next={quote(here, safe='')}",
                                 status_code=303)
+    if client.first_party:
+        # The Run·dere app itself (D-194): signing in is the consent. The code
+        # can only go to the app's own registered universal link.
+        return _issue_code(session, request, client, user, p)
     # Everything the decision needs rides in one signed, user-bound, short-lived
     # token: the POST can't be replayed by another user or tampered with, and a
     # cross-site page can't read it (so it doubles as the CSRF token).
@@ -175,11 +179,16 @@ def authorize_decide(request: Request, req: str = Form(""), decision: str = Form
     if decision != "allow":
         return _redirect_with(p["redirect_uri"], {"error": "access_denied",
                                                   "state": p.get("state")})
+    return _issue_code(session, request, client, user, p)
+
+
+def _issue_code(session, request: Request, client: OAuthClient, user, p: dict):
     code = oauth.create_code(session, client=client, user=user,
                              redirect_uri=p["redirect_uri"],
                              code_challenge=p["code_challenge"],
                              scope=p.get("scope"), resource=p.get("resource"))
-    oauth._audit(session, user.id, "oauth_consent", client.name, actor_id=user.id)
+    oauth._audit(session, user.id, "oauth_sign_in" if client.first_party else "oauth_consent",
+                 client.name, actor_id=user.id)
     session.commit()
     return _redirect_with(p["redirect_uri"], {"code": code, "state": p.get("state"),
                                               "iss": oauth.issuer(request)})
