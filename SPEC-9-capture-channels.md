@@ -207,6 +207,10 @@ The page's own capture box is not a tab, because it needs no setup.
     forged sender can't make Run·dere mail a stranger. It needs SMTP and an email on the
     account; the Email tab says which address it goes to, or asks for one.
     `TX_INBOX_ACKNOWLEDGE=false` turns it off.
+  - *TLS (YONDER-229, 2026-10-12):* the mailbox's certificate is always checked (imaplib's
+    own default checks nothing). `TX_INBOX_IMAP_CA_FILE` pins one certificate (Proton Bridge's
+    self-signed one), with the hostname check relaxed because the pinned certificate is the
+    guarantee; `TX_INBOX_IMAP_VERIFY=false` is an explicit, logged opt-out.
   - *Not in v1:* a webhook front door for mail services that push mail over HTTP.
 
 ## 6. Proposed: iOS Share Extension feedback (D-163)

@@ -170,6 +170,11 @@ class Settings(BaseSettings):
     inbox_imap_user: str = ""
     inbox_imap_password: str = ""
     inbox_imap_ssl: bool = True              # False: plain connection upgraded with STARTTLS
+    # The server's certificate is always checked (YONDER-229). A self-signed one —
+    # Proton Bridge's, for example — is trusted by pointing this at an exported
+    # copy (PEM); only that certificate is then accepted.
+    inbox_imap_ca_file: str = ""
+    inbox_imap_verify: bool = True           # False: don't check at all (a link you trust)
     inbox_folder: str = "INBOX"              # where forwarded mail arrives
     inbox_done_folder: str = "Rundere/Captured"     # captured (or already captured) mail
     inbox_dropped_folder: str = "Rundere/Dropped"   # unknown address, too big, rate-limited
