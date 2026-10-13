@@ -515,9 +515,9 @@ def users_test_email(to: str = Form(""), admin: User = Depends(authn.require_adm
                 "This is a test from Run·dere. Password-reset emails will arrive "
                 "the same way.")
     except Exception as e:
-        return RedirectResponse(
-            f"/users?err={quote_plus(f'Test email failed: {type(e).__name__}: {e}')}",
-            status_code=303)
+        from app.email import explain
+        return RedirectResponse(f"/users?err={quote_plus('Test email failed: ' + explain(e))}",
+                                status_code=303)
     return RedirectResponse(f"/users?msg={quote_plus(f'Test email sent to {to}')}",
                             status_code=303)
 

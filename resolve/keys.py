@@ -380,13 +380,18 @@ def unkeyable_reason(payload: dict, capture_context: dict | None = None) -> str:
                 if not place.get("iata"):
                     return "missing_airport_code"
     if t == "ground_transport":
-        # A drive (the road path in keys_for — anything without a printed
-        # service number) keys on its date plus both endpoints' coordinates. A
-        # Google Maps link that names its stops but embeds no coordinates, where
-        # the geocoder could not place a stop, is a perfectly-typed drive; the fix
-        # is a date or a locatable From/To, never "set the type" (YONDER-121).
+        # A drive (the road path in keys_for) keys on its date plus both
+        # endpoints' coordinates. A Google Maps link that names its stops but
+        # embeds no coordinates, where the geocoder could not place a stop, is a
+        # perfectly-typed drive; the fix is a date or a locatable From/To, never
+        # "set the type" (YONDER-121). Route exactly as keys_for does: a taxi read
+        # as mode "car" with a stray service number is still a drive (2026-10-12).
         g = payload.get("ground_transport") or {}
-        if not g.get("service_number"):
+        mode, ref, sn = g.get("mode"), payload.get("booking_reference"), g.get("service_number")
+        by_ref = bool(ref) and (mode in _BOOKED_MODE_PREFIX
+                                or (mode in _MODE_PREFIX and not sn))
+        scheduled = mode in _MODE_PREFIX and bool(sn)
+        if not by_ref and not scheduled:
             ctx = capture_context or {}
             date = ctx.get("travel_date") or (
                 (g.get("departure") or {}).get("time") or {}).get("local", "")[:10]

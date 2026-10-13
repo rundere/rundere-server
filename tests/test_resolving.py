@@ -814,3 +814,90 @@ def test_named_maps_drive_is_geocoded_before_keying():
         resolve_pending(s, adventurelog=None, geocoder=_StubPhoton({}))
         done = s.get(TravelItem, lost.id)
         assert done.review["reasons"] == ["geocode_failed"]
+
+
+def test_taxi_to_an_airport_keys_and_files_to_its_trip():
+    """Regression (owner, 2026-10-12): a forwarded taxi receipt, read as mode
+    "car" with a stray service number and no reference, going to PHX. The
+    airport end has an IATA code (so the geocoder skips it) but no coordinates;
+    it used to block as "unknown_type" ("Set the type", with no type to set)
+    and never reached trip matching. Now the airport is placed from its code
+    before keying, the drive keys, and the one trip covering it is chosen."""
+    if not DEPS:
+        return
+    from app.models import Trip
+
+    class _StubPhoton:
+        def geocode_place(self, place):
+            from resolve.geocode import GeocodeResult
+            if "25 Way" in (place.get("address") or ""):
+                return GeocodeResult(lat=35.1468, lon=-106.5919, country="US",
+                                     city="Phoenix", name=place.get("raw"),
+                                     confidence="verified")
+            return None
+
+    taxi = {"item_type": "ground_transport", "booking_status": "confirmed",
+            "cost": {"amount": 21.93, "currency": "USD"},
+            "travelers": [{"raw_name": "Daniel Okafor"}],
+            "ground_transport": {
+                "mode": "car", "service_number": "4", "round_trip": False,
+                "route": {"distance_km": None, "duration_minutes": None},
+                "departure": {"place": {"raw": "Residence Inn Phoenix North",
+                                        "address": "4331 Desert Willow Way, Phoenix, NM",
+                                        "city": "Phoenix", "region": "NM",
+                                        "country": "US", "iata": None},
+                              "time": {"tz": "America/Denver", "local": "2091-10-11T03:15",
+                                       "precision": "datetime"}},
+                "arrival": {"place": {"raw": "United Main Terminal, Phoenix "
+                                             "International Sunport (PHX)",
+                                      "city": "Phoenix", "region": "NM",
+                                      "country": "US", "iata": "PHX"},
+                            "time": {"tz": "America/Denver", "local": "2091-10-11T03:26",
+                                     "precision": "datetime"}}}}
+    with SessionLocal() as s:
+        _seed_home(s)
+        trip = Trip(name="Arizona 2091", source="manual",
+                    start_date="2091-10-02", end_date="2091-10-11")
+        s.add(trip); s.commit()
+        it = _add_item(s, taxi)
+        resolve_pending(s, adventurelog=None, geocoder=_StubPhoton(),
+                        item_filter=TravelItem.id == it.id)
+        done = s.get(TravelItem, it.id)
+        assert "unknown_type" not in ((done.review or {}).get("reasons") or [])
+        assert done.status["resolve"] == "ok"
+        assert done.trip_id == trip.id
+        assert "yonder.activity" in done.resolution["targets"]
+
+
+def test_an_unplaced_taxi_says_so_and_still_gets_its_trip():
+    """Same taxi, but neither end can be placed: the reason is geocode_failed
+    ("This place couldn't be located"), never unknown_type — and the trip its
+    dates fall in is still chosen while the person fixes it."""
+    if not DEPS:
+        return
+    from app.models import Trip
+    from resolve.keys import unkeyable_reason
+
+    class _Nowhere:
+        def geocode_place(self, place):
+            return None
+
+    taxi = {"item_type": "ground_transport", "booking_status": "confirmed",
+            "ground_transport": {
+                "mode": "car", "service_number": "4",
+                "departure": {"place": {"raw": "Somewhere unmappable"},
+                              "time": {"local": "2092-10-11T03:15", "precision": "datetime"}},
+                "arrival": {"place": {"raw": "Also unmappable"},
+                            "time": {"local": "2092-10-11T03:26", "precision": "datetime"}}}}
+    assert unkeyable_reason(taxi) == "geocode_failed"
+    with SessionLocal() as s:
+        _seed_home(s)
+        trip = Trip(name="Unplaced 2092", source="manual",
+                    start_date="2092-10-02", end_date="2092-10-12")
+        s.add(trip); s.commit()
+        it = _add_item(s, taxi)
+        resolve_pending(s, adventurelog=None, geocoder=_Nowhere(),
+                        item_filter=TravelItem.id == it.id)
+        done = s.get(TravelItem, it.id)
+        assert done.review["reasons"] == ["geocode_failed"]
+        assert done.trip_id == trip.id

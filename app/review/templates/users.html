@@ -87,6 +87,7 @@
         they are, or add a new person to the roster.</p>
 
       <h3 style="margin-top:24px">Email delivery</h3>
+      <p class="why">Status, a connection check and the email-forward inbox are on <a href="/settings/mail">Server mail</a>.</p>
       {% if smtp %}
       <form method="post" action="/users/test-email" class="lookup-row">
         <input name="to" type="email" placeholder="{{ me.email or 'send a test to…' }}">
