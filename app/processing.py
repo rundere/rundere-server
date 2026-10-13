@@ -41,7 +41,10 @@ def _source(batch: IngestBatch, payload: dict) -> dict:
 def process_batch(session: Session, batch: IngestBatch,
                   llm: OllamaExtractor | None) -> str:
     """Runs the chain for one batch; returns the new batch status."""
-    result = extract_ingest_payload(batch.payload, llm=llm)
+    from app.config import settings
+    from extract.filescan import Scanner
+    result = extract_ingest_payload(batch.payload, llm=llm,
+                                    scanner=Scanner(settings.clamav_url))   # YONDER-243
     now = datetime.now(timezone.utc).isoformat()
     src = _source(batch, batch.payload)
 
