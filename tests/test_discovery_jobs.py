@@ -291,3 +291,47 @@ def test_rerun_is_blocked_for_a_past_trip_and_findings_stay_readable(monkeypatch
     section = _client.get(f"/trips/{tid}/discover/status").text
     assert "This trip has ended" in section and "Food &amp; Drink" in section   # still readable
     assert "/rerun" not in section and "Refresh rates" not in section           # no buttons offered
+
+
+# ------------------------------------------------------------- targeted refresh (YONDER-238)
+
+def _targeted(trip_id, run_id, topic, place_key=None):
+    dj._execute(run_id, trip_id, resolve_airport=_airports, geocoder=_NoGeo(),
+                det_resolvers=[_FakeDet()], llm_resolvers=[_FakeFood()],
+                home_profiles=[], excluded=set(), discovery_profile=None,
+                nationality="CA", base_currencies=("CAD", "USD"), today="2026-08-14",
+                topic=topic, place_key=place_key)
+
+
+def test_targeted_refresh_runs_only_that_topic_and_place():
+    """"Update the weather for Lisbon" — here: food for Geneva — re-runs that one
+    task; the rest of the suite (other cities, other topics) is left alone and
+    nothing is pruned."""
+    if not DEPS:
+        return
+    tid = _fresh_trip()
+    _execute(tid, _new_run(tid))
+    with SessionLocal() as s:
+        before = {(f.topic, f.place_key): f.generated_at
+                  for f in s.query(DiscoveryFinding).filter_by(trip_id=tid).all()}
+        # A draft whose place left the trip: a whole run would prune it.
+        s.add(DiscoveryFinding(trip_id=tid, topic="plugs", scope="country",
+                               place_key="ZZ", body_md="stale", status="draft"))
+        s.commit()
+    rid = _new_run(tid)
+    _targeted(tid, rid, "food", "CH:Geneva")
+    with SessionLocal() as s:
+        run = s.get(DiscoveryRun, rid)
+        assert run.status == "done" and run.total == 1 and run.done == 1
+        assert run.params["topic"] == "food" and run.params["place_key"] == "CH:Geneva"
+        after = {(f.topic, f.place_key): f.generated_at
+                 for f in s.query(DiscoveryFinding).filter_by(trip_id=tid).all()}
+        assert after[("food", "CH:Geneva")] > before[("food", "CH:Geneva")]
+        for key in [("food", "CA:Toronto"), ("plugs", "CA"), ("plugs", "CH")]:
+            assert after[key] == before[key], key
+        assert ("plugs", "ZZ") in after                     # not pruned
+    # Topic only: every place for that topic, nothing else.
+    rid = _new_run(tid)
+    _targeted(tid, rid, "plugs")
+    with SessionLocal() as s:
+        assert s.get(DiscoveryRun, rid).total == 2

@@ -178,6 +178,18 @@ class DiscoveryStatusOut(BaseModel):
     last_status: str | None = None
     last_started_at: datetime | None = None
     last_finished_at: datetime | None = None
+    # What the latest run covered: None = the whole suite, else one topic
+    # (and one place) — a targeted refresh.
+    last_topic: str | None = None
+    last_place_key: str | None = None
+
+
+class DiscoverIn(BaseModel):
+    """Optional: refresh one topic (weather, currency, food…), or one topic for
+    one place (`place_key` as on the finding, e.g. "PT:Lisbon"), instead of
+    the whole suite."""
+    topic: str | None = None
+    place_key: str | None = None
 
 
 class TripSnapshot(BaseModel):
@@ -1171,6 +1183,8 @@ def _discovery_status(session: Session, trip: Trip, user) -> DiscoveryStatusOut:
         out.last_status = last.status
         out.last_started_at = last.started_at
         out.last_finished_at = last.finished_at
+        out.last_topic = (last.params or {}).get("topic")
+        out.last_place_key = (last.params or {}).get("place_key")
     if live is not None:
         out.running = True
         out.phase = live.phase or "starting"
@@ -1181,15 +1195,24 @@ def _discovery_status(session: Session, trip: Trip, user) -> DiscoveryStatusOut:
 
 @router.post("/trips/{trip_id}/discover", response_model=DiscoveryStatusOut,
              status_code=202)
-def api_run_discovery(trip_id: str, user=Depends(authn.current_user),
+def api_run_discovery(trip_id: str, body: DiscoverIn | None = None,
+                      user=Depends(authn.current_user),
                       session: Session = Depends(get_session)):
-    """Start the caller's Discovery run (both tiers, in the background) and
-    return its status to poll. Already running: that run's status, no second
-    run. An ended trip: 409 with the reason (D-157)."""
-    from app.trips.routes import start_discovery
+    """Start the caller's Discovery run (in the background) and return its
+    status to poll. No body: the whole suite. `topic` (+ `place_key`): just
+    that — e.g. the weather, or the weather for one city — without redoing
+    the rest. Already running: that run's status, no second run. An ended
+    trip: 409 with the reason (D-157)."""
+    from app.trips.routes import discovery_topics, start_discovery
     from discover.runner import TRIP_ENDED_MESSAGE
     trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
-    if not start_discovery(session, trip, user):
+    topic = ((body.topic if body else None) or "").strip() or None
+    place_key = ((body.place_key if body else None) or "").strip() or None
+    if place_key and not topic:
+        raise HTTPException(400, "place_key needs a topic")
+    if topic and topic not in discovery_topics():
+        raise HTTPException(400, f"unknown topic {topic!r}")
+    if not start_discovery(session, trip, user, topic=topic, place_key=place_key):
         raise HTTPException(status_code=409, detail=TRIP_ENDED_MESSAGE)
     return _discovery_status(session, trip, user)
 

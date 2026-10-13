@@ -173,3 +173,30 @@ if DEPS:
                 for r in s.query(DiscoveryRun).filter_by(trip_id=tid):
                     dj._LIVE.discard(r.id)
             _drop(tid)
+
+    def test_targeted_refresh_passes_topic_and_place(monkeypatch):
+        calls = _fake_launch(monkeypatch)
+        owner = _user("dapi-own3", "CA", "CAD")
+        tid = _trip(owner)
+        try:
+            h = _bearer(owner)
+            assert client.post(f"/api/v1/trips/{tid}/discover", headers=h,
+                               json={"topic": "astrology"}).status_code == 400
+            assert client.post(f"/api/v1/trips/{tid}/discover", headers=h,
+                               json={"place_key": "PT:Lisbon"}).status_code == 400
+            assert calls == []
+            r = client.post(f"/api/v1/trips/{tid}/discover", headers=h,
+                            json={"topic": "weather", "place_key": "PT:Lisbon"})
+            assert r.status_code == 202, r.text
+            assert calls[0]["topic"] == "weather" and calls[0]["place_key"] == "PT:Lisbon"
+            with SessionLocal() as s:                      # what launch records
+                run = s.query(DiscoveryRun).filter_by(trip_id=tid).one()
+                run.params = {"topic": "weather", "place_key": "PT:Lisbon"}
+                s.commit()
+            st = client.get(f"/api/v1/trips/{tid}/discover/status", headers=h).json()
+            assert st["last_topic"] == "weather" and st["last_place_key"] == "PT:Lisbon"
+        finally:
+            with SessionLocal() as s:
+                for r in s.query(DiscoveryRun).filter_by(trip_id=tid):
+                    dj._LIVE.discard(r.id)
+            _drop(tid)

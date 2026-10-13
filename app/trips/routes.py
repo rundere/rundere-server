@@ -1170,12 +1170,20 @@ def run_discovery_route(trip_id: str, request: Request,
     return _discovery_section(request, session, trip)
 
 
-def start_discovery(session: Session, trip: Trip, user) -> bool:
+def discovery_topics() -> set[str]:
+    """Every topic a run can refresh: the deterministic and LLM resolvers'."""
+    return {r.topic for r in [*_resolvers(), *_llm_resolvers()]}
+
+
+def start_discovery(session: Session, trip: Trip, user, *, topic: str | None = None,
+                    place_key: str | None = None) -> bool:
     """Launch `user`'s Discovery run on a trip they can see — the ONE launch the
     web button and /api/v1 (YONDER-238) share. `user` None = auth off. False when
     the trip has ended (D-157: refused server-side, not just a hidden button);
     True otherwise, including when their run is already in flight (one run per
-    person per trip — no second run is started)."""
+    person per trip — no second run is started). `topic`/`place_key` narrow it
+    to a targeted refresh (discovery_jobs.launch); a whole-trip or targeted run
+    respects locked, rejected and agent-written findings the same way."""
     from app.resolving import load_homes_for_user
     from app.trips import discovery_jobs as dj
     from datetime import date as _date
@@ -1193,7 +1201,8 @@ def start_discovery(session: Session, trip: Trip, user) -> bool:
                   discovery_profile=(profile.values if profile else None),
                   nationality=(ident.nationality if ident else None),
                   base_currencies=_base_currencies(ident),
-                  today=_date.today().isoformat(), user_id=uid)
+                  today=_date.today().isoformat(), user_id=uid,
+                  topic=topic, place_key=place_key)
     return True
 
 
