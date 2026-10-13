@@ -10,6 +10,9 @@ The protocol logic, free of HTTP (the routes are app/oauth_routes.py):
   `aud` = this server's /mcp resource, `gid` = the grant) for ~1 h; refresh
   token = opaque `yrt_<grant id>_<secret>`, rotated on every use, sliding
   ~90-day idle expiry. Presenting a retired refresh token revokes the grant.
+- **the app client** (D-194, YONDER-235): `rundere-ios`, built in on every
+  server and upserted at startup. First-party: no consent screen, and its
+  tokens may change account settings like the app's password login can.
 - **personal API tokens**: opaque `ypat_…`, stored hashed, per-token revoke and
   optional expiry, for clients that can't do OAuth (Claude Code, stdio MCP).
 
@@ -31,6 +34,7 @@ from app.models import (AccountEvent, OAuthClient, OAuthCode, OAuthGrant,
                         PersonalApiToken, User)
 
 SCOPES = ("yonder", "offline_access")
+APP_CLIENT_ID = "rundere-ios"           # the built-in iOS app client (D-194)
 DEFAULT_SCOPE = "yonder"
 _LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "[::1]", "::1")
 _MAX_REDIRECTS = 10
@@ -156,6 +160,38 @@ def register_client(session, *, name: str, redirect_uris: list[str],
     session.add(client)
     session.commit()
     return client, secret
+
+
+def app_redirect_uris() -> list[str]:
+    return [u.strip() for u in settings.oauth_app_redirect_uris.split(",")
+            if u.strip() and registrable_redirect(u.strip())]
+
+
+def ensure_app_client(session) -> OAuthClient | None:
+    """Upsert the built-in iOS app client (D-194) so every server supports the
+    app's OAuth sign-in with no admin setup. Public (PKCE) and first-party; the
+    redirect URIs follow TX_OAUTH_APP_REDIRECT_URIS. With none configured the
+    row is kept but no redirect matches, so it can't be used."""
+    uris = app_redirect_uris()
+    client = session.get(OAuthClient, APP_CLIENT_ID)
+    if client is None:
+        if not uris:
+            return None
+        client = OAuthClient(id=APP_CLIENT_ID, name="Run·dere for iOS", source="builtin")
+        session.add(client)
+    client.redirect_uris, client.secret_hash, client.first_party = uris, None, True
+    session.commit()
+    return client
+
+
+def app_client_ready(session) -> bool:
+    c = session.get(OAuthClient, APP_CLIENT_ID)
+    return bool(c is not None and c.first_party and c.redirect_uris)
+
+
+def first_party_client(session, client_id: str | None) -> bool:
+    c = session.get(OAuthClient, client_id) if client_id else None
+    return bool(c is not None and c.first_party)
 
 
 def authenticate_client(session, client_id: str | None, secret: str | None) -> OAuthClient:
@@ -372,6 +408,7 @@ def connected_apps(session, user: User) -> list[dict]:
             .order_by(OAuthGrant.created_at.desc()).all())
     now = _now()
     return [{"id": g.id, "client": client_name(session, g.client_id),
+             "app": first_party_client(session, g.client_id),
              "created_at": g.created_at, "last_used_at": g.last_used_at}
             for g in rows if _aware(g.expires_at) >= now
             and g.token_version == user.token_version]

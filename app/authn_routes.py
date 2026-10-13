@@ -156,6 +156,9 @@ class AuthMethodsOut(BaseModel):
     """How someone may sign in on the host this was asked on (YONDER-180)."""
     password: bool                 # POST /api/v1/auth/login is accepted here
     oauth: bool                    # /oauth/authorize (the server's own OAuth, YONDER-107)
+    # The built-in app client to use with it (D-194); None = this server can't
+    # sign the app in with OAuth (older server, or no app redirect configured).
+    oauth_client_id: str | None = None
     sso: bool                      # "Sign in with <sso_name>" is offered here
     sso_name: str | None = None
     sso_forced: bool = False       # SSO is the only way in on the web here
@@ -171,12 +174,16 @@ def api_auth_methods(request: Request):
     (_login_options, YONDER-164). The host is the one the request was made to —
     never a forwarded or proxy-supplied identity header. An older server
     answers 404, which the app reads as "password only"."""
-    from app import oidc
+    from app import oauth, oidc
     from app.config import settings
+    from app.db import SessionLocal
     forced = oidc.forced_on(request)
     sso = oidc.offered_on(request)
+    with SessionLocal() as session:
+        app_client = oauth.APP_CLIENT_ID if oauth.app_client_ready(session) else None
     return {"password": not (settings.oidc_force_api_login and forced),
             "oauth": True,
+            "oauth_client_id": app_client,
             "sso": sso,
             "sso_name": settings.oidc_display_name if sso else None,
             "sso_forced": forced,
