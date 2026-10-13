@@ -2405,7 +2405,7 @@ def _push_msg(text: str) -> HTMLResponse:
 # AdventureLog object) and tour/event/dining/note, which fall through to a
 # Note — AdventureLog has no generic "activity" object to hold those.
 _AL_TRANSPORT_TYPE = {
-    "flight": "plane", "train": "train", "drive": "car",
+    "flight": "plane", "train": "train", "drive": "car", "taxi": "car",
     "carRental": "car", "cruise": "boat",
 }
 

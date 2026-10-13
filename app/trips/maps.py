@@ -32,6 +32,7 @@ KIND_COLOURS = {
     "drive": "#2f6fb0", "flight": "#6a4fb3", "lodging": "#8e44ad",
     "dining": "#d35400", "tour": "#1e8449", "event": "#1e8449",
     "train": "#b03a2e", "carRental": "#2f6fb0", "cruise": "#117a8b",
+    "taxi": "#b7950b",
 }
 DEFAULT_COLOUR = "#4d5359"
 

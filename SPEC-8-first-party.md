@@ -244,6 +244,13 @@ request forgery (SSRF) risk.
   them connected; each resolution records the `integrations` it saw for this.
   "Log approved" opens as a sheet (design board) and names only the systems its
   writes go to. (built 4.9)
+- **D-193 — A taxi is its own kind of trip (owner, 2026-10-12).** Taxis and
+  ride-hailing (Uber, Lyft, Bolt…) are ground mode `taxi` and a **Taxi** timeline
+  activity (company, from, to, pickup and drop-off times, confirmation), not a
+  "Road trip". The older mode `rideshare` means the same and files as a Taxi.
+  The extractor is told to use `taxi` (prompt v3); a booked taxi keys on its
+  reference like a rental, otherwise on its endpoints. In review, the ground
+  *Kind* is a dropdown the reviewer can correct. AdventureLog gets `car`.
 - **D-149 — External writes are owner-scoped.** Until per-user connections
   exist, only the credential owner's captures produce AirTrail or AdventureLog
   targets. (shipped as D-156; superseded by D-150 in 4.8)

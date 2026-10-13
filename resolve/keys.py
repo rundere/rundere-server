@@ -215,7 +215,7 @@ def event_key(title: str, start_date: str,
 _MODE_PREFIX = {"train": "rail", "bus": "bus", "ferry": "ferry"}
 # Modes with no timetable to key on. A rental or transfer is identified by its
 # booking reference; there is no service number to anchor to.
-_BOOKED_MODE_PREFIX = {"car_rental": "carrental", "rideshare": "rideshare",
+_BOOKED_MODE_PREFIX = {"car_rental": "carrental", "rideshare": "rideshare", "taxi": "taxi",
                        "transfer": "transfer", "other": "ground"}
 
 

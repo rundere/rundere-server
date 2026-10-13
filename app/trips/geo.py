@@ -43,6 +43,7 @@ _POINTS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
     "flight": (("from", ("from",)), ("to", ("to",))),
     "train": (("from", ("from",)), ("to", ("to",))),
     "drive": (("from", ("from",)), ("to", ("to",))),
+    "taxi": (("from", ("from",)), ("to", ("to",))),
     "carRental": (("from", ("pickupLocation",)), ("to", ("dropoffLocation",))),
     "cruise": (("from", ("departurePort",)), ("to", ("arrivalPort",))),
     "lodging": (("place", ("address", "name")),),

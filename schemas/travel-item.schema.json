@@ -1014,6 +1014,7 @@
             "car",
             "car_rental",
             "rideshare",
+            "taxi",
             "transfer",
             "walk",
             "other"

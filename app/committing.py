@@ -303,11 +303,11 @@ def build_airtrail_flight(payload: dict, *, airports: dict, airlines: dict,
 # in the description so nothing is lost (owner, 2026-08-10: a car rental logs as
 # "car" with the rental details in the notes, not a rejected write).
 _AL_TRANSPORT_TYPE = {"train": "train", "bus": "bus", "ferry": "boat",
-                      "car": "car", "car_rental": "car", "rideshare": "car",
+                      "car": "car", "car_rental": "car", "rideshare": "car", "taxi": "car",
                       "transfer": "car", "other": "other"}
 # Human label for the real mode, led into the description when AdventureLog's
 # coarse type would otherwise hide it.
-_GROUND_MODE_DESC = {"car_rental": "Car rental", "rideshare": "Rideshare",
+_GROUND_MODE_DESC = {"car_rental": "Car rental", "rideshare": "Taxi", "taxi": "Taxi",
                      "transfer": "Transfer", "ferry": "Ferry"}
 
 
@@ -441,9 +441,12 @@ def build_note(payload: dict, *, collection_id: str | None) -> dict:
 # Our ground_transport.mode -> Yonder activity type (app/trips/types.py). Modes
 # with no dedicated Yonder type fall back to "drive" (Road trip), whose free-text
 # route field carries the endpoints.
+# Uber, Lyft and the like ARE taxis (owner, 2026-10-12, D-193): "rideshare" —
+# the older mode for them — files as a Taxi too.
 _YONDER_GROUND_TYPE = {"train": "train", "car_rental": "carRental",
                        "ferry": "cruise", "bus": "drive", "car": "drive",
-                       "rideshare": "drive", "transfer": "drive", "other": "drive"}
+                       "taxi": "taxi", "rideshare": "taxi",
+                       "transfer": "drive", "other": "drive"}
 
 
 def _local(dt: dict | None) -> str | None:
@@ -534,6 +537,11 @@ def _yonder_activity(payload: dict) -> tuple[str, dict]:
                     float(route["distance_km"]), int(route.get("duration_minutes") or 0)))
         elif atype == "carRental":
             base.update({"company": provider, "pickupLocation": a, "dropoffLocation": b})
+        elif atype == "taxi":
+            from resolve.routing import stop_address
+            base.update({"company": provider,
+                         "from": stop_address(dep.get("place")) or a,
+                         "to": stop_address(arr.get("place")) or b})
         elif atype == "cruise":
             base.update({"operator": provider, "departurePort": a, "arrivalPort": b})
         else:  # train

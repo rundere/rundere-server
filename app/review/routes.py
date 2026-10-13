@@ -106,7 +106,14 @@ def _fields(payload: dict) -> list[dict]:
         dt_field("Ends", "/event/end", required=False)
         place_fields("Venue", "/event/venue")
     elif t == "ground_transport":
-        text_field("Kind", "/ground_transport/mode", editable=False)
+        # The kind is the reviewer's to correct — a taxi read as "car" logs as a
+        # road trip otherwise (owner, 2026-10-12; D-193). "rideshare" is the
+        # older name for a taxi: offered only on items that already have it.
+        mode = (payload.get("ground_transport") or {}).get("mode") or ""
+        rows.append({"label": "Kind", "path": "/ground_transport/mode", "kind": "select",
+                     "value": mode,
+                     "options": [m for m in _GROUND_MODES if m != "rideshare" or mode == m],
+                     "labels": _GROUND_MODE_LABELS, "missing": False, "editable": True})
         text_field("Service number", "/ground_transport/service_number")
         dt_field("Departs", "/ground_transport/departure/time")
         place_fields("From", "/ground_transport/departure/place")
@@ -128,6 +135,15 @@ def _fields(payload: dict) -> list[dict]:
                  "missing": False, "editable": True})
     text_field("Reference", "/booking_reference")
     return rows
+
+
+# Ground modes in the order the review dropdown offers them, and their labels.
+_GROUND_MODES = ("taxi", "car", "car_rental", "train", "bus", "ferry", "transfer",
+                 "walk", "other", "rideshare")
+_GROUND_MODE_LABELS = {"taxi": "Taxi (Uber, Lyft…)", "car": "Car (a drive)",
+                       "car_rental": "Car rental", "train": "Train", "bus": "Bus",
+                       "ferry": "Ferry", "transfer": "Transfer / shuttle",
+                       "walk": "Walk", "other": "Other", "rideshare": "Taxi (rideshare)"}
 
 
 _LOCAL_RE = re.compile(r"(\d{4}-\d{2}-\d{2})(?:T(\d{1,2}):?(\d{2}))?$")

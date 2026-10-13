@@ -122,7 +122,7 @@
         {% elif f.kind == 'select' %}
           <select id="{{ i.id }}-{{ loop.index }}" name="f:{{ f.path }}">
             {% for o in f.options %}
-              <option value="{{ o }}" {% if o == f.value %}selected{% endif %}>{{ o }}</option>
+              <option value="{{ o }}" {% if o == f.value %}selected{% endif %}>{{ f.labels[o] if f.labels and o in f.labels else o }}</option>
             {% endfor %}
           </select>
         {% else %}

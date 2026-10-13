@@ -104,6 +104,24 @@ _TYPES: tuple[ActivityType, ...] = (
         subtitle=lambda v: v.get("distance", ""),
     ),
     ActivityType(
+        # Taxis and ride-hailing (Uber, Lyft, Bolt…) — D-193.
+        "taxi", "Taxi",
+        (
+            _f("when", "Pickup", "datetime-local"),
+            _f("endWhen", "Drop-off", "datetime-local"),
+            _f("company", "Company", hint="e.g. Uber, Lyft, a local cab"),
+            _f("from", "From", hint="pickup address or place"),
+            _f("to", "To", hint="drop-off address or place"),
+            _f("confirmation", "Confirmation #"),
+            _f("mapLink", "Map / directions link", "url",
+               hint="Google or Apple Maps link"),
+            _f("sourceLink", "Source", hint=_SOURCE_HINT),
+            _f("notes", "Notes", "textarea"),
+        ),
+        title=lambda v: f"Taxi · {v['company']}" if v.get("company") else "Taxi",
+        subtitle=lambda v: _join(v.get("from", ""), v.get("to", ""), sep=" → "),
+    ),
+    ActivityType(
         "carRental", "Car rental",
         (
             _f("when", "Pickup", "datetime-local"),
@@ -280,7 +298,7 @@ def map_query(activity_type: str, values: dict) -> str | None:
     """The place text that locates this activity (what `map_url` searches for),
     so a client can hand it to its own maps app. A road trip uses its route."""
     v = values or {}
-    if activity_type == "drive":
+    if activity_type in ("drive", "taxi"):
         return (v.get("route") or _join(v.get("from", ""), v.get("to", ""), sep=" → ")
                 or None)
     fn = _MAP_QUERY.get(activity_type)
