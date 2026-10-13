@@ -30,6 +30,7 @@ import hashlib
 import imaplib
 import json
 import logging
+import re
 import secrets
 import select
 import ssl
@@ -309,25 +310,19 @@ def _connect() -> imaplib.IMAP4:
         conn = imaplib.IMAP4(settings.inbox_imap_host, settings.inbox_imap_port, timeout=30)
         conn.starttls(ssl_context=ctx)
     conn.login(settings.inbox_imap_user, settings.inbox_imap_password)
+    # Servers (Proton Bridge among them) list MOVE / UIDPLUS / IDLE only once
+    # signed in; imaplib kept the pre-login list.
+    try:
+        typ, data = conn.capability()
+        if typ == "OK" and data and data[0]:
+            conn.capabilities = tuple(data[0].decode().upper().split())
+    except Exception:
+        pass
     return conn
 
 
 def _quote(folder: str) -> str:
     return '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def _move(conn, uid: bytes, folder: str) -> None:
-    """File a message into `folder` (made if missing). MOVE where the server has
-    it; otherwise copy, flag deleted and expunge."""
-    conn.create(_quote(folder))                     # "already exists" is fine
-    if "MOVE" in (conn.capabilities or ()):
-        typ, _ = conn.uid("MOVE", uid, _quote(folder))
-        if typ == "OK":
-            return
-    typ, _ = conn.uid("COPY", uid, _quote(folder))
-    if typ == "OK":
-        conn.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
-        conn.expunge()
 
 
 def _size_of(conn, uid: bytes) -> int:
@@ -350,18 +345,82 @@ def _fetch(conn, uid: bytes) -> bytes | None:
     return None
 
 
+def _move(conn, uid: bytes, folder: str) -> bool:
+    """File a message into `folder` (made if missing). MOVE where the server has
+    it; otherwise copy, flag deleted and expunge ONLY that message (UID EXPUNGE,
+    RFC 4315). A plain EXPUNGE would also permanently remove anything else
+    flagged deleted in the folder — someone's own mail in a shared mailbox — so
+    without UIDPLUS the copy is left flagged instead. Returns whether it moved."""
+    conn.create(_quote(folder))                     # "already exists" is fine
+    caps = conn.capabilities or ()
+    if "MOVE" in caps:
+        typ, _ = conn.uid("MOVE", uid, _quote(folder))
+        if typ == "OK":
+            return True
+    typ, _ = conn.uid("COPY", uid, _quote(folder))
+    if typ != "OK":
+        log.warning("inbox: couldn't file a message into %r (does the folder exist, or "
+                    "does this server only allow folders under a parent such as "
+                    "Proton's Folders/?)", folder)
+        return False
+    conn.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+    if "UIDPLUS" in caps:
+        conn.uid("EXPUNGE", uid)
+    return True
+
+
+_HEADER_FIELDS = "(BODY.PEEK[HEADER.FIELDS (TO CC DELIVERED-TO X-ORIGINAL-TO ENVELOPE-TO X-FORWARDED-TO)])"
+# Highest UID already looked at, per (folder, UIDVALIDITY): a big shared mailbox
+# isn't rescanned on every new email. In memory: a restart rescans once.
+_scanned: dict[tuple[str, bytes], int] = {}
+
+
+def _uidvalidity(conn) -> bytes:
+    try:
+        typ, data = conn.response("UIDVALIDITY")
+        return (data[0] or b"") if data else b""
+    except Exception:
+        return b""
+
+
+def _addressed_to_us(conn, start: int) -> tuple[list[bytes], int]:
+    """UIDs from `start` on whose recipient headers name one of OUR plus
+    addresses (local+token@domain), and the highest UID seen. Only the
+    recipient headers are read, with PEEK, so nothing is marked read — and mail
+    that isn't for Run·dere is never fetched, moved or recorded (D-190: the
+    mailbox may be someone's own, e.g. a Proton account with an alias)."""
+    typ, data = conn.uid("FETCH", f"{start}:*", _HEADER_FIELDS)
+    ours: list[bytes] = []
+    top = start - 1
+    for part in data or []:
+        if not (isinstance(part, tuple) and len(part) >= 2):
+            continue
+        meta = part[0].decode(errors="replace") if isinstance(part[0], bytes) else str(part[0])
+        m = re.search(r"UID (\d+)", meta)
+        if not m:
+            continue
+        uid = int(m.group(1))
+        if uid < start:                  # "n:*" answers the last message even past it
+            continue
+        top = max(top, uid)
+        if recipient_tokens(email.message_from_bytes(part[1] or b"")):
+            ours.append(str(uid).encode())
+    return ours, top
+
+
 def _drain(conn, session_factory) -> dict:
-    """Capture, file and count every message waiting in the folder on an open,
-    logged-in connection; acknowledge each capture and start processing for
-    the people who got one. Returns the counts."""
+    """Capture, file and count every message for Run·dere waiting in the folder
+    on an open, logged-in connection; acknowledge each capture and start
+    processing for the people who got one. Mail not addressed to one of our plus
+    addresses is left exactly where it is. Returns the counts."""
     counts: dict[str, int] = {}
     captured: list[Handled] = []
     typ, _ = conn.select(_quote(settings.inbox_folder))
     if typ != "OK":
         raise RuntimeError(f"can't open folder {settings.inbox_folder!r}")
-    typ, data = conn.uid("SEARCH", None, "ALL")
-    uids = (data[0] or b"").split()[:_PER_POLL] if typ == "OK" and data else []
-    for uid in uids:
+    key = (settings.inbox_folder, _uidvalidity(conn))
+    ours, top = _addressed_to_us(conn, _scanned.get(key, 0) + 1)
+    for uid in ours[:_PER_POLL]:
         with session_factory() as session:
             size = _size_of(conn, uid)
             if size > settings.inbox_max_bytes:
@@ -380,6 +439,8 @@ def _drain(conn, session_factory) -> dict:
         keep = any(r.outcome in (CAPTURED, DUPLICATE) for r in results)
         _move(conn, uid, settings.inbox_done_folder if keep
               else settings.inbox_dropped_folder)
+    # Only mark as scanned what was fully handled; a capped batch resumes there.
+    _scanned[key] = top if len(ours) <= _PER_POLL else int(ours[_PER_POLL - 1])
     _acknowledge(session_factory, captured)
     _kick(session_factory, {r.user_id for r in captured})
     return counts

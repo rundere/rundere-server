@@ -15,10 +15,14 @@ queue a few minutes later. Nothing is filed until they approve it.
   their accounts. The token is random, and each person can regenerate theirs
   under **Capture → Other ways to capture → Email forward**. The old address
   then stops working.
-- **Anything else is dropped.** Mail to an address that matches no one is moved
-  to the dropped folder and counted. This includes the bare `trips@` address, a
-  regenerated token, mail that's too large, and mail over the rate limit.
-  Run·dere never stores it, and it never becomes an ownerless capture.
+- **Mail to an unknown plus address is dropped.** A token that matches no one
+  (a regenerated one, a typo), mail that's too large, and mail over the rate
+  limit are moved to the dropped folder and counted. Run·dere never stores it,
+  and it never becomes an ownerless capture.
+- **Everything else is left alone.** Mail that isn't sent to a `trips+…@`
+  address, including the bare `trips@` address and anything else in a shared
+  mailbox, is never read past its recipient headers, moved, marked read or
+  recorded.
 - **Captured mail** is kept raw in full (D-15), filed into the done folder in
   your mailbox, and processed at once, like a capture from the capture page.
   The same message is never captured twice for the same person.
@@ -100,19 +104,38 @@ Three things trip people up:
      you're signed in to that desktop.
 2. **Bridge's IMAP port uses STARTTLS**, so set `TX_INBOX_IMAP_SSL=false`.
 3. **Bridge's certificate is self-signed.** In Bridge, *Settings → Advanced →
-   Export TLS certificates*, mount `cert.pem` into the container, and set
-   `TX_INBOX_IMAP_CA_FILE` to its path. Use the **Bridge password** Bridge shows
-   for the account, not your Proton password.
+   Export TLS certificates* (desktop) and mount only `cert.pem` — never the
+   exported `key.pem` — into the Run·dere container; set `TX_INBOX_IMAP_CA_FILE`
+   to its path. Use the **Bridge password** Bridge shows for the account, not
+   your Proton password.
+
+4. **The IMAP account is the whole Proton account.** If the inbox address is
+   one address of a bigger account, Bridge's IMAP username is that account
+   (shown by Bridge's `info`), and its INBOX holds *all* of that account's mail.
+   Run·dere only ever reads, moves or records mail sent to its own plus
+   addresses (`trips+…@`); everything else, including mail to the bare
+   `trips@`, is left exactly where it is and is never marked read. Still, give
+   it its own folder: in Proton, add a filter *if the recipient contains
+   `trips+` → move to folder `Rundere`*, and point the reader at it. Bridge
+   shows Proton folders under `Folders/`, and new folders can only be made
+   there, so name the done and dropped folders under `Folders/` too.
 
 ```
 TX_INBOX_ADDRESS=trips@example.com
-TX_INBOX_IMAP_HOST=host.docker.internal      # or the Bridge container's name
-TX_INBOX_IMAP_PORT=1143
+TX_INBOX_IMAP_HOST=proton-bridge              # the Bridge container's name
+TX_INBOX_IMAP_PORT=143                        # 1143 when talking to Bridge directly
 TX_INBOX_IMAP_SSL=false
-TX_INBOX_IMAP_CA_FILE=/data/proton-bridge-cert.pem
-TX_INBOX_IMAP_USER=trips@example.com
-TX_INBOX_IMAP_PASSWORD=<Bridge password>
+TX_INBOX_IMAP_CA_FILE=/data/artifacts/proton-bridge-cert.pem
+TX_INBOX_IMAP_USER=<the IMAP username Bridge's `info` shows>
+TX_INBOX_IMAP_PASSWORD=<the Bridge password Bridge's `info` shows>
+TX_INBOX_FOLDER=Folders/Rundere
+TX_INBOX_DONE_FOLDER=Folders/Rundere Captured
+TX_INBOX_DROPPED_FOLDER=Folders/Rundere Dropped
 ```
+
+Bridge 3 keeps its certificate inside its vault rather than as a file, and a
+Bridge in a container makes its own (different from a desktop Bridge's). Read
+it off the connection once and pin that copy.
 
 ## Check it
 

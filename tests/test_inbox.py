@@ -187,12 +187,18 @@ if DEPS:
 
     # ------------------------------------------------------------- the IMAP poll
     class FakeIMAP:
-        """Just enough of imaplib.IMAP4 for poll_once."""
-        def __init__(self, messages, move=True, fail_login=None):
+        """Just enough of imaplib.IMAP4 for the reader: header-only FETCH over a
+        UID range, MOVE / COPY, UID EXPUNGE, and a record of every command."""
+        def __init__(self, messages, move=True, uidplus=True, fail_login=None):
             self.messages = dict(messages)            # uid(bytes) -> raw bytes
-            self.capabilities = ("IMAP4REV1", "MOVE") if move else ("IMAP4REV1",)
+            caps = ["IMAP4REV1"] + (["MOVE"] if move else []) + (["UIDPLUS"] if uidplus else [])
+            self.capabilities = tuple(caps)
             self.moved: dict[bytes, str] = {}
             self.created: list[str] = []
+            self.fetched_bodies: list[bytes] = []
+            self.header_scans: list[str] = []
+            self.plain_expunges = 0
+            self.uid_expunged: list[bytes] = []
             self.fail_login = fail_login
 
         def login(self, user, password):
@@ -200,22 +206,43 @@ if DEPS:
                 raise imaplib.IMAP4.error(self.fail_login)
             return "OK", [b"logged in"]
 
+        def capability(self):
+            return "OK", [" ".join(self.capabilities).encode()]
+
         def select(self, folder):
             return "OK", [str(len(self.messages)).encode()]
+
+        def response(self, code):
+            return code, [b"42"]
 
         def create(self, folder):
             self.created.append(folder)
             return "NO", [b"exists"]
 
         def uid(self, cmd, *args):
+            import email as _email
             cmd = cmd.upper()
-            if cmd == "SEARCH":
-                return "OK", [b" ".join(sorted(self.messages))]
             if cmd == "FETCH":
-                uid, what = args
+                uidset, what = args
+                if "HEADER.FIELDS" in what:
+                    self.header_scans.append(uidset.decode() if isinstance(uidset, bytes) else uidset)
+                    start = int(str(uidset).split(":")[0])
+                    out = []
+                    pick = [u for u in sorted(self.messages, key=int) if int(u) >= start] \
+                        or sorted(self.messages, key=int)[-1:]      # n:* answers the last one
+                    for u in pick:
+                        m = _email.message_from_bytes(self.messages[u])
+                        hdr = "".join(f"{k}: {v}\r\n" for k, v in m.items()
+                                      if k.lower() in ("to", "cc", "delivered-to",
+                                                       "x-original-to")).encode()
+                        out += [(f"1 (UID {u.decode()} BODY[HEADER] {{{len(hdr)}}}".encode(), hdr),
+                                b")"]
+                    return "OK", out
+                uid = uidset
                 raw = self.messages[uid]
                 if "RFC822.SIZE" in what:
                     return "OK", [f"1 (UID {uid.decode()} RFC822.SIZE {len(raw)})".encode()]
+                self.fetched_bodies.append(uid)
                 return "OK", [(f"1 (UID {uid.decode()} BODY[] {{{len(raw)}}}".encode(), raw),
                               b")"]
             if cmd in ("MOVE", "COPY"):
@@ -226,13 +253,24 @@ if DEPS:
                 return "OK", [b"done"]
             if cmd == "STORE":
                 return "OK", [b""]
+            if cmd == "EXPUNGE":
+                self.uid_expunged.append(args[0])
+                self.messages.pop(args[0], None)
+                return "OK", [b""]
             raise AssertionError(cmd)
 
         def expunge(self):
+            self.plain_expunges += 1
             return "OK", [b""]
 
         def logout(self):
             return "BYE", [b""]
+
+    @pytest.fixture(autouse=True)
+    def _fresh_scan_marks():
+        inbox._scanned.clear()
+        yield
+        inbox._scanned.clear()
 
     def test_poll_files_captured_and_dropped_mail_and_starts_processing(monkeypatch):
         with SessionLocal() as s:
@@ -250,15 +288,65 @@ if DEPS:
                               b"2": settings.inbox_dropped_folder}
         assert kicked == [uid_]                                    # D-158, unattended
 
-    def test_poll_without_move_copies_and_expunges(monkeypatch):
+    def test_without_move_only_our_message_is_expunged(monkeypatch):
+        """COPY + flag + UID EXPUNGE of that one message — never a plain EXPUNGE,
+        which would also delete anything else flagged in a shared mailbox."""
         with SessionLocal() as s:
             addr = inbox.user_address(s, _user(s))
-        fake = FakeIMAP({b"7": _mail(addr)}, move=False)
-        monkeypatch.setattr(inbox, "_connect", lambda: fake)
         from app.review import autoprocess
         monkeypatch.setattr(autoprocess, "kick", lambda user: None)
+        fake = FakeIMAP({b"7": _mail(addr)}, move=False)
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
         inbox.poll_once(SessionLocal)
         assert fake.moved == {b"7": settings.inbox_done_folder}
+        assert fake.uid_expunged == [b"7"] and fake.plain_expunges == 0
+        inbox._scanned.clear()
+        bare = FakeIMAP({b"8": _mail("trips+zzzz@example.test")}, move=False, uidplus=False)
+        monkeypatch.setattr(inbox, "_connect", lambda: bare)
+        inbox.poll_once(SessionLocal)
+        assert bare.plain_expunges == 0 and bare.uid_expunged == []   # left flagged instead
+
+    def test_a_personal_mailbox_is_left_alone(monkeypatch):
+        """The mailbox may be someone's own (Proton: one account, many addresses).
+        Only mail to OUR plus addresses is read, moved or recorded; personal mail
+        and mail to the bare address are never fetched, moved or counted."""
+        with SessionLocal() as s:
+            addr = inbox.user_address(s, _user(s))
+        from app.review import autoprocess
+        monkeypatch.setattr(autoprocess, "kick", lambda user: None)
+        personal = _mail("Daniel <me@pm.example>", msgid="<personal-1@x>")
+        bare = _mail(MAILBOX, msgid="<bare-1@x>")
+        fake = FakeIMAP({b"1": personal, b"2": _mail(addr), b"3": bare})
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        with SessionLocal() as s:
+            before = s.query(InboxMessage).count()
+        counts = inbox.poll_once(SessionLocal)
+        assert counts == {inbox.CAPTURED: 1}
+        assert set(fake.moved) == {b"2"} and fake.fetched_bodies == [b"2"]
+        assert {b"1", b"3"} <= set(fake.messages)                      # untouched, in place
+        with SessionLocal() as s:
+            assert s.query(InboxMessage).count() == before + 1
+
+    def test_scanned_mail_is_not_rescanned_on_every_wake(monkeypatch):
+        from app.review import autoprocess
+        monkeypatch.setattr(autoprocess, "kick", lambda user: None)
+        fake = FakeIMAP({b"5": _mail("me@pm.example"), b"9": _mail("me@pm.example")})
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        inbox.poll_once(SessionLocal)
+        inbox.poll_once(SessionLocal)
+        assert fake.header_scans == ["1:*", "10:*"] and fake.moved == {}
+
+    def test_capabilities_are_reread_after_login(monkeypatch):
+        """Bridge lists MOVE/UIDPLUS/IDLE only once signed in."""
+        class Conn:
+            capabilities = ("IMAP4REV1", "STARTTLS")
+            def __init__(self, *a, **kw): pass
+            def starttls(self, ssl_context=None): pass
+            def login(self, *a): return "OK", []
+            def capability(self): return "OK", [b"IMAP4rev1 IDLE MOVE UIDPLUS"]
+        monkeypatch.setattr(imaplib, "IMAP4_SSL", Conn)
+        conn = inbox._connect()
+        assert {"IDLE", "MOVE", "UIDPLUS"} <= set(conn.capabilities)
 
     def test_a_failed_poll_never_shows_the_password(monkeypatch):
         def boom():
