@@ -187,6 +187,10 @@ class Settings(BaseSettings):
     inbox_acknowledge: bool = True
     inbox_max_bytes: int = 10_000_000        # larger mail is dropped, not fetched
     inbox_rate_limit: int = 30               # captures per address per hour
+    # YONDER-243: a clamav-rest service (e.g. http://clamav-rest:9000) that scans
+    # every captured email, attachments included, before anything parses it.
+    # Empty = no antivirus; the static PDF checks (extract/filescan.py) always run.
+    clamav_url: str = ""
     # Absolute base (e.g. https://yonder.home.example) for links in emails. Empty
     # => derive from the request that triggered the reset.
     public_base_url: str = ""

@@ -40,6 +40,11 @@ class TripSummary(BaseModel):
     # YONDER-177: the airport codes the trip's flights visit, in flight order, no
     # repeats ("LHR", "NRT", "KIX") — the app's Upcoming cards. Real 3-letter codes only.
     airports: list[str] = []
+    # YONDER-239: the trip's free-text notes (the web trip modal's Notes), and
+    # whether the caller may edit the trip — false for a view-only share (D-122),
+    # so the app can hide Edit instead of meeting a 403.
+    notes: str | None = None
+    can_edit: bool = False
 
 
 class PlaceOut(BaseModel):
@@ -493,14 +498,15 @@ def _me(user=Depends(authn.current_user)):
     return user
 
 
-def _trip_summary(session: Session, t: Trip) -> TripSummary:
+def _trip_summary(session: Session, t: Trip, user) -> TripSummary:
     from app.trips.routes import trip_route_codes
     n = session.query(TripActivity).filter(TripActivity.trip_id == t.id).count()
     flights = session.query(TripActivity).filter(
         TripActivity.trip_id == t.id, TripActivity.type == "flight").all()
     return TripSummary(id=t.id, name=t.name, start_date=t.start_date,
                        end_date=t.end_date, source=t.source, owner_id=t.owner_id,
-                       activity_count=n, airports=trip_route_codes(flights, limit=None))
+                       activity_count=n, airports=trip_route_codes(flights, limit=None),
+                       notes=t.notes, can_edit=scope.can_edit_trip(session, user, t))
 
 
 def _activity_out(a: TripActivity, traveler_ids: list[int] | None = None) -> ActivityOut:
@@ -615,7 +621,7 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
         captures.append(CaptureLite(id=c.id, kind=_kind(payload),
                                     headline=_headline(payload), created_at=c.created_at))
 
-    return TripSnapshot(trip=_trip_summary(session, trip), activities=activities,
+    return TripSnapshot(trip=_trip_summary(session, trip, user), activities=activities,
                         travelers=travelers, places=places, discovery=discovery,
                         discovery_items=discovery_items,
                         discovery_profile=discovery_profile, packing=packing,
@@ -731,7 +737,7 @@ def api_dashboard(now: Annotated[str | None, Query(
 def api_trips(user=Depends(authn.current_user), session: Session = Depends(get_session)):
     trips = (session.query(Trip).filter(scope.trip_filter(session, user))
              .order_by(Trip.start_date.desc()).all())
-    return [_trip_summary(session, t) for t in trips]
+    return [_trip_summary(session, t, user) for t in trips]
 
 
 @router.get("/trips/{trip_id}", response_model=TripSnapshot)
@@ -1090,14 +1096,14 @@ def api_update_trip(trip_id: str, body: TripPatch,
     if body.end_date is not None:
         trip.end_date = body.end_date or None
     if body.notes is not None:
-        trip.notes = body.notes or None
+        trip.notes = body.notes.strip() or None     # same as the web form (_save_trip_fields)
     session.commit()
     if (trip.start_date, trip.end_date) != dates_before:
         # Re-dated: it may now cover captures waiting for a trip (YONDER-222).
         from app.trips.routes import _recheck_waiting
         _recheck_waiting(session, trip, user)
     session.refresh(trip)
-    return _trip_summary(session, trip)
+    return _trip_summary(session, trip, user)
 
 
 def _activity_type_or_400(atype: str):
