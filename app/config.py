@@ -238,7 +238,7 @@ class Settings(BaseSettings):
     # that ships its own app bundle needs to change them. Empty = no app client.
     oauth_app_redirect_uris: str = "https://rundere.app/auth/callback"
 
-    app_version: str = "4.9.3"
+    app_version: str = "4.9.4"
 
     @property
     def base_currency_list(self) -> tuple[str, ...]:
