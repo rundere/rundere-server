@@ -21,9 +21,9 @@ from sqlalchemy.orm import Session
 from app import (authn, expenses as expenses_svc, journal as journal_svc,
                  places as places_svc, scope)
 from app.db import get_session
-from app.models import (DiscoveryFinding, JournalEntry, PackingItem, PackingPlan,
-                        SavedPlace, TravelItem, TravelerIdentity, Trip, TripActivity,
-                        TripTraveler)
+from app.models import (DiscoveryFinding, DiscoveryRun, JournalEntry, PackingItem,
+                        PackingPlan, SavedPlace, TravelItem, TravelerIdentity, Trip,
+                        TripActivity, TripTraveler)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -160,6 +160,24 @@ class CaptureLite(BaseModel):
     kind: str
     headline: str | None = None
     created_at: datetime | None = None
+
+
+class DiscoveryStatusOut(BaseModel):
+    """The caller's OWN Discovery run on a trip (YONDER-238; runs are per person,
+    4.1) — what the app's Run / Refresh button and progress bar poll."""
+    running: bool = False
+    phase: str | None = None
+    done: int = 0
+    total: int = 0
+    pct: int = 0
+    # D-157: an ended trip can't be researched; `ended_message` says why.
+    ended: bool = False
+    ended_message: str | None = None
+    # The latest run: running | done | failed | cancelled, None = never run.
+    # The error text stays server-side (it can carry provider detail).
+    last_status: str | None = None
+    last_started_at: datetime | None = None
+    last_finished_at: datetime | None = None
 
 
 class TripSnapshot(BaseModel):
@@ -1134,6 +1152,54 @@ def add_item_to_timeline(session: Session, user, trip_id: str, item_id: str,
     session.commit()
     session.refresh(a)
     return _activity_out(a, tagged)
+
+
+# --------------------------------------------------------------------------- Discovery runs (YONDER-238)
+# The web Discover button's launch and progress, for the app. Same gate as the
+# web: any trip the caller can SEE (a view-only sharer researches for
+# themselves — findings are per person, 4.1), refused once the trip has ended.
+def _discovery_status(session: Session, trip: Trip, user) -> DiscoveryStatusOut:
+    from app.trips import discovery_jobs as dj
+    from discover.runner import TRIP_ENDED_MESSAGE, trip_has_ended
+    live = dj.running_run(session, trip.id, user.id)       # also settles an orphan
+    last = (session.query(DiscoveryRun)
+            .filter(DiscoveryRun.trip_id == trip.id, DiscoveryRun.user_id == user.id)
+            .order_by(DiscoveryRun.started_at.desc()).first())
+    ended = trip_has_ended(trip)
+    out = DiscoveryStatusOut(ended=ended, ended_message=TRIP_ENDED_MESSAGE if ended else None)
+    if last is not None:
+        out.last_status = last.status
+        out.last_started_at = last.started_at
+        out.last_finished_at = last.finished_at
+    if live is not None:
+        out.running = True
+        out.phase = live.phase or "starting"
+        out.done, out.total = live.done or 0, live.total or 0
+        out.pct = int(100 * out.done / out.total) if out.total else 0
+    return out
+
+
+@router.post("/trips/{trip_id}/discover", response_model=DiscoveryStatusOut,
+             status_code=202)
+def api_run_discovery(trip_id: str, user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Start the caller's Discovery run (both tiers, in the background) and
+    return its status to poll. Already running: that run's status, no second
+    run. An ended trip: 409 with the reason (D-157)."""
+    from app.trips.routes import start_discovery
+    from discover.runner import TRIP_ENDED_MESSAGE
+    trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
+    if not start_discovery(session, trip, user):
+        raise HTTPException(status_code=409, detail=TRIP_ENDED_MESSAGE)
+    return _discovery_status(session, trip, user)
+
+
+@router.get("/trips/{trip_id}/discover/status", response_model=DiscoveryStatusOut)
+def api_discovery_status(trip_id: str, user=Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """Poll the caller's run. When `running` turns false, reload the trip."""
+    trip = scope.require_trip(session, user, trip_id)
+    return _discovery_status(session, trip, user)
 
 
 @router.post("/trips/{trip_id}/discovery-items/{item_id}/timeline",

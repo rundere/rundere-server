@@ -464,10 +464,14 @@ def _viewer_traveler(session: Session, request) -> TravelerIdentity | None:
     """The viewing person's traveller — their nationality, base currency and
     discovery profile shape their Discover tab. Auth off: the `self` traveller.
     A signed-in user with no traveller linked: None."""
-    u = scope.user_of(request)
-    if u is None:
+    return _traveler_of(session, scope.user_of(request))
+
+
+def _traveler_of(session: Session, user) -> TravelerIdentity | None:
+    """_viewer_traveler for a known user (or None = auth off) — the API's way in."""
+    if user is None:
         return _self_identity(session)
-    tid = getattr(u, "traveler_id", None)
+    tid = getattr(user, "traveler_id", None)
     return session.get(TravelerIdentity, tid) if tid is not None else None
 
 
@@ -1159,29 +1163,38 @@ def run_discovery_route(trip_id: str, request: Request,
 
     Per person (4.1): the run uses the VIEWER's discovery profile, nationality,
     base currency, homes and excluded places, and its findings are theirs."""
-    from app.resolving import load_homes_for_user
-    from app.trips import discovery_jobs as dj
-    from datetime import date as _date
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
+    start_discovery(session, trip, scope.user_of(request))   # ended: the section says why
+    return _discovery_section(request, session, trip)
+
+
+def start_discovery(session: Session, trip: Trip, user) -> bool:
+    """Launch `user`'s Discovery run on a trip they can see — the ONE launch the
+    web button and /api/v1 (YONDER-238) share. `user` None = auth off. False when
+    the trip has ended (D-157: refused server-side, not just a hidden button);
+    True otherwise, including when their run is already in flight (one run per
+    person per trip — no second run is started)."""
+    from app.resolving import load_homes_for_user
+    from app.trips import discovery_jobs as dj
+    from datetime import date as _date
     from discover.runner import trip_has_ended
-    if trip_has_ended(trip):                # D-157: server-side, not just a hidden button
-        return _discovery_section(request, session, trip)    # renders the reason
-    uid = _viewer_uid(request)
-    if dj.running_run(session, trip_id, uid) is None:
-        ident = _viewer_traveler(session, request)
+    if trip_has_ended(trip):
+        return False
+    uid = user.id if user else None
+    if dj.running_run(session, trip.id, uid) is None:
+        ident = _traveler_of(session, user)
         profile = _discovery_profile_row(session, ident, uid is None)
-        today = _date.today().isoformat()
-        dj.launch(trip_id, resolve_airport=_airport_resolver(), geocoder=_photon(),
+        dj.launch(trip.id, resolve_airport=_airport_resolver(), geocoder=_photon(),
                   det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(),
                   home_profiles=load_homes_for_user(session, uid),
-                  excluded=_excluded_keys(session, trip_id, uid),
+                  excluded=_excluded_keys(session, trip.id, uid),
                   discovery_profile=(profile.values if profile else None),
                   nationality=(ident.nationality if ident else None),
                   base_currencies=_base_currencies(ident),
-                  today=today, user_id=uid)
-    return _discovery_section(request, session, trip)
+                  today=_date.today().isoformat(), user_id=uid)
+    return True
 
 
 @router.get("/{trip_id}/discover/status", response_class=HTMLResponse)
