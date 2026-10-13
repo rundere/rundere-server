@@ -342,6 +342,7 @@ deployment stack.
 
 | `TX_PUBLIC_BASE_URL` | `""` | Public https base (e.g. `https://yonder.example.net`) for email links and the OAuth/MCP metadata. Set it when using the Claude connector |
 | `TX_INBOX_ADDRESS`, `TX_INBOX_IMAP_*` | off | Email-forward capture: a mailbox you own (e.g. `trips@example.com`) read over IMAP; each person forwards to their own `trips+<token>@…`. See [docs/email-forward.md](docs/email-forward.md) |
+| `TX_CLAMAV_URL` | `""` | A [clamav-rest](https://github.com/ajilach/clamav-rest) service (e.g. `http://clamav-rest:9000`) that scans every captured email, attachments included, before anything is extracted. An infected email is quarantined to review; if the scanner is unreachable, attachments are skipped (the body is still read). Empty = no antivirus. Static PDF checks (no scripts, launch actions, embedded files; 25 MB / 200 pages) always run |
 | `TX_OAUTH_ACCESS_TTL_SECONDS` | `3600` | OAuth access-token lifetime (Claude connector) |
 | `TX_OAUTH_REFRESH_IDLE_TTL_SECONDS` | `7776000` | A connected app's grant expires after this long unused (90 days) |
 | `TX_OAUTH_APP_REDIRECT_URIS` | `https://rundere.app/auth/callback` | The iOS app's built-in OAuth client `rundere-ios` (D-194). Change only for a fork that ships its own app; empty turns app OAuth sign-in off |

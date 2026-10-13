@@ -63,13 +63,19 @@ def running_run(session, trip_id: str, user_id: str | None = None) -> DiscoveryR
 
 def launch(trip_id: str, *, resolve_airport, geocoder, det_resolvers,
            llm_resolvers, home_profiles, excluded, discovery_profile,
-           nationality, base_currencies, today, user_id: str | None = None) -> str:
+           nationality, base_currencies, today, user_id: str | None = None,
+           topic: str | None = None, place_key: str | None = None) -> str:
     """Create the run row and submit the worker. Returns the new run id. The run
     (and so every finding it writes) belongs to `user_id` — the person whose
-    profile, nationality, currency and homes the inputs came from."""
+    profile, nationality, currency and homes the inputs came from.
+
+    `topic` (and optionally `place_key`) makes it a TARGETED refresh
+    (YONDER-238): only that topic — for every place, or just that one — runs,
+    so "update the weather for Lisbon" doesn't redo the whole suite."""
     with SessionLocal() as s:
         run = DiscoveryRun(trip_id=trip_id, user_id=user_id, status="running",
-                           phase="starting", started_at=_now())
+                           phase="starting", started_at=_now(),
+                           params={"topic": topic, "place_key": place_key} if topic else None)
         s.add(run)
         s.commit()
         run_id = run.id
@@ -80,13 +86,19 @@ def launch(trip_id: str, *, resolve_airport, geocoder, det_resolvers,
         geocoder=geocoder, det_resolvers=det_resolvers, llm_resolvers=llm_resolvers,
         home_profiles=home_profiles, excluded=excluded,
         discovery_profile=discovery_profile, nationality=nationality,
-        base_currencies=base_currencies, today=today)
+        base_currencies=base_currencies, today=today, topic=topic, place_key=place_key)
     return run_id
+
+
+def task_key(resolver, place) -> str | None:
+    """The place_key a (resolver, place) task writes its finding under."""
+    return place.country if resolver.scope == "country" else place.city_key
 
 
 def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
              det_resolvers, llm_resolvers, home_profiles, excluded,
-             discovery_profile, nationality, base_currencies, today) -> None:
+             discovery_profile, nationality, base_currencies, today,
+             topic: str | None = None, place_key: str | None = None) -> None:
     """The worker body. Its OWN session (it runs off-request). Commits after each
     finding so the poll panel streams them in. Directly callable in tests."""
     try:
@@ -108,10 +120,16 @@ def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
             det_tasks, home_skipped = _plan_tasks(derived, det_resolvers, homes,
                                                   trip.start_date)
             llm_tasks, _ = _plan_tasks(derived, llm_resolvers, homes, trip.start_date)
+            if topic:                            # a targeted refresh (YONDER-238)
+                keep = lambda t: t[0].topic == topic and (
+                    place_key is None or task_key(*t) == place_key)
+                det_tasks = [t for t in det_tasks if keep(t)]
+                llm_tasks = [t for t in llm_tasks if keep(t)]
             run.total = len(det_tasks) + len(llm_tasks)
             run.params = {"countries": derived.countries, "cities": derived.cities,
                           "dropped": len(derived.dropped),
-                          "home_skipped": home_skipped, "excluded": sorted(excluded)}
+                          "home_skipped": home_skipped, "excluded": sorted(excluded),
+                          "topic": topic, "place_key": place_key}
             s.commit()
 
             from discover import langdata
@@ -141,7 +159,8 @@ def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
                 run.done = done
                 s.commit()                       # stream the finding in
 
-            _prune_stale_drafts(s, trip_id, _in_scope_keys(derived), run.user_id)
+            if not topic:        # a targeted refresh never prunes the rest of the suite
+                _prune_stale_drafts(s, trip_id, _in_scope_keys(derived), run.user_id)
             run.done = run.total
             run.status = "done"
             run.phase = "done"

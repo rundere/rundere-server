@@ -21,9 +21,9 @@ from sqlalchemy.orm import Session
 from app import (authn, expenses as expenses_svc, journal as journal_svc,
                  places as places_svc, scope)
 from app.db import get_session
-from app.models import (DiscoveryFinding, JournalEntry, PackingItem, PackingPlan,
-                        SavedPlace, TravelItem, TravelerIdentity, Trip, TripActivity,
-                        TripTraveler)
+from app.models import (DiscoveryFinding, DiscoveryRun, JournalEntry, PackingItem,
+                        PackingPlan, SavedPlace, TravelItem, TravelerIdentity, Trip,
+                        TripActivity, TripTraveler)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -40,6 +40,11 @@ class TripSummary(BaseModel):
     # YONDER-177: the airport codes the trip's flights visit, in flight order, no
     # repeats ("LHR", "NRT", "KIX") — the app's Upcoming cards. Real 3-letter codes only.
     airports: list[str] = []
+    # YONDER-239: the trip's free-text notes (the web trip modal's Notes), and
+    # whether the caller may edit the trip — false for a view-only share (D-122),
+    # so the app can hide Edit instead of meeting a 403.
+    notes: str | None = None
+    can_edit: bool = False
 
 
 class PlaceOut(BaseModel):
@@ -172,6 +177,36 @@ class TripRateOut(BaseModel):
     as_of: str | None = None
     source: str                            # frankfurter | discover
     fetched_at: datetime | None = None
+
+
+class DiscoveryStatusOut(BaseModel):
+    """The caller's OWN Discovery run on a trip (YONDER-238; runs are per person,
+    4.1) — what the app's Run / Refresh button and progress bar poll."""
+    running: bool = False
+    phase: str | None = None
+    done: int = 0
+    total: int = 0
+    pct: int = 0
+    # D-157: an ended trip can't be researched; `ended_message` says why.
+    ended: bool = False
+    ended_message: str | None = None
+    # The latest run: running | done | failed | cancelled, None = never run.
+    # The error text stays server-side (it can carry provider detail).
+    last_status: str | None = None
+    last_started_at: datetime | None = None
+    last_finished_at: datetime | None = None
+    # What the latest run covered: None = the whole suite, else one topic
+    # (and one place) — a targeted refresh.
+    last_topic: str | None = None
+    last_place_key: str | None = None
+
+
+class DiscoverIn(BaseModel):
+    """Optional: refresh one topic (weather, currency, food…), or one topic for
+    one place (`place_key` as on the finding, e.g. "PT:Lisbon"), instead of
+    the whole suite."""
+    topic: str | None = None
+    place_key: str | None = None
 
 
 class TripSnapshot(BaseModel):
@@ -479,14 +514,15 @@ def _me(user=Depends(authn.current_user)):
     return user
 
 
-def _trip_summary(session: Session, t: Trip) -> TripSummary:
+def _trip_summary(session: Session, t: Trip, user) -> TripSummary:
     from app.trips.routes import trip_route_codes
     n = session.query(TripActivity).filter(TripActivity.trip_id == t.id).count()
     flights = session.query(TripActivity).filter(
         TripActivity.trip_id == t.id, TripActivity.type == "flight").all()
     return TripSummary(id=t.id, name=t.name, start_date=t.start_date,
                        end_date=t.end_date, source=t.source, owner_id=t.owner_id,
-                       activity_count=n, airports=trip_route_codes(flights, limit=None))
+                       activity_count=n, airports=trip_route_codes(flights, limit=None),
+                       notes=t.notes, can_edit=scope.can_edit_trip(session, user, t))
 
 
 def _activity_out(a: TripActivity, traveler_ids: list[int] | None = None) -> ActivityOut:
@@ -603,7 +639,7 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
 
     from app import rates as rates_svc
     trip_rates = [_rate_out(r) for _, r in sorted(rates_svc.latest(session, trip).items())]
-    return TripSnapshot(trip=_trip_summary(session, trip), activities=activities,
+    return TripSnapshot(trip=_trip_summary(session, trip, user), activities=activities,
                         travelers=travelers, places=places, discovery=discovery,
                         discovery_items=discovery_items,
                         discovery_profile=discovery_profile, packing=packing,
@@ -719,7 +755,7 @@ def api_dashboard(now: Annotated[str | None, Query(
 def api_trips(user=Depends(authn.current_user), session: Session = Depends(get_session)):
     trips = (session.query(Trip).filter(scope.trip_filter(session, user))
              .order_by(Trip.start_date.desc()).all())
-    return [_trip_summary(session, t) for t in trips]
+    return [_trip_summary(session, t, user) for t in trips]
 
 
 @router.get("/trips/{trip_id}", response_model=TripSnapshot)
@@ -1078,14 +1114,14 @@ def api_update_trip(trip_id: str, body: TripPatch,
     if body.end_date is not None:
         trip.end_date = body.end_date or None
     if body.notes is not None:
-        trip.notes = body.notes or None
+        trip.notes = body.notes.strip() or None     # same as the web form (_save_trip_fields)
     session.commit()
     if (trip.start_date, trip.end_date) != dates_before:
         # Re-dated: it may now cover captures waiting for a trip (YONDER-222).
         from app.trips.routes import _recheck_waiting
         _recheck_waiting(session, trip, user)
     session.refresh(trip)
-    return _trip_summary(session, trip)
+    return _trip_summary(session, trip, user)
 
 
 def _activity_type_or_400(atype: str):
@@ -1152,6 +1188,65 @@ def add_item_to_timeline(session: Session, user, trip_id: str, item_id: str,
     session.commit()
     session.refresh(a)
     return _activity_out(a, tagged)
+
+
+# --------------------------------------------------------------------------- Discovery runs (YONDER-238)
+# The web Discover button's launch and progress, for the app. Same gate as the
+# web: any trip the caller can SEE (a view-only sharer researches for
+# themselves — findings are per person, 4.1), refused once the trip has ended.
+def _discovery_status(session: Session, trip: Trip, user) -> DiscoveryStatusOut:
+    from app.trips import discovery_jobs as dj
+    from discover.runner import TRIP_ENDED_MESSAGE, trip_has_ended
+    live = dj.running_run(session, trip.id, user.id)       # also settles an orphan
+    last = (session.query(DiscoveryRun)
+            .filter(DiscoveryRun.trip_id == trip.id, DiscoveryRun.user_id == user.id)
+            .order_by(DiscoveryRun.started_at.desc()).first())
+    ended = trip_has_ended(trip)
+    out = DiscoveryStatusOut(ended=ended, ended_message=TRIP_ENDED_MESSAGE if ended else None)
+    if last is not None:
+        out.last_status = last.status
+        out.last_started_at = last.started_at
+        out.last_finished_at = last.finished_at
+        out.last_topic = (last.params or {}).get("topic")
+        out.last_place_key = (last.params or {}).get("place_key")
+    if live is not None:
+        out.running = True
+        out.phase = live.phase or "starting"
+        out.done, out.total = live.done or 0, live.total or 0
+        out.pct = int(100 * out.done / out.total) if out.total else 0
+    return out
+
+
+@router.post("/trips/{trip_id}/discover", response_model=DiscoveryStatusOut,
+             status_code=202)
+def api_run_discovery(trip_id: str, body: DiscoverIn | None = None,
+                      user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Start the caller's Discovery run (in the background) and return its
+    status to poll. No body: the whole suite. `topic` (+ `place_key`): just
+    that — e.g. the weather, or the weather for one city — without redoing
+    the rest. Already running: that run's status, no second run. An ended
+    trip: 409 with the reason (D-157)."""
+    from app.trips.routes import discovery_topics, start_discovery
+    from discover.runner import TRIP_ENDED_MESSAGE
+    trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
+    topic = ((body.topic if body else None) or "").strip() or None
+    place_key = ((body.place_key if body else None) or "").strip() or None
+    if place_key and not topic:
+        raise HTTPException(400, "place_key needs a topic")
+    if topic and topic not in discovery_topics():
+        raise HTTPException(400, f"unknown topic {topic!r}")
+    if not start_discovery(session, trip, user, topic=topic, place_key=place_key):
+        raise HTTPException(status_code=409, detail=TRIP_ENDED_MESSAGE)
+    return _discovery_status(session, trip, user)
+
+
+@router.get("/trips/{trip_id}/discover/status", response_model=DiscoveryStatusOut)
+def api_discovery_status(trip_id: str, user=Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """Poll the caller's run. When `running` turns false, reload the trip."""
+    trip = scope.require_trip(session, user, trip_id)
+    return _discovery_status(session, trip, user)
 
 
 @router.post("/trips/{trip_id}/discovery-items/{item_id}/timeline",

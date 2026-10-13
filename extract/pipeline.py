@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from extract import apple_maps_url, gcal, ical, jsonld, maps_url, mime, pdf, web
+from extract import apple_maps_url, filescan, gcal, ical, jsonld, maps_url, mime, pdf, web
 from extract.normalize import normalize_batch, normalize_payload
 from extract.llm import ExtractionFailed, OllamaExtractor, load_extraction_schema
 from validation import validate_schema
@@ -50,9 +50,12 @@ def _validated(items: list[dict], extractor: str,
 
 
 def extract_ingest_payload(ingest_payload: dict,
-                           llm: OllamaExtractor | None = None) -> ExtractionResult:
+                           llm: OllamaExtractor | None = None,
+                           scanner: filescan.Scanner | None = None) -> ExtractionResult:
     """ingest_payload is the JSON the capture client POSTed to /ingest
-    (the ingest_batches.payload column)."""
+    (the ingest_batches.payload column). `scanner` checks an email and its
+    attachments before anything parses them (YONDER-243); None = the static
+    PDF checks only, no antivirus."""
     result = ExtractionResult()
     channel = ingest_payload.get("capture_channel") or ""
     cc = ingest_payload.get("capture_context") or {}
@@ -143,6 +146,38 @@ def extract_ingest_payload(ingest_payload: dict,
         result.needs_review = True
         result.reasons.append(f"MIME decode failed: {ex}")
         return result
+
+    # 0 — scan before anything parses an attachment (YONDER-243). An infected
+    # message is quarantined; a scanner that can't answer means its
+    # attachments aren't parsed (fail closed), the body still is.
+    scanner = scanner or filescan.Scanner()
+    try:
+        import base64
+        hit = scanner.scan_message(base64.b64decode(raw_b64))
+    except filescan.ScanUnavailable as ex:
+        hit = None
+        if decoded.pdf_attachments:
+            result.trace.append(f"scan: antivirus unavailable ({ex}) — "
+                                f"{len(decoded.pdf_attachments)} attachment(s) not parsed")
+            decoded.pdf_attachments = []
+    if hit:
+        result.needs_review = True
+        result.reasons.append(f"quarantined: the antivirus scan found {hit} — "
+                              f"nothing was extracted from this email")
+        result.trace.append(f"scan: FOUND {hit}")
+        return result
+    safe_pdfs = []
+    for name, data in decoded.pdf_attachments:
+        verdict = scanner.check_pdf(data)
+        if verdict.ok:
+            safe_pdfs.append((name, data))
+            for note in verdict.notes:
+                result.trace.append(f"scan: {name!r} {note}")
+        else:
+            result.needs_review = True
+            result.reasons.append(f"attachment {name!r} blocked: {verdict.reason}")
+            result.trace.append(f"scan: {name!r} blocked ({verdict.reason})")
+    decoded.pdf_attachments = safe_pdfs
 
     # 1 — JSON-LD (measured ~0% hit rate, but free and authoritative when present)
     ld_items = [p for html in decoded.html_parts for p in jsonld.extract_jsonld(html)]

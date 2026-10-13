@@ -81,6 +81,12 @@ struct TripSummary: Codable, Identifiable, Hashable, Sendable {
     /// The airport codes the trip's flights visit, in order (server 4.7.1,
     /// YONDER-177). Optional: older servers and caches omit it.
     let airports: [String]?
+    /// The trip's free-text notes, editable with PATCH /trips/{id} (server
+    /// after 4.9.4, YONDER-239). Optional: older servers and caches omit it.
+    let notes: String?
+    /// False for a view-only share (D-122): hide Edit rather than meet a 403.
+    /// Optional: older servers omit it — treat nil as "try, and handle 403".
+    let can_edit: Bool?
 }
 
 struct ActivityOut: Codable, Identifiable, Hashable, Sendable {
@@ -227,6 +233,35 @@ struct TripRateOut: Codable, Hashable, Sendable {
 struct RateRefreshOut: Codable, Hashable, Sendable {
     let rate: TripRateOut
     let applied: [String]
+}
+
+/// The caller's own Discovery run on a trip (YONDER-238): POST
+/// /trips/{id}/discover starts it (optionally targeted, see DiscoverIn) (409 on an ended trip, D-157), GET
+/// /trips/{id}/discover/status polls it. Reload the trip once `running` is false.
+struct DiscoveryStatusOut: Codable, Hashable, Sendable {
+    let running: Bool
+    let phase: String?
+    let done: Int
+    let total: Int
+    let pct: Int
+    let ended: Bool
+    let ended_message: String?
+    /// running | done | failed | cancelled; nil = never run.
+    let last_status: String?
+    let last_started_at: String?
+    let last_finished_at: String?
+    /// What the latest run covered: nil = the whole suite, else one topic (and
+    /// one place) — a targeted refresh.
+    let last_topic: String?
+    let last_place_key: String?
+}
+
+/// POST /trips/{id}/discover body — omit it for the whole suite, or refresh
+/// one `topic` ("weather"), or one topic for one place ("PT:Lisbon", as on the
+/// finding). Unknown topic or a place without a topic → 400.
+struct DiscoverIn: Codable, Hashable, Sendable {
+    let topic: String?
+    let place_key: String?
 }
 
 /// A place, event or activity inside a Food & Drink or Events & Activities

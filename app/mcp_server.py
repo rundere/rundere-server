@@ -111,8 +111,9 @@ def list_trips() -> dict[str, Any]:
 
 @mcp.tool()
 def get_trip(trip_id: TripId) -> dict[str, Any]:
-    """Full snapshot of one trip: the timeline (each activity with its type,
-    values, times and `traveler_ids` — empty means everyone), the travellers,
+    """Full snapshot of one trip: the trip with its notes, the timeline (each
+    activity with its type, values, times and `traveler_ids` — empty means
+    everyone), the travellers,
     places with lat/lon, the user's OWN Discover findings (weather, currency,
     visa, food, saved research…), the places/events/activities inside the Food
     and Events findings (`discovery_items`, each tied to its finding by
