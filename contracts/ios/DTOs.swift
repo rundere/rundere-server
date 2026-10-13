@@ -81,6 +81,12 @@ struct TripSummary: Codable, Identifiable, Hashable, Sendable {
     /// The airport codes the trip's flights visit, in order (server 4.7.1,
     /// YONDER-177). Optional: older servers and caches omit it.
     let airports: [String]?
+    /// The trip's free-text notes, editable with PATCH /trips/{id} (server
+    /// after 4.9.4, YONDER-239). Optional: older servers and caches omit it.
+    let notes: String?
+    /// False for a view-only share (D-122): hide Edit rather than meet a 403.
+    /// Optional: older servers omit it — treat nil as "try, and handle 403".
+    let can_edit: Bool?
 }
 
 struct ActivityOut: Codable, Identifiable, Hashable, Sendable {
