@@ -287,6 +287,26 @@ if DEPS:
         # the callback follows the host the user came in on
         assert q["redirect_uri"] == [f"https://{_PUBLIC}/oidc/callback"]
 
+    def test_callback_ignores_the_host_headers_port_and_case(monkeypatch):
+        """YONDER-234: `Host: name:443` passes the hostname allowlist, but the
+        redirect_uri must still be the registered one (no ":443"), and the token
+        exchange must send the same URI."""
+        _per_host(monkeypatch)
+        c = TestClient(app, base_url=f"https://{_PUBLIC}")
+        for host in (f"{_PUBLIC}:443", _PUBLIC.upper()):
+            r = c.get("/oidc/login", headers={"Host": host}, follow_redirects=False)
+            q = parse_qs(urlparse(r.headers["location"]).query)
+            assert q["redirect_uri"] == [f"https://{_PUBLIC}/oidc/callback"], host
+        # plain http drops :80; a real non-default port (a dev server) is kept
+        r = TestClient(app, base_url=f"http://{_PUBLIC}:80").get(
+            "/oidc/login", follow_redirects=False)
+        q = parse_qs(urlparse(r.headers["location"]).query)
+        assert q["redirect_uri"] == [f"http://{_PUBLIC}/oidc/callback"]
+        r = TestClient(app, base_url=f"http://{_PUBLIC}:8000").get(
+            "/oidc/login", follow_redirects=False)
+        q = parse_qs(urlparse(r.headers["location"]).query)
+        assert q["redirect_uri"] == [f"http://{_PUBLIC}:8000/oidc/callback"]
+
     def test_forced_host_after_sso_error_shows_retry_without_password_form(monkeypatch):
         _per_host(monkeypatch)
         page = TestClient(app, base_url=f"https://{_PUBLIC}").get(

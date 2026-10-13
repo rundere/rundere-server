@@ -45,6 +45,23 @@ def listed_host(request) -> bool:
     return host in _host_list(settings.oidc_hosts) | _host_list(settings.oidc_force_hosts)
 
 
+_DEFAULT_PORTS = {"https": 443, "http": 80}
+
+
+def request_origin(request) -> str:
+    """scheme://host[:port] for this request, rebuilt from the parsed hostname —
+    never the raw Host header. A client can send `Host: name:443`, which passes
+    the hostname-only allowlist but would put ":443" in the OIDC redirect_uri
+    and fail the IdP's exact match (YONDER-234). Default ports are dropped; a
+    real non-default port (a dev server on :8000) is kept."""
+    scheme = request.url.scheme
+    port = request.url.port
+    origin = f"{scheme}://{request_host(request)}"
+    if port and port != _DEFAULT_PORTS.get(scheme):
+        origin += f":{port}"
+    return origin
+
+
 def forced_on(request) -> bool:
     """SSO is the only way to sign in on this host (YONDER-164)."""
     return enabled() and request_host(request) in _host_list(settings.oidc_force_hosts)
