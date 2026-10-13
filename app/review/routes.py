@@ -328,6 +328,17 @@ def _stage_path(bucket: str, review: dict) -> dict:
     return {"ignored": False, "steps": steps}
 
 
+def _trip_name(item: TravelItem) -> str | None:
+    """The name of the Run·dere trip the item is filed to, for the preview."""
+    if not item.trip_id:
+        return None
+    from sqlalchemy.orm import object_session
+    from app.models import Trip
+    session = object_session(item)
+    trip = session.get(Trip, item.trip_id) if session is not None else None
+    return trip.name if trip is not None else None
+
+
 # Review reasons from the AdventureLog collection ladder (see _view).
 _COLLECTION_CODES = {"no_collection_match", "ambiguous_collection", "collection_not_selected"}
 
@@ -406,7 +417,8 @@ def _view(item: TravelItem) -> dict:
         # record follows once a trip is picked) — it shows in 'Needs you' with a
         # reason but an ENABLED button, never the old reasonless dead end.
         "blocked": bucket == "attention" and resolve_state != "ok",
-        "writes": sm.write_preview(payload, resolution, item.revision),
+        "writes": sm.write_preview(payload, resolution, item.revision,
+                                   trip_name=_trip_name(item)),
         "payload": payload,
         "source": item.source or {},
     }

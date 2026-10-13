@@ -509,20 +509,32 @@ def resolve_item(session: Session, item: TravelItem,
 
     # ---- 1. keys
     key_result = keys_mod.keys_for(payload, cc)
-    if key_result is None and geocoder is not None \
-            and payload.get("item_type") == "ground_transport":
+    if key_result is None and payload.get("item_type") == "ground_transport" \
+            and (airports or geocoder is not None):
         # A drive keys on its endpoint coordinates, but a Maps link that only
         # names its stops carries none — locate them now rather than after
-        # keying, or the drive can never key (YONDER-121). Step 3 only fills
-        # blanks, so this is not repeated there.
-        payload = _geocode_places(payload, geocoder)
+        # keying, or the drive can never key (YONDER-121). An airport end is
+        # placed from its IATA code first: the geocoder skips places that have
+        # one, so a taxi to PHX never got coordinates and the item was wrongly
+        # told to "set the type" (2026-10-12). Step 3 only fills blanks, so
+        # neither is repeated there.
+        if airports:
+            payload = enrich_places_from_airports(payload, airports)
+        if geocoder is not None:
+            payload = _geocode_places(payload, geocoder)
         key_result = keys_mod.keys_for(payload, cc)
     if key_result is None:
         item.review = {**(item.review or {}), "required": True,
                        "reasons": [keys_mod.unkeyable_reason(payload, cc)]}
         item.resolution = {"ran_at": now, "outcome": "needs_review",
-                           "match_attempted": False}
+                           "match_attempted": False,
+                           "integrations": sorted(external)}
         item.status = {**(item.status or {}), "resolve": "needs_review"}
+        # Still file it to the one Run·dere trip its dates fall in, so the trip
+        # is chosen while the person fixes the rest (owner, 2026-10-12). A link
+        # they set or cleared by hand is left alone (trip_pinned).
+        start, end = item_date_span(payload)
+        _auto_link_yonder_trip(session, item, start, end)
         return "needs_review"
 
     # ---- 2. revision vs prior

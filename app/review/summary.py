@@ -117,7 +117,7 @@ _TARGET_LABEL = {
 
 
 def write_preview(item_payload: dict, resolution: dict,
-                  revision: dict | None = None) -> list[dict]:
+                  revision: dict | None = None, *, trip_name: str | None = None) -> list[dict]:
     """What logging this will actually do, including what it will NOT do.
 
     Suppressed places are listed explicitly and struck through: the system
@@ -212,7 +212,12 @@ def write_preview(item_payload: dict, resolution: dict,
                and not resolution.get("within_home_radius")
                and (resolution.get("collection_pending")
                     or resolution.get("outcome") in ("deferred", "needs_review")))
-    if no_trip:
+    if no_trip and trip_name:
+        # Filed to a trip, but held for something else (a missing date, an
+        # unplaced stop…): say that, not "pick a trip" (owner, 2026-10-12).
+        out.append({"system": "Run·dere", "state": "skip", "text": f"Add to {trip_name}",
+                    "why": "Waits until what's flagged above is fixed."})
+    elif no_trip:
         out.append({"system": "Run·dere", "state": "skip", "text": "Not on a trip yet",
                     "why": "Pick a trip above to put it on that trip's timeline."
                            + (" The flight still logs to AirTrail."
