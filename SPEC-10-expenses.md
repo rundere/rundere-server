@@ -62,6 +62,8 @@ people up and make the trip's actual cost.
   live call is made (D-146). An expense with no known rate is listed as
   unconverted and left out of the balances until a rate is given. Changing the
   trip currency re-fills rates that came from Discover and clears entered ones.
+  *Where a blank rate comes from, and the "no live call", are superseded by
+  D-195.*
 - **D-177 — Settling up is a recorded payment.** "Ana paid Ben 40" is a
   settlement row: Ana is the payer, Ben the only share. Balances net expenses and
   settlements together. Suggested payments are the greedy largest-debtor →
@@ -116,12 +118,47 @@ people up and make the trip's actual cost.
   opens on Actual. "Today" is the viewer's own date (D-187). A trip with no
   start date opens on Plan unless something has been spent. The iOS Costs view
   follows the same rule.
+- **D-195 — One dated rate table per trip; costs keep their rate
+  (YONDER-237; owner, 2026-10-13).** *"Shared context of a Trip is the
+  important aspect. Rates change rapidly and should be consistent for the
+  limited period of time that it matters, not haunt us forever or change old
+  trip data."* Supersedes the rate-source part of D-176.
+  - The trip has ONE shared table (`trip_rates`): units of the trip's balance
+    currency per 1 unit of another currency, for a date. Not per person.
+  - A blank rate is the table's rate for the cost's day: an expense's
+    `spent_on`, a planned item's start (else the trip's start); a future day,
+    or none, means today. Missing → that currency on that day is fetched from
+    Frankfurter and stored, so everyone asking about that day gets the same
+    number. The live call is optional (D-146): with no feed it falls back to
+    the nearest day already on the table, then to a Discover currency snapshot
+    (the trip owner's first, then the caller's), and otherwise the cost stays
+    unconverted.
+  - Each cost records the rate, its source (`frankfurter`, `discover`,
+    `entered`, `same`), the date it's for and the table row it came from.
+  - **No silent re-rating.** A cost re-derives only when its currency, its day
+    or an explicit rate actually changes, or when it has no rate yet. Sending
+    the same values back changes nothing; setting the balance currency to the
+    one it already is changes nothing.
+  - **Refresh one currency:** `POST /api/v1/trips/{id}/rates/{code}/refresh`
+    (`?date=`, default today; edit access) re-fetches that row. It converts
+    only the caller's own visible costs in that currency that had no rate
+    (D-183); costs with a rate keep it.
+  - **After the trip has ended** (owner, 2026-10-13) nothing is backdated. A
+    cost uses the table's rate for its day or the nearest day; only a currency
+    the trip has no rate for at all is fetched, at TODAY's rate (the day it's
+    added). A refresh on an ended trip is always today's.
+  - **The currency calculator** (web and app) converts with the latest stored
+    rate per currency on the trip's table, over the Discover snapshot, with no
+    live call. When a rate shown is older than today, people who can edit the
+    trip get "Update rates for today", which fetches today's rates onto the
+    table (costs keep theirs). The app reads the same rates from the trip
+    snapshot's `trip_rates` and refreshes through the endpoint above.
 
 ## Surfaces (first build)
 
 - `/api/v1/trips/{id}/expenses` (actuals, balances and the `plan`; create),
   `…/expenses/{eid}` (edit, delete), `…/settlements` (record a payment),
-  `…/expenses/currency`, `…/expenses/{eid}/comments` (comment; delete your own);
+  `…/expenses/currency`, `…/rates/{code}/refresh` (D-195), `…/expenses/{eid}/comments` (comment; delete your own);
   `…/budget` (plan a cost), `…/budget/batch` (research drafts), `…/budget/{bid}`
   (edit/keep, delete).
 - MCP: `list_expenses`, `add_expense`, `record_settlement`, `delete_expense`,

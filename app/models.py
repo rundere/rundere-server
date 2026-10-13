@@ -1066,7 +1066,10 @@ class TripExpense(Base):
     amount: Mapped[str] = mapped_column(String(32))                       # decimal string
     currency: Mapped[str] = mapped_column(String(3))
     rate: Mapped[str | None] = mapped_column(String(32))                  # trip currency per 1 unit
-    rate_source: Mapped[str | None] = mapped_column(String(12))           # same | entered | discover
+    rate_source: Mapped[str | None] = mapped_column(String(12))           # same | entered | frankfurter | discover
+    # D-195: the date the rate is for, and the trip_rates row it came from (soft).
+    rate_date: Mapped[str | None] = mapped_column(String(10))
+    rate_id: Mapped[str | None] = mapped_column(String(36))
     spent_on: Mapped[str | None] = mapped_column(String(10), index=True)  # ISO date
     payer_id: Mapped[int] = mapped_column(Integer)
     split: Mapped[str] = mapped_column(String(8), default="equal")        # equal | exact
@@ -1106,6 +1109,8 @@ class TripBudgetItem(Base):
     currency: Mapped[str] = mapped_column(String(3))
     rate: Mapped[str | None] = mapped_column(String(32))
     rate_source: Mapped[str | None] = mapped_column(String(12))
+    rate_date: Mapped[str | None] = mapped_column(String(10))             # D-195, as on TripExpense
+    rate_id: Mapped[str | None] = mapped_column(String(36))
     status: Mapped[str] = mapped_column(String(8), default="kept")        # draft | kept
     # D-184: when it applies for these travellers, if not the whole trip (no multiplying).
     start_date: Mapped[str | None] = mapped_column(String(10))
@@ -1118,6 +1123,30 @@ class TripBudgetItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TripRate(Base):
+    """One exchange rate on a trip's shared, dated rate table (YONDER-237, D-195):
+    units of `quote` (the trip's balance currency) per 1 `currency`, for
+    `rate_date`. One table for everyone on the trip, so two travellers asking
+    about the same day get the same number. `as_of` is the date the feed
+    actually published (Frankfurter answers a weekend with Friday's rate).
+    Expenses copy the rate they used, so refreshing a row never re-rates them.
+    Soft link on trip_id (house rule 3); purged with the trip's expenses."""
+    __tablename__ = "trip_rates"
+    __table_args__ = (UniqueConstraint("trip_id", "currency", "quote", "rate_date",
+                                       name="uq_trip_rate_day"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    currency: Mapped[str] = mapped_column(String(3))
+    quote: Mapped[str] = mapped_column(String(3))
+    rate_date: Mapped[str] = mapped_column(String(10))
+    rate: Mapped[str] = mapped_column(String(32))
+    as_of: Mapped[str | None] = mapped_column(String(10))
+    source: Mapped[str] = mapped_column(String(12))                       # frankfurter | discover
+    fetched_by: Mapped[str | None] = mapped_column(String(36))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class TripBudgetTraveler(Base):

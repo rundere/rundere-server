@@ -13,10 +13,12 @@ The one place the expense rules live, so /api/v1 and MCP never diverge:
   the trip's roster when the expense is saved. Shares are always stored, an equal
   split divided to the currency's minor unit with the leftover going to the first
   travellers in id order, so they add up exactly.
-- **Own currency + the rate used (D-176).** Balances are in the trip's expense
-  currency. A blank rate is filled from the caller's stored Discover currency
-  rates for the trip (no live call, D-146); unknown stays NULL and the expense is
-  listed as unconverted instead of guessed.
+- **Own currency + the rate used (D-176, D-195).** Balances are in the trip's
+  expense currency. A blank rate comes from the TRIP's dated rate table
+  (app/rates.py) for the cost's day — the same number for everyone on the trip;
+  unknown stays NULL and the expense is listed as unconverted instead of guessed.
+  A cost keeps the rate it was converted with: it re-derives only when its
+  currency, day or rate changes, or when it had no rate yet.
 - **Settlements are payments (D-177)** and net with expenses; suggested payments
   are a greedy largest-debtor → largest-creditor match.
 - **Planned vs actual (D-178–D-181, D-184).** Planned items (TripBudgetItem) are
@@ -39,9 +41,10 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from sqlalchemy.orm import Session
 
 from app import scope
+from app import rates as rates_svc
 from app.models import (DiscoveryFinding, TravelerIdentity, Trip, TripBudgetItem,
                         TripBudgetTraveler, TripExpense, TripExpenseComment,
-                        TripExpenseShare)
+                        TripExpenseShare, TripRate)
 from app.trips import who
 
 EXPENSE, SETTLEMENT = "expense", "settlement"
@@ -108,16 +111,24 @@ def _fmt(d: Decimal | None) -> str | None:
 def discover_rate(session: Session, trip_id: str, user_id: str | None,
                   frm: str, to: str) -> Decimal | None:
     """Units of `to` per 1 `frm` from the caller's stored currency findings on this
-    trip (D-65 snapshots), pivoting through a base both are quoted against — the
-    same table the trip's currency calculator uses. None when it can't tell."""
+    trip (D-65 snapshots). None when it can't tell."""
+    return discover_quote(session, trip_id, user_id, frm, to)[0]
+
+
+def discover_quote(session: Session, trip_id: str, user_id: str | None,
+                   frm: str, to: str) -> tuple[Decimal | None, str | None]:
+    """discover_rate plus the snapshot's date: pivots through a base both are
+    quoted against — the same table the trip's currency calculator uses. Since
+    D-195 only a FALLBACK for the trip's rate table (app/rates.py)."""
     if frm == to:
-        return Decimal(1)
+        return Decimal(1), None
     q = session.query(DiscoveryFinding).filter(DiscoveryFinding.trip_id == trip_id,
                                                DiscoveryFinding.topic == "currency")
     if user_id is not None:
         q = q.filter(DiscoveryFinding.user_id == user_id)
     # per_base[base][code] = units of code per 1 base.
     per_base: dict[str, dict[str, Decimal]] = {}
+    dated: dict[str, str | None] = {}
     for f in q.all():
         for code, per in ((f.data or {}).get("rates") or {}).items():
             for key, v in (per or {}).items():
@@ -128,10 +139,12 @@ def discover_rate(session: Session, trip_id: str, user_id: str | None,
                 if val > 0:
                     base = key.replace("per_", "")
                     per_base.setdefault(base, {base: Decimal(1)})[str(code).upper()] = val
-    for table in per_base.values():
+                    dated.setdefault(base, (f.data or {}).get("date"))
+    for base, table in per_base.items():
         if frm in table and to in table:
-            return (table[to] / table[frm]).quantize(_RATE_Q, rounding=ROUND_HALF_UP)
-    return None
+            return ((table[to] / table[frm]).quantize(_RATE_Q, rounding=ROUND_HALF_UP),
+                    dated.get(base))
+    return None, None
 
 
 # --------------------------------------------------------------------------- currency picker
@@ -321,17 +334,36 @@ def _check_activity(session: Session, trip_id: str, activity_id: str | None) -> 
     return a.id
 
 
-def _apply_rate(session: Session, trip: Trip, e: TripExpense, user_id: str | None,
-                entered) -> None:
+def _apply_rate(session: Session, trip: Trip, e, user_id: str | None, entered,
+                look: rates_svc.Lookup | None = None) -> None:
+    """Set a cost's rate (an expense or a planned item): same currency → 1; an
+    entered rate as given; otherwise the trip's rate table for the cost's day
+    (D-195) — or NULL, unconverted."""
     tc = trip.expense_currency
     given = _rate(entered)
+    e.rate_id = None
     if tc is None or e.currency == tc:
-        e.rate, e.rate_source = "1", "same"
+        e.rate, e.rate_source, e.rate_date = "1", "same", None
     elif given is not None:
         e.rate, e.rate_source = _fmt(given), "entered"
+        e.rate_date = rates_svc.day_for(e, trip)
     else:
-        found = discover_rate(session, trip.id, user_id, e.currency, tc)
-        e.rate, e.rate_source = (_fmt(found), "discover") if found is not None else (None, None)
+        look = look or rates_svc.Lookup(session, trip, user_id)
+        row = look.find(e.currency, tc, rates_svc.day_for(e, trip))
+        if row is None:
+            e.rate, e.rate_source, e.rate_date = None, None, None
+        else:
+            e.rate, e.rate_source = row.rate, row.source
+            e.rate_date, e.rate_id = row.as_of or row.rate_date, row.id
+
+
+def _rerate(e, changes: dict, before: tuple) -> bool:
+    """D-195: re-derive a cost's rate only when something it depends on really
+    changed — an explicit rate, a different currency or day — or it had none.
+    Sending the same currency back (the app does on every edit) changes nothing."""
+    if changes.get("rate") is not None:
+        return True
+    return e.rate is None or (e.currency, rates_svc.day_key(e)) != before
 
 
 def _check_date(d: str | None) -> str | None:
@@ -404,6 +436,7 @@ def record_settlement(session: Session, user, trip: Trip, *, from_id: int, to_id
 def update(session: Session, user, trip: Trip, e: TripExpense, changes: dict) -> TripExpense:
     """Apply the fields in `changes` (ExpenseInput field names). Changing the
     amount, currency or split rebuilds the shares. Caller commits."""
+    before = (e.currency, rates_svc.day_key(e))
     for key in ("title", "notes"):
         if key in changes and changes[key] is not None:
             setattr(e, key, (changes[key] or "").strip()[:200] if key == "title"
@@ -450,7 +483,7 @@ def update(session: Session, user, trip: Trip, e: TripExpense, changes: dict) ->
                               ids, exact)
         e.split = split
         _write_shares(session, e.id, shares)
-    if changes.get("rate") is not None or changes.get("currency") is not None:
+    if _rerate(e, changes, before):
         _apply_rate(session, trip, e, getattr(user, "id", None), changes.get("rate"))
     session.flush()
     return e
@@ -465,13 +498,34 @@ def delete(session: Session, e: TripExpense) -> None:
 
 
 def set_trip_currency(session: Session, user, trip: Trip, currency: str) -> None:
-    """Change the balance currency (D-176): rates are re-derived — same currency
-    becomes 1, Discover rates are looked up again, entered rates are cleared
-    (they were against the old currency) and must be given again."""
-    trip.expense_currency = currency_code(currency)
-    uid = getattr(user, "id", None)
+    """Change the balance currency (D-176, D-195): every cost is converted again
+    from the trip's rate table at its own day (same currency becomes 1); entered
+    rates are cleared (they were against the old currency) and must be given
+    again. The same currency again changes nothing."""
+    code = currency_code(currency)
+    if code == trip.expense_currency:
+        return
+    trip.expense_currency = code
+    look = rates_svc.Lookup(session, trip, getattr(user, "id", None))
     for e in [*expenses_of(session, trip.id), *budget_of(session, trip.id)]:
-        _apply_rate(session, trip, e, uid, None)
+        _apply_rate(session, trip, e, look.user_id, None, look)
+
+
+def apply_to_unconverted(session: Session, trip: Trip, user, currency: str) -> list[str]:
+    """After a rate refresh (YONDER-242): convert the caller's VISIBLE costs in
+    `currency` that have no rate yet (D-183 — nobody's hidden costs are
+    touched). Costs that already have a rate keep it. Returns their ids."""
+    look = rates_svc.Lookup(session, trip, getattr(user, "id", None))
+    done = []
+    expenses, _ = visible_expenses(session, trip, user)
+    budget = [b for b in budget_of(session, trip.id) if can_see_budget(session, user, b)]
+    for e in [*expenses, *budget]:
+        if e.currency == currency and e.rate is None:
+            _apply_rate(session, trip, e, look.user_id, None, look)
+            if e.rate is not None:
+                done.append(e.id)
+    session.flush()
+    return done
 
 
 def unlink_activity(session: Session, activity_id: str) -> None:
@@ -497,6 +551,8 @@ def purge_trip(session: Session, trip_id: str) -> None:
     session.query(TripBudgetItem).filter(TripBudgetItem.trip_id == trip_id).delete(
         synchronize_session=False)
     session.query(TripExpenseComment).filter(TripExpenseComment.trip_id == trip_id).delete(
+        synchronize_session=False)
+    session.query(TripRate).filter(TripRate.trip_id == trip_id).delete(
         synchronize_session=False)
 
 
@@ -784,6 +840,7 @@ def create_budget(session: Session, user, trip: Trip, data: BudgetInput,
 def update_budget(session: Session, user, trip: Trip, b: TripBudgetItem,
                   changes: dict) -> TripBudgetItem:
     """Edit a planned item; a person's edit keeps it (a draft becomes theirs)."""
+    before = (b.currency, rates_svc.day_key(b))
     if changes.get("title") is not None:
         b.title = (changes["title"] or "").strip()[:200]
     if changes.get("category") is not None:
@@ -811,7 +868,7 @@ def update_budget(session: Session, user, trip: Trip, b: TripBudgetItem,
         b.status = changes["status"]
     elif changes:
         b.status = KEPT
-    if changes.get("rate") is not None or changes.get("currency") is not None:
+    if _rerate(b, changes, before):
         _apply_rate(session, trip, b, getattr(user, "id", None), changes.get("rate"))
     session.flush()
     return b

@@ -210,6 +210,29 @@ struct TripSnapshot: Codable, Hashable, Sendable {
     let discovery_profile: JSONValue?
     var packing: PackingOut?
     let captures: [CaptureLite]
+    /// Newest stored rate per currency into the trip's balance currency (D-195):
+    /// the calculator uses these over the Discover snapshot, with no live call;
+    /// one older than today → offer "Update rate for today" (rates refresh).
+    /// Optional: older servers omit it.
+    let trip_rates: [TripRateOut]?
+}
+
+/// One row of the trip's shared rate table (D-195, YONDER-237).
+struct TripRateOut: Codable, Hashable, Sendable {
+    let currency: String
+    let quote: String
+    let rate_date: String
+    let rate: String
+    let as_of: String?
+    let source: String               // frankfurter | discover
+    let fetched_at: String?
+}
+
+/// POST /trips/{id}/rates/{code}/refresh?date= (YONDER-242): the fetched rate
+/// and the caller's costs it converted. 409 = trip ended; 422 = no rate to get.
+struct RateRefreshOut: Codable, Hashable, Sendable {
+    let rate: TripRateOut
+    let applied: [String]
 }
 
 /// The caller's own Discovery run on a trip (YONDER-238): POST
@@ -588,7 +611,10 @@ struct ExpenseOut: Codable, Identifiable, Hashable, Sendable {
     let amount: String
     let currency: String
     let rate: String?                // trip currency per 1 unit; nil = unconverted
-    let rate_source: String?         // same | entered | discover
+    let rate_source: String?         // same | entered | frankfurter | discover
+    /// The day the rate is for ("1 USD = 0.92 EUR · 12 Oct"), D-195. Optional:
+    /// older servers omit it.
+    let rate_date: String?
     let amount_in_trip_currency: String?
     let spent_on: String?
     let payer_id: Int
@@ -636,6 +662,7 @@ struct BudgetItemOut: Codable, Identifiable, Hashable, Sendable {
     let total: String?               // trip currency; nil = no rate
     let rate: String?
     let rate_source: String?
+    let rate_date: String?           // D-195; optional for older servers
     let status: String               // draft (an agent's suggestion) | kept
     let place_key: String?
     let activity_id: String?

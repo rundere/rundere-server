@@ -50,7 +50,7 @@
         <div class="field" id="ex-rate-field" data-trip-cur="{{ trip_currency or '' }}">
           <label for="ex-rate" id="ex-rate-label">Exchange rate</label>
           <input id="ex-rate" class="input" name="rate" value="{{ form.rate }}" inputmode="decimal"
-                 placeholder="blank = your Discover rates">
+                 placeholder="blank = the trip's rate for that day">
         </div>
       </div>
       {% if not settlement %}
