@@ -152,6 +152,38 @@ class RefreshBody(BaseModel):
     refresh: str
 
 
+class AuthMethodsOut(BaseModel):
+    """How someone may sign in on the host this was asked on (YONDER-180)."""
+    password: bool                 # POST /api/v1/auth/login is accepted here
+    oauth: bool                    # /oauth/authorize (the server's own OAuth, YONDER-107)
+    sso: bool                      # "Sign in with <sso_name>" is offered here
+    sso_name: str | None = None
+    sso_forced: bool = False       # SSO is the only way in on the web here
+    registration_open: bool = False
+    server_name: str = "Run·dere"
+    version: str
+
+
+@router.get("/api/v1/auth/methods", response_model=AuthMethodsOut)
+def api_auth_methods(request: Request):
+    """The sign-in choices for THIS host, unauthenticated, for the app's login
+    screen (YONDER-180): the same per-host rules as the web login
+    (_login_options, YONDER-164). The host is the one the request was made to —
+    never a forwarded or proxy-supplied identity header. An older server
+    answers 404, which the app reads as "password only"."""
+    from app import oidc
+    from app.config import settings
+    forced = oidc.forced_on(request)
+    sso = oidc.offered_on(request)
+    return {"password": not (settings.oidc_force_api_login and forced),
+            "oauth": True,
+            "sso": sso,
+            "sso_name": settings.oidc_display_name if sso else None,
+            "sso_forced": forced,
+            "registration_open": settings.auth_registration_open and not forced,
+            "version": settings.app_version}
+
+
 @router.post("/api/v1/auth/login", response_model=TokenOut)
 def api_login(body: LoginBody, request: Request, session: Session = Depends(get_session)):
     from app import oidc

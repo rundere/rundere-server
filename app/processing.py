@@ -27,7 +27,8 @@ def _source(batch: IngestBatch, payload: dict) -> dict:
     channel = payload.get("capture_channel") or "gmail"
     return {
         "type": {"gmail": "gmail", "maps_url": "maps", "apple_maps_url": "maps",
-                 "gcal": "gcal", "web": "web"}.get(channel, "manual"),
+                 "gcal": "gcal", "web": "web",
+                 "email": "email"}.get(channel, "manual"),     # D-190 email forward
         "ref": payload.get("message_id") or batch.artifact_sha256 or batch.id,
         "thread_ref": payload.get("thread_id"),
         "received_at": batch.received_at.isoformat(),

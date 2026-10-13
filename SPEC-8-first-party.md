@@ -231,6 +231,19 @@ request forgery (SSRF) risk.
 - **D-148 — `yonder.activity` is the primary write target.** External targets
   exist only for capture owners with an enabled connection. Trip matching runs
   against Rundere trips first. (built 4.8)
+- **D-192 — In review, AdventureLog is optional and second (owner, 2026-10-12).**
+  An item filed to a Run·dere trip is ready to approve even when no AdventureLog
+  collection matches: the miss no longer puts it in "Needs you", the Run·dere
+  activity is its target, and the AdventureLog records wait until a collection is
+  picked. A flight's open passenger question still needs you. On the item page the
+  **Trip** picker comes first; AdventureLog sits below it, folded and marked
+  optional, and only appears when the owner has a connection (D-150). Notes and
+  the "what logging writes" preview name the system they mean ("No AdventureLog
+  collection matches these dates", never "No trip covers these dates" for an item
+  already on a trip), and mention AdventureLog and AirTrail only to people who have
+  them connected; each resolution records the `integrations` it saw for this.
+  "Log approved" opens as a sheet (design board) and names only the systems its
+  writes go to. (built 4.9)
 - **D-149 — External writes are owner-scoped.** Until per-user connections
   exist, only the credential owner's captures produce AirTrail or AdventureLog
   targets. (shipped as D-156; superseded by D-150 in 4.8)

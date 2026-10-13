@@ -946,6 +946,32 @@ def api_job(job_id: str, user=Depends(authn.current_user)):
     return _job_out(job)
 
 
+# --------------------------------------------------------------------------- email forward (D-190)
+class InboxAddressOut(BaseModel):
+    enabled: bool                    # the server's mailbox is set up
+    address: str | None = None       # your own forward-to address
+
+
+@router.get("/capture/email-address", response_model=InboxAddressOut)
+def api_inbox_address(user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    """Your own email-forward address (SPEC-9 D-162): forward a confirmation to
+    it and it lands in your review queue. Made the first time it's asked for;
+    `enabled: false` when the server's mailbox isn't set up."""
+    from app import inbox
+    return {"enabled": inbox.configured(), "address": inbox.user_address(session, user)}
+
+
+@router.post("/capture/email-address/rotate", response_model=InboxAddressOut)
+def api_inbox_rotate(user=Depends(authn.first_party_user),
+                     session: Session = Depends(get_session)):
+    """A new address; the old one stops working at once. First-party only: a
+    connected app can't retire the address your forwarding rules use."""
+    from app import inbox
+    if not inbox.configured():
+        raise HTTPException(409, "the email inbox isn't set up on this server")
+    return {"enabled": True, "address": inbox.rotate(session, user)}
+
+
 # --------------------------------------------------------------------------- write
 @router.post("/capture", response_model=CaptureOut, status_code=202)
 def api_capture(body: CaptureIn, user=Depends(authn.current_user),

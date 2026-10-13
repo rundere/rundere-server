@@ -328,6 +328,10 @@ def _stage_path(bucket: str, review: dict) -> dict:
     return {"ignored": False, "steps": steps}
 
 
+# Review reasons from the AdventureLog collection ladder (see _view).
+_COLLECTION_CODES = {"no_collection_match", "ambiguous_collection", "collection_not_selected"}
+
+
 def _view(item: TravelItem) -> dict:
     payload = (item.extraction or {}).get("payload") or {}
     resolution = item.resolution or {}
@@ -346,9 +350,29 @@ def _view(item: TravelItem) -> dict:
                  else ["low_confidence"])
 
     note = reason_text.headline(codes)
+    action_hint = reason_text.action_hint(codes)
     if resolution.get("outcome") == "deferred" and deferred_until:
         note = (f"No trip covers these dates yet. Waiting until {deferred_until}, "
                 f"then it comes back to you.")
+    # The collection codes come from the AdventureLog ladder. Say which "trip"
+    # they mean (D-192): an item already on a Run·dere trip only lacks the
+    # OPTIONAL AdventureLog collection; one with no trip lacks a Run·dere trip.
+    al_on = "adventurelog" in resolution.get("integrations", ["adventurelog"])
+    trip_codes = set(codes) & _COLLECTION_CODES
+    if item.trip_id and (trip_codes or resolution.get("outcome") == "deferred"):
+        if not al_on:
+            note, action_hint = "", ""
+        elif "ambiguous_collection" in trip_codes:
+            note = ("More than one AdventureLog collection could hold this. It's on your "
+                    "Run·dere trip; choosing a collection is optional.")
+            action_hint = "Pick one under AdventureLog, or leave it."
+        else:
+            note = ("No AdventureLog collection matches these dates. It's on your "
+                    "Run·dere trip; adding it to AdventureLog is optional.")
+            action_hint = "Pick a collection under AdventureLog, or leave it."
+    elif not item.trip_id and al_on and (trip_codes or resolution.get("outcome") == "deferred"):
+        note = note.replace("No trip covers these dates yet.",
+                            "No Run·dere trip or AdventureLog collection covers these dates yet.")
     if (item.revision or {}).get("action") == "no_change":
         note = "Already logged from an earlier capture — this one writes nothing."
     if (item.revision or {}).get("action") == "supersede":
@@ -363,8 +387,10 @@ def _view(item: TravelItem) -> dict:
         "subline": sm.subline(payload),
         "reference": sm.reference(payload),
         "note": note,
-        "action_hint": reason_text.action_hint(codes),
+        "action_hint": action_hint,
         "reason_codes": codes,
+        # The optional AdventureLog collection is still unsettled (D-192).
+        "al_pending": bool(resolution.get("collection_pending")),
         "canonical_key": item.canonical_key,
         "locked_fields": (item.revision or {}).get("field_locks") or [],
         "revision_action": (item.revision or {}).get("action"),
@@ -1075,8 +1101,10 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
         except Exception as ex:
             log.exception("commit preview failed")
             error = str(ex)
+        _label_plans(session, summary)
         return templates.TemplateResponse(request, "_commit_preview.html", {
-            "summary": summary, "error": error, "bucket": b})
+            "summary": summary, "error": error, "bucket": b,
+            "systems_text": _systems_text(summary)})
 
     # EXECUTE is the slow, irreversible write — run it as a background job.
     if jobs.current_running():
@@ -1126,6 +1154,38 @@ def job_status(job_id: str, request: Request, bucket: str = "attention",
 def job_dismiss(job_id: str):
     jobs.dismiss(job_id)
     return HTMLResponse("")
+
+
+def _label_plans(session: Session, summary: dict) -> None:
+    """Readable names for the preview: the item's own headline (not its
+    canonical key) and, per write, the system and what it is — the raw target
+    code stays only as a tooltip."""
+    from app.models import Trip
+    from app.review import summary as sm
+    for plan in summary.get("plans") or []:
+        item = session.get(TravelItem, plan.get("item_id")) if plan.get("item_id") else None
+        payload = ((item.extraction or {}).get("payload") or {}) if item else {}
+        plan["title"] = sm.headline(payload) if payload else plan.get("headline")
+        trip = session.get(Trip, item.trip_id) if item is not None and item.trip_id else None
+        for r in plan.get("results") or []:
+            system, label = sm._TARGET_LABEL.get(r.get("target"), ("", r.get("target")))
+            if r.get("target") == "yonder.activity":
+                label = f"On {trip.name}" if trip is not None else "On your trip"
+            r["system"], r["label"] = system, label
+
+
+_SYSTEM_NAMES = (("yonder", "your Run·dere trips"), ("airtrail", "AirTrail"),
+                 ("adventurelog", "AdventureLog"))
+
+
+def _systems_text(summary: dict) -> str:
+    """Where this run will actually write, in plain words — only the systems a
+    planned write goes to, so nobody without AdventureLog reads about it (D-192)."""
+    hit = {str(r.get("target", "")).split(".", 1)[0]
+           for plan in summary.get("plans") or [] for r in plan.get("results") or []
+           if not r.get("skipped")}
+    names = [name for key, name in _SYSTEM_NAMES if key in hit] or ["your Run·dere trips"]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
 @router.get("/commit/cancel", response_class=HTMLResponse)

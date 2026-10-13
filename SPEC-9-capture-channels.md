@@ -1,9 +1,10 @@
 # SPEC-9 — Capture channels and the one-step capture flow
 
-**Status: PLANNING (2026-10-02), revised after owner review.** Decisions D-158–D-160, D-162,
-D-163 and D-164 are **proposed** (D-161 is the design-token decision in SPEC-8). Nothing here is
-built yet; section 2 documents what exists today (read from the code), sections 3–7 are
-the proposal. Related Plane items: YONDER-159–163 (capture page redesign), YONDER-199
+**Status: PLANNING (2026-10-02), revised after owner review.** D-162 and D-190 (email
+forward) are built (2026-10-12). Decisions D-158–D-160, D-163 and D-164 were proposed here
+(D-161 is the design-token decision in SPEC-8); several have shipped since, so check the code
+and Plane for each. Section 2 documents what existed on 2026-10-02 (read from the code);
+sections 3–7 are the proposal. Related Plane items: YONDER-159–163 (capture page redesign), YONDER-199
 (email forward), YONDER-54 (iOS Share Extension), YONDER-179 (file capture API),
 YONDER-200 (Maps place link).
 
@@ -167,6 +168,46 @@ The page's own capture box is not a tab, because it needs no setup.
     as D-158 for that user's batch. The result is an item in their approval queue (D-31).
   - *Needs from the deployment:* a mailbox that supports plus addressing and IMAP access. The
     Email tab says so when the admin has not configured one.
+  - **Built 2026-10-12 (YONDER-199), with the details in D-190.** This supersedes the
+    verified-sender idea in the original Plane item: the address alone decides.
+
+- **D-190 — How the email inbox is built (YONDER-199; owner, 2026-10-12).**
+  - *Configuration:* `TX_INBOX_ADDRESS` and `TX_INBOX_IMAP_*`, like SMTP. The mailbox
+    password is read from the environment only, never stored in the database or shown in a
+    log or status line. With no host, user or address the feature is off and the tab says so.
+  - *Address:* `local+<token>@domain`. The token is 12 random characters from an alphabet
+    without look-alikes; one per user (`inbox_addresses`); made the first time it is shown;
+    regenerated from the Email tab or `POST /api/v1/capture/email-address/rotate`
+    (first-party only).
+  - *Recipient:* read from `Delivered-To`, `X-Original-To`, `Envelope-To`, `X-Forwarded-To`,
+    `To` and `Cc`, so a forwarding rule that keeps the original `To` still works. A message
+    addressed to several people's tokens becomes one capture each. A deactivated user's
+    address matches no one.
+  - *Capture:* an `email`-channel batch shaped like the Gmail add-on's (raw RFC 2822,
+    D-15; `source.type` `email`). Mail forwarded as an attachment keeps the original's
+    booking markup, because the MIME decoder walks into it. Then auto-process (D-158).
+  - *Dropped, never stored:* no matching address, larger than `TX_INBOX_MAX_BYTES` (never
+    downloaded), or over `TX_INBOX_RATE_LIMIT` captures per address per hour. Such mail is
+    moved to the dropped folder, and only the outcome is recorded (`inbox_messages`: no
+    sender, subject or body).
+  - *Exactly once:* `inbox_messages.message_key` = sha256(Message-ID, or the raw bytes, +
+    user) is unique, so a re-forward, a second poll or a second worker never captures twice.
+  - *Mailbox housekeeping:* captured mail moves to `TX_INBOX_DONE_FOLDER`, everything else
+    to `TX_INBOX_DROPPED_FOLDER` (IMAP MOVE, or copy + expunge). Admins see the read mode, the
+    last read, the last error and a 7-day count on the Email tab.
+  - *Real time (owner, 2026-10-12):* one reader thread per process holds an **IMAP IDLE**
+    (RFC 2177), so the mail server tells Run·dere about new mail and it is read within
+    seconds. The reader re-IDLEs every 20 minutes and reconnects after a drop. A server
+    without IDLE, or `TX_INBOX_IDLE=false`, falls back to reading every
+    `TX_INBOX_POLL_SECONDS`. Email is the only channel that needs this. Every other channel
+    (the add-ons, the bookmarklet, the capture box, the API, MCP) is an HTTP request *to*
+    Run·dere, answered at once. After capture, processing is the same for all (D-158).
+  - *"Got it" (owner, 2026-10-12):* as soon as a forward is captured, an email goes to the
+    capture owner's **own account address**, never to the sender, which nobody verified, so a
+    forged sender can't make Run·dere mail a stranger. It needs SMTP and an email on the
+    account; the Email tab says which address it goes to, or asks for one.
+    `TX_INBOX_ACKNOWLEDGE=false` turns it off.
+  - *Not in v1:* a webhook front door for mail services that push mail over HTTP.
 
 ## 6. Proposed: iOS Share Extension feedback (D-163)
 
@@ -232,7 +273,14 @@ points that share one parser (`extract/place_url.py`) and one category table:
 - **D-158** — Capture-page captures start processing immediately; approval stays human (D-31).
 - **D-159** — The bookmarklet hands the page over by `window.open` + `postMessage`.
 - **D-160** — The capture page is the always-used capture box plus a click-through guide with a
-  tab per channel; each tab is an instruction manual with status.
+  tab per channel; each tab is an instruction manual with status. *Layout revised by D-191.*
+- **D-191 — The capture page shows every guide as a card (owner, 2026-10-12).** The single
+  "See the guides" link was easy to miss, and reaching one guide took three clicks. Now the
+  left column holds the capture box with **Recent captures as a second tab** (linkable as
+  `#recent`). The right column is a prominent **"Other ways to capture"** with one card per
+  channel: what it is, its status (last capture, "Coming soon", or "Needs your server's
+  mailbox"), the person's email-forward address when they have one, and a link **straight to
+  that channel's guide tab**. The guides themselves stay on `/capture/setup`, as D-160 set out.
 - **D-162** — Email forward uses a server-generated per-user plus address.
 - **D-163** — The iOS Share Extension confirms receipt with a notification at minimum.
 - **D-164** — The Gmail add-on no longer moves labels and no longer asks for `gmail.modify`;

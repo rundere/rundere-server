@@ -160,6 +160,28 @@ class Settings(BaseSettings):
     # Implicit TLS from the first byte (SMTPS, usually port 465) instead of
     # upgrading a plain connection with STARTTLS (usually 587).
     smtp_ssl: bool = False
+    # Email-forward capture (SPEC-9 D-162, D-190; YONDER-199). The admin owns one
+    # mailbox that accepts plus-addressed mail; each user forwards confirmations
+    # to `local+<their token>@domain`. Off until host, user and address are set.
+    # Configured here like SMTP, so the mailbox password never enters the database.
+    inbox_address: str = ""                  # e.g. trips@example.com — what users see
+    inbox_imap_host: str = ""
+    inbox_imap_port: int = 993
+    inbox_imap_user: str = ""
+    inbox_imap_password: str = ""
+    inbox_imap_ssl: bool = True              # False: plain connection upgraded with STARTTLS
+    inbox_folder: str = "INBOX"              # where forwarded mail arrives
+    inbox_done_folder: str = "Rundere/Captured"     # captured (or already captured) mail
+    inbox_dropped_folder: str = "Rundere/Dropped"   # unknown address, too big, rate-limited
+    # Push: hold an IMAP IDLE so new mail is read within seconds (D-190); when the
+    # server can't IDLE, or this is off, read every inbox_poll_seconds instead.
+    inbox_idle: bool = True
+    inbox_poll_seconds: int = 120
+    # A "got it" email to the capture's owner (their account address, never the
+    # sender) as soon as it's captured. Needs SMTP; skipped without it.
+    inbox_acknowledge: bool = True
+    inbox_max_bytes: int = 10_000_000        # larger mail is dropped, not fetched
+    inbox_rate_limit: int = 30               # captures per address per hour
     # Absolute base (e.g. https://yonder.home.example) for links in emails. Empty
     # => derive from the request that triggered the reset.
     public_base_url: str = ""

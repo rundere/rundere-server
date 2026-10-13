@@ -15,6 +15,16 @@ from discover.resolvers.base import Finding, ResolverContext, get_json, qs
 
 _SOURCE = [{"title": "Open-Meteo", "url": "https://open-meteo.com"}]
 _DAILY = "temperature_2m_max,temperature_2m_min,precipitation_sum"
+# D-189 (YONDER-211): air temperature alone misleads — 15 °C at 1,600 m in dry
+# air feels far colder. Feels-like and humidity come from the same call, in all
+# three modes (forecast and archive both accept them, checked live 2026-10-12),
+# and `elevation` is in every response, so altitude costs no extra request.
+_DAILY_EXTRA = ("apparent_temperature_max,apparent_temperature_min,"
+                "relative_humidity_2m_mean,relative_humidity_2m_min,relative_humidity_2m_max")
+HIGH_ALTITUDE_M = 1500        # thinner air, stronger sun, faster dehydration
+BIG_SWING_C = 15              # a day/night swing worth packing for
+_HUMIDITY_BANDS = [(85, "very humid"), (70, "humid"), (45, "comfortable"),
+                   (30, "dry"), (-1, "very dry")]
 # Open-Meteo's forecast endpoint accepts end_date up to (today + 15) inclusive —
 # confirmed live (a +16 request 400s: "out of allowed range ... today+15"). This
 # must stay <= that true ceiling or every straddling-trip request 400s outright
@@ -41,6 +51,38 @@ def _mean(xs: list) -> float | None:
     return sum(vals) / len(vals) if vals else None
 
 
+def humidity_band(pct: float) -> str:
+    return next(label for floor, label in _HUMIDITY_BANDS if pct >= floor)
+
+
+def _conditions(feels_hi, feels_lo, rh, rh_lo, rh_hi, elevation, hi, lo) -> tuple[dict, list[str]]:
+    """The D-189 extras as finding data plus the sentences that describe them.
+    Every field is optional: what Open-Meteo didn't return is simply left out."""
+    data: dict = {}
+    lines: list[str] = []
+    if feels_hi is not None and feels_lo is not None:
+        data.update(feels_high_c=round(feels_hi), feels_low_c=round(feels_lo))
+        lines.append(f"Feels like ~{round(feels_hi)}°C by day and ~{round(feels_lo)}°C "
+                     f"at dawn.")
+    if rh is not None:
+        band = humidity_band(rh)
+        data.update(humidity_pct=round(rh), humidity_band=band)
+        span = (f", {round(rh_lo)}–{round(rh_hi)}% over the day"
+                if rh_lo is not None and rh_hi is not None else "")
+        lines.append(f"Humidity ~{round(rh)}%{span} — {band}.")
+    if isinstance(elevation, (int, float)):
+        data["elevation_m"] = round(elevation)
+        if elevation >= HIGH_ALTITUDE_M:
+            data["high_altitude"] = True
+            lines.append(f"Elevation ~{round(elevation):,} m — high altitude: thinner air, "
+                         f"stronger sun, faster dehydration and colder mornings.")
+    swing = round(hi - lo)
+    if swing >= BIG_SWING_C:
+        data["swing_c"] = swing
+        lines.append(f"Big day/night swing of ~{swing}°C — dress in layers.")
+    return data, lines
+
+
 class WeatherResolver:
     topic = "weather"
     scope = "city"
@@ -55,7 +97,7 @@ class WeatherResolver:
     def _fetch(self, endpoint: str, lat: float, lon: float, start: date, end: date,
                timeout: int) -> dict | None:
         url = endpoint + "?" + qs(
-            latitude=lat, longitude=lon, daily=_DAILY, timezone="auto",
+            latitude=lat, longitude=lon, daily=f"{_DAILY},{_DAILY_EXTRA}", timezone="auto",
             start_date=start.isoformat(), end_date=end.isoformat())
         return get_json(url, timeout=timeout)
 
@@ -95,6 +137,12 @@ class WeatherResolver:
         highs: list = []
         lows: list = []
         precip: list = []
+        feels_hi: list = []
+        feels_lo: list = []
+        rh_mean: list = []
+        rh_min: list = []
+        rh_max: list = []
+        elevation = None
         hit: list[str] = []
         forecast_through = None
         for mode, q_start, q_end, ep in segments:
@@ -107,6 +155,13 @@ class WeatherResolver:
             highs += h
             lows += l
             precip += daily.get("precipitation_sum") or []
+            feels_hi += daily.get("apparent_temperature_max") or []
+            feels_lo += daily.get("apparent_temperature_min") or []
+            rh_mean += daily.get("relative_humidity_2m_mean") or []
+            rh_min += daily.get("relative_humidity_2m_min") or []
+            rh_max += daily.get("relative_humidity_2m_max") or []
+            if elevation is None:
+                elevation = (data or {}).get("elevation")
             hit.append(mode)
             if mode == "forecast":
                 forecast_through = q_end
@@ -145,13 +200,16 @@ class WeatherResolver:
             conf = "medium"
 
         mode_out = "+".join(hit)
+        extra, lines = _conditions(_mean(feels_hi), _mean(feels_lo), _mean(rh_mean),
+                                   _mean(rh_min), _mean(rh_max), elevation, hi, lo)
+        more = ("\n\n" + " ".join(lines)) if lines else ""
         body = (f"{head}: highs ~{round(hi)}°C, lows ~{round(lo)}°C, "
-                f"{rain_days} day(s) with rain over {n} days.\n\n{tail}")
+                f"{rain_days} day(s) with rain over {n} days.{more}\n\n{tail}")
 
         return Finding(
             topic=self.topic, scope=self.scope, place_key=key,
             resolver="weather.openmeteo", confidence=conf, sources=_SOURCE,
             ttl_seconds=(6 * 3600 if hit == ["forecast"] else 30 * 86400),
             data={"mode": mode_out, "high_c": round(hi), "low_c": round(lo),
-                  "rain_days": rain_days, "days": n},
+                  "rain_days": rain_days, "days": n, **extra},
             body_md=body)

@@ -171,6 +171,7 @@
             "gmail",
             "gcal",
             "web",
+            "email",
             "maps",
             "file",
             "manual"
@@ -1374,6 +1375,17 @@
           ],
           "x-owner": "resolver",
           "description": "Resolver ran the full match ladder before minting. 'created' without this is an unproven claim that nothing matched."
+        },
+        "integrations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "airtrail",
+              "adventurelog"
+            ]
+          },
+          "description": "The capture owner's connected integrations this resolution pass saw (SPEC-8 D-150), so review only mentions systems the person uses (D-192)."
         }
       }
     },

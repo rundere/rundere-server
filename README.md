@@ -341,6 +341,7 @@ deployment stack.
 | `TX_FORWARDED_ALLOW_IPS` | `*` | Trust Traefik's `X-Forwarded-Proto` |
 
 | `TX_PUBLIC_BASE_URL` | `""` | Public https base (e.g. `https://yonder.example.net`) for email links and the OAuth/MCP metadata. Set it when using the Claude connector |
+| `TX_INBOX_ADDRESS`, `TX_INBOX_IMAP_*` | off | Email-forward capture: a mailbox you own (e.g. `trips@example.com`) read over IMAP; each person forwards to their own `trips+<token>@…`. See [docs/email-forward.md](docs/email-forward.md) |
 | `TX_OAUTH_ACCESS_TTL_SECONDS` | `3600` | OAuth access-token lifetime (Claude connector) |
 | `TX_OAUTH_REFRESH_IDLE_TTL_SECONDS` | `7776000` | A connected app's grant expires after this long unused (90 days) |
 
