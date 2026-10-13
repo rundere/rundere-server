@@ -16,8 +16,16 @@
         </select>
       </div>
       <div class="yn-cc-result"><span id="yn-cc-out">—</span></div>
-      <p class="bp-trip-notes">Rates as of {{ as_of }} — for reference only, rates
-        fluctuate. Computed from Run·dere's stored snapshot (no live lookup).</p>
+      <p class="bp-trip-notes">{% if trip_dates %}Trip rates (into {{ trip_currency }}):
+        {% for code, d in trip_dates %}{{ code }} {{ d }}{% if not loop.last %} · {% endif %}{% endfor %}.
+        {% if as_of != "—" %}Others from the Discover snapshot of {{ as_of }}.{% endif %}
+        {% else %}Rates as of {{ as_of }}.{% endif %}
+        For reference only — rates fluctuate. Computed from stored rates (no live lookup).</p>
+      {% if can_update %}
+      <button type="button" class="btn btn-secondary"
+              hx-post="/trips/{{ trip_id }}/finding/{{ fid }}/calculator/update-rates"
+              hx-target="#modal-root">Update rates for today</button>
+      {% endif %}
       <script>
       (function(){
         var perPivot = {{ per_pivot_json }};

@@ -1406,10 +1406,16 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
     STORED rate snapshot — no live call — pivoting every currency through one home
     base so any pair converts, including local↔local on a multi-country trip. The
     pivot is chosen from the trip's own base currencies (no hardcoded CAD), so a
-    non-Canadian traveller's calculator works too."""
+    non-Canadian traveller's calculator works too.
+
+    D-195 (owner, 2026-10-13): a currency on the trip's shared rate table uses
+    its LATEST stored rate there, over the Discover snapshot; still no live
+    call. "Update rates for today" (calculator_refresh) appears when a rate
+    shown is older than today."""
     f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
+    trip = session.get(Trip, trip_id)
     cur_findings = (session.query(DiscoveryFinding)
                     .filter(DiscoveryFinding.trip_id == trip_id,
                             DiscoveryFinding.user_id == f.user_id,
@@ -1447,18 +1453,71 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
             for b, v in br.items():
                 if b not in per_pivot and p and v:
                     per_pivot[b] = p / v                     # b per 1 pivot
+    # The trip's shared rate table wins for the currencies it has (D-195).
+    from app import rates as rates_svc
+    q = trip.expense_currency if trip else None
+    latest = rates_svc.latest(session, trip) if trip else {}
+    if latest and q not in per_pivot:
+        bridge = next((c for c in latest if c in per_pivot), None)
+        if bridge is not None:                  # q per pivot, via a shared currency
+            per_pivot[q] = per_pivot[bridge] * float(latest[bridge].rate)
+        elif not per_pivot:
+            per_pivot[q] = 1.0                  # no snapshot at all: pivot on q
+    trip_dates: dict[str, str] = {}
+    if q in per_pivot:
+        for code, row in latest.items():
+            per_pivot[code] = per_pivot[q] / float(row.rate)   # code per 1 pivot
+            trip_dates[code] = row.as_of or row.rate_date
+        if q not in ordered_bases:
+            ordered_bases.insert(0, q)
     # Dropdown order: home bases first, then destination currencies.
     bases = [b for b in ordered_bases if b in per_pivot]
     dests = sorted(c for c in per_pivot if c not in bases)
     currencies = bases + dests
+    today = rates_svc.today()
+    shown = [c for c in currencies if c != q]
+    stale = bool(q) and any(trip_dates.get(c, "") < today for c in shown)
     import json as _json
     return templates.TemplateResponse(request, "_calculator.html", {
-        "request": request, "trip_id": trip_id,
+        "request": request, "trip_id": trip_id, "fid": fid,
         "currencies": currencies, "per_pivot_json": Markup(_json.dumps(per_pivot)),
         "as_of": as_of or "—",
+        "trip_dates": sorted(trip_dates.items()), "trip_currency": q,
+        "can_update": stale and scope.can_edit_trip(session, scope.user_of(request), trip),
         "default_from": bases[0] if bases else (currencies[0] if currencies else ""),
         "default_to": dests[0] if dests else (currencies[-1] if currencies else ""),
     })
+
+
+@router.post("/{trip_id}/finding/{fid}/calculator/update-rates", response_class=HTMLResponse)
+def calculator_refresh(trip_id: str, fid: str, request: Request,
+                       session: Session = Depends(get_session)):
+    """"Update rates for today" (owner, 2026-10-13): fetch today's rate onto the
+    trip's shared table for every currency the calculator shows, then redraw
+    it. The person asked, so this is the one live call; costs keep their rates
+    (D-195). Needs edit access — the table is the trip's, not theirs."""
+    from app import rates as rates_svc
+    f = _finding_or_404(session, request, trip_id, fid)
+    trip = session.get(Trip, trip_id)
+    if f is None or trip is None:
+        return HTMLResponse("", status_code=404)
+    if not trip.expense_currency:         # view-only was already refused (trip_or_none)
+        return HTMLResponse("", status_code=400)
+    codes = set()
+    for cf in (session.query(DiscoveryFinding)
+               .filter(DiscoveryFinding.trip_id == trip_id,
+                       DiscoveryFinding.user_id == f.user_id,
+                       DiscoveryFinding.topic == "currency").all()):
+        codes.update((cf.data or {}).get("rates") or {})
+    codes.update(rates_svc.latest(session, trip))
+    for code in sorted(c for c in codes if c != trip.expense_currency):
+        try:
+            rates_svc.refresh(session, trip, getattr(scope.user_of(request), "id", None),
+                              code)
+        except ValueError:
+            pass                    # not quoted / feed down: keep the stored rate
+    session.commit()
+    return currency_calculator(trip_id, fid, request, session)
 
 
 # ----------------------------------------------------------------- planning (3.1)

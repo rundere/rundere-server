@@ -204,6 +204,11 @@ struct TripSnapshot: Codable, Hashable, Sendable {
     let discovery_profile: JSONValue?
     var packing: PackingOut?
     let captures: [CaptureLite]
+    /// Newest stored rate per currency into the trip's balance currency (D-195):
+    /// the calculator uses these over the Discover snapshot, with no live call;
+    /// one older than today → offer "Update rate for today" (rates refresh).
+    /// Optional: older servers omit it.
+    let trip_rates: [TripRateOut]?
 }
 
 /// One row of the trip's shared rate table (D-195, YONDER-237).

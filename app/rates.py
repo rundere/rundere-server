@@ -16,8 +16,12 @@ old trip data. So:
   to the nearest rate already on the trip's table, then to a Discover currency
   snapshot (the trip owner's first, so it's still one number per trip), and
   otherwise the cost stays unconverted. Never a 500 (D-146).
-- **Frozen once the trip has ended (D-157):** no fetches; the table and entered
-  rates still work.
+- **After the trip has ended** (owner, 2026-10-13) nothing is backdated: a
+  cost uses the table's day or nearest day, and only a currency with NO rate
+  on the trip yet is fetched — today's rate, the day it's added. A refresh on
+  an ended trip is always today's.
+- **The calculator** (Discover's currency calculator, web and app) uses the
+  latest stored rate per currency — `latest()` — never a live call.
 - **No silent re-rating.** Costs copy the rate they used (`rate`, `rate_date`,
   `rate_id`); refreshing a row on the table changes only the table and the
   costs that had no rate yet. See expenses.update for when a cost re-derives.
@@ -34,10 +38,6 @@ from app.models import Trip, TripRate
 _RATE_Q = Decimal("0.0000000001")        # same precision as app/expenses.py
 FETCH_TIMEOUT = 6                         # seconds; the person is waiting on a save
 MAX_FETCHES = 25                          # per request (a balance-currency change)
-
-
-class RatesFrozen(ValueError):
-    """The trip has ended: rates are no longer fetched (D-157)."""
 
 
 def _fmt(d: Decimal) -> str:
@@ -102,7 +102,7 @@ class Lookup:
     def __init__(self, session: Session, trip: Trip, user_id: str | None):
         self.session, self.trip, self.user_id = session, trip, user_id
         self.fetches = 0
-        self.can_fetch = not frozen(trip)
+        self.ended = frozen(trip)
 
     def _row(self, frm: str, to: str, day: str) -> TripRate | None:
         return (self.session.query(TripRate)
@@ -125,7 +125,7 @@ class Lookup:
         return row
 
     def fetch_into_table(self, frm: str, to: str, day: str) -> TripRate | None:
-        if not self.can_fetch or self.fetches >= MAX_FETCHES:
+        if self.fetches >= MAX_FETCHES:
             return None
         self.fetches += 1
         rate, as_of = fetch(frm, to, day)
@@ -161,32 +161,50 @@ class Lookup:
     def find(self, frm: str, to: str, day: str) -> TripRate | None:
         """The trip's rate for `frm`→`to` on `day`: the table's row for that
         day, else a fetch for that day, else the nearest day on the table, else
-        a Discover snapshot. None = unconverted."""
+        a Discover snapshot. None = unconverted. On an ended trip nothing is
+        backdated: the table first, and only a currency the trip has no rate
+        for at all is fetched — for today."""
+        if self.ended:
+            return (self._row(frm, to, day) or self._nearest(frm, to, day)
+                    or self.fetch_into_table(frm, to, today())
+                    or self._from_discover(frm, to, day))
         return (self._row(frm, to, day) or self.fetch_into_table(frm, to, day)
                 or self._nearest(frm, to, day) or self._from_discover(frm, to, day))
 
 
 def refresh(session: Session, trip: Trip, user_id: str | None, currency: str,
             day: str | None = None) -> TripRate:
-    """Re-fetch ONE currency's rate for one day (default today) onto the trip's
-    table (the app's "fetch this rate"). Costs that already have a rate keep it.
-    Raises RatesFrozen on an ended trip, ValueError when there's no rate to get."""
+    """Re-fetch ONE currency's rate for one day (default today; always today on
+    an ended trip — no backdating) onto the trip's table ("update rate for
+    today"). Costs that already have a rate keep it. ValueError when there's no
+    rate to get."""
     if trip.expense_currency is None:
         raise ValueError("this trip has no costs yet, so there's no currency to convert to")
     if currency == trip.expense_currency:
         raise ValueError(f"{currency} is the trip's own currency — its rate is always 1")
-    if frozen(trip):
-        raise RatesFrozen("this trip has ended, so rates are no longer fetched — "
-                          "enter the rate by hand instead")
     day = (day or today())[:10]
     try:
         date.fromisoformat(day)
     except ValueError:
         raise ValueError(f"not a date: {day!r} (use YYYY-MM-DD)") from None
-    day = min(day, today())
+    day = today() if frozen(trip) else min(day, today())
     look = Lookup(session, trip, user_id)
     row = look.fetch_into_table(currency, trip.expense_currency, day)
     if row is None:
         raise ValueError(f"no exchange rate is available for {currency} right now "
                          "(the rate service is unreachable or doesn't quote it)")
     return row
+
+
+def latest(session: Session, trip: Trip) -> dict[str, TripRate]:
+    """The newest stored rate per currency into the trip's balance currency —
+    what the calculator converts with. Stored rows only, no live call."""
+    if not trip.expense_currency:
+        return {}
+    out: dict[str, TripRate] = {}
+    for r in (session.query(TripRate)
+              .filter(TripRate.trip_id == trip.id,
+                      TripRate.quote == trip.expense_currency)
+              .order_by(TripRate.rate_date).all()):
+        out[r.currency] = r                 # ascending, so the last one wins
+    return out

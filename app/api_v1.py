@@ -162,6 +162,18 @@ class CaptureLite(BaseModel):
     created_at: datetime | None = None
 
 
+class TripRateOut(BaseModel):
+    """One row of the trip's shared rate table (D-195): 1 `currency` = `rate`
+    `quote` for `rate_date`; `as_of` is the day the feed published it."""
+    currency: str
+    quote: str
+    rate_date: str
+    rate: str
+    as_of: str | None = None
+    source: str                            # frankfurter | discover
+    fetched_at: datetime | None = None
+
+
 class TripSnapshot(BaseModel):
     trip: TripSummary
     activities: list[ActivityOut] = []
@@ -172,6 +184,10 @@ class TripSnapshot(BaseModel):
     discovery_profile: Any = None          # the caller's own preferences (4.5)
     packing: PackingOut | None = None
     captures: list[CaptureLite] = []
+    # The newest stored rate per currency into the trip's balance currency —
+    # the app's calculator uses these over the Discover snapshot, no live call
+    # (D-195). Older than today → offer "Update rate for today" (rates refresh).
+    trip_rates: list[TripRateOut] = []
 
 
 class ReviewItemOut(BaseModel):
@@ -585,11 +601,13 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
         captures.append(CaptureLite(id=c.id, kind=_kind(payload),
                                     headline=_headline(payload), created_at=c.created_at))
 
+    from app import rates as rates_svc
+    trip_rates = [_rate_out(r) for _, r in sorted(rates_svc.latest(session, trip).items())]
     return TripSnapshot(trip=_trip_summary(session, trip), activities=activities,
                         travelers=travelers, places=places, discovery=discovery,
                         discovery_items=discovery_items,
                         discovery_profile=discovery_profile, packing=packing,
-                        captures=captures)
+                        captures=captures, trip_rates=trip_rates)
 
 
 def _review_item(v: dict) -> ReviewItemOut:
@@ -2096,18 +2114,6 @@ class ExpenseCommentIn(BaseModel):
     body: str
 
 
-class TripRateOut(BaseModel):
-    """One row of the trip's shared rate table (D-195): 1 `currency` = `rate`
-    `quote` for `rate_date`; `as_of` is the day the feed published it."""
-    currency: str
-    quote: str
-    rate_date: str
-    rate: str
-    as_of: str | None = None
-    source: str                            # frankfurter | discover
-    fetched_at: datetime | None = None
-
-
 class RateRefreshOut(BaseModel):
     rate: TripRateOut
     applied: list[str] = []                # your costs that had no rate and now do
@@ -2310,23 +2316,25 @@ def api_refresh_rate(trip_id: str, code: str, date: str | None = None,
                      session: Session = Depends(get_session)):
     """Fetch ONE currency's rate for a day (default today) onto the trip's shared
     rate table (YONDER-237/242, D-195), then convert your costs in that currency
-    that had no rate yet. Costs that already have a rate keep it. 409 once the
-    trip has ended (enter the rate by hand); 422 when no rate can be had."""
+    that had no rate yet. Costs that already have a rate keep it. On an ended
+    trip it's always today's rate (no backdating). 422 when no rate can be had."""
     from app import rates as rates_svc
     trip = scope.require_trip(session, user, trip_id, edit=True)
     cur = _valueerror_400(lambda: expenses_svc.currency_code(code))
     try:
         row = rates_svc.refresh(session, trip, user.id, cur, date)
-    except rates_svc.RatesFrozen as err:
-        raise HTTPException(409, str(err)) from None
     except ValueError as err:
         status = 400 if "not a date" in str(err) else 422
         raise HTTPException(status, str(err)) from None
     applied = expenses_svc.apply_to_unconverted(session, trip, user, cur)
     session.commit()
-    return RateRefreshOut(rate=TripRateOut(
-        currency=row.currency, quote=row.quote, rate_date=row.rate_date, rate=row.rate,
-        as_of=row.as_of, source=row.source, fetched_at=row.fetched_at), applied=applied)
+    return RateRefreshOut(rate=_rate_out(row), applied=applied)
+
+
+def _rate_out(row) -> TripRateOut:
+    return TripRateOut(currency=row.currency, quote=row.quote, rate_date=row.rate_date,
+                       rate=row.rate, as_of=row.as_of, source=row.source,
+                       fetched_at=row.fetched_at)
 
 
 @router.put("/trips/{trip_id}/expenses/currency", response_model=ExpensesOut)

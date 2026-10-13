@@ -143,8 +143,16 @@ people up and make the trip's actual cost.
     (`?date=`, default today; edit access) re-fetches that row. It converts
     only the caller's own visible costs in that currency that had no rate
     (D-183); costs with a rate keep it.
-  - **Frozen once the trip has ended (D-157):** no fetches (409 on refresh);
-    the table and entered rates still work.
+  - **After the trip has ended** (owner, 2026-10-13) nothing is backdated. A
+    cost uses the table's rate for its day or the nearest day; only a currency
+    the trip has no rate for at all is fetched, at TODAY's rate (the day it's
+    added). A refresh on an ended trip is always today's.
+  - **The currency calculator** (web and app) converts with the latest stored
+    rate per currency on the trip's table, over the Discover snapshot, with no
+    live call. When a rate shown is older than today, people who can edit the
+    trip get "Update rates for today", which fetches today's rates onto the
+    table (costs keep theirs). The app reads the same rates from the trip
+    snapshot's `trip_rates` and refreshes through the endpoint above.
 
 ## Surfaces (first build)
 

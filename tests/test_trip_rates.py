@@ -177,20 +177,72 @@ if DEPS:
         g = _add(tid, ana, p["Ana"], spent_on="2026-04-01")
         assert g["rate"] == "0.9"
 
-    def test_ended_trip_fetches_nothing(feed):
+    def test_ended_trip_fetches_todays_rate_never_backdates(feed):
+        """Owner, 2026-10-13: logging a cost after the trip, in a currency the trip
+        has no rate for, takes TODAY's rate (the day it's added); once there is
+        one, later costs use the table — no backdated fetches."""
         table, calls = feed
-        table[("USD", "EUR", "2020-01-05")] = ("0.9", "2020-01-05")
+        table[("USD", "EUR", TODAY)] = ("0.88", TODAY)
+        table[("USD", "EUR", "2020-01-05")] = ("0.7", "2020-01-05")   # never asked for
         owner = _user("rt-owner5")
         tid, p = _trip(owner, start="2020-01-01", end="2020-01-10")
         e = _add(tid, owner, p["Ana"], spent_on="2020-01-05")
-        assert e["rate"] is None and calls == []
+        assert e["rate"] == "0.88" and e["rate_date"] == TODAY
+        assert calls == [("USD", "EUR", TODAY)]
+        e2 = _add(tid, owner, p["Ana"], spent_on="2020-01-07")    # the table now has USD
+        assert e2["rate"] == "0.88" and len(calls) == 1
+        # A refresh on an ended trip is always today's, whatever date is asked.
         r = client.post(f"/api/v1/trips/{tid}/rates/USD/refresh?date=2020-01-05",
                         headers=_h(owner))
-        assert r.status_code == 409 and "ended" in r.json()["detail"] and calls == []
+        assert r.status_code == 200 and r.json()["rate"]["rate_date"] == TODAY
+        assert calls[-1] == ("USD", "EUR", TODAY)
         # An entered rate still works.
-        e2 = _add(tid, owner, p["Ana"], spent_on="2020-01-05", rate="0.91")
-        assert e2["rate"] == "0.91" and e2["rate_source"] == "entered"
-        assert e2["rate_date"] == "2020-01-05"
+        e3 = _add(tid, owner, p["Ana"], spent_on="2020-01-05", rate="0.91")
+        assert e3["rate"] == "0.91" and e3["rate_source"] == "entered"
+        assert e3["rate_date"] == "2020-01-05"
+
+    def test_calculator_uses_the_trips_latest_rate_and_offers_today(feed, monkeypatch):
+        """D-195: the calculator converts with the trip table's LATEST rate per
+        currency, no live call; a rate older than today offers "Update rates for
+        today" to editors only, which fetches today's and redraws."""
+        from app.config import settings
+        table, calls = feed
+        owner, viewer = _user("rt-owner8"), _user("rt-viewer8")
+        tid, p = _trip(owner)
+        with SessionLocal() as s:
+            s.add(TripMember(trip_id=tid, user_id=viewer.id))
+            for uid in (owner.id, viewer.id):
+                s.add(DiscoveryFinding(trip_id=tid, user_id=uid, topic="currency",
+                                       scope="country", place_key="US",
+                                       data={"currency": "USD", "date": "2026-02-01",
+                                             "rates": {"USD": {"per_EUR": 1.25}}}))
+            s.add_all([TripRate(trip_id=tid, currency="USD", quote="EUR",
+                                rate_date="2026-03-01", rate="0.8", source="frankfurter"),
+                       TripRate(trip_id=tid, currency="USD", quote="EUR",
+                                rate_date="2026-03-05", rate="0.9", as_of="2026-03-05",
+                                source="frankfurter")])
+            s.commit()
+            fids = {f.user_id: f.id for f in s.query(DiscoveryFinding).filter_by(trip_id=tid)}
+        monkeypatch.setattr(settings, "auth_required", True)
+        page = client.get(f"/trips/{tid}/finding/{fids[owner.id]}/calculator",
+                          headers=_h(owner)).text
+        assert "USD 2026-03-05" in page and calls == []          # stored rates only
+        assert '"USD": 1.1111' in page                           # 1 EUR = 1/0.9 USD
+        assert "Update rates for today" in page
+        vpage = client.get(f"/trips/{tid}/finding/{fids[viewer.id]}/calculator",
+                           headers=_h(viewer)).text
+        assert "USD 2026-03-05" in vpage and "Update rates for today" not in vpage
+        assert client.post(f"/trips/{tid}/finding/{fids[viewer.id]}/calculator/update-rates",
+                           headers=_h(viewer)).status_code == 403
+        table[("USD", "EUR", TODAY)] = ("0.95", TODAY)
+        page = client.post(f"/trips/{tid}/finding/{fids[owner.id]}/calculator/update-rates",
+                           headers=_h(owner)).text
+        assert f"USD {TODAY}" in page and "Update rates for today" not in page
+        assert calls == [("USD", "EUR", TODAY)]
+        # The app gets the same latest rates in the trip snapshot.
+        snap = client.get(f"/api/v1/trips/{tid}", headers=_h(owner)).json()
+        assert [(r["currency"], r["rate"], r["rate_date"]) for r in snap["trip_rates"]] == \
+            [("USD", "0.95", TODAY)]
 
     def test_refresh_fills_your_unconverted_costs_only(feed):
         table, calls = feed
