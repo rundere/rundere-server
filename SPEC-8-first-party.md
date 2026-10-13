@@ -254,11 +254,23 @@ request forgery (SSRF) risk.
       screen says so.
     - A capture filed to no trip is purged 12 months after it arrived.
       Captures still waiting in review are never purged.
-  - **The mailbox copies.** The inbox poller files each handled email into
-    `Rundere/Captured` or `Rundere/Dropped` in the hoster's mailbox, where it
-    stays. Rundere can clear only those two folders, never anything else in
-    the mailbox. The exact rule is pending the owner's answer before
-    YONDER-179 ships.
+  - **The mailbox copies (owner, 2026-10-13).** The inbox poller files each
+    handled email into `Rundere/Captured` or `Rundere/Dropped` in the hoster's
+    mailbox. Rundere clears only those two folders, never anything else in the
+    mailbox:
+    - **Captured:** moved to Trash on the same day Rundere deletes its own copy,
+      12 months after the trip ends (or after arrival, when the capture has no
+      trip). The message is matched through `inbox_messages`.
+    - **Dropped** (unknown address, too large or rate-limited, so never
+      captured): moved to Trash after **30 days**. That's long enough to notice
+      a misdirected booking and forward it again.
+    - **Deletion moves mail to Trash** (`TX_INBOX_TRASH_FOLDER`, default
+      `Trash`), so it can be recovered until the mail provider empties the
+      Trash. Rundere never expunges mail permanently.
+    - The daily retention job does this when the inbox is configured, and logs
+      counts only.
+  - **Settings for other hosters:** `TX_RETENTION_MONTHS` (default 12) and
+    `TX_INBOX_DROPPED_DAYS` (default 30).
 
 ## Build order
 
