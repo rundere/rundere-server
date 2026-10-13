@@ -716,6 +716,9 @@ def resolve_item(session: Session, item: TravelItem,
         "within_home_radius": home_only,
         "self_on_booking": self_on_booking,
         "targets": targets,
+        # Which of the owner's integrations this pass saw (D-150), so the review
+        # page only talks about AdventureLog / AirTrail to people who use them.
+        "integrations": sorted(external),
     }
     if collection_pending:
         # The payload is fine; only the trip is unsettled. Carried so the review
@@ -789,11 +792,19 @@ def resolve_item(session: Session, item: TravelItem,
     if collection_pending:
         writable = bool(targets)              # the collection-independent subset
         reasons = [_collection_reason(coll)]
-        if needs_traveler_review and payload.get("item_type") == "flight":
+        passengers_open = needs_traveler_review and payload.get("item_type") == "flight"
+        if passengers_open:
             reasons.append("missing_passenger_list")
-        item.review = {**(item.review or {}),
-                       "required": writable or outcome == "needs_review",
-                       "reasons": reasons}
+        if "yonder.activity" in targets and not passengers_open:
+            # D-192: filed to a Run·dere trip, the only open question is the
+            # optional AdventureLog collection — not a reason to stop. Ready to
+            # approve; the AdventureLog picker still offers a collection, and
+            # `collection_pending` keeps the AdventureLog records withheld.
+            item.review = {**(item.review or {}), "required": False, "reasons": []}
+        else:
+            item.review = {**(item.review or {}),
+                           "required": writable or outcome == "needs_review",
+                           "reasons": reasons}
         if writable:
             # It resolves for the purpose of the AirTrail write; the pending trip
             # lives in `collection_pending` + `candidate_collections`.

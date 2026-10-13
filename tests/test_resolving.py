@@ -512,6 +512,39 @@ def test_unresolved_trip_flight_still_targets_airtrail():
     _skip_or(run)
 
 
+def test_adventurelog_miss_does_not_hold_an_item_filed_to_a_rundere_trip():
+    """D-192 (owner, 2026-10-12): with AdventureLog connected but no collection
+    covering a hotel, the hotel used to land in "Needs you" even though it was
+    filed to a Run·dere trip. AdventureLog is optional now (D-148): it's ready
+    to approve; the Run·dere activity is its target and the AdventureLog
+    records stay withheld until a collection is picked."""
+    def run():
+        from app.models import Trip
+        from app.review.routes import _bucket_of
+        with SessionLocal() as s:
+            _seed_home(s)
+            trip = Trip(name="D-192 trip", source="manual",
+                        start_date="2093-05-14", end_date="2093-05-18")
+            s.add(trip); s.commit()
+            hotel = {"item_type": "lodging", "booking_status": "confirmed",
+                     "booking_reference": "D192",
+                     "lodging": {"property_name": "D-192 Hotel",
+                                 "place": {"raw": "1 Main St", "city": "Pittsburgh",
+                                           "country": "US", "lat": 40.44, "lon": -79.99},
+                                 "check_in": _dt("2093-05-14T16:00"),
+                                 "check_out": _dt("2093-05-16T11:00")}}
+            it = _add_item(s, hotel)
+            resolve_pending(s, adventurelog=_ConnectedAL(),
+                            item_filter=TravelItem.id == it.id)
+            it = s.get(TravelItem, it.id)
+            assert it.trip_id == trip.id                       # auto-linked by date
+            assert it.resolution.get("collection_pending") is True
+            assert it.resolution["targets"] == ["yonder.activity"]
+            assert (it.review or {}).get("required") is False
+            assert _bucket_of(it) == "ready"                   # not "Needs you"
+    _skip_or(run)
+
+
 def test_middle_leg_inherits_the_enclosing_trip():
     """A leg that never touches home (IAD->PHX) still belongs to the journey
     bounded by the home departure and the home return."""

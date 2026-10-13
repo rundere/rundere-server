@@ -194,21 +194,34 @@ def write_preview(item_payload: dict, resolution: dict,
             text = "Location · " + ", ".join(n for n in names if n != "?") if names else label
         out.append({"system": system, "text": text, "state": "new"})
 
-    for p in _suppressed_places(item_payload):
-        out.append({"system": "AdventureLog",
-                    "text": f"Location · {_place(p)}",
-                    "state": "skip",
-                    "why": _suppression_sentence(p)})
+    # AdventureLog lines only for people who have it connected (D-150, D-192).
+    # Items resolved before `integrations` was recorded keep the old wording.
+    al_on = "adventurelog" in resolution.get("integrations", ["adventurelog"])
+    if al_on:
+        for p in _suppressed_places(item_payload):
+            out.append({"system": "AdventureLog",
+                        "text": f"Location · {_place(p)}",
+                        "state": "skip",
+                        "why": _suppression_sentence(p)})
 
-    # The trip didn't resolve, so the AirTrail flight logs but the AdventureLog
-    # trip records are held back — say so explicitly, or the operator can't tell
-    # the collection silently failed (which is exactly how this went unnoticed).
-    if resolution.get("collection_pending"):
+    # Nothing is filed until the item is on a Run·dere trip — say so in Run·dere's
+    # terms, first (D-148, D-192). An unsettled AdventureLog collection is a
+    # second, optional line, and AirTrail is only mentioned when a flight logs there.
+    no_trip = ("yonder.activity" not in targets
+               and resolution.get("outcome") not in ("ignored",)
+               and not resolution.get("within_home_radius")
+               and (resolution.get("collection_pending")
+                    or resolution.get("outcome") in ("deferred", "needs_review")))
+    if no_trip:
+        out.append({"system": "Run·dere", "state": "skip", "text": "Not on a trip yet",
+                    "why": "Pick a trip above to put it on that trip's timeline."
+                           + (" The flight still logs to AirTrail."
+                              if "airtrail.flight" in targets else "")})
+    if resolution.get("collection_pending") and al_on:
         out.append({"system": "AdventureLog", "state": "skip",
-                    "text": "Trip record (transportation + locations)",
-                    "why": "No trip is settled for these dates yet. The flight "
-                           "still logs to AirTrail; this files once you pick or "
-                           "create a trip."})
+                    "text": "Trip record (optional)",
+                    "why": "No AdventureLog collection covers these dates. Pick one "
+                           "under AdventureLog to also file it there."})
     return out
 
 

@@ -19,64 +19,64 @@
 <div class="saved-note">Saved. {{ i.note or 'This is ready to approve.' }}</div>
 {% endif %}
 
-{# Two independent trip pickers (2.1.2). Each is its OWN form (HTML forms can't
-   nest), sitting outside the save form below. AdventureLog files the item into a
-   collection and drives the commit; Run·dere is an in-house association only. Both
-   degrade gracefully — omitted entirely when not applicable. #}
+{# The trip pickers. The Run·dere trip comes first: it is where the item is filed
+   (D-148). AdventureLog is optional — shown only when the capture's owner has a
+   connection (D-150), folded away under the Run·dere picker (D-192). Each is its OWN
+   form (HTML forms can't nest), outside the save form below. #}
 {% if trip_al or trip_yonder %}
 <div class="trip-pickers">
-  {% if trip_al %}
-  <form class="trip-picker" hx-post="/review/item/{{ i.id }}/assign?bucket={{ bucket }}"
-        hx-target="#d-{{ i.id }}" hx-swap="innerHTML">
-    <h3>AdventureLog trip</h3>
-    {% if i.collection_name %}
-      <p class="why">Files into <b>{{ i.collection_name }}</b>.</p>
-    {% elif 'ambiguous_collection' in i.reason_codes %}
-      <p class="why">More than one trip covers these dates — choose the right one.</p>
-    {% elif 'no_collection_match' in i.reason_codes %}
-      <p class="why">No trip matched these dates. Pick one to file into — a flight
-        still logs to AirTrail regardless.</p>
-    {% endif %}
-    <div class="trip-row">
-      <select name="collection_id" aria-label="AdventureLog trip">
-        <option value="">— Auto (let the resolver decide) —</option>
-        {% for t in trip_al.trips %}
-          <option value="{{ t.id }}" {% if t.selected %}selected{% endif %}>{% if t.is_candidate %}★ {% elif t.contains %}• {% endif %}{{ t.name }}{% if t.start_date %} · {{ t.start_date }}{% if t.end_date and t.end_date != t.start_date %}–{{ t.end_date }}{% endif %}{% endif %}</option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="act">Assign</button>
-    </div>
-    <p class="hint quiet">★ candidate · • dates fall inside. Filing here writes the
-      AdventureLog records and re-checks the item.</p>
-  </form>
-  {% endif %}
-
   {% if trip_yonder %}
-  <form class="trip-picker" hx-post="/review/item/{{ i.id }}/assign-trip?bucket={{ bucket }}"
+  <form class="trip-picker trip-main" hx-post="/review/item/{{ i.id }}/assign-trip?bucket={{ bucket }}"
         hx-target="#d-{{ i.id }}" hx-swap="innerHTML">
-    <h3>Run·dere trip</h3>
+    <h3>Trip</h3>
     {% if trip_yonder.selected_name %}
-      <p class="why">Linked to <b>{{ trip_yonder.selected_name }}</b> — an in-house
-        link only; it doesn’t touch AdventureLog.</p>
+      <p class="why">Filed to <b>{{ trip_yonder.selected_name }}</b>. Approving puts it on that trip's timeline.</p>
     {% else %}
-      <p class="why">Not linked to a Run·dere trip (in-house association, independent
-        of AdventureLog).</p>
+      <p class="why">Not filed to a trip yet. Pick one to put it on that trip's timeline.</p>
     {% endif %}
     {% if trip_yonder.have_trips %}
     <div class="trip-row">
-      <select name="trip_id" aria-label="Run·dere trip">
-        <option value="">— Not linked —</option>
+      <select name="trip_id" aria-label="Trip">
+        <option value="">— No trip —</option>
         {% for t in trip_yonder.trips %}
           <option value="{{ t.id }}" {% if t.selected %}selected{% endif %}>{% if t.contains %}• {% endif %}{{ t.name }}{% if t.start_date %} · {{ t.start_date }}{% if t.end_date and t.end_date != t.start_date %}–{{ t.end_date }}{% endif %}{% endif %}</option>
         {% endfor %}
       </select>
-      <button type="submit" class="act">Link</button>
+      {# One primary action per screen (design board): only while it isn't filed yet. #}
+      <button type="submit" class="act{{ '' if trip_yonder.selected_name else ' primary' }}">File to trip</button>
     </div>
-    <p class="hint quiet">• dates fall inside this trip. Linking re-checks the item. <a href="/trips" target="_blank" rel="noopener">Manage trips</a></p>
+    <p class="hint quiet">• the dates fall inside this trip. Filing re-checks the item. <a href="/trips" target="_blank" rel="noopener">Manage trips</a></p>
     {% else %}
-    <p class="hint">No Run·dere trips yet. <a href="/trips" target="_blank" rel="noopener">Create one</a>, then reopen this item.</p>
+    <p class="hint">No trips yet. <a href="/trips" target="_blank" rel="noopener">Create one</a>, then reopen this item.</p>
     {% endif %}
   </form>
+  {% endif %}
+
+  {% if trip_al %}
+  <details class="trip-al"{% if not trip_yonder %} open{% endif %}>
+    <summary>AdventureLog <span class="quiet">(optional)</span> —
+      {% if i.collection_name %}files into <b>{{ i.collection_name }}</b>
+      {% elif i.al_pending or 'no_collection_match' in i.reason_codes or 'ambiguous_collection' in i.reason_codes %}no collection matched these dates
+      {% else %}collection chosen by date{% endif %}</summary>
+    <form class="trip-picker" hx-post="/review/item/{{ i.id }}/assign?bucket={{ bucket }}"
+          hx-target="#d-{{ i.id }}" hx-swap="innerHTML">
+      {% if 'ambiguous_collection' in i.reason_codes %}
+        <p class="why">More than one AdventureLog collection covers these dates — choose one to also file it there.</p>
+      {% else %}
+        <p class="why">Also file it to an AdventureLog collection. Leave it on Auto to skip.</p>
+      {% endif %}
+      <div class="trip-row">
+        <select name="collection_id" aria-label="AdventureLog collection">
+          <option value="">— Auto (let the resolver decide) —</option>
+          {% for t in trip_al.trips %}
+            <option value="{{ t.id }}" {% if t.selected %}selected{% endif %}>{% if t.is_candidate %}★ {% elif t.contains %}• {% endif %}{{ t.name }}{% if t.start_date %} · {{ t.start_date }}{% if t.end_date and t.end_date != t.start_date %}–{{ t.end_date }}{% endif %}{% endif %}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="act">Assign</button>
+      </div>
+      <p class="hint quiet">★ candidate · • dates fall inside. Assigning writes the AdventureLog records on approval.</p>
+    </form>
+  </details>
   {% endif %}
 </div>
 {% endif %}

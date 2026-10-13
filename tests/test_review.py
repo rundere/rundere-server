@@ -778,6 +778,28 @@ def test_re_dating_over_the_api_settles_a_waiting_capture():
     _skip_or(run)
 
 
+def test_the_rundere_trip_comes_first_and_adventurelog_is_folded(monkeypatch):
+    """D-192: the Run·dere trip picker leads; AdventureLog (only with a
+    connection) sits below it, collapsed and marked optional."""
+    def run():
+        from app.review import routes
+        with SessionLocal() as s:
+            item_id = _deferred_hotel(s, 2088).id
+            _trip_covering_the_hotel(s, 2088)
+        html = client.get(f"/review/item/{item_id}?bucket=waiting").text
+        assert '<h3>Trip</h3>' in html and 'class="trip-al"' not in html   # no connection
+        assert "AdventureLog" not in html and "AirTrail" not in html      # not mentioned at all
+        assert "Not on a trip yet" in html
+        monkeypatch.setattr(routes, "_list_trips", lambda session, owner_id: [
+            {"id": "c1", "name": "AL Collection", "start_date": "2088-05-01",
+             "end_date": "2088-05-30"}])
+        html = client.get(f"/review/item/{item_id}?bucket=waiting").text
+        assert html.index("<h3>Trip</h3>") < html.index('class="trip-al"')
+        assert '<details class="trip-al">' in html                        # folded
+        assert "AdventureLog <span class=\"quiet\">(optional)</span>" in html
+    _skip_or(run)
+
+
 def test_yonder_trip_picker_rejects_an_unknown_trip():
     """Never link to a trip that doesn't exist."""
     def run():
@@ -842,3 +864,70 @@ def test_al_trip_picker_rejects_an_unknown_collection(monkeypatch):
             cc = (s.get(TravelItem, item_id).source or {}).get("capture_context") or {}
             assert "collection_id" not in cc
     _skip_or(run)
+
+
+def test_write_preview_speaks_rundere_first_d192():
+    """No trip: one Run·dere line. AdventureLog lines only with a connection;
+    AirTrail only when a flight logs there."""
+    from app.review.summary import write_preview
+    hotel = {"item_type": "lodging", "lodging": {"property_name": "X"}}
+    pending = {"outcome": "deferred", "targets": [], "collection_pending": True}
+    lines = write_preview(hotel, {**pending, "integrations": []})
+    assert [(w["system"], w["text"]) for w in lines] == [("Run·dere", "Not on a trip yet")]
+    assert "AirTrail" not in lines[0]["why"]
+    lines = write_preview(hotel, {**pending, "integrations": ["adventurelog"]})
+    assert ("AdventureLog", "Trip record (optional)") in [(w["system"], w["text"]) for w in lines]
+    filed = {"outcome": "resolved", "targets": ["yonder.activity"], "collection_pending": True,
+             "integrations": ["adventurelog"]}
+    systems = [w["system"] for w in write_preview(hotel, filed)]
+    assert systems[0] == "Run·dere" and "Not on a trip yet" not in str(write_preview(hotel, filed))
+
+
+def test_trip_notes_say_which_trip_they_mean_d192():
+    """The collection codes are AdventureLog's: on an item already on a Run·dere
+    trip they must not read "No trip covers these dates"."""
+    def run():
+        from app.review.routes import _view
+        base = dict(item_type="lodging", schema_version="1.4.0",
+                    extraction={"payload": {"item_type": "lodging"}},
+                    status={"extract": "ok", "resolve": "ok"},
+                    review={"required": True, "reasons": ["no_collection_match"]})
+        al = {"outcome": "resolved", "targets": ["yonder.activity"],
+              "collection_pending": True, "integrations": ["adventurelog"]}
+        filed = _view(TravelItem(trip_id="t1", resolution=al, **base))
+        assert filed["note"].startswith("No AdventureLog collection matches")
+        assert "No trip covers" not in filed["note"]
+        no_al = _view(TravelItem(trip_id="t1", resolution={**al, "integrations": []}, **base))
+        assert "AdventureLog" not in (no_al["note"] or "")
+        unfiled = _view(TravelItem(trip_id=None, resolution={
+            "outcome": "deferred", "targets": [], "integrations": ["adventurelog"],
+            "deferred_until": "2031-01-01"}, **{**base, "status": {"extract": "ok",
+                                                                    "resolve": "deferred"}}))
+        assert "No Run·dere trip or AdventureLog collection" in unfiled["note"]
+    _skip_or(run)
+
+
+def test_log_approved_opens_in_a_sheet_not_inline():
+    """Design board: commit is a sheet. The preview names only the systems a
+    write goes to, and Confirm swaps the sheet's own body."""
+    def run():
+        page = client.get("/review?bucket=staged").text
+        assert 'id="modal-root"' in page
+        assert 'hx-post="/review/commit"' in page and 'hx-target="#modal-root"' in page
+        r = client.post("/review/commit", data={"bucket": "staged"})
+        assert r.status_code == 200
+        assert 'class="rd-sheet"' in r.text and 'role="dialog"' in r.text
+        assert "Log approved items" in r.text and "data-sheet-close" in r.text
+    _skip_or(run)
+
+
+def test_systems_text_names_only_where_writes_go():
+    from app.review.routes import _systems_text
+    plans = lambda *targets, skipped=(): {"plans": [{"results": (
+        [{"target": t} for t in targets] + [{"target": t, "skipped": "x"} for t in skipped])}]}
+    assert _systems_text(plans("yonder.activity")) == "your Run·dere trips"
+    assert _systems_text(plans("yonder.activity", "airtrail.flight",
+                               skipped=("adventurelog.lodging",))) == \
+        "your Run·dere trips and AirTrail"
+    assert _systems_text(plans("yonder.activity", "airtrail.flight", "adventurelog.lodging")) == \
+        "your Run·dere trips, AirTrail and AdventureLog"
