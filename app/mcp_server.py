@@ -143,7 +143,7 @@ def dashboard() -> dict[str, Any]:
 # --------------------------------------------------------------------------- timeline
 @mcp.tool()
 def list_activity_types() -> dict[str, Any]:
-    """Timeline activity types (flight, train, drive, carRental, lodging, tour,
+    """Timeline activity types (flight, train, drive, taxi, carRental, lodging, tour,
     event, dining, cruise, note) and the `values` field keys each takes (e.g.
     `when`, `endWhen`, `name`, `address`)."""
     return {"types": _run(lambda session, user: api_v1.api_activity_types(user=user))}

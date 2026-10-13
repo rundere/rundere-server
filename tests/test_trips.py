@@ -277,8 +277,8 @@ def test_type_registry_titles_and_fields():
     if not DEPS:
         return
     assert list(activity_types.TRIP_ACTIVITY_TYPES) == [
-        "flight", "train", "drive", "carRental", "lodging", "tour", "event",
-        "dining", "cruise", "note"]
+        "flight", "train", "drive", "taxi", "carRental", "lodging", "tour", "event",
+        "dining", "cruise", "note"]                        # taxi: D-193
     t = activity_types.get_type("lodging")
     assert t.title({"name": "Hotel Nordljos"}) == "Hotel Nordljos"
     assert t.title({}) == "Lodging"                   # fallback

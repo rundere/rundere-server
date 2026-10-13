@@ -119,7 +119,7 @@ def _add_maps(days: list[dict]) -> dict:
             a["map_no"] = n
             legend.setdefault(a["type_label"], colour)
             anchor = (pts.get("place") or pts.get("from") or next(iter(pts.values())))[0]
-            if a["type"] in ("drive", "carRental", "train", "cruise") and len(
+            if a["type"] in ("drive", "taxi", "carRental", "train", "cruise") and len(
                     (a.get("geo") or {}).get("points") or []) >= 2:
                 line, dashed = (_route_line(a) if a["type"] == "drive" else
                                 ([(p["lat"], p["lon"]) for p in a["geo"]["points"]], True))
