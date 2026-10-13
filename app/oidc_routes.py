@@ -36,9 +36,10 @@ def _redirect_uri(request: Request) -> str:
     if settings.oidc_redirect_url:
         return settings.oidc_redirect_url
     # A host named in the per-host settings gets its own callback (YONDER-164) —
-    # safe to take from the request because the name is on an explicit list.
+    # safe to take from the request because the name is on an explicit list —
+    # but only the vetted hostname, not the raw Host header (YONDER-234).
     if oidc.listed_host(request):
-        return f"{str(request.base_url).rstrip('/')}/oidc/callback"
+        return f"{oidc.request_origin(request)}/oidc/callback"
     base = (settings.public_base_url or str(request.base_url)).rstrip("/")
     return f"{base}/oidc/callback"
 
