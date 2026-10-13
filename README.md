@@ -7,7 +7,7 @@
 
 # Run·dere (formerly Yonder)
 
-**Version 4.9.2** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/rundere-server/releases) · [releasing](RELEASING.md)
+**Version 4.9.3** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/rundere-server/releases) · [releasing](RELEASING.md)
 
 > **Yonder is now Run·dere** (say "run there"; plain-text spelling: Rundere). Same app, same data, same
 > `TX_*` settings — from 4.4.0 the repository is `jeeves5454/rundere-server` and
