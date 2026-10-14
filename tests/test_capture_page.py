@@ -46,7 +46,8 @@ if DEPS:
         assert "Capture something" in html and 'name="content"' in html and "More options" in html
         for key in ("gmail", "calendar", "bookmarklet", "email", "ios", "mcp"):
             assert f'href="/capture/setup?tab={key}"' in html, key
-        assert "Other ways to capture" in html and "Coming soon" in html          # iOS isn't built
+        assert "Other ways to capture" in html
+        assert "Coming soon" not in html          # iOS shipped (app 0.7.0, YONDER-54/257)
         assert "script.google.com" not in html and "Apps Script" not in html
 
     def test_recent_captures_is_a_tab_beside_the_capture_box():
@@ -95,7 +96,7 @@ if DEPS:
                  "calendar": ["calendar.addons.execute", "Install add-on", "Check it works"],
                  "bookmarklet": ["bookmarks bar", "/capture/handoff", "Check it works"],
                  "email": ["Not set up on this server yet", "trips+", "forward"],   # D-190; no mailbox in tests
-                 "ios": ["Not available yet", "Share"],
+                 "ios": ["Share → Run·dere", "Check it works"],
                  "mcp": ["Model Context Protocol", "/mcp", "capture_url", "Check it works"]}
         for tab, needles in marks.items():
             html = client.get(f"/capture/setup?tab={tab}").text

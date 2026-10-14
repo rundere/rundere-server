@@ -291,15 +291,20 @@ def account_page(request: Request, msg: str = "", err: str = "",
 
 # --------------------------------------------------------------------------- connected apps + API tokens (YONDER-107)
 @router.post("/account/connected-apps/{grant_id}/revoke")
-def account_revoke_app(grant_id: str, user: User = Depends(authn.current_user),
+def account_revoke_app(grant_id: str, next: str = Form(""),
+                       user: User = Depends(authn.current_user),
                        session: Session = Depends(get_session)):
     from app import oauth
     from app.models import OAuthGrant
+    # Back to the Capture guide it was disconnected from (YONDER-257) — only
+    # ever a page of ours, never an outside address.
+    back = next if next.startswith("/capture/setup?tab=") else "/account"
+    sep = "&" if "?" in back else "?"
     grant = session.get(OAuthGrant, grant_id)
     if grant is None or grant.user_id != user.id:
-        return RedirectResponse("/account?err=No+such+connected+app", status_code=303)
+        return RedirectResponse(f"{back}{sep}err=No+such+connected+app", status_code=303)
     oauth.revoke_grant(session, grant, actor_id=user.id)
-    return RedirectResponse("/account?msg=Disconnected", status_code=303)
+    return RedirectResponse(f"{back}{sep}msg=Disconnected", status_code=303)
 
 
 @router.post("/account/tokens", response_class=HTMLResponse)
