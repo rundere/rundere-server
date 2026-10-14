@@ -647,10 +647,8 @@
    "under12": 0,
    "under12List": [],
    "outfitSmall": [],
-   "contrast": 2,
-   "contrastList": [
-    ".yn-conf.yn-conf-high 3.95 \"high\""
-   ],
+   "contrast": 0,
+   "contrastList": [],
    "radii": [],
    "overflowX": false,
    "status": 200,
@@ -1080,10 +1078,8 @@
    "under12": 0,
    "under12List": [],
    "outfitSmall": [],
-   "contrast": 2,
-   "contrastList": [
-    ".pill 4.28 \"Not connected\""
-   ],
+   "contrast": 0,
+   "contrastList": [],
    "radii": [],
    "overflowX": false,
    "mobileOverflowX": false,
@@ -1102,11 +1098,8 @@
    "under12": 0,
    "under12List": [],
    "outfitSmall": [],
-   "contrast": 3,
-   "contrastList": [
-    ".pill.ok 4.14 \"Built in \u00b7 always on\"",
-    ".pill 4.35 \"Not connected\""
-   ],
+   "contrast": 0,
+   "contrastList": [],
    "radii": [],
    "overflowX": false,
    "status": 200,
@@ -1187,10 +1180,8 @@
    "under12": 0,
    "under12List": [],
    "outfitSmall": [],
-   "contrast": 2,
-   "contrastList": [
-    ".pill.ok 4.14 \"ok\""
-   ],
+   "contrast": 0,
+   "contrastList": [],
    "radii": [],
    "overflowX": false,
    "status": 200,

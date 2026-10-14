@@ -175,7 +175,7 @@ open** for three things only the owner can decide or that need building (below).
 |---|---|---|
 | Text under 12px (the web scale's floor is overline 12) | 654 | 0 |
 | Controls under the 32px small control (D-165) | 244 | 0 |
-| Contrast failures (WCAG AA) | 90 | 9, all status capsules (see below) |
+| Contrast failures (WCAG AA) | 90 | 0 (status capsules fixed under R1) |
 | Radii outside the token set (6 / 10 / 16 / 24 / pill) | 66 | 0 |
 | Outfit below 20px | 8 | 0 |
 | Emoji / horizontal overflow at 390px | 0 / 0 | 0 / 0 |
@@ -204,9 +204,9 @@ open** for three things only the owner can decide or that need building (below).
 
 | # | Gap | Why it isn't fixed here | Proposed |
 |---|---|---|---|
-| R1 | **Status capsules fail AA in light mode** (success 4.14:1, neutral 4.35:1; dark neutral 4.28:1). The README's own spec, colour at 14% fill with full-colour text at 12px, lands just under 4.5. | It's the design system's token choice, not the app's | Owner decision. Either darker capsule text in light (e.g. success-700), a lighter 10% fill, or accept it (status is also given in words) |
+| R1 | ~~Status capsules fail AA in light mode~~ **Resolved (owner, 2026-10-14: darker text in light mode).** Capsule text mixes 35% of `--rd-text` into the status colour in light mode (`--capsule-ink`), so it's the same hue with no new colour. The neutral capsule uses `text-secondary` in both themes (it was 4.28:1 in dark). | — | Done |
 | R2 | **Timeline isn't the spec component.** README §6: a vertical 1px Night 600 line with 8px nodes, the next item's node Silver with the glow. The app uses day-grouped cards. | A real component build | Own item (filed) |
-| R3 | **Home grid differs from the Web board.** The board puts Next-up across 2/3 with the Review queue beside it, and Upcoming trips as a full-width 3-up row below. The app puts Next-up full width, with the queue and trips side by side below. | Layout change the owner should confirm | Own item (filed) |
+| R3 | **Home grid differs from the Web board** (on hold, owner 2026-10-14: keep Next-up full width with the queue below, pending user feedback; YONDER-263). The board puts Next-up across 2/3 with the Review queue beside it, and Upcoming trips as a full-width 3-up row below. The app puts Next-up full width, with the queue and trips side by side below. | Layout change the owner should confirm | Own item (filed) |
 | — | Sidebar items differ from the board (Dashboard/Trips/Review/Capture/Discover/Packing/Journal vs Home/Review/Capture/Trips/Places/Journal) | Already under the navigation rethink, YONDER-228 | — |
 | — | Owner sign-off per page (every ☐ above) | Only the owner can sign off a look | — |
 

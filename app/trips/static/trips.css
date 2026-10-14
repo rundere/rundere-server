@@ -264,9 +264,12 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-finding-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .yn-conf { font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
   padding: 2px 6px; border-radius: var(--rd-radius-xs); }
-.yn-conf-high { color: var(--rd-success); background: color-mix(in srgb, var(--rd-success) 12%, transparent); }
-.yn-conf-medium { color: var(--rd-highlight); background: color-mix(in srgb, var(--rd-highlight) 12%, transparent); }
-.yn-conf-flagged { color: var(--rd-danger); background: color-mix(in srgb, var(--rd-danger) 12%, transparent); }
+.yn-conf-high { color: color-mix(in srgb, var(--rd-text) var(--capsule-ink), var(--rd-success));
+  background: color-mix(in srgb, var(--rd-success) 12%, transparent); }
+.yn-conf-medium { color: color-mix(in srgb, var(--rd-text) var(--capsule-ink), var(--rd-highlight));
+  background: color-mix(in srgb, var(--rd-highlight) 12%, transparent); }
+.yn-conf-flagged { color: color-mix(in srgb, var(--rd-text) var(--capsule-ink), var(--rd-danger));
+  background: color-mix(in srgb, var(--rd-danger) 12%, transparent); }
 .yn-status-badge { margin-left: auto; font-size: 12px; text-transform: uppercase;
   letter-spacing: .04em; color: var(--color-neutral-500); }
 .yn-finding-body { font-size: 14px; color: var(--color-text); line-height: 1.5; }

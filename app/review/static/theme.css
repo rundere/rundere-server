@@ -149,6 +149,14 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
 .rd-dict-def{margin:8px 0 0;color:var(--ink-2)}
 .rd-dict-note{color:var(--ink-3)}
 
+/* ---- Status capsules: AA in both themes (YONDER-202 R1, owner 2026-10-14) ----
+   The README's capsule is the status colour at 14% fill with full-colour text,
+   which misses 4.5:1 at 12px in light mode. In light mode the text mixes in this
+   much of the ink colour (--rd-text): darker text, same hue, no new colour. */
+:root{--capsule-ink:0%}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){--capsule-ink:35%}}
+:root[data-theme="light"]{--capsule-ink:35%}
+
 /* ---- Next-up card (design Web board; one per screen) ---- */
 .nextup{border-radius:var(--rd-radius-card);padding:28px;display:flex;flex-direction:column;gap:22px;
   background:radial-gradient(circle at 85% 30%, var(--rd-night-600) 0%, var(--rd-night-700) 40%, var(--rd-surface) 100%);
