@@ -7,12 +7,15 @@ way, one coming up and one in the past:
 - **Lisbon & Porto**, under way (day 2 of 5): a timeline with moments in the
   next 48 hours (Today, the Watch, the Live Activity), the full Discover set,
   costs in euros.
-- **Banff long weekend**, about three weeks out: a road trip with a route
+- **Paris to Nice road trip**, about three weeks out: a drive with a route
   line, Discover and a generated packing plan.
 - **New York City**, about two months ago: journal entries, costs split with a
   companion, and a plan against actuals.
 
-Plus two captures waiting in Review, for a trip that isn't planned yet.
+The demo user's traveller is Jane Doe, who lives in central London and flies
+from Heathrow (British Airways, and a Ryanair hop home into Stansted). Her home
+profile is what keeps London out of Discover. Plus two captures waiting in
+Review, for a trip that isn't planned yet.
 
 Everything is written through the app's own validated paths (the agent's
 `save_research_finding`, expenses, budget, journal, the packing generator and
@@ -52,11 +55,12 @@ ANCHOR_OFFSET = -1                # …whose start is yesterday
 # --------------------------------------------------------------------------- places
 # Where the seed's places are, so nothing is geocoded at seed or read time.
 PLACES = {
+    "london": ("GB", "London", 51.5074, -0.1278),
     "lisbon": ("PT", "Lisbon", 38.7223, -9.1393),
     "porto": ("PT", "Porto", 41.1579, -8.6291),
-    "banff": ("CA", "Banff", 51.1784, -115.5708),
-    "lake louise": ("CA", "Lake Louise", 51.4254, -116.1773),
-    "calgary": ("CA", "Calgary", 51.0447, -114.0719),
+    "paris": ("FR", "Paris", 48.8566, 2.3522),
+    "nice": ("FR", "Nice", 43.7102, 7.2620),
+    "eze": ("FR", "Èze", 43.7280, 7.3615),
     "new york": ("US", "New York", 40.7128, -74.0060),
     "manhattan": ("US", "New York", 40.7831, -73.9712),
     "tokyo": ("JP", "Tokyo", 35.6762, 139.6503),
@@ -87,15 +91,16 @@ class SeedGeocoder:
 
 # --------------------------------------------------------------------------- feeds
 # 1 unit of the key = this many of each quote (fixed, rounded, for a demo).
-_RATES = {("CAD", "EUR"): 0.66, ("EUR", "CAD"): 1.51, ("CAD", "USD"): 0.72,
-          ("USD", "CAD"): 1.38, ("EUR", "USD"): 1.09, ("USD", "EUR"): 0.92,
-          ("CAD", "JPY"): 108.0, ("JPY", "CAD"): 0.0093}
+_RATES = {("GBP", "EUR"): 1.17, ("EUR", "GBP"): 0.85, ("GBP", "USD"): 1.27,
+          ("USD", "GBP"): 0.79, ("EUR", "USD"): 1.09, ("USD", "EUR"): 0.92,
+          ("GBP", "JPY"): 190.0, ("JPY", "GBP"): 0.0053}
 # Rough daily highs/lows (°C), rain (mm/day), humidity (%) and elevation (m) by
 # city. Approximations for a showcase, not records.
 _CLIMATE = {
-    "Lisbon": (24, 15, 1.2, 65, 50), "Porto": (21, 13, 2.5, 72, 90),
-    "Banff": (16, 2, 1.8, 60, 1384), "Lake Louise": (14, 0, 2.0, 62, 1540),
-    "Calgary": (17, 4, 1.5, 55, 1045), "New York": (20, 12, 3.0, 64, 10),
+    "London": (18, 10, 1.7, 75, 15), "Lisbon": (24, 15, 1.2, 65, 50),
+    "Porto": (21, 13, 2.5, 72, 90), "Paris": (20, 12, 1.8, 70, 35),
+    "Nice": (25, 18, 0.8, 65, 10), "Èze": (24, 17, 0.8, 62, 430),
+    "New York": (20, 12, 3.0, 64, 10),
 }
 
 
@@ -163,16 +168,18 @@ def _pt(role, label, place):
 
 # A trip: key, name, start/end offsets (days from today), notes, who's on it,
 # timeline activities as (type, start (day, "HH:MM"), end or None, values, points).
+# Jane flies from Heathrow (her home airport); times are local wall clock.
+LHR = (51.4700, -0.4543)
 TRIPS = [
     {"key": "lisbon", "name": "Lisbon & Porto", "start": -1, "end": 3,
      "notes": "Sample trip on the Run·dere demo server. Five days: Lisbon, then the "
-              "train north to Porto.",
-     "companion": True, "currency": "CAD",
+              "train north to Porto, home on a Ryanair hop into Stansted.",
+     "companion": True, "currency": "GBP",
      "activities": [
-         ("flight", (-2, "21:15"), (-1, "09:05"),
-          {"airline": "Air Canada", "flightNumber": "AC 832", "from": "YYZ", "to": "LIS",
+         ("flight", (-1, "07:05"), (-1, "09:45"),
+          {"airline": "British Airways", "flightNumber": "BA 500", "from": "LHR", "to": "LIS",
            "confirmation": "DEMO-LX4"},
-          [_pt("from", "YYZ", (43.6777, -79.6248)), _pt("to", "LIS", (38.7742, -9.1342))]),
+          [_pt("from", "LHR", LHR), _pt("to", "LIS", (38.7742, -9.1342))]),
          ("lodging", (-1, "14:00"), (2, "11:00"),
           {"name": "Casa do Miradouro (sample)", "type": "Hotel",
            "address": "Rua da Rosa, Bairro Alto, Lisbon", "confirmation": "DEMO-CM19"},
@@ -196,57 +203,58 @@ TRIPS = [
          ("dining", (2, "20:30"), None,
           {"name": "Adega da Ribeira (sample)", "address": "Ribeira, Porto", "partySize": "2"},
           [_pt("place", "Adega da Ribeira", (41.1411, -8.6120))]),
-         ("flight", (3, "13:35"), (3, "16:50"),
-          {"airline": "Air Canada", "flightNumber": "AC 877", "from": "OPO", "to": "YYZ",
-           "confirmation": "DEMO-LX4"},
-          [_pt("from", "OPO", (41.2481, -8.6814)), _pt("to", "YYZ", (43.6777, -79.6248))]),
+         # Ryanair doesn't serve Heathrow; Stansted is in London's metro group, so
+         # this still counts as coming home (resolve/home.py METRO_GROUPS).
+         ("flight", (3, "13:40"), (3, "16:15"),
+          {"airline": "Ryanair", "flightNumber": "FR 8337", "from": "OPO", "to": "STN",
+           "confirmation": "DEMO-FR2"},
+          [_pt("from", "OPO", (41.2481, -8.6814)), _pt("to", "STN", (51.8860, 0.2389))]),
      ]},
-    {"key": "banff", "name": "Banff long weekend", "start": 21, "end": 24,
-     "notes": "Sample trip: fly to Calgary, drive into the Rockies, two days of lakes "
-              "and trails.",
-     "companion": False, "currency": "CAD",
+    {"key": "france", "name": "Paris to Nice road trip", "start": 21, "end": 26,
+     "notes": "Sample trip: two nights in Paris, then the drive south to the Riviera.",
+     "companion": False, "currency": "GBP",
      "activities": [
-         ("flight", (21, "08:00"), (21, "10:20"),
-          {"airline": "WestJet", "flightNumber": "WS 663", "from": "YYZ", "to": "YYC",
-           "confirmation": "DEMO-WB2"},
-          [_pt("from", "YYZ", (43.6777, -79.6248)), _pt("to", "YYC", (51.1215, -114.0076))]),
-         ("carRental", (21, "11:00"), (24, "12:00"),
-          {"company": "Sample Car Rental", "pickupLocation": "Calgary Airport (YYC)",
-           "dropoffLocation": "Calgary Airport (YYC)", "confirmation": "DEMO-CR5"},
-          [_pt("from", "YYC", (51.1215, -114.0076)), _pt("to", "YYC", (51.1215, -114.0076))]),
-         ("drive", (21, "11:30"), (21, "13:15"),
-          {"route": "Calgary Airport → Banff", "from": "Calgary Airport", "to": "Banff",
-           "distance": "145 km"},
-          [_pt("from", "Calgary Airport", (51.1215, -114.0076)),
-           _pt("to", "Banff", "banff")]),
-         ("lodging", (21, "15:00"), (24, "10:00"),
-          {"name": "Cascade Lodge (sample)", "type": "Lodge",
-           "address": "Banff Avenue, Banff, AB", "confirmation": "DEMO-CL8"},
-          [_pt("place", "Cascade Lodge", (51.1802, -115.5683))]),
-         ("tour", (22, "08:00"), (22, "14:00"),
-          {"name": "Lake Louise & Moraine Lake", "location": "Lake Louise, AB",
-           "duration": "6 h"},
-          [_pt("place", "Lake Louise", "lake louise")]),
-         ("tour", (23, "10:00"), (23, "12:30"),
-          {"name": "Sulphur Mountain gondola", "location": "Banff, AB", "duration": "2.5 h"},
-          [_pt("place", "Banff Gondola", (51.1441, -115.5735))]),
-         ("drive", (24, "10:15"), (24, "11:50"),
-          {"route": "Banff → Calgary Airport", "from": "Banff", "to": "Calgary Airport",
-           "distance": "145 km"},
-          [_pt("from", "Banff", "banff"), _pt("to", "Calgary Airport", (51.1215, -114.0076))]),
-         ("flight", (24, "14:00"), (24, "19:45"),
-          {"airline": "WestJet", "flightNumber": "WS 668", "from": "YYC", "to": "YYZ",
-           "confirmation": "DEMO-WB2"},
-          [_pt("from", "YYC", (51.1215, -114.0076)), _pt("to", "YYZ", (43.6777, -79.6248))]),
+         ("flight", (21, "08:15"), (21, "10:30"),
+          {"airline": "British Airways", "flightNumber": "BA 304", "from": "LHR", "to": "CDG",
+           "confirmation": "DEMO-PN1"},
+          [_pt("from", "LHR", LHR), _pt("to", "CDG", (49.0097, 2.5479))]),
+         ("lodging", (21, "15:00"), (23, "10:00"),
+          {"name": "Hôtel du Marais (sample)", "type": "Hotel",
+           "address": "Le Marais, Paris", "confirmation": "DEMO-HM6"},
+          [_pt("place", "Hôtel du Marais", (48.8590, 2.3620))]),
+         ("tour", (22, "10:00"), (22, "13:00"),
+          {"name": "Musée d'Orsay", "location": "Paris", "duration": "3 h"},
+          [_pt("place", "Musée d'Orsay", (48.8600, 2.3266))]),
+         ("carRental", (23, "09:00"), (26, "10:00"),
+          {"company": "Sample Car Rental", "pickupLocation": "Paris Gare de Lyon",
+           "dropoffLocation": "Nice Côte d'Azur Airport (NCE)", "confirmation": "DEMO-CR5"},
+          [_pt("from", "Paris Gare de Lyon", (48.8443, 2.3743)),
+           _pt("to", "NCE", (43.6584, 7.2159))]),
+         ("drive", (23, "09:30"), (23, "18:30"),
+          {"route": "Paris → Nice (A6 / A7 / A8)", "from": "Paris", "to": "Nice",
+           "distance": "930 km"},
+          [_pt("from", "Paris", "paris"), _pt("to", "Nice", "nice")]),
+         ("lodging", (23, "19:00"), (26, "09:00"),
+          {"name": "Villa Promenade (sample)", "type": "Hotel",
+           "address": "Promenade des Anglais, Nice", "confirmation": "DEMO-VP8"},
+          [_pt("place", "Villa Promenade", (43.6950, 7.2650))]),
+         ("tour", (24, "10:00"), (24, "15:00"),
+          {"name": "Èze village and the Grande Corniche", "location": "Èze, France",
+           "duration": "5 h"},
+          [_pt("place", "Èze", "eze")]),
+         ("flight", (26, "12:50"), (26, "14:00"),
+          {"airline": "British Airways", "flightNumber": "BA 343", "from": "NCE", "to": "LHR",
+           "confirmation": "DEMO-PN1"},
+          [_pt("from", "NCE", (43.6584, 7.2159)), _pt("to", "LHR", LHR)]),
      ]},
     {"key": "nyc", "name": "New York City", "start": -62, "end": -58,
      "notes": "Sample trip from two months ago: a long weekend in Manhattan.",
-     "companion": True, "currency": "CAD",
+     "companion": True, "currency": "GBP",
      "activities": [
-         ("flight", (-62, "07:30"), (-62, "09:00"),
-          {"airline": "Air Canada", "flightNumber": "AC 702", "from": "YYZ", "to": "LGA",
+         ("flight", (-62, "08:25"), (-62, "11:20"),
+          {"airline": "British Airways", "flightNumber": "BA 117", "from": "LHR", "to": "JFK",
            "confirmation": "DEMO-NY1"},
-          [_pt("from", "YYZ", (43.6777, -79.6248)), _pt("to", "LGA", (40.7769, -73.8740))]),
+          [_pt("from", "LHR", LHR), _pt("to", "JFK", (40.6413, -73.7781))]),
          ("lodging", (-62, "15:00"), (-58, "11:00"),
           {"name": "Midtown Hotel (sample)", "type": "Hotel",
            "address": "West 44th Street, Manhattan, New York", "confirmation": "DEMO-MH3"},
@@ -260,22 +268,24 @@ TRIPS = [
          ("tour", (-60, "15:00"), (-60, "17:00"),
           {"name": "High Line walk", "location": "Manhattan, New York", "duration": "2 h"},
           [_pt("place", "The High Line", (40.7480, -74.0048))]),
-         ("flight", (-58, "17:00"), (-58, "18:35"),
-          {"airline": "Air Canada", "flightNumber": "AC 717", "from": "LGA", "to": "YYZ",
+         ("flight", (-58, "18:30"), (-57, "06:35"),
+          {"airline": "British Airways", "flightNumber": "BA 112", "from": "JFK", "to": "LHR",
            "confirmation": "DEMO-NY1"},
-          [_pt("from", "LGA", (40.7769, -73.8740)), _pt("to", "YYZ", (43.6777, -79.6248))]),
+          [_pt("from", "JFK", (40.6413, -73.7781)), _pt("to", "LHR", LHR)]),
      ]},
 ]
 
 # Discover content written as an AI agent would (topic, place_key, title, body,
-# extra FindingIn fields). Real, long-standing places; no bookings.
-_SRC = [{"title": "Visit Portugal", "url": "https://www.visitportugal.com"}]
+# extra FindingIn fields). Real, long-standing places; no bookings. Safety
+# advice cites the UK government, as Jane is British.
+_SRC_PT = [{"title": "Visit Portugal", "url": "https://www.visitportugal.com"}]
+_SRC_FR = [{"title": "France.fr", "url": "https://www.france.fr"}]
 RESEARCH = {
     "lisbon": [
         {"topic": "food", "place_key": "PT:Lisbon", "title": "Food & drink in Lisbon",
          "body_md": "Seafood, custard tarts and late dinners. Book ahead for Friday and "
                     "Saturday nights; tascas (small family places) rarely take bookings.",
-         "sources": _SRC,
+         "sources": _SRC_PT,
          "items": [
              {"kind": "bakery", "name": "Pastéis de Belém", "neighbourhood": "Belém",
               "what_to_get": "Pastéis de nata, warm, with cinnamon", "price_tier": 1,
@@ -288,7 +298,7 @@ RESEARCH = {
               "lat": 38.7145, "lon": -9.1383}]},
         {"topic": "events", "place_key": "PT:Lisbon", "title": "Things to do in Lisbon",
          "body_md": "Hilly and walkable: ride tram 28 once, then walk. Most museums close "
-                    "on Mondays.", "sources": _SRC,
+                    "on Mondays.", "sources": _SRC_PT,
          "items": [
              {"kind": "activity", "name": "Tram 28 through Alfama", "duration": "1 h",
               "details": "The classic yellow tram through the old town; go early to get a seat.",
@@ -301,7 +311,7 @@ RESEARCH = {
               "lat": 38.7037, "lon": -9.1784}]},
         {"topic": "food", "place_key": "PT:Porto", "title": "Food & drink in Porto",
          "body_md": "Port lodges across the river in Gaia, and the francesinha sandwich.",
-         "sources": _SRC,
+         "sources": _SRC_PT,
          "items": [
              {"kind": "market", "name": "Mercado do Bolhão", "neighbourhood": "Baixa",
               "what_to_get": "Fresh fruit and a sandes de presunto", "price_tier": 1,
@@ -310,12 +320,13 @@ RESEARCH = {
               "neighbourhood": "Gaia", "what_to_get": "A tawny tasting flight", "price_tier": 2,
               "lat": 41.1373, "lon": -8.6136}]},
         {"topic": "safety", "place_key": "PT", "title": "Safety & getting around in Portugal",
-         "body_md": "", "sources": _SRC,
+         "body_md": "", "sources": _SRC_PT,
          "safety_transport": {
              "safety": {"summary": "Portugal is one of Europe's safest countries. Watch for "
                                    "pickpockets on tram 28 and around busy viewpoints.",
-                        "advisories": [{"text": "Exercise normal security precautions.",
-                                        "source_url": "https://travel.gc.ca/destinations/portugal"}],
+                        "advisories": [{"text": "Most visits are trouble-free; watch for pickpockets "
+                                                "in tourist areas and on public transport.",
+                                        "source_url": "https://www.gov.uk/foreign-travel-advice/portugal"}],
                         "scams": ["People selling 'hashish' (usually bay leaves) in Baixa."]},
              "transport": {"summary": "Metro, trams and funiculars in Lisbon; trains between cities.",
                            "public_transit": "Load a Viva Viagem card for metro, trams and buses.",
@@ -333,43 +344,68 @@ RESEARCH = {
                                      {"phrase": "Uma bica", "meaning": "An espresso (Lisbon word)"}],
                      "etiquette": ["Tipping is small: round up or leave 5–10%."]}},
     ],
-    "banff": [
-        {"topic": "events", "place_key": "CA:Banff", "title": "Things to do around Banff",
-         "body_md": "Start early: parking at Lake Louise and Moraine Lake fills by 8 a.m., "
-                    "and the Moraine Lake road is shuttle-only.",
-         "sources": [{"title": "Parks Canada", "url": "https://parks.canada.ca/pn-np/ab/banff"}],
+    "france": [
+        {"topic": "food", "place_key": "FR:Nice", "title": "Food & drink in Nice",
+         "body_md": "Niçois cooking leans Italian: socca, pissaladière and salade niçoise. "
+                    "Lunch is the main meal; many kitchens close between 14:30 and 19:00.",
+         "sources": _SRC_FR,
          "items": [
-             {"kind": "activity", "name": "Johnston Canyon catwalks", "duration": "2 h",
-              "details": "An easy walk along catwalks to the Lower and Upper Falls.",
-              "lat": 51.2453, "lon": -115.8395},
-             {"kind": "activity", "name": "Banff Upper Hot Springs", "duration": "1.5 h",
-              "details": "Hot pool with mountain views; good after a day of hiking.",
-              "lat": 51.1525, "lon": -115.5612}]},
-        {"topic": "food", "place_key": "CA:Banff", "title": "Food & drink in Banff",
-         "body_md": "Hearty and casual. Book dinner on weekends.",
-         "sources": [{"title": "Banff & Lake Louise Tourism", "url": "https://www.banfflakelouise.com"}],
+             {"kind": "street_food", "name": "Chez Pipo", "neighbourhood": "Port",
+              "what_to_get": "Socca, straight from the wood oven", "price_tier": 1,
+              "lat": 43.7010, "lon": 7.2860},
+             {"kind": "market", "name": "Cours Saleya market", "neighbourhood": "Vieux Nice",
+              "what_to_get": "Morning flowers and produce; socca from the stalls", "price_tier": 1,
+              "lat": 43.6955, "lon": 7.2757}]},
+        {"topic": "events", "place_key": "FR:Nice", "title": "Things to do around Nice",
+         "body_md": "Walk the Promenade at sunset; the hill villages are an easy drive east.",
+         "sources": _SRC_FR,
          "items": [
-             {"kind": "brewery", "name": "Banff Ave. Brewing Co.", "neighbourhood": "Downtown",
-              "what_to_get": "A flight of local beers", "price_tier": 2,
-              "lat": 51.1763, "lon": -115.5713}]},
-        {"topic": "safety", "place_key": "CA", "title": "Safety in the Rockies", "body_md": "",
-         "sources": [{"title": "Parks Canada", "url": "https://parks.canada.ca/pn-np/ab/banff"}],
+             {"kind": "activity", "name": "Colline du Château", "duration": "1.5 h",
+              "details": "Climb (or take the lift) for the view over the Baie des Anges.",
+              "lat": 43.6950, "lon": 7.2810},
+             {"kind": "activity", "name": "Musée Matisse", "duration": "2 h",
+              "details": "Matisse's work in a Genoese villa in Cimiez.",
+              "lat": 43.7196, "lon": 7.2760}]},
+        {"topic": "events", "place_key": "FR:Paris", "title": "Things to do in Paris",
+         "body_md": "Book big museums ahead; many close one weekday (the Louvre on Tuesdays).",
+         "sources": _SRC_FR,
+         "items": [
+             {"kind": "activity", "name": "Sainte-Chapelle", "duration": "1 h",
+              "details": "Thirteenth-century stained glass; go on a sunny morning.",
+              "booking": True, "lat": 48.8554, "lon": 2.3450},
+             {"kind": "activity", "name": "Canal Saint-Martin walk", "duration": "1.5 h",
+              "details": "Iron footbridges, cafés and the locks.",
+              "lat": 48.8710, "lon": 2.3650}]},
+        {"topic": "safety", "place_key": "FR", "title": "Safety & driving in France", "body_md": "",
+         "sources": _SRC_FR,
          "safety_transport": {
-             "safety": {"summary": "Wildlife is the main hazard: keep your distance from elk "
-                                   "and bears, and carry bear spray on trails.",
-                        "advisories": [{"text": "Check trail and wildlife warnings before hiking.",
-                                        "source_url": "https://parks.canada.ca/pn-np/ab/banff"}],
-                        "scams": []},
-             "transport": {"summary": "A car makes it easy; Roam Transit buses link Banff, "
-                                      "the gondola and Lake Louise.",
-                           "tips": ["Buy a Parks Canada pass before you drive in."]}}},
+             "safety": {"summary": "Generally safe. Pickpocketing is common in central Paris "
+                                   "and on the Riviera's busy promenades.",
+                        "advisories": [{"text": "Carry your driving licence, insurance and V5C "
+                                                "if you drive your own car.",
+                                        "source_url": "https://www.gov.uk/foreign-travel-advice/france"}],
+                        "scams": ["The 'found gold ring' and petition-signing tricks near landmarks."]},
+             "transport": {"summary": "Métro in Paris; motorways south are tolled (péage).",
+                           "apps": ["Bonjour RATP", "SNCF Connect"],
+                           "tips": ["Tolls from Paris to Nice run to about €80; keep a card handy.",
+                                    "Speed cameras are frequent: 130 km/h on motorways, 110 in rain."]}}},
+        {"topic": "language_local", "place_key": "FR:Nice", "title": "Local phrases in Nice",
+         "body_md": "",
+         "phrases": {"register_summary": "Always start with 'bonjour' before asking anything; "
+                                         "it's expected, and service warms up when you do.",
+                     "greetings": [{"phrase": "Bonjour", "meaning": "Hello / good day"},
+                                   {"phrase": "Bonsoir", "meaning": "Good evening"}],
+                     "expressions": [{"phrase": "L'addition, s'il vous plaît", "meaning": "The bill, please"},
+                                     {"phrase": "Une socca, s'il vous plaît",
+                                      "meaning": "One socca, please"}],
+                     "etiquette": ["Service is included; round up for good service."]}},
     ],
 }
 
 JOURNAL = [   # (trip key, day offset, "HH:MM", body, place)
     ("nyc", -62, "21:40", "Landed, checked in, and walked to Times Square just to say we did. "
                           "Too loud, loved it anyway.", ("Times Square", 40.7580, -73.9855)),
-    ("nyc", -61, "23:10", "The show was worth every cent. Sam cried at the second act.",
+    ("nyc", -61, "23:10", "The show was worth every penny. Sam cried at the second act.",
      ("Theatre District", 40.7590, -73.9866)),
     ("nyc", -60, "18:05", "High Line at golden hour, then dumplings. Feet are done.",
      ("The High Line", 40.7480, -74.0048)),
@@ -377,22 +413,22 @@ JOURNAL = [   # (trip key, day offset, "HH:MM", body, place)
      ("Bairro Alto", 38.7128, -9.1446)),
 ]
 
-EXPENSES = [  # (trip key, day offset, title, amount, currency, rate→CAD, category, payer)
+EXPENSES = [  # (trip key, day offset, title, amount, currency, rate→GBP, category, payer)
     # Split equally between everyone on the trip.
-    ("nyc", -62, "Taxi from LGA", "48.00", "USD", "1.38", "transport", "alex"),
-    ("nyc", -61, "Show tickets", "310.00", "USD", "1.38", "activities", "sam"),
-    ("nyc", -60, "Chelsea Market lunch", "62.50", "USD", "1.38", "food", "alex"),
-    ("nyc", -59, "Museum entry", "60.00", "USD", "1.38", "activities", "sam"),
-    ("lisbon", -1, "Metro cards", "14.00", "EUR", "1.51", "transport", "alex"),
-    ("lisbon", -1, "Dinner in Bairro Alto", "58.00", "EUR", "1.51", "food", "sam"),
+    ("nyc", -62, "Taxi from JFK", "70.00", "USD", "0.79", "transport", "jane"),
+    ("nyc", -61, "Show tickets", "310.00", "USD", "0.79", "activities", "sam"),
+    ("nyc", -60, "Chelsea Market lunch", "62.50", "USD", "0.79", "food", "jane"),
+    ("nyc", -59, "Museum entry", "60.00", "USD", "0.79", "activities", "sam"),
+    ("lisbon", -1, "Metro cards", "14.00", "EUR", "0.85", "transport", "jane"),
+    ("lisbon", -1, "Dinner in Bairro Alto", "58.00", "EUR", "0.85", "food", "sam"),
 ]
 
 BUDGET = [    # (trip key, title, amount, currency, category)
-    ("nyc", "Hotel, four nights", "1450.00", "CAD", "lodging"),
-    ("nyc", "Food and drink", "600.00", "CAD", "food"),
-    ("nyc", "Shows and museums", "450.00", "CAD", "activities"),
-    ("lisbon", "Hotels", "1100.00", "CAD", "lodging"),
-    ("lisbon", "Food and drink", "500.00", "CAD", "food"),
+    ("nyc", "Hotel, four nights", "950.00", "GBP", "lodging"),
+    ("nyc", "Food and drink", "400.00", "GBP", "food"),
+    ("nyc", "Shows and museums", "300.00", "GBP", "activities"),
+    ("lisbon", "Hotels", "650.00", "GBP", "lodging"),
+    ("lisbon", "Food and drink", "300.00", "GBP", "food"),
 ]
 
 
@@ -416,9 +452,9 @@ def _encode_polyline6(points) -> str:
     return "".join(out)
 
 
-# Calgary Airport → Banff, a handful of points along the Trans-Canada.
-_BANFF_ROUTE = [(51.1215, -114.0076), (51.0870, -114.2100), (51.0900, -114.6200),
-                (51.0870, -115.0500), (51.0870, -115.3500), (51.1784, -115.5708)]
+# Paris → Nice down the A6 / A7 / A8, a handful of points along the way.
+_ROAD_ROUTE = [(48.8566, 2.3522), (47.7986, 3.5673), (47.0260, 4.8400), (45.7640, 4.8357),
+               (44.9334, 4.8924), (43.5297, 5.4474), (43.4332, 6.7370), (43.7102, 7.2620)]
 
 
 def _geo(atype: str, values: dict, points: list[dict]) -> dict:
@@ -426,14 +462,13 @@ def _geo(atype: str, values: dict, points: list[dict]) -> dict:
     g = {"points": points, "key": fingerprint(atype, values), "complete": True,
          "at": datetime.now(timezone.utc).isoformat()}
     if atype == "drive":
-        line = _BANFF_ROUTE if values.get("to") == "Banff" else list(reversed(_BANFF_ROUTE))
-        g["route"] = {"polyline": _encode_polyline6(line), "distance_km": 145.0,
-                      "duration_minutes": 100, "provider": "capture"}
+        g["route"] = {"polyline": _encode_polyline6(_ROAD_ROUTE), "distance_km": 930.0,
+                      "duration_minutes": 540, "provider": "capture"}
     return g
 
 
-# Alex is the demo login's own traveller; Sam is a guest with no login.
-_PEOPLE = (("alex", "Alex Morgan", "self"), ("sam", "Sam Rivera", "guest"))
+# Jane is the demo login's own traveller; Sam is a guest with no login.
+_PEOPLE = (("jane", "Jane Doe", "self"), ("sam", "Sam Rivera", "guest"))
 _PEOPLE_NAMES = [name for _, name, _ in _PEOPLE]
 
 
@@ -443,27 +478,30 @@ def _demo_user(session: Session):
 
 
 def _travellers(session: Session, user) -> dict:
-    """Alex (the demo login's own traveller) and Sam (a guest with no login)."""
+    """Jane (the demo login's own traveller) and Sam (a guest with no login),
+    both British and based in London."""
     from app.models import TravelerIdentity
     out = {}
     for key, name, kind in _PEOPLE:
         t = session.query(TravelerIdentity).filter_by(display_name=name).one_or_none()
         if t is None:
-            t = TravelerIdentity(display_name=name, kind=kind, nationality="CA",
-                                 base_currency="CAD", timezone="America/Toronto")
+            t = TravelerIdentity(display_name=name, kind=kind, nationality="GB",
+                                 base_currency="GBP", timezone="Europe/London")
             session.add(t)
             session.flush()
         out[key] = t.id
-    user.traveler_id = out["alex"]
-    # Home is Toronto, so Discover doesn't research it and the trips from YYZ
-    # aren't visits (as on a real account).
+    user.traveler_id = out["jane"]
+    # The home profile the demo shows off: Jane lives within 10 km of central
+    # London and flies from Heathrow. So Discover never researches London, and
+    # flights home (Heathrow, or Stansted through London's metro group) aren't
+    # visits, as on a real account.
     from app.models import HomeProfile
-    if not session.query(HomeProfile).filter_by(traveler_id=out["alex"]).count():
+    if not session.query(HomeProfile).filter_by(traveler_id=out["jane"]).count():
         session.add_all([
-            HomeProfile(traveler_id=out["alex"], kind="residence", label="Toronto",
-                        lat=43.6532, lon=-79.3832, radius_km=50.0, country="CA"),
-            HomeProfile(traveler_id=out["alex"], kind="home_airport", label="Toronto Pearson",
-                        iata="YYZ", lat=43.6777, lon=-79.6248, radius_km=50.0, country="CA")])
+            HomeProfile(traveler_id=out["jane"], kind="residence", label="Central London",
+                        lat=51.5074, lon=-0.1278, radius_km=10.0, country="GB"),
+            HomeProfile(traveler_id=out["jane"], kind="home_airport", label="London Heathrow",
+                        iata="LHR", lat=51.4700, lon=-0.4543, radius_km=50.0, country="GB")])
     session.commit()
     return out
 
@@ -489,7 +527,7 @@ def seed(session: Session, *, replace: bool = False, today: date | None = None) 
     with demo.seeding():
         trips = {t["key"]: _seed_trip(session, user, people, t, today) for t in TRIPS}
         _seed_discover(session, user, trips)
-        _seed_packing(session, user, trips["banff"])
+        _seed_packing(session, user, trips["france"])
         _seed_costs(session, user, people, trips, today)
         _seed_journal(session, user, trips, today)
         _seed_captures(session, user, today)
@@ -504,7 +542,7 @@ def _seed_trip(session, user, people, spec, today):
              external_ref=TAG + spec["key"], expense_currency=spec["currency"])
     session.add(t)
     session.flush()
-    session.add(TripTraveler(trip_id=t.id, traveler_id=people["alex"], role="self"))
+    session.add(TripTraveler(trip_id=t.id, traveler_id=people["jane"], role="self"))
     if spec["companion"]:
         session.add(TripTraveler(trip_id=t.id, traveler_id=people["sam"], role="companion"))
     for atype, (sd, st), end, values, points in spec["activities"]:
@@ -537,7 +575,7 @@ def refresh_discover(session, user, trips) -> None:
         for t in trips:
             run_discovery(session, t, resolve_airport=_airport_resolver(),
                           geocoder=SeedGeocoder(), resolvers=_resolvers(),
-                          home_profiles=homes, base_currencies=("CAD",), user_id=user.id)
+                          home_profiles=homes, base_currencies=("GBP",), user_id=user.id)
 
 
 def _seed_packing(session, user, trip):
@@ -596,15 +634,16 @@ def _seed_captures(session, user, today):
     dep = today + timedelta(days=90)
     docs = [
         {"@context": "https://schema.org", "@type": "FlightReservation",
-         "reservationNumber": "DEMO-TK9", "underName": {"@type": "Person", "name": "Alex Morgan"},
-         "reservationFor": {"@type": "Flight", "flightNumber": "AC1",
-                            "airline": {"@type": "Airline", "name": "Air Canada", "iataCode": "AC"},
-                            "departureAirport": {"@type": "Airport", "iataCode": "YYZ"},
-                            "departureTime": f"{dep.isoformat()}T13:10:00-05:00",
+         "reservationNumber": "DEMO-TK9", "underName": {"@type": "Person", "name": "Jane Doe"},
+         "reservationFor": {"@type": "Flight", "flightNumber": "BA5",
+                            "airline": {"@type": "Airline", "name": "British Airways",
+                                        "iataCode": "BA"},
+                            "departureAirport": {"@type": "Airport", "iataCode": "LHR"},
+                            "departureTime": f"{dep.isoformat()}T19:15:00+01:00",
                             "arrivalAirport": {"@type": "Airport", "iataCode": "HND"},
-                            "arrivalTime": f"{(dep + timedelta(days=1)).isoformat()}T15:25:00+09:00"}},
+                            "arrivalTime": f"{(dep + timedelta(days=1)).isoformat()}T17:20:00+09:00"}},
         {"@context": "https://schema.org", "@type": "LodgingReservation",
-         "reservationNumber": "DEMO-TH4", "underName": {"@type": "Person", "name": "Alex Morgan"},
+         "reservationNumber": "DEMO-TH4", "underName": {"@type": "Person", "name": "Jane Doe"},
          "reservationFor": {"@type": "LodgingBusiness", "name": "Shinjuku Hotel (sample)",
                             "address": {"@type": "PostalAddress", "addressLocality": "Tokyo",
                                         "addressCountry": "JP"}},
@@ -639,7 +678,7 @@ def _remove(session, user) -> None:
         synchronize_session=False)
     _remove_captures(session, user)
     session.query(m.Trip).filter(m.Trip.id.in_(tids)).delete(synchronize_session=False)
-    # The seed's people and Alex's homes (a re-seed recreates them).
+    # The seed's people and Jane's homes (a re-seed recreates them).
     people = [t.id for t in session.query(m.TravelerIdentity).filter(
         m.TravelerIdentity.display_name.in_(_PEOPLE_NAMES))]
     session.query(m.HomeProfile).filter(m.HomeProfile.traveler_id.in_(people)).delete(

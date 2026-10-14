@@ -400,21 +400,36 @@ request forgery (SSRF) risk.
     (SMTP or IMAP) or SSO configured, or on a database holding any user other
     than the demo user. A real server can never be flipped into demo mode by
     accident.
-  - **The sample data** (`app/demo_seed.py`) is three fictional trips for the
-    demo user's traveller Alex, with Sam as a guest companion with no login:
-    Lisbon & Porto under way (day 2 of 5), a Banff road trip three weeks out,
-    New York two months ago. They come with Discover, a packing plan, costs and
-    a budget, journal entries, a Toronto home, and two captures waiting in
-    Review. Bookings use sample names and `DEMO-` confirmation codes; Discover
-    recommends real, long-standing places. Everything is written through the
-    app's own paths inside `demo.seeding()`, the one narrow lift of the
-    read-only rule. Places come from the seed's own table (`SeedGeocoder`, also
-    used by demo reads). Weather and rates come from a built-in offline stand-in
-    for Open-Meteo and Frankfurter: fixed rates and rough climate averages,
-    illustrative only.
+  - **The sample data** (`app/demo_seed.py`) shows off the home profile and
+    travel discovery (owner, 2026-10-14). The demo user's traveller is **Jane
+    Doe**, British, based within 10 km of central London, flying from
+    **Heathrow**, with Sam as a guest companion with no login. She has three
+    trips:
+    - **Lisbon & Porto**, under way (day 2 of 5): British Airways out of
+      Heathrow, home on Ryanair into Stansted. Ryanair doesn't serve Heathrow;
+      Stansted is in London's metro group, so it's still home.
+    - **A Paris to Nice road trip** three weeks out, with BA flights either side.
+    - **New York** two months ago, on BA.
+    They come with Discover, a packing plan, costs (GBP) and a budget, journal
+    entries, and two captures waiting in Review. Her home profile keeps London
+    out of Discover.
+    - Bookings use sample names and `DEMO-` confirmation codes. Airlines are
+      real; Discover recommends real, long-standing places.
+    - Everything is written through the app's own paths inside
+      `demo.seeding()`, the one narrow lift of the read-only rule.
+    - Places come from the seed's own table (`SeedGeocoder`, also used by demo
+      reads). Weather and rates come from a built-in offline stand-in for
+      Open-Meteo and Frankfurter: fixed rates and rough climate averages,
+      illustrative only.
+  - **Shipped in the image, not fetched.** The seed is code in every release, so
+    it always matches the schema it writes. It's never pulled from GitHub at
+    run time, which would add an outbound dependency and a supply-chain risk.
+    It only runs on a demo server: the startup path and the CLI both check
+    `TX_DEMO_MODE`. Changing the data is a PR. A demo upgrade then runs
+    `demo-seed --replace` once.
   - **Kept current, never wiped.** Nothing changes, so there is nothing to
     reset. A nightly job (03:00 in `TX_DEMO_TIMEZONE`, default
-    America/Toronto, and at startup) measures how far the in-progress trip has
+    Europe/London, and at startup) measures how far the in-progress trip has
     drifted and shifts every seeded date by that many days. It refreshes the
     weather and currency findings and rebuilds the waiting captures; running
     it twice changes nothing. A re-seed (`demo-seed --replace`) runs only when a

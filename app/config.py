@@ -128,7 +128,7 @@ class Settings(BaseSettings):
     demo_mode: bool = False
     demo_username: str = "demo"
     demo_password: str = ""
-    demo_timezone: str = "America/Toronto"   # the nightly roll runs at 03:00 here
+    demo_timezone: str = "Europe/London"     # the nightly roll runs at 03:00 here
     # HS256 signing key. MUST be set in prod (empty => a process-ephemeral key,
     # so tokens do not survive a restart — a loud dev-only fallback).
     jwt_secret: str = ""

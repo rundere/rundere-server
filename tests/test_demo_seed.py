@@ -67,26 +67,34 @@ if DEPS:
         assert out["seeded"] is True
         with SessionLocal() as s:
             t = _trips(s)
-            lis, banff, nyc = t["demo:lisbon"], t["demo:banff"], t["demo:nyc"]
+            lis, france, nyc = t["demo:lisbon"], t["demo:france"], t["demo:nyc"]
             d = lambda n: (TODAY + timedelta(days=n)).isoformat()
             assert (lis.start_date, lis.end_date) == (d(-1), d(3))          # under way
-            assert banff.start_date == d(21) and nyc.end_date == d(-58)
+            assert france.start_date == d(21) and nyc.end_date == d(-58)
             assert all(x.owner_id == uid for x in t.values())
             topics = {f.topic for f in s.query(m.DiscoveryFinding).filter_by(trip_id=lis.id)}
             assert {"weather", "currency", "plugs", "language", "food", "events",
                     "safety", "language_local"} <= topics
-            # Home (Toronto) is never researched.
+            # Home (central London, Heathrow) is never researched; the trips are.
             assert not s.query(m.DiscoveryFinding).filter(
-                m.DiscoveryFinding.place_key.like("%Toronto%")).count()
+                m.DiscoveryFinding.place_key.like("GB%")).count()
+            fr = {f.place_key for f in s.query(m.DiscoveryFinding).filter_by(trip_id=france.id)}
+            assert {"FR", "FR:Paris", "FR:Nice"} <= fr
+            jane = s.get(m.TravelerIdentity, s.get(m.User, uid).traveler_id)
+            assert (jane.display_name, jane.nationality, jane.base_currency) == (
+                "Jane Doe", "GB", "GBP")
+            homes = {(h.kind, h.iata, h.radius_km) for h in
+                     s.query(m.HomeProfile).filter_by(traveler_id=jane.id)}
+            assert homes == {("residence", None, 10.0), ("home_airport", "LHR", 50.0)}
             assert s.query(m.DiscoveryItem).filter_by(trip_id=lis.id).count() >= 5
-            assert s.query(m.PackingItem).filter_by(trip_id=banff.id, user_id=uid).count()
+            assert s.query(m.PackingItem).filter_by(trip_id=france.id, user_id=uid).count()
             assert s.query(m.TripExpense).filter_by(trip_id=nyc.id).count() == 4
             assert s.query(m.TripBudgetItem).filter_by(trip_id=nyc.id).count() == 3
             assert s.query(m.JournalEntry).filter_by(owner_id=uid).count() == 4
             caps = s.query(m.TravelItem).filter_by(owner_id=uid).all()
             assert sorted(c.item_type for c in caps) == ["flight", "lodging"]
-            # The drive into Banff carries its route line, no router needed.
-            drive = next(a for a in s.query(m.TripActivity).filter_by(trip_id=banff.id)
+            # The drive from Paris to Nice carries its route line, no router needed.
+            drive = next(a for a in s.query(m.TripActivity).filter_by(trip_id=france.id)
                          if a.type == "drive")
             assert drive.geo["route"]["polyline"]
             # Seeding again does nothing unless asked to replace.
