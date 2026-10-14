@@ -77,7 +77,7 @@ PNG files are rendered from the SVGs next to them. If you change an SVG, re-rend
 
 ## 3. Colour
 
-Dark is the designed default on every platform; light follows the OS.
+Dark is the designed default on every platform; light follows the OS. The web app is dark until the person picks light with the header toggle, whatever the OS prefers (SPEC-8 D-201).
 
 | Ramp | Role |
 |---|---|

@@ -2,6 +2,7 @@
  *
  * Dark is the designed default. Light applies when the OS prefers light,
  * unless the page forces a theme with <html data-theme="dark|light">.
+ * The Run·dere web app always sets one, dark unless the person chose light (D-201).
  *
  * Fonts (load once per page):
  * <link rel="preconnect" href="https://fonts.googleapis.com">
