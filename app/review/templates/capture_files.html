@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Your files{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops">
+    <div class="ops-row">
+      <h1 class="pagetitle">Your files</h1>
+      <a class="act" href="/capture">← Capture</a>
+    </div>
+  </div>
+  <section class="cap-card">
+    {# YONDER-179, SPEC-8 D-196: only you see these; each is removed
+       {{ retention_months }} months after its trip ends. #}
+    <p class="why">
+      {{ used }} of {{ quota }} used. Only you can see or download these files — people on a shared
+      trip see what was read from them, never the files. Each file is removed {{ retention_months }}
+      months after its trip ends (or after you added it, if it isn't filed to a trip); what was
+      read from it stays.
+    </p>
+    {% if not enabled %}<p class="cap-msg err">{{ reason }}.</p>{% endif %}
+    {% if files %}
+    <table class="cap-files">
+      <thead><tr><th>File</th><th class="opt">Type</th><th>Size</th><th class="opt">Trip</th><th class="opt">Added</th><th>Removed on</th><th></th></tr></thead>
+      <tbody>
+      {% for f in files %}
+        <tr>
+          <td>{% if f.purged %}{{ f.name }}{% else %}<a href="/capture/files/{{ f.id }}/download">{{ f.name }}</a>{% endif %}
+            {% if f.notes %}<div class="muted">{{ f.notes }}</div>{% endif %}</td>
+          <td class="opt">{{ f.kind }}</td>
+          <td class="num">{{ f.size }}</td>
+          <td class="opt">{{ f.trip or "—" }}</td>
+          <td class="opt num">{{ f.added }}</td>
+          <td class="num">{% if f.purged %}removed{% else %}{{ f.removed_on }}{% endif %}</td>
+          <td>
+            <form method="post" action="/capture/files/{{ f.id }}/delete"
+                  onsubmit="return confirm('Delete “{{ f.name }}” now? What was read from it stays.');">
+              <button class="act tiny" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No files yet. Capture one from the <a href="/capture">Capture</a> page.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

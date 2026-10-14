@@ -133,6 +133,12 @@ def extract_ingest_payload(ingest_payload: dict,
         result.trace.append(f"llm: ok ({len(batch['items'])} item(s) from web page)")
         return result
 
+    # ---- file channel (YONDER-179): an uploaded PDF or .ics, read from the
+    # documents store by app/processing. An uploaded .eml arrives with
+    # raw_message_base64 and is read as an email below, scan and all.
+    if channel == "file" and not ingest_payload.get("raw_message_base64"):
+        return _extract_file(ingest_payload, llm, scanner or filescan.Scanner(), result)
+
     # ---- email channel (gmail add-on shape)
     raw_b64 = ingest_payload.get("raw_message_base64")
     if not raw_b64:
@@ -230,6 +236,61 @@ def extract_ingest_payload(ingest_payload: dict,
     result.trace.append(f"llm: ok ({len(batch['items'])} item(s), "
                         f"{len(attempts)} attempt(s)"
                         f"{', with pdf text' if pdf_texts else ''})")
+    return result
+
+
+def _extract_file(payload: dict, llm, scanner, result: ExtractionResult) -> ExtractionResult:
+    """An uploaded PDF or calendar file. Already virus-scanned when it was
+    stored (app/documents.py); a PDF's static checks run again before parsing."""
+    import base64
+    name = payload.get("filename") or "file"
+    if payload.get("missing") or not payload.get("file_base64"):
+        result.needs_review = True
+        result.reasons.append(f"the captured file {name!r} is no longer stored")
+        return result
+    data = base64.b64decode(payload["file_base64"])
+    if payload.get("content_type") == "text/calendar":
+        items = ical.extract_ical(data.decode("utf-8", errors="replace"))
+        if items:
+            done = _validated(items, "ical", result)
+            if done:
+                return done
+        result.needs_review = True
+        result.reasons.append(f"no usable events in the calendar file {name!r}")
+        return result
+    verdict = scanner.check_pdf(data)
+    if not verdict.ok:
+        result.needs_review = True
+        result.reasons.append(f"file {name!r} blocked: {verdict.reason}")
+        result.trace.append(f"scan: {name!r} blocked ({verdict.reason})")
+        return result
+    for note in verdict.notes:
+        result.trace.append(f"scan: {name!r} {note}")
+    text = pdf.extract_pdf_text(data)
+    if not text:
+        result.needs_review = True
+        result.reasons.append(f"no text could be read from {name!r} (a scanned image?)")
+        return result
+    result.trace.append(f"pdf: {len(text)} characters of text")
+    if llm is None:
+        result.needs_review = True
+        result.reasons.append("an uploaded PDF needs the LLM, and none is configured")
+        return result
+    cc = payload.get("capture_context") or {}
+    context = f"Uploaded file: {name}" + (f"\nNotes: {cc['notes']}" if cc.get("notes") else "")
+    try:
+        batch, attempts = llm.extract(f"=== Attachment: {name} ===\n{text}", context)
+    except ExtractionFailed as ex:
+        result.needs_review = True
+        result.llm_attempts = ex.attempts
+        result.reasons.append(str(ex))
+        result.trace.append("llm: failed validation gate")
+        return result
+    batch = normalize_batch(batch)
+    result.llm_attempts = attempts
+    result.extractor = "llm"
+    result.batch = batch
+    result.trace.append(f"llm: ok ({len(batch['items'])} item(s) from {name!r})")
     return result
 
 

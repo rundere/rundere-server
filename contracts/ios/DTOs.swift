@@ -264,6 +264,44 @@ struct DiscoverIn: Codable, Hashable, Sendable {
     let place_key: String?
 }
 
+// MARK: - Documents (YONDER-179, SPEC-8 D-196)
+
+/// A file you captured — PDF, .ics or .eml. Only its uploader ever sees it.
+struct DocumentOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let filename: String
+    let content_type: String         // application/pdf | text/calendar | message/rfc822
+    let size_bytes: Int
+    let trip_id: String?
+    let batch_id: String?
+    let source: String
+    let scan_notes: String?
+    let created_at: String?
+    /// When the stored copy is removed (12 months after its trip ends).
+    let removed_on: String?
+    let purged: Bool
+}
+
+/// GET /documents — your files and storage. `enabled` false = this server
+/// doesn't take files (hide the file actions; `reason` says why).
+struct DocumentsOut: Codable, Hashable, Sendable {
+    let enabled: Bool
+    let reason: String?
+    let used_bytes: Int
+    let quota_bytes: Int
+    let max_file_bytes: Int
+    let documents: [DocumentOut]
+}
+
+/// POST /capture/file (multipart: file, trip_id?, notes?, source="ios") →
+/// 202. 413 too big / over quota, 415 not PDF/.ics/.eml, 422 unsafe, 503 off
+/// or the scanner is down. `duplicate` = you'd already captured this file.
+struct FileCaptureOut: Codable, Hashable, Sendable {
+    let document: DocumentOut
+    let batch_id: String?
+    let duplicate: Bool
+}
+
 /// A place, event or activity inside a Food & Drink or Events & Activities
 /// finding (server 4.5, YONDER-147). `finding_id` ties it to its city.
 struct DiscoveryItemOut: Codable, Identifiable, Hashable, Sendable {

@@ -343,6 +343,11 @@ deployment stack.
 | `TX_PUBLIC_BASE_URL` | `""` | Public https base (e.g. `https://yonder.example.net`) for email links and the OAuth/MCP metadata. Set it when using the Claude connector |
 | `TX_INBOX_ADDRESS`, `TX_INBOX_IMAP_*` | off | Email-forward capture: a mailbox you own (e.g. `trips@example.com`) read over IMAP; each person forwards to their own `trips+<token>@…`. See [docs/email-forward.md](docs/email-forward.md) |
 | `TX_CLAMAV_URL` | `""` | A [clamav-rest](https://github.com/ajilach/clamav-rest) service (e.g. `http://clamav-rest:9000`) that scans every captured email, attachments included, before anything is extracted. An infected email is quarantined to review; if the scanner is unreachable, attachments are skipped (the body is still read). Empty = no antivirus. Static PDF checks (no scripts, launch actions, embedded files; 25 MB / 200 pages) always run |
+| `TX_DOCUMENTS_DIR` | `""` | File capture (PDF, .ics, .eml): a local folder for the stored files — any disk you like; mount it into the container. Empty = file capture off. Needs `TX_CLAMAV_URL` too. Rundere writes a `.rundere-documents` marker there and stops storing files if it later goes missing (a drive that didn't mount). A local folder backed up to a NAS is safer than an NFS share mounted `hard`, which hangs uploads while the NAS is away |
+| `TX_DOCUMENT_MAX_MB` | `25` | Largest file accepted |
+| `TX_DOCUMENT_QUOTA_MB` | `1024` | Each person's file storage; an admin can raise one person's in Administer → Users. Full = new files refused, nothing deleted |
+| `TX_RETENTION_MONTHS` | `12` | Stored files and raw captures are removed this long after their trip ends (after they arrived, with no trip); what was extracted stays (SPEC-8 D-196) |
+| `TX_INBOX_DROPPED_DAYS`, `TX_INBOX_TRASH_FOLDER` | `30`, auto | Email forward: mail in the dropped folder goes to Trash after this many days; the Trash folder is found automatically unless named |
 | `TX_OAUTH_ACCESS_TTL_SECONDS` | `3600` | OAuth access-token lifetime (Claude connector) |
 | `TX_OAUTH_REFRESH_IDLE_TTL_SECONDS` | `7776000` | A connected app's grant expires after this long unused (90 days) |
 | `TX_OAUTH_APP_REDIRECT_URIS` | `https://rundere.app/auth/callback` | The iOS app's built-in OAuth client `rundere-ios` (D-194). Change only for a fork that ships its own app; empty turns app OAuth sign-in off |

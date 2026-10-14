@@ -217,6 +217,9 @@ class User(Base):
     # first sign-in; accounts an admin creates share by default, unasked.
     sharing_prompt: Mapped[bool] = mapped_column(Boolean, default=False,
                                                  server_default="0")
+    # SPEC-8 D-196: an admin's per-user override of TX_DOCUMENT_QUOTA_MB (NULL =
+    # the deployment default).
+    document_quota_mb: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -1192,6 +1195,32 @@ class InboxAddress(Base):
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True)    # users.id
     token: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Document(Base):
+    """A captured file — a PDF, .ics or .eml (YONDER-179, SPEC-8 D-153/D-196).
+
+    The bytes live outside the database at `<TX_DOCUMENTS_DIR>/<owner_id>/<sha256>`
+    (app/documents.py), deduplicated only within one person's files. Only its
+    owner ever sees or downloads it (D-196, like the journal's D-134): travellers
+    on a shared trip see what was extracted, never the file. Soft links on
+    trip_id and batch_id (house rule 3). `purged_at` marks a file whose bytes the
+    retention job removed; the row stays as a record."""
+    __tablename__ = "documents"
+    __table_args__ = (UniqueConstraint("owner_id", "sha256", name="uq_document_owner_sha"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    owner_id: Mapped[str] = mapped_column(String(36), index=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    content_type: Mapped[str] = mapped_column(String(64))  # application/pdf | text/calendar | message/rfc822
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    source: Mapped[str] = mapped_column(String(16), default="api")        # web | ios | api
+    trip_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    batch_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    scan_notes: Mapped[str | None] = mapped_column(String(255))           # e.g. "has JavaScript"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class InboxMessage(Base):

@@ -11,10 +11,12 @@ columns (activity `values`, finding `data`) are passed through as-is.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query, Request, Response,
+                     UploadFile)
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -26,6 +28,7 @@ from app.models import (DiscoveryFinding, DiscoveryRun, JournalEntry, PackingIte
                         TripActivity, TripTraveler)
 
 router = APIRouter(prefix="/api/v1")
+log = logging.getLogger("rundere.api")
 
 
 # --------------------------------------------------------------------------- schemas
@@ -1027,6 +1030,147 @@ def api_inbox_rotate(user=Depends(authn.first_party_user),
 
 
 # --------------------------------------------------------------------------- write
+# --------------------------------------------------------------------------- documents (YONDER-179, D-196)
+# Captured files: PDF, .ics, .eml. Only the uploader ever lists or downloads
+# a file (D-196); rules live in app/documents.py.
+class DocumentOut(BaseModel):
+    id: str
+    filename: str
+    content_type: str                      # application/pdf | text/calendar | message/rfc822
+    size_bytes: int
+    trip_id: str | None = None
+    batch_id: str | None = None            # the capture it went into
+    source: str
+    scan_notes: str | None = None          # e.g. "has JavaScript (never run; text read only)"
+    created_at: datetime | None = None
+    removed_on: str | None = None          # when the stored copy is removed (D-196)
+    purged: bool = False                   # the stored copy is already gone
+
+
+class DocumentsOut(BaseModel):
+    enabled: bool                          # file capture is on for this server
+    reason: str | None = None              # why not, when it's off
+    used_bytes: int = 0
+    quota_bytes: int = 0
+    max_file_bytes: int = 0
+    documents: list[DocumentOut] = []
+
+
+class FileCaptureOut(BaseModel):
+    document: DocumentOut
+    batch_id: str | None = None
+    duplicate: bool = False                # you'd already captured this exact file
+
+
+def _document_out(session: Session, d) -> DocumentOut:
+    from app import documents
+    return DocumentOut(id=d.id, filename=d.filename, content_type=d.content_type,
+                       size_bytes=d.size_bytes, trip_id=d.trip_id, batch_id=d.batch_id,
+                       source=d.source, scan_notes=d.scan_notes, created_at=d.created_at,
+                       removed_on=documents.removal_date(session, d).isoformat(),
+                       purged=d.purged_at is not None)
+
+
+@router.get("/documents", response_model=DocumentsOut)
+def api_documents(user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    """Your captured files, newest first, with how much of your quota they use.
+    `enabled` says whether this server takes files at all."""
+    from app import documents
+    from app.config import settings
+    from app.models import Document
+    enabled, reason = documents.status(session)
+    rows = (session.query(Document).filter(Document.owner_id == user.id)
+            .order_by(Document.created_at.desc()).all())
+    return DocumentsOut(enabled=enabled, reason=reason,
+                        used_bytes=documents.used_bytes(session, user),
+                        quota_bytes=documents.quota_bytes(user),
+                        max_file_bytes=settings.document_max_mb * 1024 * 1024,
+                        documents=[_document_out(session, d) for d in rows])
+
+
+@router.post("/capture/file", response_model=FileCaptureOut, status_code=202)
+def api_capture_file(file: UploadFile = File(...), trip_id: str | None = Form(None),
+                     notes: str | None = Form(None), source: str = Form("api"),
+                     user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """Capture a file — a booking PDF, a calendar .ics or a saved .eml — for
+    iPad drag-and-drop, the Share Extension and the web (YONDER-179). It's
+    virus-scanned and stored (D-196), then extracted like any capture. Your
+    exact same file again returns the first one (`duplicate`), with no new
+    capture. 503 when file capture is off or the scanner is down; 413 too big
+    or over quota; 415 not a PDF/.ics/.eml; 422 unsafe."""
+    trip_id = (trip_id or "").strip() or None
+    if trip_id:
+        scope.require_trip(session, user, trip_id, edit=True)
+    return _capture_file(session, user, file, trip_id=trip_id, notes=notes,
+                         source=(source or "api")[:16])
+
+
+def _capture_file(session: Session, user, file, *, trip_id, notes, source) -> FileCaptureOut:
+    from app import documents
+    from app.config import settings
+    data = file.file.read(settings.document_max_mb * 1024 * 1024 + 1)
+    try:
+        doc, created = documents.save(session, user, data, file.filename or "",
+                                      source=source, trip_id=trip_id)
+    except documents.Unavailable as err:
+        raise HTTPException(503, str(err)) from None
+    except documents.Refused as err:
+        raise HTTPException(err.status, str(err)) from None
+    batch_id = doc.batch_id
+    if created:
+        batch_id = documents.queue_capture(session, doc, user, notes=notes, via=source)
+    session.commit()
+    if created:
+        from app.review import autoprocess
+        try:
+            autoprocess.kick(user)              # D-158: start processing now
+        except Exception:
+            log.exception("auto-process could not start; the batch stays received")
+    return FileCaptureOut(document=_document_out(session, doc), batch_id=batch_id,
+                          duplicate=not created)
+
+
+@router.get("/documents/{doc_id}/download")
+def api_document_download(doc_id: str, user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """The file itself — yours only, always as a download, never shown inline
+    (a PDF's scripts must never run in the app; D-196). 410 once removed."""
+    from app import documents
+    doc = documents.own(session, user, doc_id)
+    if doc is None:
+        raise HTTPException(404, "file not found")
+    data = documents.read(doc)
+    if data is None:
+        raise HTTPException(410, "this file's stored copy has been removed")
+    return document_response(doc, data)
+
+
+def document_response(doc, data: bytes) -> Response:
+    from urllib.parse import quote
+    name = doc.filename or "capture"
+    ascii_name = name.encode("ascii", "replace").decode().replace('"', "'")
+    return Response(content=data, media_type=doc.content_type, headers={
+        "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; "
+                               f"filename*=UTF-8''{quote(name)}",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox",
+        "Cache-Control": "private, no-store"})
+
+
+@router.delete("/documents/{doc_id}", status_code=204)
+def api_document_delete(doc_id: str, user=Depends(authn.current_user),
+                        session: Session = Depends(get_session)):
+    """Delete your file now. What was extracted from it stays."""
+    from app import documents
+    doc = documents.own(session, user, doc_id)
+    if doc is None:
+        raise HTTPException(404, "file not found")
+    documents.delete(session, doc)
+    session.commit()
+    return None
+
+
 @router.post("/capture", response_model=CaptureOut, status_code=202)
 def api_capture(body: CaptureIn, user=Depends(authn.current_user),
                 session: Session = Depends(get_session)):

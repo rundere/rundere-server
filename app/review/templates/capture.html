@@ -92,6 +92,20 @@
         </div>
       </form>
       <div id="cap-result" aria-live="polite"></div>
+      {% if files %}
+      {# YONDER-179 (D-196): a booking PDF, a calendar file or a saved email. #}
+      <form id="cap-file-form" class="cap-file" hx-post="/capture/file" hx-encoding="multipart/form-data"
+            hx-target="#cap-file-result" hx-swap="innerHTML" hx-disabled-elt="button[type=submit]">
+        <label class="cap-lbl" for="cap-file">Or a file — a booking PDF, a calendar (.ics) or a saved email (.eml), up to {{ files.max_mb }} MB</label>
+        <input id="cap-file" name="file" type="file" required
+               accept=".pdf,.ics,.eml,application/pdf,text/calendar,message/rfc822">
+        <div class="cap-actions">
+          <button class="act primary" type="submit">Capture file</button>
+          <a class="cap-go" href="/capture/files">Your files · {{ files.used }} of {{ files.quota }}</a>
+        </div>
+      </form>
+      <div id="cap-file-result" aria-live="polite"></div>
+      {% endif %}
       </div>
 
       <div class="cap-pane" data-pane="recent" role="tabpanel" hidden>
