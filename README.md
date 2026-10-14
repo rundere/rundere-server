@@ -290,6 +290,18 @@ Extraction reuses the JSON-LD reader for web pages (most booking pages embed sch
    the trip is linked to AdventureLog) sync activities and findings both ways
    from `/trips/{id}/adventurelog`.
 
+### Alerts when something breaks
+
+Admins can be told when a service stops working: the email inbox, outgoing
+mail, someone's AirTrail or AdventureLog connection, the file store folder,
+the virus scanner, the daily retention sweep, or the LLM. Set it up in
+**Settings → Notifications**: add a Pushover target (an application token
+from pushover.net/apps and your user key, both stored encrypted, which needs
+`TX_SECRETS_KEY`), pick what it should hear about, and press **Send test**.
+Alerts arrive when something starts failing, once a day while it still is,
+and when it recovers; one hiccup that fixes itself pages nobody. More target
+kinds can be added over time (SPEC-8 D-197).
+
 ---
 
 ## `/ingest` authentication

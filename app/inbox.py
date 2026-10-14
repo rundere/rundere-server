@@ -566,6 +566,8 @@ _thread: threading.Thread | None = None
 def _ok(counts: dict, mode: str) -> None:
     status.update(last_poll_at=datetime.now(timezone.utc), last_error=None,
                   last_counts=counts, mode=mode)
+    from app import notify
+    notify.report("inbox", True, category="mail", label="Email inbox (IMAP)")
     if counts:
         log.info("inbox: %s", ", ".join(f"{v} {k}" for k, v in sorted(counts.items())))
 
@@ -579,6 +581,11 @@ def _failed(ex: Exception) -> None:
     status.update(last_poll_at=datetime.now(timezone.utc),
                   last_error=f"{type(ex).__name__}: {text[:200]}")
     log.warning("inbox read failed: %s", status["last_error"])
+    # Admin alert (D-197) once it has failed twice in a row — one dropped
+    # connection that the next read recovers from pages nobody.
+    from app import notify
+    notify.report("inbox", False, category="mail", label="Email inbox (IMAP)",
+                  detail=status["last_error"], threshold=2)
 
 
 def poll_and_record(session_factory) -> None:

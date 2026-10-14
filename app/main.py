@@ -315,6 +315,12 @@ def startup() -> None:
     except Exception:                       # pragma: no cover
         log.exception("retention job failed to start; nothing is removed until it does")
     try:
+        # YONDER-253 (D-197): the health monitor behind admin notifications.
+        from app.notify import monitor
+        monitor.start()
+    except Exception:                       # pragma: no cover
+        log.exception("health monitor failed to start; admins get no alerts until it does")
+    try:
         from app.admin import mount_admin
         mount_admin(app, engine)
     except Exception:                       # pragma: no cover

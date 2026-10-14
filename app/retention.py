@@ -256,6 +256,11 @@ def run(session_factory, *, today: date | None = None, dry_run: bool = False,
             report.mail_skipped = f"mailbox step failed ({type(ex).__name__})"
             log.warning("retention: %s", report.mail_skipped)
     log.info("retention%s: %s", " (dry run)" if dry_run else "", report.summary())
+    if not dry_run:                           # admin alert (D-197); retried tomorrow anyway
+        from app import notify
+        failed = (report.mail_skipped or "").startswith(("mailbox step failed", "no Trash"))
+        notify.report("retention", not failed, category="jobs", label="Retention sweep",
+                      detail=report.mail_skipped, threshold=1, session_factory=session_factory)
     return report
 
 
@@ -271,8 +276,11 @@ def _loop(session_factory) -> None:
     while True:
         try:
             run(session_factory)
-        except Exception:                      # pragma: no cover - never kill the thread
+        except Exception as ex:                # pragma: no cover - never kill the thread
             log.exception("retention run failed; trying again tomorrow")
+            from app import notify
+            notify.report("retention", False, category="jobs", label="Retention sweep",
+                          detail=f"the daily sweep failed ({type(ex).__name__})", threshold=1)
         if _stop.wait(_EVERY):
             return
 
