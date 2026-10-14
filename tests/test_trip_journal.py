@@ -91,6 +91,7 @@ if DEPS:
         ben = client.get(f"/trips/{tid}", cookies=ck["Ben"]).text
         assert "Ben private note" in ben and "harbour tacos" not in ben
         vi = client.get(f"/trips/{tid}", cookies=ck["Vi"]).text
-        assert "harbour tacos" not in vi and "No journal entries on this trip yet" in vi
+        # Vi only views the trip: no Journal tab at all (D-199), and nobody's entries.
+        assert "harbour tacos" not in vi and 'data-tab="journal"' not in vi
         ad = client.get(f"/trips/{tid}", cookies=ck["Ad"]).text   # admin, Ana shares
         assert "harbour tacos" not in ad and "Ben private note" not in ad

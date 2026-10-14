@@ -170,6 +170,27 @@ def can_edit_trip(session, user, trip) -> bool:
     return _is_traveller(session, user, trip)
 
 
+def trip_role(session, user, trip) -> str | None:
+    """The caller's tier on a trip (D-199, YONDER-185), for the API's `my_role`
+    and the web's view-only page. owner | traveller | admin | viewer, or None
+    without access. owner/traveller/admin are exactly the editors
+    (`can_edit_trip`); viewer is an explicit share for a non-traveller, which is
+    view-only (D-122). Auth off: owner (the single user owns everything)."""
+    if trip is None:
+        return None
+    if unrestricted(user):
+        return "owner"
+    if trip.owner_id is not None and trip.owner_id == user.id:
+        return "owner"
+    if _is_traveller(session, user, trip):
+        return "traveller"
+    if _admin_sees(session, user, trip.owner_id):
+        return "admin"
+    if _is_member(session, user, trip):
+        return "viewer"
+    return None
+
+
 # Back-compat alias — "access" means view.
 can_access_trip = can_view_trip
 

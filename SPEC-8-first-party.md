@@ -320,6 +320,52 @@ request forgery (SSRF) risk.
     taken from anyone (D-152). Sending happens off the caller's thread, so an
     alert never slows or breaks the thing that failed.
 
+## 10. Who someone is on a trip (D-199)
+
+- **D-199: Four tiers on a trip, and the API says which one you are (YONDER-185,
+  which absorbs YONDER-182; owner, 2026-10-14).** Being *on* a trip (the roster,
+  `TripTraveler`) and being able to *open* it (access) are separate questions:
+  1. **You**: the owner, who works the trip.
+  2. **A companion with an account**: on the roster and linked to a login
+     (`User.traveler_id`). Full access, as D-122 already gives travellers.
+  3. **A guest companion**: on the roster with no login, tracked for planning.
+  4. **A viewer**: has a login and an explicit share (`TripMember`) but isn't
+     travelling. **View-only**, which D-122 already enforces in `app/scope.py`.
+  - *Demo is not a tier.* The demo server is a read-only server mode (YONDER-181,
+    D-198), not a kind of person.
+  - *No editor share yet.* Editing still comes with travelling (D-122). A
+    non-travelling editor would need its own decision.
+  - **`my_role`** on every `TripSummary` (and so every snapshot and MCP
+    `get_trip`): `owner` | `traveller` | `admin` (editing through admin sharing,
+    4.1) | `viewer`, from `scope.trip_role`. It is `viewer` exactly when
+    `can_edit` is false; `can_edit` stays for older app builds. The demo server
+    reports `viewer` on every trip.
+  - **`has_account`** on each traveller in a snapshot: true when a login is
+    linked to that roster person.
+  - **What a viewer sees: the timeline and the map, nothing personal** (owner,
+    2026-10-14: a viewer is *"invited to see the trip and not participate"*;
+    they *"just focus on timeline and map"*). That's the timeline, the places
+    and map, the trip PDF and travellers' names, each marked "Has login" or
+    "Guest · no login". **No** Discover (they can't run it and needn't care
+    about things to do), packing (*"that is personal"*, D-123), costs (D-183
+    already shows them none), journals (D-134), linked captures, or travellers'
+    profile details such as nationality. Viewers can't start Discovery runs;
+    the API now refuses them, as the web always did.
+  - **API:** a viewer's snapshot carries only `trip`, `activities`,
+    `travelers` and `places`. Discover, the discovery profile, packing,
+    captures and rates are left out.
+  - **Web:** a "View only" badge in the trip header. No Edit, Delete, Add,
+    Remove or Run controls. Only the Travellers and Timeline tabs (plus
+    Sharing). The Sharing tab splits people into
+    "Can edit (travellers with a login)" and "Can view", in words and icons,
+    not colour alone. The server still refuses viewers' writes
+    (`scope.trip_or_none`, `require_trip(edit=True)`); hiding only stops
+    offering them.
+  - **MCP:** the instructions tell agents that `viewer` means read-only. Every
+    write tool calls an edit-guarded `/api/v1` function, so writes are refused.
+  - Turning a guest into an account holder is a separate item with its own spec
+    (YONDER-260: invite links and templates).
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.

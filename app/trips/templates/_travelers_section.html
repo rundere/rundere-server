@@ -5,9 +5,11 @@
     <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Who's traveling">▾</button>
     <h2 class="bp-h2">Who's traveling</h2>
   </div>
+  {% if not view_only %}
   <div class="bp-head-actions">
     <a class="btn btn-secondary bp-sm" href="{{ travelers_manage_url }}">Manage travellers</a>
   </div>
+  {% endif %}
 </div>
 <div class="yn-sec-body">
 
@@ -19,12 +21,18 @@
       <li class="yn-traveler yn-filterable">
         <span class="yn-traveler-name">{{ t.name }}</span>
         <span class="tag {{ 'tag-outline' if t.role == 'self' else 'tag-neutral' }}">{{ t.role_label }}</span>
+        {# D-199: who can sign in vs. who is only on the roster, in words, not colour alone. #}
+        {% if t.has_account %}<span class="tag tag-outline yn-login" title="Has a Run·dere login">Has login</span>
+        {% else %}<span class="tag tag-neutral yn-login" title="On the roster only. No Run·dere login">Guest · no login</span>{% endif %}
         {% if t.generic %}<span class="tag tag-neutral" title="Generic guest — a headcount placeholder, not used for discovery or packing">guest</span>{% endif %}
-        {% if t.nationality %}<span class="tag tag-neutral" title="Nationality">{{ t.nationality }}</span>{% endif %}
+        {# Profile details stay with the people who can edit the trip (D-199). #}
+        {% if t.nationality and not view_only %}<span class="tag tag-neutral" title="Nationality">{{ t.nationality }}</span>{% endif %}
+        {% if not view_only %}
         <button class="btn btn-ghost bp-sm yn-traveler-remove"
                 hx-post="/trips/{{ trip_id }}/travelers/{{ t.id }}/remove"
                 hx-target="#travelers-section" hx-swap="outerHTML"
                 {% if t.role == 'self' %}hx-confirm="Remove yourself from this trip? Visa research needs your nationality."{% endif %}>Remove</button>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
@@ -32,10 +40,12 @@
 </section>
 {% else %}
 <div class="card blueprint bp-empty-card">
-  <div class="bp-empty-msg">No one added yet. Add travellers so Discovery and Packing
-    know who's going — and so visa research can read the right passport.</div>
+  <div class="bp-empty-msg">No one added yet.{% if not view_only %} Add travellers so Discovery and Packing
+    know who's going — and so visa research can read the right passport.{% endif %}</div>
 </div>
 {% endif %}
+
+{% if not view_only %}
 
 {% if travelers_available %}
 <form class="yn-traveler-add" hx-post="/trips/{{ trip_id }}/travelers"
@@ -59,5 +69,6 @@
 </form>
 <p class="yn-traveler-hint">A guest is just a name — no profile needed. Add details later in
   <a href="{{ travelers_manage_url }}">Travellers</a> if you want.</p>
+{% endif %}
 </div>
 </div>
