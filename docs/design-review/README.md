@@ -154,3 +154,61 @@ tiles and "Go to" cards removed), the sidebar Review badge, packing progress on 
 Still open: stacked login lockup, residual px radii and sub-12px font sizes, Outfit on admin
 headings, per-page owner sign-off, and a toggle switch (not built: the board's
 "Auto-commit trusted senders" example conflicts with D-31).
+
+## Re-audit (2026-10-14, YONDER-202, release 4.12.0)
+
+**Verdict: not yet. Every page clears the measurable token rules, but 202 stays
+open** for three things only the owner can decide or that need building (below).
+
+**How:**
+- 45 pages and modals rendered in headless Chrome (dark and light at 1280, dark at 390),
+  measured by `audit202.py` / `audit202.js`, with results in `audit202.json`.
+- The data was the demo seed (`app/demo_seed.py`: Jane Doe, three trips), so the
+  Discover, Packing, Costs and Journal tabs, the activity, trip, expense and
+  derived-locations modals, the viewer page and every Settings page were covered.
+  None of those were covered in October.
+- Compared against `design/README.md` and the canvas's **Web dashboard**,
+  **Typography** and **Foundations & components** boards (read 2026-10-14).
+- I looked at Home, trip timeline, packing and sign-in by eye; the rest are metrics only.
+
+| Measure (instances across 45 pages × 2 themes) | Before | After |
+|---|---|---|
+| Text under 12px (the web scale's floor is overline 12) | 654 | 0 |
+| Controls under the 32px small control (D-165) | 244 | 0 |
+| Contrast failures (WCAG AA) | 90 | 0 (status capsules fixed under R1) |
+| Radii outside the token set (6 / 10 / 16 / 24 / pill) | 66 | 0 |
+| Outfit below 20px | 8 | 0 |
+| Emoji / horizontal overflow at 390px | 0 / 0 | 0 / 0 |
+
+**Fixed in this pass:**
+- **Type:** every font size under 12px raised to 12 (52 rules across theme, trips,
+  admin, base, authcard and about).
+- **Colour:** the trips stylesheet's invented text greys (`--color-neutral-500/600`,
+  58%/70% mixes) now *are* `--rd-text-muted` / `--rd-text-secondary`. Counts and
+  Discover meta use `text-secondary`, and `.why` hints use `ink-2`.
+- **Radius:** every pixel radius mapped to a radius token.
+- **Controls:** packing controls now meet the 32px floor.
+- **Token hygiene:** the undefined `--rd-surface-sunk` and dead hex fallbacks (one
+  of them meant a hard-coded red, since `--danger` never existed) are gone, and the
+  menu and toast shadows use `--rd-shadow-raised`.
+- **Board details:**
+  - Home's greeting is now the board's h1 (Outfit 300, 40/48, scaling down to 28 on phones).
+  - Trip-card names are Outfit 22.
+  - Capture-guide subheads are a Figtree label, not Outfit at 13.
+  - Timeline times are in JetBrains Mono.
+- **Sign-in:** the sign-in and auth cards now use the stacked lockup (open since October).
+- **AdventureLog sync:** the page rendered unstyled (a bare string) when AdventureLog
+  wasn't connected; it now uses the shared layout and links to Connections.
+
+### What still stands between 202 and closing
+
+| # | Gap | Why it isn't fixed here | Proposed |
+|---|---|---|---|
+| R1 | ~~Status capsules fail AA in light mode~~ **Resolved (owner, 2026-10-14: darker text in light mode).** Capsule text mixes 35% of `--rd-text` into the status colour in light mode (`--capsule-ink`), so it's the same hue with no new colour. The neutral capsule uses `text-secondary` in both themes (it was 4.28:1 in dark). | — | Done |
+| R2 | **Timeline isn't the spec component.** README §6: a vertical 1px Night 600 line with 8px nodes, the next item's node Silver with the glow. The app uses day-grouped cards. | A real component build | Own item (filed) |
+| R3 | **Home grid differs from the Web board** (on hold, owner 2026-10-14: keep Next-up full width with the queue below, pending user feedback; YONDER-263). The board puts Next-up across 2/3 with the Review queue beside it, and Upcoming trips as a full-width 3-up row below. The app puts Next-up full width, with the queue and trips side by side below. | Layout change the owner should confirm | Own item (filed) |
+| — | Sidebar items differ from the board (Dashboard/Trips/Review/Capture/Discover/Packing/Journal vs Home/Review/Capture/Trips/Places/Journal) | Already under the navigation rethink, YONDER-228 | — |
+| — | Owner sign-off per page (every ☐ above) | Only the owner can sign off a look | — |
+
+The "View only" badge from YONDER-185 (PR #126) inherits Outfit from the page title at
+11px. It's fixed in that PR, not here.

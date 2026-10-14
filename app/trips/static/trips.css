@@ -24,8 +24,10 @@
   --color-neutral-200: color-mix(in srgb, var(--rd-text) 13%, var(--rd-bg));
   --color-neutral-300: color-mix(in srgb, var(--rd-text) 22%, var(--rd-bg));
   --color-neutral-400: color-mix(in srgb, var(--rd-text) 40%, var(--rd-bg));
-  --color-neutral-500: color-mix(in srgb, var(--rd-text) 58%, var(--rd-bg));
-  --color-neutral-600: color-mix(in srgb, var(--rd-text) 70%, var(--rd-bg));
+  /* Text greys are the design's own tokens (YONDER-202): the old 58%/70% mixes
+     failed contrast in light mode. */
+  --color-neutral-500: var(--rd-text-muted);
+  --color-neutral-600: var(--rd-text-secondary);
   --color-neutral-700: color-mix(in srgb, var(--rd-text) 82%, var(--rd-bg));
   --color-neutral-800: color-mix(in srgb, var(--rd-text) 92%, var(--rd-bg));
   --color-neutral-900: var(--rd-text);
@@ -100,7 +102,7 @@ textarea.input { min-height: 72px; resize: vertical; }
 .seg-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 
 /* ---- tags ---- */
-.tag { display: inline-flex; align-items: center; font-size: 11px;
+.tag { display: inline-flex; align-items: center; font-size: 12px;
   letter-spacing: 0.02em; padding: 3px 10px; border-radius: var(--rd-radius-pill); white-space: nowrap; }
 .tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
 .tag-chip { gap: 6px; font-size: 12px; background: var(--rd-surface-raised); color: var(--rd-text);
@@ -109,7 +111,7 @@ textarea.input { min-height: 72px; resize: vertical; }
 
 /* ---- table ---- */
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.table th { text-align: left; font-size: 11px; letter-spacing: 0.08em;
+.table th { text-align: left; font-size: 12px; letter-spacing: 0.08em;
   text-transform: uppercase; color: color-mix(in srgb, var(--color-text) 60%, transparent);
   padding: 6.8px; border-bottom: 1px solid var(--color-divider); }
 .table td { padding: 6.8px; border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent); }
@@ -152,13 +154,13 @@ textarea.input { min-height: 72px; resize: vertical; }
 details.bp-group > summary.bp-group-label { cursor: pointer; list-style: none;
   display: flex; align-items: center; gap: 8px; user-select: none; }
 details.bp-group > summary.bp-group-label::-webkit-details-marker { display: none; }
-details.bp-group > summary.bp-group-label::before { content: "▸"; font-size: 11px;
+details.bp-group > summary.bp-group-label::before { content: "▸"; font-size: 12px;
   color: var(--color-neutral-500); transition: transform .15s; }
 details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90deg); }
 .bp-group-count { font-family: var(--font-body, inherit); letter-spacing: 0;
-  text-transform: none; color: var(--color-neutral-500);
-  background: var(--color-neutral-100); border-radius: 10px; padding: 0 7px;
-  font-size: 11px; }
+  text-transform: none; color: var(--rd-text-secondary);
+  background: var(--color-neutral-100); border-radius: var(--rd-radius-pill); padding: 0 7px;
+  font-size: 12px; }
 .bp-head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   justify-content: flex-end; }
 @media (prefers-reduced-motion: reduce) {
@@ -211,19 +213,20 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 /* 4.1: who an activity is for, on a multi-traveller trip */
 .bp-who { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 1; min-width: 0;
   justify-content: flex-end; }
-.bp-who-tag { font-size: 11.5px; white-space: nowrap; }
+.bp-who-tag { font-size: 12px; white-space: nowrap; }
 .bp-who-picks { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 4px 0; }
 .bp-who-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 14px;
   font-weight: 400; cursor: pointer; }
 .bp-who-hint { font-size: 12.5px; color: var(--color-neutral-600); margin-top: 2px; }
-.bp-act-time { font-size: 13px; color: var(--color-neutral-600); flex-shrink: 0; }
+.bp-act-time { font-family: var(--rd-font-mono); font-size: 13px; color: var(--color-neutral-600);
+  flex-shrink: 0; }   /* README §4: times in JetBrains Mono */
 .bp-chevron { font-size: 12px; color: var(--color-neutral-500); flex-shrink: 0;
   transition: transform .15s; }
 .bp-act[open] .bp-chevron { transform: rotate(90deg); }
 .bp-act-body { padding: 0 16px 16px; background: var(--color-accent-100); }
 .bp-field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 10px 20px; padding-top: 12px; margin-bottom: 12px; }
-.bp-field-label { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+.bp-field-label { font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
   color: var(--color-neutral-700); }
 .bp-field-value { font-size: 14px; color: var(--color-text); }
 .bp-field-link { font-size: 14px; word-break: break-all; color: var(--color-accent-700); }
@@ -232,18 +235,18 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 /* ---- detail: derived-locations viewer (D-68) ---- */
 .yn-derived-list { display: flex; flex-direction: column; gap: 4px; margin: 14px 0 4px; }
 .yn-derived-row { display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border: 1px solid var(--color-neutral-200); border-radius: 3px; }
+  padding: 8px 10px; border: 1px solid var(--color-neutral-200); border-radius: var(--rd-radius-xs); }
 .yn-derived-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px;
   flex: 1; min-width: 0; }
 .yn-derived-label { font-size: 14px; font-weight: 600; color: var(--color-text); }
-.yn-derived-src { font-size: 10px; letter-spacing: .03em; text-transform: uppercase;
+.yn-derived-src { font-size: 12px; letter-spacing: .03em; text-transform: uppercase;
   color: var(--color-neutral-500); }
 .yn-derived-home { opacity: .6; }
 .yn-derived-excluded { opacity: .5; }
 .yn-derived-excluded .yn-derived-label { text-decoration: line-through; }
-.yn-derived-badge { font-size: 10px; letter-spacing: .02em; text-transform: uppercase;
+.yn-derived-badge { font-size: 12px; letter-spacing: .02em; text-transform: uppercase;
   color: var(--color-neutral-600); background: var(--color-neutral-100);
-  padding: 1px 5px; border-radius: 2px; }
+  padding: 1px 5px; border-radius: var(--rd-radius-xs); }
 .yn-derived-count { font-size: 13px; }
 .yn-derived-dropped { margin-top: 18px; padding-top: 14px;
   border-top: 1px solid var(--color-neutral-200); }
@@ -259,12 +262,15 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-finding.yn-status-rejected { opacity: .5; }
 .yn-finding.yn-status-approved { border-left: 3px solid var(--color-accent); }
 .yn-finding-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.yn-conf { font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
-  padding: 2px 6px; border-radius: 2px; }
-.yn-conf-high { color: var(--rd-success); background: color-mix(in srgb, var(--rd-success) 12%, transparent); }
-.yn-conf-medium { color: var(--rd-highlight); background: color-mix(in srgb, var(--rd-highlight) 12%, transparent); }
-.yn-conf-flagged { color: var(--rd-danger); background: color-mix(in srgb, var(--rd-danger) 12%, transparent); }
-.yn-status-badge { margin-left: auto; font-size: 11px; text-transform: uppercase;
+.yn-conf { font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: var(--rd-radius-xs); }
+.yn-conf-high { color: color-mix(in srgb, var(--rd-text) var(--capsule-ink), var(--rd-success));
+  background: color-mix(in srgb, var(--rd-success) 12%, transparent); }
+.yn-conf-medium { color: color-mix(in srgb, var(--rd-text) var(--capsule-ink), var(--rd-highlight));
+  background: color-mix(in srgb, var(--rd-highlight) 12%, transparent); }
+.yn-conf-flagged { color: color-mix(in srgb, var(--rd-text) var(--capsule-ink), var(--rd-danger));
+  background: color-mix(in srgb, var(--rd-danger) 12%, transparent); }
+.yn-status-badge { margin-left: auto; font-size: 12px; text-transform: uppercase;
   letter-spacing: .04em; color: var(--color-neutral-500); }
 .yn-finding-body { font-size: 14px; color: var(--color-text); line-height: 1.5; }
 .yn-sources { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 10px;
@@ -290,7 +296,7 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
   padding: 10px 12px; display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 16px; }
 .yn-musthave-group { display: flex; flex-direction: column; gap: 4px; }
-.yn-musthave-cat { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+.yn-musthave-cat { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
   color: var(--color-neutral-600); font-weight: 600; margin: 6px 0 2px; }
 
 /* ---- planning: packing list ---- */
@@ -315,7 +321,7 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-pack-row.yn-edited .yn-pack-label-input { color: var(--color-accent-700); }
 .yn-pack-label-input { font-size: 15px; font-weight: 600; color: var(--color-text);
   border: 1px solid transparent; background: none; padding: 2px 4px; margin: -2px -4px;
-  border-radius: 4px; width: 100%; box-sizing: border-box; font-family: inherit; }
+  border-radius: var(--rd-radius-xs); width: 100%; box-sizing: border-box; font-family: inherit; }
 .yn-pack-label-input:hover { border-color: var(--color-neutral-300); }
 .yn-pack-label-input:focus { border-color: var(--color-accent); outline: none;
   background: var(--color-surface); }
@@ -374,17 +380,17 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 /* Section tabs: one section visible at a time. While a filter is active every
    tab's matches show together (the non-matching sections hide themselves). */
 .yn-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px;
-  border-radius: 9px; background: var(--yn-tab-track); }
+  border-radius: var(--rd-radius-control); background: var(--yn-tab-track); }
 .yn-tab { border: none; background: none; cursor: pointer; padding: 5px 14px;
   min-height: var(--rd-control-sm);
-  border-radius: 7px; font: inherit; font-size: 13px; font-weight: 600;
+  border-radius: var(--rd-radius-xs); font: inherit; font-size: 13px; font-weight: 600;
   color: var(--color-neutral-700); }
 .yn-tab:hover { color: var(--color-accent); }
 .yn-tab.active { background: var(--yn-tab-on); color: var(--color-neutral-900);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
 .yn-filtering .yn-tab.active { background: none; box-shadow: none; }
 .yn-tab-count { margin-left: 4px; font-weight: 500; font-size: 12px;
-  color: var(--color-neutral-500); font-variant-numeric: tabular-nums; }
+  color: var(--rd-text-secondary); font-variant-numeric: tabular-nums; }
 .bp-trip-tabs { display: inline-flex; margin: 0 0 12px; }
 .yn-tabpanel { display: none; }
 .yn-tabpanel.active, .yn-filtering .yn-tabpanel { display: block; }
@@ -407,7 +413,7 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 details.yn-finding > summary.yn-finding-head { cursor: pointer; list-style: none;
   display: flex; align-items: center; gap: 8px; }
 details.yn-finding > summary.yn-finding-head::-webkit-details-marker { display: none; }
-.yn-finding-caret { font-size: 11px; color: var(--color-neutral-600);
+.yn-finding-caret { font-size: 12px; color: var(--color-neutral-600);
   transition: transform 0.15s; display: inline-block; flex-shrink: 0; }
 details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg); }
 
@@ -422,7 +428,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-arch-manual { font-weight: 400; color: var(--color-accent); }
 .yn-arch-chip { display: inline-flex; align-items: center; gap: 4px;
   font-size: 13px; padding: 3px 6px 3px 10px; border: 1px solid var(--color-divider);
-  border-radius: 999px; background: var(--color-accent-100, transparent); }
+  border-radius: var(--rd-radius-pill); background: var(--color-accent-100, transparent); }
 .yn-arch-x { border: none; background: none; cursor: pointer; font-size: 15px;
   line-height: 1; color: var(--color-neutral-600); padding: 0 2px; }
 .yn-arch-x:hover { color: var(--color-text); }
@@ -435,7 +441,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-run-live::first-letter { animation: yn-pulse 1.2s ease-in-out infinite; }
 .yn-run-card { padding: 14px 16px; margin-top: 4px; }
 .yn-run-phase { font-size: 13px; font-weight: 600; color: var(--color-text); }
-.yn-run-bar { height: 6px; border-radius: 3px; margin: 8px 0 6px;
+.yn-run-bar { height: 6px; border-radius: var(--rd-radius-xs); margin: 8px 0 6px;
   background: var(--color-neutral-200); overflow: hidden; }
 .yn-run-bar > span { display: block; height: 100%; background: var(--color-accent);
   transition: width 0.4s ease; }
@@ -487,7 +493,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-disc-rail { position: sticky; top: 64px; display: flex; flex-direction: column;
   gap: 2px; }
 .yn-disc-link { display: flex; flex-direction: column; align-items: flex-start;
-  gap: 1px; min-height: 44px; padding: 7px 12px; border: none; border-radius: 8px;
+  gap: 1px; min-height: 44px; padding: 7px 12px; border: none; border-radius: var(--rd-radius-control);
   background: none; cursor: pointer; text-align: left; font: inherit;
   color: var(--color-neutral-700); box-shadow: inset 0 0 0 0 var(--color-accent); }
 .yn-disc-link:hover { background: var(--yn-tab-track); color: var(--color-neutral-900); }
@@ -495,7 +501,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-disc-link.active { background: var(--yn-tab-track); color: var(--color-neutral-900);
   box-shadow: inset 2px 0 0 0 var(--color-accent); font-weight: 600; }
 .yn-disc-label { font-size: 14px; }
-.yn-disc-meta { font-size: 12px; font-weight: 500; color: var(--color-neutral-500);
+.yn-disc-meta { font-size: 12px; font-weight: 500; color: var(--rd-text-secondary);
   font-variant-numeric: tabular-nums; }
 .yn-disc-link.is-empty .yn-disc-label { color: var(--color-neutral-500); }
 .yn-disc-flag { color: var(--color-accent); }
@@ -503,7 +509,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-dsec.active, .yn-filtering .yn-dsec { display: block; }
 .yn-dsec-head { margin: 2px 0 10px; }
 .yn-dsec-title { margin: 0; font-size: 18px; font-weight: 600; }
-.yn-dsec-about { margin: 2px 0 0; font-size: 13px; color: var(--color-neutral-500); }
+.yn-dsec-about { margin: 2px 0 0; font-size: 13px; color: var(--rd-text-secondary); }
 .yn-dsec-sub { margin: 16px 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em;
   text-transform: uppercase; color: var(--color-neutral-500); }
 .yn-finding-compact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
@@ -516,21 +522,21 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-menu > summary::-webkit-details-marker { display: none; }
 .yn-menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
   display: flex; flex-direction: column; min-width: 160px; padding: 4px;
-  background: var(--color-bg); border: 1px solid var(--color-divider); border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+  background: var(--color-bg); border: 1px solid var(--color-divider); border-radius: var(--rd-radius-control);
+  box-shadow: var(--rd-shadow-raised); }
 @media (max-width: 760px) {
   .yn-disc { grid-template-columns: 1fr; gap: 10px; }
   .yn-disc-rail { position: static; flex-direction: row; overflow-x: auto; gap: 6px;
     padding-bottom: 4px; scrollbar-width: thin; }
   .yn-disc-link { flex: none; min-height: 44px; border: 1px solid var(--color-divider);
-    border-radius: 999px; padding: 6px 14px; }
+    border-radius: var(--rd-radius-pill); padding: 6px 14px; }
   .yn-disc-link.active { box-shadow: inset 0 -2px 0 0 var(--color-accent); }
 }
 
 /* ---- Food & Drink / Events & Activities (4.5, YONDER-150/151/152) ---- */
 .yn-city-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .yn-city-chip { min-height: 44px; padding: 6px 14px; border: 1px solid var(--color-divider);
-  border-radius: 999px; background: none; font: inherit; font-size: 14px; cursor: pointer;
+  border-radius: var(--rd-radius-pill); background: none; font: inherit; font-size: 14px; cursor: pointer;
   color: var(--color-neutral-700); }
 .yn-city-chip:hover { color: var(--color-neutral-900); }
 .yn-city-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
@@ -545,10 +551,10 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-city-summary { font-size: 15px; line-height: 1.55; margin: 0 0 10px; max-width: 72ch; }
 .yn-city-dishes { margin: 0 0 8px; font-size: 14px; }
 .yn-city-warn { margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--color-accent);
-  background: var(--yn-tab-track); font-size: 13px; border-radius: 4px; }
+  background: var(--yn-tab-track); font-size: 13px; border-radius: var(--rd-radius-xs); }
 .yn-items-group { margin: 0 0 14px; }
 .yn-items { width: 100%; border-collapse: collapse; font-size: 14px; }
-.yn-items th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+.yn-items th { text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .06em;
   text-transform: uppercase; color: var(--color-neutral-500); padding: 6px 8px;
   border-bottom: 1px solid var(--color-divider); }
 .yn-items td { padding: 8px; vertical-align: top; border-bottom: 1px solid var(--color-divider); }
@@ -610,7 +616,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .bp-wrap:has(.yn-tabs) { max-width: 1200px; }
 
 /* ---- Weather summary + Safety subsections (4.5, YONDER-167/168) ---- */
-.yn-weather-sum { margin: 0 0 14px; padding: 12px 14px; border-radius: 8px;
+.yn-weather-sum { margin: 0 0 14px; padding: 12px 14px; border-radius: var(--rd-radius-control);
   background: var(--yn-tab-track); border-left: 3px solid var(--color-accent);
   font-size: 15px; line-height: 1.5; }
 .yn-weather-hints { margin-top: 4px; font-size: 14px; }
@@ -654,7 +660,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
   justify-content: center; width: 32px; height: 32px; margin: -2px -6px 0 0; padding: 0;
   border: 1px solid transparent; border-radius: var(--rd-radius-pill, 999px); background: transparent;
   color: var(--rd-text-muted); cursor: pointer; }
-.yn-tcard-edit:hover { color: var(--rd-text); background: var(--rd-surface-sunk, rgba(0,0,0,.04));
+.yn-tcard-edit:hover { color: var(--rd-text); background: var(--surface-sunk);
   border-color: var(--rd-border-subtle); }
 .yn-tcard-edit:focus-visible { outline: 2px solid var(--rd-focus-ring); outline-offset: 2px; }
 
@@ -691,7 +697,7 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
    data-sub, so a server refresh lands on the same sub-tab. */
 .yn-subtabs { display: inline-flex; gap: 4px; padding: 4px; margin: 4px 0 12px;
   border: 1px solid var(--rd-border-subtle); border-radius: var(--rd-radius-control, 10px); }
-.yn-subtab { background: none; border: 0; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+.yn-subtab { background: none; border: 0; padding: 6px 14px; border-radius: var(--rd-radius-control); cursor: pointer;
   color: var(--rd-text-muted); font: inherit; min-height: 32px; }
 #costs-section[data-sub="actual"] .yn-subtab[data-sub="actual"],
 #costs-section[data-sub="plan"] .yn-subtab[data-sub="plan"] {
@@ -701,6 +707,11 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 #costs-section[data-sub="plan"] .yn-subpanel[data-sub="plan"] { display: block; }
 #costs-section[data-sub="actual"] .yn-costs-act[data-for="plan"],
 #costs-section[data-sub="plan"] .yn-costs-act[data-for="actual"] { display: none; }
+
+/* D-165 / YONDER-202: nothing interactive below the 32px small control. */
+.yn-pack-check, .yn-pack-label-input, .yn-pack-qty-input, .input.yn-pack-bag-select,
+.input.yn-pack-add-bag, .input.yn-arch-add { min-height: var(--rd-control-sm); }
+.yn-arch-x { min-width: var(--rd-control-sm); min-height: var(--rd-control-sm); }
 
 /* D-199: the viewer's badge sits inside the Outfit page title; it's a capsule label
    (Figtree), not a heading (YONDER-202 re-audit). */

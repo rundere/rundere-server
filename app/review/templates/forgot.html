@@ -2,7 +2,7 @@
 {% block title %}Reset password{% endblock %}
 {% block body %}
 <form class="card" method="post" action="/forgot">
-  <div class="brand"><h1><span class="rd-mark" aria-hidden="true"></span> <span class="rd-wordmark" role="img" aria-label="Run·dere"></span></h1><span>reset password</span></div>
+  <div class="brand"><h1><span class="rd-lockup-stacked" role="img" aria-label="Run·dere"></span></h1><span>reset password</span></div>
   {% if sent %}
     <div class="ok">If that account exists, a reset link is on its way.</div>
     {% if not smtp %}
