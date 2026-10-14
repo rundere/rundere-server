@@ -340,6 +340,45 @@ def notifications_test(request: Request, target_id: str,
                            {"err": f"“{t.name}” didn't take it: {note}"}))
 
 
+@router.post("/settings/notifications/{target_id}/edit", response_class=HTMLResponse)
+def notifications_edit(request: Request, target_id: str, name: str = Form(""),
+                       token: str = Form(""), user_key: str = Form(""), device: str = Form(""),
+                       priority: str = Form("0"), categories: list[str] = Form([]),
+                       session: Session = Depends(get_session)):
+    """Change a saved target (YONDER-256): name, device, priority, categories.
+    Its keys stay as they are unless new ones are typed in — and are still
+    never shown (D-151)."""
+    from app import authn, notify, secretbox
+    from app.notify import pushover
+    admin = authn.require_admin(request)
+    t = _target(session, target_id)
+    if t is None:
+        return _notify_page(request, session, admin, err="No such target.")
+    try:
+        current = notify.secrets_of(t)
+    except secretbox.SecretError:
+        current = {}
+    try:
+        secrets, config = pushover.validate(token.strip() or current.get("token", ""),
+                                            user_key.strip() or current.get("user", ""),
+                                            device, priority)
+    except ValueError as err:
+        msg = str(err)
+        if not current and not (token.strip() and user_key.strip()):
+            msg = "the saved keys can't be read any more — enter both keys again"
+        return _notify_page(request, session, admin, edit_id=t.id,
+                            err=f"“{t.name}” wasn't changed: {msg}.")
+    t.name = (name.strip() or t.name)[:80]
+    t.config = config
+    t.categories = [c for c in categories if c in notify.CATEGORIES] or None
+    if secrets != current:
+        notify.set_secrets(t, secrets)
+        t.secret_hint = pushover.hint(secrets)
+        t.last_error = None
+    session.commit()
+    return _notify_page(request, session, admin, msg=f"Saved “{t.name}”.")
+
+
 @router.post("/settings/notifications/{target_id}/toggle", response_class=HTMLResponse)
 def notifications_toggle(request: Request, target_id: str,
                          session: Session = Depends(get_session)):

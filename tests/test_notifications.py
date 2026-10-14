@@ -400,3 +400,38 @@ if DEPS:
         page = client.get("/settings/notifications", headers=_admin()).text
         assert "Trip research sources" in page and "SearXNG (web search)" in page
         assert "google (1)" in page and "50%" in page
+
+    # ---------------------------------------------------------------- editing a target
+    def test_edit_a_saved_target_keeps_its_keys(env):
+        """YONDER-256: priority, device, name and categories change without
+        re-entering the keys; new keys replace them; bad input changes nothing."""
+        h = _admin()
+        tid = _target(categories=["mail"])
+        page = client.get("/settings/notifications", headers=h).text
+        assert f'action="/settings/notifications/{tid}/edit"' in page
+        assert TOKEN not in page and USER_KEY not in page
+        r = client.post(f"/settings/notifications/{tid}/edit", headers=h, data={
+            "name": "Phone (loud)", "priority": "1", "device": "iphone",
+            "categories": ["mail", "research"], "token": "", "user_key": ""})
+        assert "Saved “Phone (loud)”" in r.text
+        with SessionLocal() as s:
+            t = s.get(NotificationTarget, tid)
+            assert t.config == {"device": "iphone", "priority": 1}
+            assert t.categories == ["mail", "research"] and t.name == "Phone (loud)"
+            assert notify.secrets_of(t) == {"token": TOKEN, "user": USER_KEY}   # kept
+        new_user = "n" * 26 + "Q7w8"
+        client.post(f"/settings/notifications/{tid}/edit", headers=h, data={
+            "name": "Phone (loud)", "priority": "1", "user_key": new_user})
+        with SessionLocal() as s:
+            t = s.get(NotificationTarget, tid)
+            assert notify.secrets_of(t) == {"token": TOKEN, "user": new_user}
+            assert t.secret_hint == "…Q7w8" and t.categories is None    # none ticked = all
+        r = client.post(f"/settings/notifications/{tid}/edit", headers=h, data={
+            "name": "x", "priority": "1", "device": "bad device!"})
+        assert "changed: a device name" in r.text      # wasn&#39;t changed: …
+        with SessionLocal() as s:
+            assert s.get(NotificationTarget, tid).name == "Phone (loud)"
+        client.post(f"/settings/notifications/{tid}/test", headers=h)
+        assert env[-1]["config"]["priority"] == 1 and env[-1]["secrets"]["user"] == new_user
+        assert client.post(f"/settings/notifications/{tid}/edit", headers=_admin("nt-plain", False),
+                           data={"priority": "-1"}).status_code == 403
