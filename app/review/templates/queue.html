@@ -20,7 +20,7 @@
                 hx-post="/review/reprocess?bucket={{ bucket }}"
                 hx-target="#job-panel" hx-swap="innerHTML"
                 hx-disabled-elt="this" hx-indicator="this"
-                hx-confirm="Re-extract and re-resolve your captures not yet logged, from the original emails? Any edits or approvals on them will be redone. Logged items, and other people's captures, are untouched."
+                hx-confirm="Re-extract and re-resolve your captures not yet logged, from the original emails? Any edits or approvals on them will be redone. Logged items, other people's captures, and captures whose original has been removed (12 months after their trip) are untouched."
                 title="Re-run the current extractor and resolver over already-processed emails">
           <span class="lbl">⟳ Reprocess</span>
           <span class="spin">Reprocessing…</span>

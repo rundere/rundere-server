@@ -92,6 +92,8 @@
         {% if i.source.document_timestamp %}
           <dt>Document date</dt><dd>{{ i.source.document_timestamp }}</dd>{% endif %}
         {% if i.source.ref %}<dt>Message</dt><dd>{{ i.source.ref }}</dd>{% endif %}
+        {% if original %}<dt>Original</dt><dd>{% if original.removed %}removed (12 months after its trip) —
+          what was read from it stays; it can't be re-processed{% else %}kept until {{ original.until }}{% endif %}</dd>{% endif %}
         <dt>Read by</dt>
         <dd>{{ i.extractor }}{% if i.confidence %} · confidence {{ i.confidence }}{% endif %}</dd>
         {% if i.canonical_key %}<dt>Identity</dt><dd>{{ i.canonical_key }}</dd>{% endif %}

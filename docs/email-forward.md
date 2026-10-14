@@ -53,6 +53,17 @@ queue a few minutes later. Nothing is filed until they approve it.
 | `TX_INBOX_ACKNOWLEDGE` | `true` | Send the "Got it" email (needs SMTP and an email on the person's account). |
 | `TX_INBOX_MAX_BYTES` | `10000000` | Larger messages are dropped without being downloaded. |
 | `TX_INBOX_RATE_LIMIT` | `30` | Captures per address per hour. |
+| `TX_INBOX_DROPPED_DAYS` | `30` | Mail in the dropped folder is moved to Trash after this many days (SPEC-8 D-196). |
+| `TX_INBOX_TRASH_FOLDER` | auto | Where cleared mail goes. Empty = the mailbox's own Trash (the `\Trash` folder). |
+| `TX_RETENTION_MONTHS` | `12` | A captured email — Run·dere's copy and the one in the done folder — is removed this long after its trip ends (or after it arrived, with no trip). What was read from it stays. |
+
+**Clean-up (D-196).** Once a day Run·dere clears its own two folders, and
+nothing else in the mailbox: mail in the done folder goes to Trash on the day
+Run·dere removes its own copy of that capture, and mail in the dropped folder
+goes to Trash after `TX_INBOX_DROPPED_DAYS`. It always *moves* mail to Trash
+and never deletes it outright, so anything can be recovered until the mail
+provider empties the Trash. Captures still waiting in review are never removed.
+`python -m app.cli retention --dry-run` shows what the next sweep would do.
 
 Restart after changing them.
 

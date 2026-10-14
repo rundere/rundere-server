@@ -870,6 +870,21 @@ def default_traveler(session: Session, item: TravelItem) -> int | None:
     return user.traveler_id if user else None
 
 
+def _original_context(session: Session, item: TravelItem) -> dict | None:
+    """Whether the original email/page/file is still kept, and until when
+    (SPEC-8 D-196): removed 12 months after its trip ends."""
+    from app import retention
+    from app.models import IngestBatch
+    batch = session.get(IngestBatch, item.batch_id) if item.batch_id else None
+    if batch is None:
+        return None
+    if retention.source_gone(session, batch.payload):
+        return {"removed": True}
+    items = session.query(TravelItem).filter(TravelItem.batch_id == batch.id).all()
+    return {"removed": False,
+            "until": retention._batch_keep_until(session, batch, items).isoformat()}
+
+
 def _detail_response(request: Request, session: Session, item: TravelItem,
                      *, bucket: str = "attention", saved: bool = False,
                      oob_counts: bool = False, approve_refused: bool = False):
@@ -890,7 +905,8 @@ def _detail_response(request: Request, session: Session, item: TravelItem,
            # be absent and the template just omits that picker.
            "trip_al": _trip_context(session, item, view, scope.user_of(request)),
            "trip_yonder": _yonder_trip_context(session, item, view,
-                                               scope.user_of(request))}
+                                               scope.user_of(request)),
+           "original": _original_context(session, item)}
     if oob_counts:
         # Saving can move the item between buckets; refresh the counts too.
         views = _all_views(session, scope.user_of(request))
@@ -1063,6 +1079,11 @@ def reprocess(request: Request, bucket: str = "attention",
                                            flights_by.get(id(c), []))
             protected |= {i.batch_id for i in items
                           if i.batch_id not in protected and present(i)}
+            # D-196: a capture whose original was removed by retention can't be
+            # extracted again — rebuilding it would only lose what it has.
+            from app import retention
+            protected |= {b.id for b in batch_q.all()
+                          if retention.source_gone(s, b.payload)}
             doomed = [i.id for i in items
                       if not _is_logged(i) and i.batch_id not in protected]
             if doomed:
