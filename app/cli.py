@@ -47,6 +47,11 @@
                                                       # AdventureLog connection (no secrets)
     python -m app.cli secrets-rotate                   # re-encrypt every stored credential
                                                       # with the newest TX_SECRETS_KEYS key (D-151)
+    python -m app.cli demo-seed [--replace]            # D-198: write the demo server's sample
+                                                      # trips (--replace: after a release
+                                                      # changed the seed). Demo servers only.
+    python -m app.cli demo-roll                        # move the sample trips' dates to today
+                                                      # (the nightly job, by hand)
 """
 from __future__ import annotations
 
@@ -217,6 +222,28 @@ def _oauth_client_cmd(session, args: list[str]) -> int:
     return 0
 
 
+def _demo_cmd(session, cmd: str, args: list[str]) -> int:
+    """D-198: the demo server's sample data. Refuses anywhere but a demo server,
+    behind the same startup checks the server runs."""
+    from app import demo, demo_seed
+    if not demo.enabled():
+        print("not a demo server (TX_DEMO_MODE is off); refusing to write sample data")
+        return 1
+    try:
+        demo.check_startup(session)
+    except demo.DemoMisconfigured as e:
+        print(e)
+        return 1
+    if cmd == "demo-seed":
+        out = demo_seed.seed(session, replace="--replace" in args)
+        print("seeded: " + ", ".join(out["trips"]) if out["seeded"] else out["reason"])
+    else:
+        out = demo_seed.roll(session)
+        print(f"moved the sample trips {out['rolled']:+d} day(s)" if out["rolled"]
+              else "already current")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 1:
         print(__doc__)
@@ -276,6 +303,8 @@ def main(argv: list[str]) -> int:
             return _user_cmd(session, cmd, args)
         elif cmd == "oauth-client":
             return _oauth_client_cmd(session, args)
+        elif cmd in ("demo-seed", "demo-roll"):
+            return _demo_cmd(session, cmd, args)
         elif cmd == "import-home":
             # Home profiles are per-deployment personal config and are MANAGED
             # IN THE ADMIN UI (/admin -> Home Profiles). This importer exists

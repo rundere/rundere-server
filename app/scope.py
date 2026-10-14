@@ -163,7 +163,7 @@ def can_edit_trip(session, user, trip) -> bool:
     if trip is None:
         return False
     from app import demo
-    if demo.enabled():
+    if demo.read_only():
         return False
     if unrestricted(user):
         return True
