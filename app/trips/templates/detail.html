@@ -115,10 +115,13 @@
   <details class="bp-group yn-filterable" data-grp="timeline" open>
     <summary class="bp-group-label">{{ day.label }}
       <span class="bp-group-count">{{ day.activities | length }}</span></summary>
-    <div class="card blueprint bp-daycard">
+    {# The timeline component (design README §6, YONDER-262): a 1px line down the
+       day with an 8px node per item; the next moment's node is lit (D-172). #}
+    <div class="card blueprint bp-daycard yn-tl">
       {% for act in day.activities %}
-      <details class="bp-act">
+      <details class="bp-act{% if act.id == next_activity_id %} is-next{% endif %}">
         <summary class="yn-actrow">
+          <span class="yn-tl-node" aria-hidden="true"></span>{% if act.id == next_activity_id %}<span class="sr-only">Next up: </span>{% endif %}
           <span class="tag tag-chip bp-typetag">{{ icon('plane' if act.type == 'flight' else 'home' if act.type == 'lodging' else 'pin', 14) }}{{ act.type_label }}</span>
           <div class="bp-act-main">
             <div class="bp-act-title">{{ act.title }}</div>

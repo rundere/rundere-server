@@ -377,6 +377,7 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         },
         "day_groups": day_groups,
         "has_activities": bool(acts),
+        "next_activity_id": _next_activity_id(session, trip, user),
         "linked_captures": _linked_captures(session, trip.id),
         **_push_state(trip, al),
         **_travelers_context(session, trip.id),
@@ -386,6 +387,21 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         **_costs_context(session, trip, user),
         "journal": _journal_context(session, trip, user),
     }
+
+
+def _next_activity_id(session: Session, trip: Trip, user) -> str | None:
+    """The activity holding the trip's next moment for the viewer (D-172), whose
+    node on the timeline is lit (YONDER-262, design README §6). The same rule and
+    clock as Home's Next-up card, so the two always agree."""
+    from app import clock
+    from app.dashboard import viewer_moments
+    from app.trips import nextup
+    try:
+        moment, _ = viewer_moments(session, [trip], nextup.now_key(clock.now_for(session, user)),
+                                   user)
+    except Exception:                       # pragma: no cover - decoration only
+        return None
+    return moment.activity.id if moment else None
 
 
 def _journal_context(session: Session, trip: Trip, user) -> list[dict]:

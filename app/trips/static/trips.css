@@ -713,6 +713,29 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .input.yn-pack-add-bag, .input.yn-arch-add { min-height: var(--rd-control-sm); }
 .yn-arch-x { min-width: var(--rd-control-sm); min-height: var(--rd-control-sm); }
 
+/* ---- Timeline component (design README §6, YONDER-262) ----
+   A vertical 1px line (Night 600 in dark, the border token in light) down each
+   day's items, an 8px node per item, and the next moment's node lit: Silver with
+   the brand glow in dark, ink with a Beacon ring in light (the glow is dark-only). */
+.yn-tl { position: relative; }
+.yn-tl::before { content: ""; position: absolute; top: 0; bottom: 0; left: 23px;
+  width: 1px; background: var(--rd-border); pointer-events: none; }
+.yn-tl .yn-actrow { padding-left: 40px; position: relative; }
+.yn-tl-node { position: absolute; left: 20px; top: 50%; width: 8px; height: 8px;
+  margin-top: -4px; border-radius: var(--rd-radius-pill); background: var(--rd-surface);
+  box-shadow: inset 0 0 0 1px var(--rd-border); box-sizing: border-box; }
+.yn-tl .is-next .yn-tl-node { background: var(--rd-text); box-shadow: none;
+  filter: var(--rd-glow); }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .yn-tl .is-next .yn-tl-node {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--rd-accent) 30%, transparent); } }
+:root[data-theme="light"] .yn-tl .is-next .yn-tl-node {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rd-accent) 30%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .yn-tl-node { transition: background var(--rd-dur-standard) var(--rd-ease-standard); } }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
 /* D-199: the viewer's badge sits inside the Outfit page title; it's a capsule label
    (Figtree), not a heading (YONDER-202 re-audit). */
 .yn-view-only-badge { font-family: var(--rd-font-body); font-size: 12px; font-weight: 600;
