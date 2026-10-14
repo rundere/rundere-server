@@ -86,6 +86,34 @@
               <button class="act tiny" type="submit">Remove</button></form>
           </td>
         </tr>
+        <tr class="nt-edit-row">
+          <td colspan="4">
+            {# YONDER-256: change a saved target without re-entering its keys. #}
+            <details class="nt-edit" {% if edit_id == t.id %}open{% endif %}>
+              <summary>Edit “{{ t.name }}”</summary>
+              <form method="post" action="/settings/notifications/{{ t.id }}/edit" autocomplete="off">
+                <div class="field"><label for="e-name-{{ t.id }}">Name</label>
+                  <input id="e-name-{{ t.id }}" name="name" value="{{ t.name }}"></div>
+                <div class="field"><label for="e-pri-{{ t.id }}">Priority for alerts</label>
+                  <select id="e-pri-{{ t.id }}" name="priority">
+                    {% for p, label in priorities.items() %}<option value="{{ p }}" {% if (t.config or {}).get('priority', 0) == p %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                  </select></div>
+                <div class="field"><label for="e-dev-{{ t.id }}">Device <span class="yn-help">— blank = all your devices</span></label>
+                  <input id="e-dev-{{ t.id }}" name="device" value="{{ (t.config or {}).get('device') or '' }}"></div>
+                <div class="field"><label for="e-tok-{{ t.id }}">Application API token</label>
+                  <input id="e-tok-{{ t.id }}" name="token" placeholder="saved — leave blank to keep" autocomplete="off" spellcheck="false"></div>
+                <div class="field"><label for="e-usr-{{ t.id }}">User or group key</label>
+                  <input id="e-usr-{{ t.id }}" name="user_key" placeholder="saved ({{ t.secret_hint or '…' }}) — leave blank to keep" autocomplete="off" spellcheck="false"></div>
+                <fieldset class="nt-cats"><legend>Send alerts about</legend>
+                  {% for key, label in categories.items() %}
+                  <label><input type="checkbox" name="categories" value="{{ key }}" {% if not t.categories or key in t.categories %}checked{% endif %}> <span>{{ label }}</span></label>
+                  {% endfor %}
+                </fieldset>
+                <button class="act primary" type="submit">Save</button>
+              </form>
+            </details>
+          </td>
+        </tr>
       {% endfor %}
       </tbody>
     </table>
