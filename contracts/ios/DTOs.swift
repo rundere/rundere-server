@@ -238,6 +238,27 @@ struct RateRefreshOut: Codable, Hashable, Sendable {
 /// The caller's own Discovery run on a trip (YONDER-238): POST
 /// /trips/{id}/discover starts it (optionally targeted, see DiscoverIn) (409 on an ended trip, D-157), GET
 /// /trips/{id}/discover/status polls it. Reload the trip once `running` is false.
+/// YONDER-264 (Refine Discovery): GET /api/v1/trips/{id}/discover/places, and
+/// PUT /api/v1/trips/{id}/discover/places/{key} with {"excluded": Bool}.
+struct DiscoveryPlaceOut: Codable, Hashable, Sendable {
+    let key: String               // stable place key, e.g. "PT:Lisbon"
+    let label: String?
+    let city: String?
+    let country: String?
+    let lat: Double?
+    let lon: Double?
+    let sources: [String]
+    let is_home: Bool
+    let home_country: Bool
+    let excluded: Bool
+}
+
+struct DiscoveryPlacesOut: Codable, Sendable {
+    let places: [DiscoveryPlaceOut]
+    let countries: [String]
+    let dropped: [String]
+}
+
 struct DiscoveryStatusOut: Codable, Hashable, Sendable {
     let running: Bool
     let phase: String?

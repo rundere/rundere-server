@@ -748,7 +748,8 @@ def unshare_trip(trip_id: str, request: Request, user_id: str = Form(""),
 @router.get("/{trip_id}/derived-locations", response_class=HTMLResponse)
 def derived_locations(trip_id: str, request: Request,
                       session: Session = Depends(get_session)):
-    """The "What Yonder found" viewer (D-68): show the destination set Discovery
+    """The Refine Discovery sheet (D-68; renamed from "What Yonder found",
+    YONDER-264): show the destination set Discovery
     DERIVED from this trip's own activities (D-62) — with per-place provenance
     and the places that couldn't be verified — so the operator sees the
     pipeline's starting point rather than guessing at it. On-demand modal, read
@@ -768,15 +769,18 @@ def _excluded_keys(session: Session, trip_id: str, uid: str | None) -> set[str]:
                     DiscoveryExclusion.user_id == uid).all()}
 
 
-def _derived_locations_ctx(request: Request, session: Session, trip: Trip) -> dict:
+def discovery_places(session: Session, trip: Trip, uid: str | None) -> dict:
+    """The places Discovery will research on this trip for one person (D-62/D-68):
+    derived from the trip's own activities, each with where it came from, whether
+    it's home or in the home country (skipped or narrowed), and whether this person
+    excluded it (4.1: per person). Shared by the web sheet, /api/v1 and MCP
+    (YONDER-264)."""
     from app.resolving import load_homes_for_user
     from discover.home_filter import home_country_set, is_home_place
     from discover.places import derive_locations
     acts = trip_activities(session, trip.id)
     result = derive_locations(acts, resolve_airport=_airport_resolver(),
                               geocoder=_photon())
-    # Discover is per person (4.1): the viewer's homes and exclusions.
-    uid = _viewer_uid(request)
     profiles = load_homes_for_user(session, uid)
     hc = home_country_set(result.places, profiles, trip.start_date)
     excluded = _excluded_keys(session, trip.id, uid)
@@ -789,11 +793,43 @@ def _derived_locations_ctx(request: Request, session: Session, trip: Trip) -> di
         "home_country": bool(p.country and p.country.upper() in hc),
         "excluded": p.place_key in excluded,
     } for p in result.places]
+    return {"places": places, "countries": result.countries, "dropped": result.dropped}
+
+
+def set_place_excluded(session: Session, trip_id: str, uid: str | None, place_key: str,
+                       excluded: bool) -> None:
+    """Exclude (or include again) one place from this person's Discovery on a trip.
+    Idempotent. Excluding also drops that place's DRAFT findings for instant
+    feedback; country-scope findings reconcile on the next run (the runner prunes
+    stale drafts)."""
+    existing = (session.query(DiscoveryExclusion)
+                .filter(DiscoveryExclusion.trip_id == trip_id,
+                        DiscoveryExclusion.user_id == uid,
+                        DiscoveryExclusion.place_key == place_key).first())
+    if not excluded:
+        if existing is not None:
+            session.delete(existing)
+        session.commit()
+        return
+    if existing is None:
+        session.add(DiscoveryExclusion(trip_id=trip_id, user_id=uid, place_key=place_key))
+    for f in (session.query(DiscoveryFinding)
+              .filter(DiscoveryFinding.trip_id == trip_id,
+                      DiscoveryFinding.user_id == uid,
+                      DiscoveryFinding.place_key == place_key,
+                      DiscoveryFinding.status == "draft").all()):
+        from discover import items as discovery_items
+        discovery_items.delete_for_finding(session, f.id)
+        session.delete(f)
+    session.commit()
+
+
+def _derived_locations_ctx(request: Request, session: Session, trip: Trip) -> dict:
+    # Discover is per person (4.1): the viewer's homes and exclusions.
+    found = discovery_places(session, trip, _viewer_uid(request))
     return {
-        "request": request, "trip_id": trip.id, "trip_name": trip.name,
-        "places": places, "countries": result.countries,
-        "dropped": result.dropped,
-        "has_home": any(p["is_home"] or p["home_country"] for p in places),
+        "request": request, "trip_id": trip.id, "trip_name": trip.name, **found,
+        "has_home": any(p["is_home"] or p["home_country"] for p in found["places"]),
     }
 
 
@@ -808,24 +844,8 @@ def toggle_excluded_place(trip_id: str, place_key: str = Form(""),
     if trip is None or not place_key:
         return HTMLResponse("", status_code=404)
     uid = _viewer_uid(request)
-    existing = (session.query(DiscoveryExclusion)
-                .filter(DiscoveryExclusion.trip_id == trip_id,
-                        DiscoveryExclusion.user_id == uid,
-                        DiscoveryExclusion.place_key == place_key).first())
-    if existing is not None:
-        session.delete(existing)
-    else:
-        session.add(DiscoveryExclusion(trip_id=trip_id, user_id=uid, place_key=place_key))
-        # Instant feedback: remove this place's own draft findings now.
-        for f in (session.query(DiscoveryFinding)
-                  .filter(DiscoveryFinding.trip_id == trip_id,
-                          DiscoveryFinding.user_id == uid,
-                          DiscoveryFinding.place_key == place_key,
-                          DiscoveryFinding.status == "draft").all()):
-            from discover import items as discovery_items
-            discovery_items.delete_for_finding(session, f.id)
-            session.delete(f)
-    session.commit()
+    now_excluded = place_key in _excluded_keys(session, trip_id, uid)
+    set_place_excluded(session, trip_id, uid, place_key, not now_excluded)
     return templates.TemplateResponse(request, "_derived_locations.html",
                                       _derived_locations_ctx(request, session, trip))
 

@@ -34,6 +34,7 @@ if DEPS:
     settings.auth_cookie_secure = False
 
     ALL_TOOLS = {"list_trips", "get_trip", "update_trip", "dashboard",
+                 "list_discovery_places", "set_discovery_place",   # YONDER-264
                  "list_activity_types", "add_activity", "update_activity",
                  "delete_activity", "generate_packing", "set_packing_status",
                  "add_packing_item", "create_journal_entry", "list_journal_entries",

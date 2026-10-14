@@ -11,6 +11,11 @@
     <h2 class="bp-h2">Discovery</h2>
   </div>
   <div class="bp-head-actions">
+    {# YONDER-264: choose the places before a run (was "What Run·dere found" in the trip header). #}
+    {% if not discovery_ended and not read_only %}
+    <button class="btn btn-secondary" hx-get="/trips/{{ trip.id }}/derived-locations"
+            hx-target="#modal-root">Refine Discovery</button>
+    {% endif %}
     {% if discovery_running %}
     <span class="yn-run-live">● Researching…</span>
     {% elif discovery_ended %}

@@ -182,6 +182,33 @@ class TripRateOut(BaseModel):
     fetched_at: datetime | None = None
 
 
+class DiscoveryPlaceOut(BaseModel):
+    """One place Discovery will research on a trip, for the caller (YONDER-264).
+    `is_home`: home, never researched. `home_country`: in the home country, so the
+    local topics are skipped. `excluded`: the caller chose to skip it."""
+    key: str
+    label: str | None = None
+    city: str | None = None
+    country: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    sources: list[str] = []
+    is_home: bool = False
+    home_country: bool = False
+    excluded: bool = False
+
+
+class DiscoveryPlacesOut(BaseModel):
+    places: list[DiscoveryPlaceOut] = []
+    countries: list[str] = []
+    # Places named on the trip that couldn't be verified (shown, never guessed).
+    dropped: list[str] = []
+
+
+class DiscoveryPlaceIn(BaseModel):
+    excluded: bool
+
+
 class DiscoveryStatusOut(BaseModel):
     """The caller's OWN Discovery run on a trip (YONDER-238; runs are per person,
     4.1) — what the app's Run / Refresh button and progress bar poll."""
@@ -1383,6 +1410,42 @@ def api_run_discovery(trip_id: str, body: DiscoverIn | None = None,
     if not start_discovery(session, trip, user, topic=topic, place_key=place_key):
         raise HTTPException(status_code=409, detail=TRIP_ENDED_MESSAGE)
     return _discovery_status(session, trip, user)
+
+
+def _discovery_places_out(session: Session, trip: Trip, user) -> DiscoveryPlacesOut:
+    from app.trips.routes import discovery_places
+    found = discovery_places(session, trip, user.id)
+    return DiscoveryPlacesOut(
+        places=[DiscoveryPlaceOut(**p) for p in found["places"]],
+        countries=list(found["countries"] or []),
+        dropped=[str(d.get("raw") if isinstance(d, dict) else d) for d in (found["dropped"] or [])])
+
+
+@router.get("/trips/{trip_id}/discover/places", response_model=DiscoveryPlacesOut)
+def api_discovery_places(trip_id: str, user=Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """The places the caller's Discovery would research on this trip (Refine
+    Discovery, YONDER-264): derived from the trip's own activities, with home and
+    the caller's own exclusions marked. Check this, exclude what you don't want,
+    then start a run."""
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    return _discovery_places_out(session, trip, user)
+
+
+@router.put("/trips/{trip_id}/discover/places/{place_key}", response_model=DiscoveryPlacesOut)
+def api_set_discovery_place(trip_id: str, place_key: str, body: DiscoveryPlaceIn,
+                            user=Depends(authn.current_user),
+                            session: Session = Depends(get_session)):
+    """Exclude (`excluded: true`) or include again one place for the caller's
+    Discovery on this trip. Idempotent. Only a place the trip actually has (404
+    otherwise). Excluding drops that place's draft findings. Returns the list."""
+    from app.trips.routes import discovery_places, set_place_excluded
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    keys = {p["key"] for p in discovery_places(session, trip, user.id)["places"]}
+    if place_key not in keys:
+        raise HTTPException(404, "no such place on this trip")
+    set_place_excluded(session, trip.id, user.id, place_key, body.excluded)
+    return _discovery_places_out(session, trip, user)
 
 
 @router.get("/trips/{trip_id}/discover/status", response_model=DiscoveryStatusOut)

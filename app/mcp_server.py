@@ -122,6 +122,27 @@ def get_trip(trip_id: TripId) -> dict[str, Any]:
 
 
 @mcp.tool()
+def list_discovery_places(trip_id: TripId) -> dict[str, Any]:
+    """The places Discovery researches on this trip for the user (Refine Discovery):
+    each with its `key`, where it came from, `is_home` (never researched),
+    `home_country` (local topics skipped) and `excluded` (the user chose to skip
+    it). Check before researching; skip what the user doesn't want with
+    set_discovery_place."""
+    return _run(api_v1.api_discovery_places, trip_id=trip_id)
+
+
+@mcp.tool()
+def set_discovery_place(trip_id: TripId,
+                        place_key: Annotated[str, Field(description="A place `key` from list_discovery_places, e.g. \"PT:Lisbon\"")],
+                        excluded: Annotated[bool, Field(description="true = skip this place; false = research it again")],
+                        ) -> dict[str, Any]:
+    """Exclude a place from (or include it in) the user's Discovery on this trip.
+    Idempotent; excluding drops that place's draft findings. Needs edit access."""
+    return _run(api_v1.api_set_discovery_place, trip_id=trip_id, place_key=place_key,
+                body=api_v1.DiscoveryPlaceIn(excluded=excluded))
+
+
+@mcp.tool()
 def update_trip(trip_id: TripId,
                 name: Annotated[str | None, Field(description="New trip name")] = None,
                 start_date: Date = None, end_date: Date = None,
