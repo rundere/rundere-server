@@ -260,7 +260,8 @@ request forgery (SSRF) risk.
     mailbox:
     - **Captured:** moved to Trash on the same day Rundere deletes its own copy,
       12 months after the trip ends (or after arrival, when the capture has no
-      trip). The message is matched through `inbox_messages`.
+      trip). The message is found again by its Message-ID, which the capture's
+      tombstone keeps. A failed mailbox step is retried the next day.
     - **Dropped** (unknown address, too large or rate-limited, so never
       captured): moved to Trash after **30 days**. That's long enough to notice
       a misdirected booking and forward it again.

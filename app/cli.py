@@ -18,6 +18,7 @@
                                                       # the id (+ secret, once)
     python -m app.cli oauth-client list
     python -m app.cli process [--no-llm] [--limit N]   # extract received batches
+    python -m app.cli retention [--dry-run] [--no-mailbox]   # D-196: the daily sweep, by hand
     python -m app.cli import-home <file.json>          # bootstrap home_profiles;
                                                       # manage them in /admin after
     python -m app.cli resolve [--no-adventurelog] [--no-airtrail] [--limit N] [--redo]
@@ -309,6 +310,13 @@ def main(argv: list[str]) -> int:
             for p in session.query(HomeProfile).order_by(HomeProfile.effective_from).all():
                 span = f"{p.effective_from or 'start'} .. {p.effective_to or 'current'}"
                 print(f"  [{p.kind:13}] {p.label:35} {span}  r={p.radius_km}km")
+        elif cmd == "retention":
+            # SPEC-8 D-196: what the daily sweep removes; --dry-run only counts.
+            from app import retention
+            report = retention.run(SessionLocal, dry_run="--dry-run" in args,
+                                   mailbox="--no-mailbox" not in args)
+            print(("dry run: " if "--dry-run" in args else "") +
+                  " ".join(f"{k}={v}" for k, v in report.summary().items()))
         elif cmd == "process":
             from app.config import settings
             from app.processing import process_pending

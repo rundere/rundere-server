@@ -309,6 +309,12 @@ def startup() -> None:
     except Exception:                       # pragma: no cover
         log.exception("inbox poller failed to start; email forward is off")
     try:
+        # SPEC-8 D-196: the daily retention sweep (files, raw captures, mailbox).
+        from app import retention
+        retention.start(SessionLocal)
+    except Exception:                       # pragma: no cover
+        log.exception("retention job failed to start; nothing is removed until it does")
+    try:
         from app.admin import mount_admin
         mount_admin(app, engine)
     except Exception:                       # pragma: no cover
