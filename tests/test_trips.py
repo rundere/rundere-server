@@ -707,3 +707,20 @@ def test_calculator_pivots_without_cad_home():
     assert "GBP" in r.text and "CHF" in r.text
     assert '"GBP": 1.0' in r.text
     assert "1.15" in r.text
+
+
+def test_trip_cards_quick_edit_but_never_delete():
+    """YONDER-255 (owner, 2026-10-14): a card offers quick edit as a pencil by
+    the name, and no Delete — deleting takes opening the trip first."""
+    if not DEPS:
+        return
+    _clear()
+    tid = _mk("Card actions trip", start=(TODAY + timedelta(days=30)).isoformat(),
+              end=(TODAY + timedelta(days=35)).isoformat())
+    html = client.get("/trips").text
+    assert f'hx-get="/trips/{tid}/edit?next=/trips"' in html
+    assert 'class="yn-tcard-edit"' in html and 'aria-label="Edit Card actions trip"' in html
+    assert f'/trips/{tid}/delete' not in html and ">Delete<" not in html
+    detail = client.get(f"/trips/{tid}").text
+    assert f'hx-post="/trips/{tid}/delete"' in detail and "hx-confirm" in detail
+    _clear()
