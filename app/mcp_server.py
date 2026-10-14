@@ -45,6 +45,9 @@ INSTRUCTIONS = """Run·dere (formerly Yonder) is the user's personal travel plan
 Tools act as the signed-in Run·dere user and see only what they can see in the app.
 Start with list_trips, then get_trip for the full picture (timeline, travellers,
 places, the user's Discover findings, their discovery profile and packing).
+Each trip has `my_role`: owner, traveller or admin can change it; viewer means it
+was shared with the user to view only, so don't try to change it (writes are
+refused) — offer to research or summarise instead.
 Timeline items take a `type` from list_activity_types and a `values` object with
 that type's field keys. Research with the user's preferences: get_trip's
 `discovery_profile` (also get_discovery_profile) gives dietary restrictions,
@@ -117,7 +120,9 @@ def get_trip(trip_id: TripId) -> dict[str, Any]:
     places with lat/lon, the user's OWN Discover findings (weather, currency,
     visa, food, saved research…), the places/events/activities inside the Food
     and Events findings (`discovery_items`, each tied to its finding by
-    `finding_id`), the packing list, and linked captures."""
+    `finding_id`), the packing list, and linked captures. `trip.my_role` says
+    what the user may do here (viewer = read-only); each traveller has
+    `has_account` (true = has a Run·dere login, false = a guest on the roster)."""
     return _run(api_v1.api_trip_snapshot, trip_id=trip_id)
 
 

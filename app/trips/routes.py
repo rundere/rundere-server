@@ -356,7 +356,16 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
     day_groups = timeline_day_groups(session, trip)
     acts = [a for g in day_groups for a in g["activities"]]
     notes = (trip.notes or "").strip()
+    # D-199 (YONDER-185): a view-only share sees the trip without its edit
+    # controls, packing or travellers' profile details. The server still refuses
+    # its writes (scope.trip_or_none); this only stops offering them.
+    my_role = scope.trip_role(session, user, trip) or "viewer"
     return {
+        "my_role": my_role,
+        "view_only": my_role == "viewer",
+        # No edit controls: a viewer, or anyone on a demo server (D-198), where
+        # can_edit_trip is always false but every tab still shows.
+        "read_only": not scope.can_edit_trip(session, user, trip),
         "trip": {
             "id": trip.id, "name": trip.name,
             "start_display": fmt_date(trip.start_date) or "—",
@@ -458,10 +467,13 @@ def _linked_captures(session: Session, trip_id: str) -> list[dict]:
 _ROLE_LABELS = {"self": "You", "companion": "Companion"}
 
 
-def _traveler_view(t: TravelerIdentity, role: str) -> dict:
+def _traveler_view(t: TravelerIdentity, role: str, has_account: bool = False) -> dict:
     return {"id": t.id, "name": t.display_name, "kind": t.kind, "role": role,
             "role_label": _ROLE_LABELS.get(role, role.title()),
-            "nationality": t.nationality, "generic": bool(t.generic)}
+            "nationality": t.nationality, "generic": bool(t.generic),
+            # D-199: can this person sign in (a linked account), or are they a
+            # guest who is only on the roster?
+            "has_account": has_account}
 
 
 def discovery_travelers(session: Session, trip_id: str) -> list[TravelerIdentity]:
@@ -528,7 +540,10 @@ def _travelers_context(session: Session, trip_id: str) -> dict:
                .filter(TravelerIdentity.id.in_(roles)).all()} if roles else {})
     # self first, then companions alphabetically. Orphan rows (identity deleted)
     # are skipped silently.
-    travelers = [_traveler_view(idents[tid], role)
+    from app.models import User
+    with_login = ({row[0] for row in session.query(User.traveler_id)
+                   .filter(User.traveler_id.in_(roles)).all()} if roles else set())
+    travelers = [_traveler_view(idents[tid], role, tid in with_login)
                  for tid, role in roles.items() if tid in idents]
     travelers.sort(key=lambda v: (v["role"] != "self", v["name"].lower()))
     avail_q = session.query(TravelerIdentity)
@@ -559,6 +574,12 @@ def _adventurelog(session: Session, request: Request):
 
 
 def _photon():
+    from app import demo
+    if demo.enabled():
+        # D-198: a demo server places its sample trips from the seed's own
+        # table; it never reaches a geocoder.
+        from app.demo_seed import SeedGeocoder
+        return SeedGeocoder()
     from resolve.geocode import PhotonGeocoder
     return PhotonGeocoder(settings.photon_url)
 

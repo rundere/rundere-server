@@ -105,9 +105,15 @@ def login_form(request: Request, next: str = "/", error: str | None = None,
 
 
 def _login_options(request: Request) -> dict:
-    from app import oidc
+    from app import demo, oidc
     from app.config import settings
     forced = oidc.forced_on(request)
+    if demo.enabled():
+        # D-198: the shared login is shown on the page; it isn't a secret.
+        return {"password_allowed": True, "registration_open": False,
+                "oidc_enabled": False, "oidc_name": "",
+                "demo": {"username": settings.demo_username.strip(),
+                         "password": settings.demo_password}}
     return {"password_allowed": not forced,
             "registration_open": settings.auth_registration_open and not forced,
             "oidc_enabled": oidc.offered_on(request),
@@ -164,6 +170,9 @@ class AuthMethodsOut(BaseModel):
     sso_forced: bool = False       # SSO is the only way in on the web here
     registration_open: bool = False
     server_name: str = "Run·dere"
+    # D-198: a read-only demo server. The app shows its banner and hides edit
+    # controls (every trip also reports can_edit=false).
+    demo: bool = False
     version: str
 
 
@@ -174,9 +183,14 @@ def api_auth_methods(request: Request):
     (_login_options, YONDER-164). The host is the one the request was made to —
     never a forwarded or proxy-supplied identity header. An older server
     answers 404, which the app reads as "password only"."""
-    from app import oauth, oidc
+    from app import demo, oauth, oidc
     from app.config import settings
     from app.db import SessionLocal
+    if demo.enabled():
+        # Plain username and password only: no OAuth, SSO or registration.
+        return {"password": True, "oauth": False, "oauth_client_id": None, "sso": False,
+                "sso_name": None, "sso_forced": False, "registration_open": False,
+                "demo": True, "version": settings.app_version}
     forced = oidc.forced_on(request)
     sso = oidc.offered_on(request)
     with SessionLocal() as session:

@@ -8,14 +8,22 @@
 {% set cu = request.state.user if request else none %}
 {% import "_settings_menu.html" as settings_menu with context %}
 {% set in_settings = settings_menu.in_settings %}
+{% if demo_mode is defined and demo_mode() %}
+{# D-198: every page on a demo server says so; refused writes land in #demo-msg. #}
+<div class="yn-demo-banner" role="note">{{ icon('lock', 14) }}
+  <strong>Demo server:</strong> read-only, view the sample trips. Changes aren't saved.
+  <span id="demo-msg" aria-live="polite"></span></div>
+{% endif %}
 <header class="appbar">
   <a class="wordmark" href="/" style="text-decoration:none" aria-label="Run·dere home" title="Run·dere — say “run there”">
     <span class="rd-mark" aria-hidden="true"></span><span class="rd-wordmark" role="img" aria-label="Run·dere"></span>
     <span>self-hosted</span></a>
   {# D-200 (YONDER-228): Capture from anywhere. A secondary button, so a page keeps
      its one Beacon primary; it opens the quick capture sheet over the page. #}
+  {% if not (demo_mode is defined and demo_mode()) %}{# D-198: nothing to capture on the read-only demo #}
   <button class="navcap" type="button" hx-get="/capture/sheet" hx-target="#modal-root"
           aria-label="Capture a booking">{{ icon('capture', 18) }}<span>Capture</span></button>
+  {% endif %}
   {# D-200: your trips and stories, then getting things in and sorting them. #}
   <nav class="appnav" aria-label="Sections">
     <a href="/" class="{{ 'on' if p == '/' else '' }}"><span class="ni">{{ icon('home', 20) }}</span>Home</a>

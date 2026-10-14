@@ -62,6 +62,10 @@ struct Dashboard: Codable, Sendable {
     /// its end moment). Optional: pre-4.7.1 servers and older caches omit them.
     let next_activity: MomentOut?
     let in_progress: [MomentOut]?
+    /// YONDER-250: the next moments within `window_h` (default 48 h, up to `limit`,
+    /// default 12) across every trip, soonest first; the first is `next_activity`.
+    /// Optional: pre-4.12 servers omit it.
+    let upcoming: [MomentOut]?
     let counts: [String: Int]
     let capture: [String: Int]
     let trip_count: Int
@@ -87,6 +91,10 @@ struct TripSummary: Codable, Identifiable, Hashable, Sendable {
     /// False for a view-only share (D-122): hide Edit rather than meet a 403.
     /// Optional: older servers omit it — treat nil as "try, and handle 403".
     let can_edit: Bool?
+    /// D-199 (YONDER-185): owner | traveller | admin | viewer. `viewer` = a
+    /// view-only share: hide every edit control (YONDER-259). The demo server
+    /// reports `viewer` on every trip. Optional: pre-4.12 servers omit it.
+    let my_role: String?
 }
 
 struct ActivityOut: Codable, Identifiable, Hashable, Sendable {
@@ -145,6 +153,8 @@ struct TravelerOut: Codable, Identifiable, Hashable, Sendable {
     let display_name: String
     let role: String
     let kind: String
+    /// D-199: true = has a Run·dere login; false = a guest on the roster only.
+    let has_account: Bool?
 }
 
 struct PlaceOut: Codable, Hashable, Sendable {

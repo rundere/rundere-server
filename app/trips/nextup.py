@@ -73,10 +73,8 @@ def _span(a) -> tuple[tuple[str, str], tuple[str, str] | None, bool] | None:
     return start, None, False
 
 
-def plan(activities, now: str) -> tuple[Moment | None, list[Moment]]:
-    """(next moment, what's in progress) for `activities` at wall-clock `now`
-    ("YYYY-MM-DDTHH:MM"). In-progress moments are each item's end, soonest first,
-    without the item the next moment belongs to (it's already on the card)."""
+def _moments(activities, now: str) -> tuple[list[Moment], list[Moment]]:
+    """(every moment still ahead, what's in progress) at `now`, both soonest first."""
     ahead: list[Moment] = []
     under_way: list[Moment] = []
     for a in activities:
@@ -94,11 +92,31 @@ def plan(activities, now: str) -> tuple[Moment | None, list[Moment]]:
             ahead.append(Moment(a, "end", end[0], end[1]))
     # Ties: an end before a start — you check out, then drive away.
     ahead.sort(key=lambda m: (m.key, 0 if m.edge == "end" else 1))
-    nxt = ahead[0] if ahead else None
     under_way.sort(key=lambda m: m.key)
+    return ahead, under_way
+
+
+def plan(activities, now: str) -> tuple[Moment | None, list[Moment]]:
+    """(next moment, what's in progress) for `activities` at wall-clock `now`
+    ("YYYY-MM-DDTHH:MM"). In-progress moments are each item's end, soonest first,
+    without the item the next moment belongs to (it's already on the card)."""
+    ahead, under_way = _moments(activities, now)
+    nxt = ahead[0] if ahead else None
     if nxt is not None:
         under_way = [m for m in under_way if m.activity is not nxt.activity]
     return nxt, under_way
+
+
+def upcoming(activities, now: str, *, window_h: int, limit: int) -> list[Moment]:
+    """The next `limit` moments within `window_h` hours of `now`, soonest first
+    (YONDER-250, SPEC-11 §6). The first is always `plan()`'s next moment, so a
+    list that rolls forward (the Apple Watch) agrees with the Next-up card. The
+    window is wall-clock hours, like everything here."""
+    from datetime import timedelta
+    until = (datetime.strptime(now, "%Y-%m-%dT%H:%M")
+             + timedelta(hours=window_h)).strftime("%Y-%m-%dT%H:%M")
+    ahead, _ = _moments(activities, now)
+    return [m for m in ahead if m.key <= until][:limit]
 
 
 def label(m: Moment) -> str:
