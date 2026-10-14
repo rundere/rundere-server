@@ -127,6 +127,22 @@ def check_frankfurter() -> tuple[bool, str] | None:
     return False, "Frankfurter didn't answer — new exchange rates can't be fetched"
 
 
+def check_watched(url: str) -> tuple[bool, str]:
+    """Another Run·dere server's /health (YONDER-126, e.g. the demo): up when it
+    answers 200 with status "ok". The reason never carries more than the status."""
+    import json
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Rundere-monitor"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            body = json.loads(r.read() or b"{}")
+            if r.status == 200 and body.get("status") == "ok":
+                return True, f"up (version {body.get('version', '?')})"
+            return False, f"answered {r.status} without status ok"
+    except Exception as e:                    # noqa: BLE001 - any failure is "down"
+        return False, f"didn't answer ({type(e).__name__})"
+
+
 def check_inbox() -> tuple[bool, str] | None:
     """The reader reports each read itself; this catches a reader that has
     silently stopped (no read at all for a long while)."""
@@ -160,6 +176,11 @@ def run_once(*, force: bool = False, session_factory=None) -> dict:
     rep("antivirus", check_antivirus(), category="storage", label="Virus scanner", threshold=2)
     rep("llm", check_llm(), category="ai", label="LLM (Ollama)", threshold=2)
     rep("inbox", check_inbox(), category="mail", label="Email inbox (IMAP)", threshold=1)
+    for url in settings.watch_url_list:      # YONDER-126: e.g. the demo server
+        from urllib.parse import urlparse
+        host = urlparse(url).hostname or url
+        rep(f"watch:{host}", check_watched(url), category="servers",
+            label=f"Run·dere at {host}", threshold=2)
     if _due("smtp", HOURLY, force):
         from app import email as mail
         if mail.email_configured():
