@@ -305,3 +305,98 @@ if DEPS:
         assert "imap-pass-xyz" not in env[-1]["message"]
         inbox._ok({}, "push")
         assert env[-1]["title"] == "✅ Email inbox (IMAP) recovered"
+
+    # ---------------------------------------------------------------- research sources
+    @pytest.fixture
+    def fresh_health():
+        from discover import health
+        health.reset()
+        yield health
+        health.reset()
+
+    def test_searxng_outcomes_are_recorded(monkeypatch, fresh_health):
+        from discover import search
+        health = fresh_health
+        answers = iter([{"results": [], "unresponsive_engines": [["google", "timeout"],
+                                                                  ["bing", "CAPTCHA"]]},
+                        None,
+                        {"results": [{"url": "https://x.example", "title": "t", "content": "c"}]}])
+        monkeypatch.setattr(search, "get_json", lambda url, timeout=12, retries=1: next(answers))
+        assert search.searxng_search("q", base_url="http://sx", backoff=()) == []
+        assert search.searxng_search("q", base_url="http://sx", backoff=()) == []
+        assert len(search.searxng_search("q", base_url="http://sx", backoff=())) == 1
+        st = health.snapshot()[health.SEARXNG]
+        assert (st.ok, st.empty, st.down) == (1, 1, 1)
+        assert st.engines == {"google": 1, "bing": 1}
+
+    def test_weather_and_rates_are_recorded(monkeypatch, fresh_health):
+        from datetime import date
+        from discover.resolvers import weather, currency
+        health = fresh_health
+        monkeypatch.setattr(weather, "get_json", lambda url, timeout=12: None)
+        weather.WeatherResolver()._fetch("http://om/forecast", 1.0, 2.0, date(2031, 1, 1),
+                                         date(2031, 1, 2), 5)
+        monkeypatch.setattr(weather, "get_json",
+                            lambda url, timeout=12: {"error": True, "reason": "out of range"})
+        weather.WeatherResolver()._fetch("http://om/forecast", 1.0, 2.0, date(2031, 1, 1),
+                                         date(2031, 1, 2), 5)
+        monkeypatch.setattr(currency, "get_json", lambda url, timeout=12: [])   # not quoted
+        currency.CurrencyResolver()._rate("EUR", "XOF", 5)
+        snap = health.snapshot()
+        om = snap[health.OPEN_METEO]
+        assert (om.down, om.empty) == (1, 1) and "out of range" in om.last_failure
+        assert snap[health.FRANKFURTER].ok == 1          # an answer, even with no rate
+
+    def test_a_discovery_run_that_mostly_failed_alerts(env, fresh_health):
+        from app.trips import discovery_jobs as dj
+        health = fresh_health
+        _target()
+        before = health.snapshot()
+        for _ in range(6):
+            health.record(health.SEARXNG, health.EMPTY, "no results", engines=["google"])
+        for _ in range(4):
+            health.record(health.SEARXNG, health.OK)
+        health.record(health.OPEN_METEO, health.OK)               # too few calls to judge
+        dj.report_sources(health.delta(before, health.snapshot()))
+        st = _state("research-run:searxng")
+        assert st.failing and _state("research-run:open-meteo") is None
+        assert env[-1]["title"] == "⚠️ SearXNG (web search) during Discovery is failing"
+        assert "6 of 10 searches failed" in env[-1]["message"]
+        assert "engines not answering: google" in env[-1]["message"]
+        before = health.snapshot()
+        for _ in range(5):
+            health.record(health.SEARXNG, health.OK)
+        dj.report_sources(health.delta(before, health.snapshot()))
+        assert env[-1]["title"] == "✅ SearXNG (web search) during Discovery recovered"
+
+    def test_hourly_probes(monkeypatch, env, fresh_health):
+        from discover import http
+        _target()
+        monkeypatch.setattr(settings, "searxng_url", "http://sx")
+        monkeypatch.setattr(settings, "open_meteo_url", "http://om")
+        monkeypatch.setattr(settings, "frankfurter_url", "http://fx")
+        monkeypatch.setattr(settings, "ollama_url", "")
+        monkeypatch.setattr(settings, "documents_dir", "")
+        monkeypatch.setattr(settings, "clamav_url", "")
+
+        def fake(url, timeout=12, retries=1):
+            if url.startswith("http://sx"):
+                return {"results": [], "unresponsive_engines": [["duckduckgo", "timeout"]]}
+            if url.startswith("http://om"):
+                return {"daily": {"temperature_2m_max": [20]}}
+            return [{"date": "2026-10-13", "base": "EUR", "quote": "USD", "rate": 1.1}]
+        monkeypatch.setattr(http, "get_json", fake)
+        monitor.run_once(force=True)
+        monitor.run_once(force=True)
+        st = _state("searxng")
+        assert st.failing and "duckduckgo" in st.detail
+        assert not _state("open-meteo").failing and not _state("frankfurter").failing
+        assert any(m["title"] == "⚠️ SearXNG (web search) is failing" for m in env)
+
+    def test_the_page_shows_source_reliability(fresh_health):
+        health = fresh_health
+        health.record(health.SEARXNG, health.EMPTY, "no results", engines=["google"])
+        health.record(health.SEARXNG, health.OK)
+        page = client.get("/settings/notifications", headers=_admin()).text
+        assert "Trip research sources" in page and "SearXNG (web search)" in page
+        assert "google (1)" in page and "50%" in page

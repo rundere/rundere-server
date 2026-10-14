@@ -37,6 +37,7 @@ CATEGORIES = {
     "storage": "The file store and the virus scanner",
     "jobs": "Background jobs — the daily retention sweep",
     "ai": "The LLM (Ollama) used to read bookings and research trips",
+    "research": "Trip research sources — SearXNG, Open-Meteo, Frankfurter",
 }
 REMIND_AFTER = timedelta(hours=24)
 

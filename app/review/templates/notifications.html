@@ -40,6 +40,28 @@
   </section>
 
   <section class="mail-card">
+    <h2 class="cap-h">Trip research sources</h2>
+    <p class="why">Every call Discovery and Costs made to these outside services since the server
+      started ({{ sources_since.strftime('%Y-%m-%d %H:%M') }} UTC). "Empty" is SearXNG answering with
+      nothing — its search engines timing out or refusing it — which quietly thins out research.
+      A Discovery run where a source fails half its calls or more sends an alert.</p>
+    <table class="cap-files">
+      <thead><tr><th>Source</th><th class="num">Calls</th><th class="num">Failed</th><th class="opt">Last failure</th></tr></thead>
+      <tbody>
+      {% for s in sources %}
+        <tr>
+          <td>{{ s.label }}{% if s.engines %}<div class="muted">engines not answering: {{ s.engines }}</div>{% endif %}</td>
+          <td class="num">{{ s.calls }}</td>
+          <td class="num">{% if s.calls %}{% if s.share and s.share >= 50 %}<span class="pill warn">{{ s.share }}%</span>{% else %}{{ s.share }}%{% endif %}
+            <div class="muted">{{ s.empty }} empty · {{ s.down }} no answer</div>{% else %}—{% endif %}</td>
+          <td class="opt">{% if s.last_at %}{{ s.last_at.strftime('%Y-%m-%d %H:%M') }} — {{ s.last }}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="mail-card">
     <h2 class="cap-h">Where alerts go</h2>
     {% if key_problem %}<div class="violations">Alert targets need a secrets key to store their
       credentials: {{ key_problem }}</div>{% endif %}

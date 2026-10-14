@@ -53,8 +53,12 @@ def send(secrets: dict, config: dict, title: str, message: str, *, quiet: bool =
         fields["device"] = config["device"]
     if url:
         fields["url"], fields["url_title"] = url, "Run·dere notifications"
+    from app.config import settings
+    # Our own User-Agent: CDN-fronted APIs refuse Python's default one (Frankfurter's
+    # Cloudflare answers it with 403 / error 1010).
     req = urllib.request.Request(API, data=urllib.parse.urlencode(fields).encode(),
-                                 method="POST")
+                                 method="POST",
+                                 headers={"User-Agent": f"Rundere/{settings.app_version}"})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
             body = json.loads(resp.read() or b"{}")

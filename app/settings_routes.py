@@ -269,7 +269,16 @@ def _notify_page(request: Request, session: Session, user, **flash) -> HTMLRespo
     targets = session.query(NotificationTarget).order_by(NotificationTarget.created_at).all()
     states = session.query(AlertState).order_by(AlertState.failing.desc(),
                                                 AlertState.label).all()
+    from discover import health
+    snap = health.snapshot()
+    sources = [{"label": health.LABELS[k], "calls": st.calls, "ok": st.ok,
+                "empty": st.empty, "down": st.down,
+                "share": round(100 * st.failed / st.calls) if st.calls else None,
+                "engines": ", ".join(f"{n} ({c})" for n, c in st.engines.most_common(4)),
+                "last": st.last_failure, "last_at": st.last_failure_at}
+               for k in health.LABELS for st in [snap.get(k, health.SourceStats())]]
     return templates.TemplateResponse(request, "notifications.html", {
+        "sources": sources, "sources_since": health.since(),
         "me": user, "targets": targets, "states": states,
         "categories": notify.CATEGORIES, "priorities": pushover.PRIORITIES,
         "key_problem": secretbox.problem(), **flash})

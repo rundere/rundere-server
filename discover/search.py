@@ -17,6 +17,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from discover import health
 from discover.http import get_json, qs
 
 # Widening gaps (seconds) BEFORE each retry of an empty result. Discovery's LLM
@@ -56,19 +57,27 @@ def searxng_search(query: str, *, base_url: str | None, categories: str = "gener
     url = f"{base_url.rstrip('/')}/search?" + qs(
         q=query, format="json", categories=categories, language=language)
     results = None
+    engines: list[str] = []
     for gap in (*backoff, None):          # one extra pass after the last gap
         data = get_json(url, timeout=timeout, retries=1)
         if not isinstance(data, dict):
             # Unreachable / bad body — SearXNG is down, not flaky. get_json already
             # retried the transient blip; a widening backoff would just burn minutes
             # across a run waiting for a service that isn't coming back. Bail fast.
+            health.record(health.SEARXNG, health.DOWN, "SearXNG didn't answer")
             return []
         results = data.get("results")
+        engines = health.unresponsive(data)
         if results or gap is None:
             break
         _sleep(gap)                       # reachable-but-empty (engines flaked) → retry
     if not results:
+        # Admin alerts (D-197): the quiet failure — answered, but nothing usable.
+        health.record(health.SEARXNG, health.EMPTY,
+                      "no results" + (f" — engines not answering: {', '.join(engines)}"
+                                      if engines else ""), engines=engines)
         return []
+    health.record(health.SEARXNG, health.OK, engines=engines)
     out: list[SearchResult] = []
     for item in (results or []):
         if not isinstance(item, dict):

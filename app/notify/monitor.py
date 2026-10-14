@@ -14,6 +14,14 @@ isn't watched (and its old state is left alone).
 | antivirus                     | storage       | a tiny scan through clamav-rest       | 15 min |
 | llm                           | ai            | Ollama's /api/tags                    | 15 min |
 | retention                     | jobs          | reported by the daily sweep itself    | daily  |
+| searxng                       | research      | a real search — results, not just up  | 60 min |
+| open-meteo                    | research      | a one-day forecast                    | 60 min |
+| frankfurter                   | research      | one exchange rate                     | 60 min |
+| research-run:<source>         | research      | how each source did in a Discovery run| per run|
+
+The research probes are hourly on purpose: SearXNG fans every search out to
+public engines that throttle (or ban) frequent automated queries, and
+Open-Meteo / Frankfurter are free public services.
 """
 from __future__ import annotations
 
@@ -67,12 +75,56 @@ def check_llm() -> tuple[bool, str] | None:
         return None
     import urllib.request
     try:
-        with urllib.request.urlopen(settings.ollama_url.rstrip("/") + "/api/tags",
-                                    timeout=10) as r:
+        req = urllib.request.Request(settings.ollama_url.rstrip("/") + "/api/tags",
+                                     headers={"User-Agent": f"Rundere/{settings.app_version}"})
+        with urllib.request.urlopen(req, timeout=10) as r:
             return (r.status == 200, "" if r.status == 200 else f"HTTP {r.status}")
     except Exception as ex:
         return False, f"can't reach Ollama ({type(ex).__name__}) — bookings that need " \
                       "the LLM go to review instead of being read"
+
+
+def check_searxng() -> tuple[bool, str] | None:
+    """A real query: SearXNG's usual failure is answering with nothing."""
+    url = (settings.searxng_url or "").strip()
+    if not url:
+        return None
+    from discover.http import get_json, qs
+    from discover import health
+    data = get_json(url.rstrip("/") + "/search?" + qs(q="Lisbon travel guide", format="json"),
+                    timeout=20)
+    if not isinstance(data, dict):
+        return False, "SearXNG didn't answer (or JSON output isn't enabled)"
+    engines = health.unresponsive(data)
+    if not data.get("results"):
+        return False, ("SearXNG answered with no results" +
+                       (f" — engines not answering: {', '.join(engines)}" if engines
+                        else "") + ". Discovery's food, events and safety research will be thin")
+    return True, ""
+
+
+def check_open_meteo() -> tuple[bool, str] | None:
+    url = (settings.open_meteo_url or "").strip()
+    if not url:
+        return None
+    from discover.http import get_json, qs
+    data = get_json(url.rstrip("/") + "/forecast?" + qs(
+        latitude=38.72, longitude=-9.14, daily="temperature_2m_max", forecast_days=1,
+        timezone="auto"), timeout=15)
+    if isinstance(data, dict) and data.get("daily"):
+        return True, ""
+    return False, "Open-Meteo didn't return a forecast — weather findings can't be made"
+
+
+def check_frankfurter() -> tuple[bool, str] | None:
+    url = (settings.frankfurter_url or "").strip()
+    if not url:
+        return None
+    from discover.http import get_json, qs
+    data = get_json(url.rstrip("/") + "/rates?" + qs(base="EUR", quotes="USD"), timeout=15)
+    if isinstance(data, (list, dict)) and data:
+        return True, ""
+    return False, "Frankfurter didn't answer — new exchange rates can't be fetched"
 
 
 def check_inbox() -> tuple[bool, str] | None:
@@ -114,6 +166,13 @@ def run_once(*, force: bool = False, session_factory=None) -> dict:
             mail.check_connection()                 # reports through email._record
     if _due("integrations", HOURLY, force):
         check_integrations(sf)
+    if _due("research", HOURLY, force):
+        rep("searxng", check_searxng(), category="research", label="SearXNG (web search)",
+            threshold=2)
+        rep("open-meteo", check_open_meteo(), category="research",
+            label="Open-Meteo (weather)", threshold=2)
+        rep("frankfurter", check_frankfurter(), category="research",
+            label="Frankfurter (exchange rates)", threshold=2)
     return out
 
 

@@ -96,10 +96,19 @@ class WeatherResolver:
 
     def _fetch(self, endpoint: str, lat: float, lon: float, start: date, end: date,
                timeout: int) -> dict | None:
+        from discover import health
         url = endpoint + "?" + qs(
             latitude=lat, longitude=lon, daily=f"{_DAILY},{_DAILY_EXTRA}", timezone="auto",
             start_date=start.isoformat(), end_date=end.isoformat())
-        return get_json(url, timeout=timeout)
+        data = get_json(url, timeout=timeout)
+        if isinstance(data, dict) and data.get("daily"):
+            health.record(health.OPEN_METEO, health.OK)
+        else:                                   # admin alerts (D-197)
+            health.record(health.OPEN_METEO, health.DOWN if data is None else health.EMPTY,
+                          "Open-Meteo didn't answer" if data is None
+                          else f"Open-Meteo answered without data ({str(data.get('reason') or '')[:120]})"
+                          if isinstance(data, dict) else "Open-Meteo's answer couldn't be read")
+        return data
 
     def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:
         if place.lat is None or place.lon is None:
