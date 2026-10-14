@@ -142,6 +142,7 @@
             </span>
             <span class="cap-way-sub">{{ c.blurb }}</span>
             {% if c.detail %}<code class="cap-way-detail">{{ c.detail }}</code>{% endif %}
+            {% if c.detail_text %}<span class="cap-way-sub">{{ c.detail_text }}</span>{% endif %}
             {% if c.note %}<span class="cap-way-note">{{ c.note }}</span>{% endif %}
             <span class="cap-way-go">{{ 'Read about it' if c.soon else 'Open the guide' }} →</span>
           </a>

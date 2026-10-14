@@ -470,10 +470,12 @@ _CHANNEL_BLURBS = {
     "calendar": "Capture an event from Google Calendar.",
     "bookmarklet": "One click on any booking page in your browser.",
     "email": "Forward confirmations to your own address, from any email account.",
-    "ios": "Share from Safari or Mail on iPhone and iPad.",
+    "ios": "Share → Run·dere from Safari, Mail or Maps on iPhone and iPad.",
     "mcp": "Ask Claude or another AI assistant to capture a link for you.",
 }
-_CHANNEL_SOON = {"ios"}            # guides that describe something not built yet
+_CHANNEL_SOON: set[str] = set()   # guides that describe something not built yet
+# (iPhone and iPad left this set when the Share Extension shipped in app 0.7.0,
+# YONDER-54 / YONDER-257.)
 _CAPTURE_DIR = Path(__file__).resolve().parent.parent / "capture"
 
 
@@ -482,6 +484,7 @@ def _channel_cards(session: Session, user) -> list[dict]:
     has come in through it, and a link straight to its guide."""
     from app import inbox
     last = _last_capture_by_channel(session, user)
+    connected = connected_apps(session, user)
     cards = []
     for key, label, chans in _CHANNELS:
         times = [last[c] for c in chans if c in last]
@@ -494,8 +497,70 @@ def _channel_cards(session: Session, user) -> list[dict]:
                 card["note"] = "Needs your server's mailbox set up"
             elif user is not None:
                 card["detail"] = inbox.user_address(session, user, create=False)
+        if key in connected and connected[key]:
+            # What's connected shows where you set it up (YONDER-257), not only
+            # under Settings → Account.
+            items = connected[key]
+            used = [i["last_used_at"] for i in items if i["last_used_at"]]
+            noun = "device" if key == "ios" else "app"
+            card["status"] = (f"Connected · {len(items)} {noun}{'' if len(items) == 1 else 's'}"
+                              if key == "ios" or len(items) > 1 else "Connected")
+            card["detail_text"] = ", ".join(dict.fromkeys(i["name"] for i in items)) + (
+                f" · last used {_ago(max(used))}" if used else "")
         cards.append(card)
     return cards
+
+
+def connected_apps(session: Session, user) -> dict[str, list[dict]]:
+    """What the person has connected, by channel (YONDER-257): signed-in
+    Run·dere apps under "ios", AI assistants and API tokens under "mcp".
+    Their own only; nothing for nobody signed in."""
+    from datetime import datetime, timezone
+
+    from app import oauth
+    from app.models import PersonalApiToken, RefreshToken
+    out: dict[str, list[dict]] = {"ios": [], "mcp": []}
+    if user is None:
+        return out
+    for a in oauth.connected_apps(session, user):
+        out["ios" if a["app"] else "mcp"].append({
+            "kind": "grant", "id": a["id"], "name": a["client"],
+            "since": a["created_at"], "last_used_at": a["last_used_at"]})
+    now = datetime.now(timezone.utc)
+
+    def aware(d):
+        return d if d is None or d.tzinfo else d.replace(tzinfo=timezone.utc)
+    # The app signed in with a password (SPEC-4 D-111): one live refresh token
+    # per device, replaced on every refresh — so when it was issued is when the
+    # app last checked in.
+    for r in (session.query(RefreshToken)
+              .filter(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+              .order_by(RefreshToken.issued_at.desc()).all()):
+        if aware(r.expires_at) and aware(r.expires_at) < now:
+            continue
+        out["ios"].append({"kind": "session", "id": r.id,
+                           "name": _device_name(r.user_agent),
+                           "since": r.issued_at, "last_used_at": r.issued_at})
+    for t in (session.query(PersonalApiToken)
+              .filter(PersonalApiToken.user_id == user.id,
+                      PersonalApiToken.revoked_at.is_(None))
+              .order_by(PersonalApiToken.created_at.desc()).all()):
+        if (t.expires_at and aware(t.expires_at) < now) or \
+                t.token_version != user.token_version:
+            continue
+        out["mcp"].append({"kind": "token", "id": t.id, "name": f"API token “{t.name}”",
+                           "since": t.created_at, "last_used_at": t.last_used_at})
+    return out
+
+
+def _device_name(user_agent: str | None) -> str:
+    """A readable name from the app's User-Agent: "Run·dere on iPad" and the like."""
+    ua = (user_agent or "").lower()
+    for key, name in (("ipad", "iPad"), ("iphone", "iPhone"), ("mac", "Mac"),
+                      ("watch", "Apple Watch")):
+        if key in ua:
+            return f"Run·dere on {name} (password sign-in)"
+    return "Run·dere app (password sign-in)"
 
 
 def _addon_file(addon: str, name: str) -> str | None:
@@ -576,6 +641,8 @@ def capture_setup(request: Request, tab: str = "gmail", session: Session = Depen
         "gcal_manifest": _addon_file("gcal-addon", "appsscript.json"),
         "signed_in": user is not None or not settings.auth_required,
         "inbox": _inbox_context(session, user) if tab == "email" else None,
+        "connected": connected_apps(session, user).get(tab, []) if tab in ("ios", "mcp") else [],
+        "msg": request.query_params.get("msg", ""),
     })
 
 

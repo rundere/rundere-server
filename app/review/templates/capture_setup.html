@@ -169,13 +169,41 @@
 
     {% elif tab == 'ios' %}
       <h2 class="cap-h">iPhone and iPad</h2>
-      <p class="why"><b>Not available yet.</b> The Run·dere app will add a share-sheet action: from Safari or Mail choose
-        Share, then Run·dere, and you get a notification that the capture was received.</p>
+      <p class="why">The Run·dere app adds <b>Run·dere</b> to the share sheet, so a booking page, a confirmation
+        email or a Maps place goes straight to your review queue. On iPad you can also drop a booking PDF,
+        calendar file or saved email onto the app.</p>
       <ol class="cap-steps">
-        <li>Install the Run·dere app and sign in.</li>
-        <li>In Safari or Mail choose <b>Share → Run·dere</b>.</li>
-        <li>Check it works: a notification says it was captured.</li>
+        <li>Install the Run·dere app (ask whoever runs this server for the invite) and sign in to this server.</li>
+        <li>In Safari, Mail or Maps choose <b>Share → Run·dere</b>. A Maps place is saved and can be filed to a trip;
+          directions ask for the travel day; anything else is captured.</li>
+        <li><b>Check it works:</b> the capture shows under <a href="/capture">Recent captures</a>. Shared while
+          offline? It waits in the app and is sent the next time you open it.</li>
       </ol>
+
+      {# What's connected, where you set it up (YONDER-257). #}
+      <h3 class="cap-h" style="margin-top:20px">{{ 'Your signed-in devices' if tab == 'ios' else 'Connected to your account' }}</h3>
+      {% if msg %}<div class="saved-note">{{ msg }}</div>{% endif %}
+      {% if connected %}
+      <ul class="cap-connected">
+        {% for c in connected %}
+        <li>
+          <span><b>{{ c.name }}</b>
+            <span class="muted">· since {{ c.since.strftime('%Y-%m-%d') if c.since else '—' }}{% if c.last_used_at %} · last used {{ c.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span></span>
+          {% if c.kind == 'grant' %}
+          <form method="post" action="/account/connected-apps/{{ c.id }}/revoke"
+                onsubmit="return confirm('Disconnect {{ c.name }}? It loses access straight away.');">
+            <input type="hidden" name="next" value="/capture/setup?tab={{ tab }}">
+            <button class="act tiny" type="submit">Disconnect</button>
+          </form>
+          {% else %}
+          <a class="act tiny" href="/account#{{ 'api-tokens' if c.kind == 'token' else 'connected-apps' }}">Manage in Account</a>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif signed_in %}
+      <p class="muted">{{ 'No Run·dere app is signed in to your account yet.' if tab == 'ios' else 'No assistant or tool is connected to your account yet.' }}</p>
+      {% endif %}
 
     {% elif tab == 'mcp' %}
       <h2 class="cap-h">AI assistants (MCP)</h2>
@@ -199,6 +227,30 @@
           <li>The server needs to be reachable from the assistant (a hosted assistant connects from its own cloud). Admin
             details are in <code>docs/claude-connector.md</code>.</li>
         </ul></details>
+      {# What's connected, where you set it up (YONDER-257). #}
+      <h3 class="cap-h" style="margin-top:20px">{{ 'Your signed-in devices' if tab == 'ios' else 'Connected to your account' }}</h3>
+      {% if msg %}<div class="saved-note">{{ msg }}</div>{% endif %}
+      {% if connected %}
+      <ul class="cap-connected">
+        {% for c in connected %}
+        <li>
+          <span><b>{{ c.name }}</b>
+            <span class="muted">· since {{ c.since.strftime('%Y-%m-%d') if c.since else '—' }}{% if c.last_used_at %} · last used {{ c.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span></span>
+          {% if c.kind == 'grant' %}
+          <form method="post" action="/account/connected-apps/{{ c.id }}/revoke"
+                onsubmit="return confirm('Disconnect {{ c.name }}? It loses access straight away.');">
+            <input type="hidden" name="next" value="/capture/setup?tab={{ tab }}">
+            <button class="act tiny" type="submit">Disconnect</button>
+          </form>
+          {% else %}
+          <a class="act tiny" href="/account#{{ 'api-tokens' if c.kind == 'token' else 'connected-apps' }}">Manage in Account</a>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif signed_in %}
+      <p class="muted">{{ 'No Run·dere app is signed in to your account yet.' if tab == 'ios' else 'No assistant or tool is connected to your account yet.' }}</p>
+      {% endif %}
     {% endif %}
     </section>
   </div>
