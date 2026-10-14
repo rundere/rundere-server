@@ -359,11 +359,9 @@ def _mount_admin() -> None:
 
 
 def _start_demo_jobs() -> None:
-    """The demo's nightly roll-forward (app/demo_seed.py), when it's present."""
-    try:
-        from app import demo_seed
-    except ImportError:                     # pragma: no cover - seed ships separately
-        return
+    """D-198: seed the sample trips if they're missing, then keep them current
+    (app/demo_seed.py: at startup, then 03:00 daily)."""
+    from app import demo_seed
     demo_seed.start(SessionLocal)
 
 

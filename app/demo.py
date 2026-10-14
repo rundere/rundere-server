@@ -24,6 +24,8 @@ Nothing they do changes anything, and nothing reaches the outside world:
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import logging
 
 from app.config import settings
@@ -43,8 +45,31 @@ _CLOSED_PREFIX = ("/oauth/", "/oidc/", "/.well-known/oauth", "/ingest", "/reset/
 _READ_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
+# True only inside `seeding()`: the seed and the nightly roll writing the sample
+# data through the app's own functions. Never set by a request.
+_seeding: contextvars.ContextVar[bool] = contextvars.ContextVar("demo_seeding", default=False)
+
+
 def enabled() -> bool:
     return bool(settings.demo_mode)
+
+
+def read_only() -> bool:
+    """Is editing off right now? On a demo server, yes, except while the seed
+    itself is writing (D-198)."""
+    return enabled() and not _seeding.get()
+
+
+@contextlib.contextmanager
+def seeding():
+    """Let the demo's own seed and roll write through the app's validated paths
+    (save_research_finding, expenses, journal, …). Requests never pass through
+    here; `demo_guard` refuses their writes before any of this runs."""
+    token = _seeding.set(True)
+    try:
+        yield
+    finally:
+        _seeding.reset(token)
 
 
 def is_closed(path: str) -> bool:

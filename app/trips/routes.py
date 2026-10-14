@@ -547,6 +547,12 @@ def _adventurelog(session: Session, request: Request):
 
 
 def _photon():
+    from app import demo
+    if demo.enabled():
+        # D-198: a demo server places its sample trips from the seed's own
+        # table; it never reaches a geocoder.
+        from app.demo_seed import SeedGeocoder
+        return SeedGeocoder()
     from resolve.geocode import PhotonGeocoder
     return PhotonGeocoder(settings.photon_url)
 

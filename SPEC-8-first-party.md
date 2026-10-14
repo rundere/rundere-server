@@ -400,12 +400,27 @@ request forgery (SSRF) risk.
     (SMTP or IMAP) or SSO configured, or on a database holding any user other
     than the demo user. A real server can never be flipped into demo mode by
     accident.
+  - **The sample data** (`app/demo_seed.py`) is three fictional trips for the
+    demo user's traveller Alex, with Sam as a guest companion with no login:
+    Lisbon & Porto under way (day 2 of 5), a Banff road trip three weeks out,
+    New York two months ago. They come with Discover, a packing plan, costs and
+    a budget, journal entries, a Toronto home, and two captures waiting in
+    Review. Bookings use sample names and `DEMO-` confirmation codes; Discover
+    recommends real, long-standing places. Everything is written through the
+    app's own paths inside `demo.seeding()`, the one narrow lift of the
+    read-only rule. Places come from the seed's own table (`SeedGeocoder`, also
+    used by demo reads). Weather and rates come from a built-in offline stand-in
+    for Open-Meteo and Frankfurter: fixed rates and rough climate averages,
+    illustrative only.
   - **Kept current, never wiped.** Nothing changes, so there is nothing to
-    reset. A nightly job (03:00 in the demo's time zone, and at startup) shifts
-    the seeded trips' dates so one is always under way, one is upcoming and
-    one is in the past. A re-seed (`demo-seed --replace`) runs only when a
-    release changes the seed. Managed from the command line only; there's no
-    demo admin.
+    reset. A nightly job (03:00 in `TX_DEMO_TIMEZONE`, default
+    America/Toronto, and at startup) measures how far the in-progress trip has
+    drifted and shifts every seeded date by that many days. It refreshes the
+    weather and currency findings and rebuilds the waiting captures; running
+    it twice changes nothing. A re-seed (`demo-seed --replace`) runs only when a
+    release changes the seed. Managed from the command line only
+    (`demo-seed`, `demo-roll`, which refuse to run outside a demo server);
+    there's no demo admin. A refused write in the browser shows as a toast.
   - **Hosting** (YONDER-126): its own stack on the home server, behind the
     public ingress, firewalled from the LAN, with SQLite on a volume.
     `demo.rundere.app` is a CNAME to `demorundere.example.net`.
