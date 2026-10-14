@@ -123,6 +123,11 @@ class Settings(BaseSettings):
     # the operator creates a user and opts in (TX_AUTH_REQUIRED=true). The 4.0
     # test stack turns it ON.
     auth_required: bool = False
+    # YONDER-181 / D-198: a read-only public demo server (app/demo.py). One shared
+    # login; the password isn't a secret (the app's "Try the demo" fills it in).
+    demo_mode: bool = False
+    demo_username: str = "demo"
+    demo_password: str = ""
     # HS256 signing key. MUST be set in prod (empty => a process-ephemeral key,
     # so tokens do not survive a restart — a loud dev-only fallback).
     jwt_secret: str = ""

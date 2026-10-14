@@ -11,7 +11,7 @@
       {% if trip.has_notes %}<p class="bp-trip-notes">{{ trip.notes }}</p>{% endif %}
     </div>
     <div class="bp-trip-actions">
-      {% if not view_only and ((trip.adventurelog_collection_id and al_connected) or al_show_push) %}
+      {% if not read_only and ((trip.adventurelog_collection_id and al_connected) or al_show_push) %}
       {# Optional AdventureLog integration lives under Advanced — Run·dere is the
          first-party system (SPEC-8 D-146). #}
       <details class="yn-menu">
@@ -48,7 +48,7 @@
       {% endif %}
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Run·dere found</button>
-      {% if not view_only %}
+      {% if not read_only %}
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
       <button class="btn btn-danger"
@@ -102,7 +102,7 @@
     <a class="btn btn-secondary bp-sm" href="/trips/{{ trip.id }}/timeline.pdf" target="_blank"
        rel="noopener" title="A printable itinerary to share with anyone">Export PDF</a>
     {% endif %}
-    {% if not view_only %}
+    {% if not read_only %}
     <button class="btn btn-primary"
             hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
     {% endif %}
@@ -148,7 +148,7 @@
             {% if act.map_url %}
             <a class="btn btn-secondary bp-sm" href="{{ act.map_url }}" target="_blank" rel="noopener">Map&nbsp;↗</a>
             {% endif %}
-            {% if not view_only %}
+            {% if not read_only %}
             <button class="btn btn-secondary bp-sm"
                     hx-get="/trips/{{ trip.id }}/activity/{{ act.id }}/edit" hx-target="#modal-root">Edit</button>
             <button class="btn btn-danger bp-sm"
@@ -164,7 +164,7 @@
   {% endfor %}
 {% else %}
   <div class="card blueprint bp-empty-card">
-    {% if view_only %}
+    {% if read_only %}
     <div class="bp-empty-msg">No activities on this trip yet.</div>
     {% else %}
     <div class="bp-empty-msg">No activities yet. Add flights, lodging, tours and more to build the timeline.</div>

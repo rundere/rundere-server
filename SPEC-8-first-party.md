@@ -366,6 +366,50 @@ request forgery (SSRF) risk.
   - Turning a guest into an account holder is a separate item with its own spec
     (YONDER-260: invite links and templates).
 
+## 11. The demo server (D-198)
+
+- **D-198: A read-only demo server with one shared login (YONDER-181; owner,
+  2026-10-14).** It exists for App Review, external TestFlight and anyone
+  curious: *"They are there to view pre-seeded data, they cannot create new
+  records."* This replaces the 2026-09-27 plan for a writable demo.
+  - **One switch, one login.** `TX_DEMO_MODE=true` with `TX_DEMO_USERNAME`
+    (default `demo`) and `TX_DEMO_PASSWORD`. The password isn't a secret: the
+    sign-in page shows it and the app's "Try the demo" fills it in. There's no
+    separate reviewer account and no database column; the demo user is
+    whoever `TX_DEMO_USERNAME` names, created at startup, never an admin.
+  - **Every write is refused**, except signing in and out (`demo_guard`, the
+    outermost middleware). The API gets a 403 (`{"detail": …, "demo": true}`).
+    An HTMX action shows the message in the demo banner. `scope.can_edit_trip`
+    answers false, so every edit check follows from it.
+  - **Everything is visible.** The demo user owns the seeded trips, so
+    `my_role` is `owner` with `can_edit: false`. Edit controls hide on
+    `can_edit`, and tabs trim only for D-199's viewer. The server decides what
+    can be edited; demo isn't a user type.
+  - **Closed (404):** MCP, OAuth and its discovery documents, OIDC,
+    registration, password reset, ingest, admin and Users, Connections, Server
+    mail, Notifications, personal API tokens and connected apps.
+    `/api/v1/auth/methods` reports `password: true`, no OAuth or SSO, and
+    `demo: true`.
+  - **Nothing reaches the outside world.** The inbox poller, retention sweep
+    and health monitor don't start. The self-hosted services (Ollama, Photon,
+    SearXNG, ClamAV, AdventureLog, AirTrail, Valhalla) are blanked at startup.
+    Weather, rates, routes and places are stored in the seed. The only outbound
+    traffic is OpenStreetMap tiles for the PDF maps (allowed by the demo's
+    firewall).
+  - **It refuses to start** without sign-in, without the demo login, with mail
+    (SMTP or IMAP) or SSO configured, or on a database holding any user other
+    than the demo user. A real server can never be flipped into demo mode by
+    accident.
+  - **Kept current, never wiped.** Nothing changes, so there is nothing to
+    reset. A nightly job (03:00 in the demo's time zone, and at startup) shifts
+    the seeded trips' dates so one is always under way, one is upcoming and
+    one is in the past. A re-seed (`demo-seed --replace`) runs only when a
+    release changes the seed. Managed from the command line only; there's no
+    demo admin.
+  - **Hosting** (YONDER-126): its own stack on the home server, behind the
+    public ingress, firewalled from the LAN, with SQLite on a volume.
+    `demo.rundere.app` is a CNAME to `demorundere.example.net`.
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.

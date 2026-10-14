@@ -5,7 +5,7 @@
     <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Who's traveling">▾</button>
     <h2 class="bp-h2">Who's traveling</h2>
   </div>
-  {% if not view_only %}
+  {% if not read_only %}
   <div class="bp-head-actions">
     <a class="btn btn-secondary bp-sm" href="{{ travelers_manage_url }}">Manage travellers</a>
   </div>
@@ -27,7 +27,7 @@
         {% if t.generic %}<span class="tag tag-neutral" title="Generic guest — a headcount placeholder, not used for discovery or packing">guest</span>{% endif %}
         {# Profile details stay with the people who can edit the trip (D-199). #}
         {% if t.nationality and not view_only %}<span class="tag tag-neutral" title="Nationality">{{ t.nationality }}</span>{% endif %}
-        {% if not view_only %}
+        {% if not read_only %}
         <button class="btn btn-ghost bp-sm yn-traveler-remove"
                 hx-post="/trips/{{ trip_id }}/travelers/{{ t.id }}/remove"
                 hx-target="#travelers-section" hx-swap="outerHTML"
@@ -40,12 +40,12 @@
 </section>
 {% else %}
 <div class="card blueprint bp-empty-card">
-  <div class="bp-empty-msg">No one added yet.{% if not view_only %} Add travellers so Discovery and Packing
+  <div class="bp-empty-msg">No one added yet.{% if not read_only %} Add travellers so Discovery and Packing
     know who's going — and so visa research can read the right passport.{% endif %}</div>
 </div>
 {% endif %}
 
-{% if not view_only %}
+{% if not read_only %}
 
 {% if travelers_available %}
 <form class="yn-traveler-add" hx-post="/trips/{{ trip_id }}/travelers"
