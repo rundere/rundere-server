@@ -2879,7 +2879,11 @@ def adventurelog_sync_page(trip_id: str, request: Request,
     clients = _al_clients(session, scope.user_of(request))
     client = clients.adventurelog
     if client is None:
-        return HTMLResponse(_NOT_CONNECTED, status_code=403)
+        # A page, not a bare string (YONDER-202): the shared layout with the way back.
+        return templates.TemplateResponse(
+            request, "adventurelog.html",
+            {"request": request, "trip": {"id": trip.id, "name": trip.name},
+             "not_connected": _NOT_CONNECTED}, status_code=403)
     ctx = {"request": request, **_al_sync_ctx(session, trip, client, _viewer_uid(request),
                                               public_url=clients.public_url)}
     return templates.TemplateResponse(request, "adventurelog.html", ctx)

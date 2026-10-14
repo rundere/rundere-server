@@ -43,14 +43,14 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
   border-bottom:1px solid var(--line-strong);font-family:var(--ui)}
 .appbar .wordmark{display:flex;align-items:baseline;gap:8px;font-weight:600;
   letter-spacing:-.01em;color:var(--ink);white-space:nowrap}
-.appbar .wordmark span{font-family:var(--mono);font-size:10px;color:var(--ink-3);
+.appbar .wordmark span{font-family:var(--mono);font-size:12px;color:var(--ink-3);
   text-transform:uppercase;letter-spacing:.08em}
 .appnav{display:flex;align-items:stretch;gap:2px;height:100%}
 .appnav a{display:flex;align-items:center;padding:0 11px;text-decoration:none;
   color:var(--ink-2);border-bottom:2px solid transparent;font-size:13.5px}
 .appnav a:hover{color:var(--ink)}
 .appnav a.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
-.appnav .grouplbl{display:flex;align-items:center;font-size:10px;
+.appnav .grouplbl{display:flex;align-items:center;font-size:12px;
   text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:0 2px 0 8px}
 .appnav .sep{width:1px;background:var(--line);margin:9px 6px}
 .appbar .grow{flex:1}
@@ -72,7 +72,7 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
 
 /* ---- settings hub (/settings) ---- */
 .settings-hub{max-width:960px;padding:8px 16px 32px}
-.settings-h{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
+.settings-h{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
   font-weight:600;margin:22px 0 10px}
 .settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
 .settings-card{display:flex;flex-direction:column;gap:4px;padding:14px 16px;
@@ -96,7 +96,7 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
 .yn-set-nav a.on{color:var(--ink);font-weight:600;background:var(--surface-sunk);
   border-left-color:var(--accent)}
 .yn-set-nav .yn-set-top{font-weight:600;color:var(--ink);margin-bottom:4px}
-.yn-set-grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
+.yn-set-grp{font-size:12px;text-transform:uppercase;letter-spacing:.07em;
   color:var(--ink-3);padding:14px 10px 4px}
 .yn-set-nav .yn-set-about{margin-top:14px;font-size:12.5px}
 .yn-set-main{flex:1;min-width:0}
@@ -120,6 +120,10 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
 .rd-wordmark{display:inline-block;height:1em;width:4.375em;vertical-align:middle;background:currentColor;
   -webkit-mask:url(/brand/logo/rundere-wordmark.svg) left center/contain no-repeat;
           mask:url(/brand/logo/rundere-wordmark.svg) left center/contain no-repeat}
+/* README §1: the stacked lockup on sign-in and the other auth cards (≥ 96px wide). */
+.rd-lockup-stacked{display:block;width:112px;aspect-ratio:420/392;background:currentColor;
+  -webkit-mask:url(/brand/logo/rundere-lockup-stacked.svg) center/contain no-repeat;
+          mask:url(/brand/logo/rundere-lockup-stacked.svg) center/contain no-repeat}
 .appbar .wordmark{align-items:center;color:var(--ink)}
 .appbar .wordmark .rd-mark,.appbar .wordmark .rd-wordmark{color:var(--ink)}
 .appbar .wordmark .rd-wordmark{font-size:19px}
@@ -183,7 +187,7 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
     align-items:stretch;gap:24px;padding:24px 16px;overflow-y:auto;
     background:var(--surface-sunk);border-bottom:0;border-right:1px solid var(--line)}
   .appbar .wordmark{flex-direction:column;align-items:flex-start;gap:4px;padding:0 8px}
-  .appbar .wordmark span:last-child{font-size:10px}
+  .appbar .wordmark span:last-child{font-size:12px}
   .appnav{flex-direction:column;height:auto;gap:2px}
   .appnav a{min-height:var(--rd-control-md);padding:0 12px;gap:12px;font-size:15px;font-weight:500;
     border-bottom:0;border-radius:var(--rd-radius-control)}

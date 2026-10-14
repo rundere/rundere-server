@@ -12,6 +12,11 @@
     {% if adventurelog_url %}<a href="{{ adventurelog_url }}" target="_blank" rel="noopener">↗ Open the collection</a>.{% endif %}</p>
 </div>
 
+{% if not_connected %}
+<div class="card blueprint yn-profile-card">
+  <p class="bp-trip-notes">{{ not_connected }} <a href="/settings/integrations">Open Connections</a></p>
+</div>
+{% else %}
 <div id="al-result"></div>
 
 <!-- ------------------------------------------------------------------ PUSH -->
@@ -74,4 +79,5 @@
   <p class="bp-trip-notes">No transport or lodging in the AdventureLog collection to pull.</p>
   {% endif %}
 </form>
+{% endif %}
 {% endblock %}

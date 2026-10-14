@@ -22,7 +22,7 @@
                   hx-target="#modal-root" hx-swap="innerHTML"
                   hx-include="[name=link]">Fill in</button>
         </div>
-        {% if link_error %}<div class="bp-who-hint" style="color:var(--danger,#b3261e)">{{ link_error }}</div>{% endif %}
+        {% if link_error %}<div class="bp-who-hint" style="color:var(--rd-danger)">{{ link_error }}</div>{% endif %}
         {% if from_link %}<div class="bp-who-hint">Filled in from your link — check the type, then set the time (or leave it for later).</div>{% endif %}
       </div>
       {% endif %}

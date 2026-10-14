@@ -15,7 +15,7 @@
     <form method="post" action="/account/sharing">
       <input type="hidden" name="next" value="{{ next }}">
       {% if travelers is not none %}
-      <fieldset style="border:1px solid var(--line, #ddd);border-radius:8px;padding:12px 14px;margin:12px 0 18px">
+      <fieldset style="border:1px solid var(--line);border-radius:var(--rd-radius-control);padding:12px 14px;margin:12px 0 18px">
         <legend><b>Which traveller are you?</b></legend>
         <p class="why" style="margin-top:0">Your account isn't linked to a traveller yet. Linking
           one lets you set up your travel and packing profiles and shows your trips as yours.</p>
