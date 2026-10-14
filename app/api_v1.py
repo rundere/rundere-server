@@ -25,7 +25,7 @@ from app import (authn, expenses as expenses_svc, journal as journal_svc,
 from app.db import get_session
 from app.models import (DiscoveryFinding, DiscoveryRun, JournalEntry, PackingItem,
                         PackingPlan, SavedPlace, TravelItem, TravelerIdentity, Trip,
-                        TripActivity, TripTraveler)
+                        TripActivity, TripTraveler, User)
 
 router = APIRouter(prefix="/api/v1")
 log = logging.getLogger("rundere.api")
@@ -48,6 +48,10 @@ class TripSummary(BaseModel):
     # so the app can hide Edit instead of meeting a 403.
     notes: str | None = None
     can_edit: bool = False
+    # D-199 (YONDER-185): the caller's tier on the trip — owner | traveller |
+    # admin (edit through admin sharing) | viewer (a view-only share). `can_edit`
+    # stays for older app builds; it is true exactly when my_role isn't viewer.
+    my_role: str = "viewer"
 
 
 class PlaceOut(BaseModel):
@@ -95,6 +99,9 @@ class TravelerOut(BaseModel):
     display_name: str
     role: str
     kind: str
+    # D-199: true when a Run·dere account is linked to this person (they can sign
+    # in); false for a guest who is only on the roster.
+    has_account: bool = False
 
 
 class FindingOut(BaseModel):
@@ -357,6 +364,10 @@ class DashboardOut(BaseModel):
     # its whole span), and what's under way now as each item's end moment.
     next_activity: MomentOut | None = None
     in_progress: list[MomentOut] = []
+    # YONDER-250 (SPEC-11 §6): the next moments within `window_h`, across every trip,
+    # soonest first; the first is `next_activity`. The Apple Watch rolls forward
+    # through it instead of rebuilding the list from one trip's cached snapshot.
+    upcoming: list[MomentOut] = []
     counts: dict[str, int]
     capture: dict[str, int]
     trip_count: int
@@ -525,7 +536,16 @@ def _trip_summary(session: Session, t: Trip, user) -> TripSummary:
     return TripSummary(id=t.id, name=t.name, start_date=t.start_date,
                        end_date=t.end_date, source=t.source, owner_id=t.owner_id,
                        activity_count=n, airports=trip_route_codes(flights, limit=None),
-                       notes=t.notes, can_edit=scope.can_edit_trip(session, user, t))
+                       notes=t.notes, can_edit=scope.can_edit_trip(session, user, t),
+                       my_role=scope.trip_role(session, user, t) or "viewer")
+
+
+def _traveler_ids_with_accounts(session: Session, traveler_ids: list[int]) -> set[int]:
+    """Which of these roster people have a Run·dere account (User.traveler_id, D-112)."""
+    if not traveler_ids:
+        return set()
+    return {row[0] for row in session.query(User.traveler_id)
+            .filter(User.traveler_id.in_(traveler_ids)).all()}
 
 
 def _activity_out(a: TripActivity, traveler_ids: list[int] | None = None) -> ActivityOut:
@@ -587,17 +607,23 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
     from discover.places import derive_locations
 
     acts = list(trip_activities(session, trip.id))
+    # D-199: a viewer gets the timeline and map only. Discover, packing, the
+    # discovery profile and linked captures belong to the people travelling.
+    viewer = scope.trip_role(session, user, trip) == "viewer"
     from app.trips import who
     tags = who.activity_map(session, [a.id for a in acts])
     activities = [_activity_out(a, tags.get(a.id)) for a in acts]
 
     # travellers (+ resolved names)
     travelers = []
-    for tt in session.query(TripTraveler).filter_by(trip_id=trip.id).all():
+    roster = session.query(TripTraveler).filter_by(trip_id=trip.id).all()
+    with_login = _traveler_ids_with_accounts(session, [tt.traveler_id for tt in roster])
+    for tt in roster:
         ident = session.get(TravelerIdentity, tt.traveler_id)
         travelers.append(TravelerOut(id=tt.traveler_id,
                                      display_name=ident.display_name if ident else "—",
-                                     role=tt.role, kind=ident.kind if ident else "guest"))
+                                     role=tt.role, kind=ident.kind if ident else "guest",
+                                     has_account=tt.traveler_id in with_login))
 
     # materialized places (lat/lon) — the map/offline source
     places = []
@@ -609,6 +635,10 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
                   for p in derived.places]
     except Exception:                                   # never fail the snapshot on geocode
         places = []
+
+    if viewer:
+        return TripSnapshot(trip=_trip_summary(session, trip, user), activities=activities,
+                            travelers=travelers, places=places)
 
     # discovery findings — PER-USER (4.1): the caller's own Discover tab
     discovery = [_finding_out(f)
@@ -720,11 +750,15 @@ def api_dashboard(now: Annotated[str | None, Query(
                       description="Your local wall-clock time, YYYY-MM-DDTHH:MM. Timeline "
                                   "times have no zone, so the app sends the device's time; "
                                   "the server's own clock is used when omitted.")] = None,
+                  window_h: Annotated[int, Query(
+                      ge=1, le=168, description="How far ahead `upcoming` looks, in hours.")] = 48,
+                  limit: Annotated[int, Query(
+                      ge=1, le=50, description="The most moments `upcoming` returns.")] = 12,
                   user=Depends(authn.current_user), session: Session = Depends(get_session)):
     from datetime import date
 
     from app.dashboard import (_capture_activity, _next_trip, _pipeline_counts,
-                               _trip_status, viewer_moments)
+                               _trip_status, viewer_activities)
     from app import clock
     from app.trips import nextup, who
     # The app's own clock when it sends one; else the caller's travel-profile
@@ -735,9 +769,12 @@ def api_dashboard(now: Annotated[str | None, Query(
     nxt = _next_trip(trips, today)
     upcoming = sum(1 for t in trips
                    if t.start_date and _trip_status(t, today) == "upcoming")
-    moment, under_way = viewer_moments(session, trips, now, user)
+    acts = viewer_activities(session, trips, now, user)
+    moment, under_way = nextup.plan(acts, now)
+    ahead = nextup.upcoming(acts, now, window_h=window_h, limit=limit)
     names = {t.id: t.name for t in trips}
-    tags = who.activity_map(session, [m.activity.id for m in [moment, *under_way] if m])
+    tags = who.activity_map(session, list({m.activity.id for m in [moment, *under_way, *ahead]
+                                           if m}))
 
     def _moment(m) -> MomentOut:
         a = m.activity
@@ -749,6 +786,7 @@ def api_dashboard(now: Annotated[str | None, Query(
         next_trip=NextTripOut(**nxt) if nxt else None,
         next_activity=_moment(moment) if moment else None,
         in_progress=[_moment(m) for m in under_way],
+        upcoming=[_moment(m) for m in ahead],
         counts=_pipeline_counts(session, user),
         capture=_capture_activity(session, today, user),
         trip_count=len(trips), upcoming_count=upcoming)
@@ -1373,7 +1411,9 @@ def api_run_discovery(trip_id: str, body: DiscoverIn | None = None,
     trip: 409 with the reason (D-157)."""
     from app.trips.routes import discovery_topics, start_discovery
     from discover.runner import TRIP_ENDED_MESSAGE
-    trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
+    # Edit access, like the web's Run button: a view-only share (D-122/D-199)
+    # can't start runs on someone else's trip.
+    trip = scope.require_trip(session, user, trip_id, edit=True)
     topic = ((body.topic if body else None) or "").strip() or None
     place_key = ((body.place_key if body else None) or "").strip() or None
     if place_key and not topic:

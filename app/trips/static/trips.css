@@ -735,3 +735,8 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
   .yn-tl-node { transition: background var(--rd-dur-standard) var(--rd-ease-standard); } }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* D-199: the viewer's badge sits inside the Outfit page title; it's a capsule label
+   (Figtree), not a heading (YONDER-202 re-audit). */
+.yn-view-only-badge { font-family: var(--rd-font-body); font-size: 12px; font-weight: 600;
+  vertical-align: middle; }

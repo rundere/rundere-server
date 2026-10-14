@@ -320,6 +320,126 @@ request forgery (SSRF) risk.
     taken from anyone (D-152). Sending happens off the caller's thread, so an
     alert never slows or breaks the thing that failed.
 
+## 10. Who someone is on a trip (D-199)
+
+- **D-199: Four tiers on a trip, and the API says which one you are (YONDER-185,
+  which absorbs YONDER-182; owner, 2026-10-14).** Being *on* a trip (the roster,
+  `TripTraveler`) and being able to *open* it (access) are separate questions:
+  1. **You**: the owner, who works the trip.
+  2. **A companion with an account**: on the roster and linked to a login
+     (`User.traveler_id`). Full access, as D-122 already gives travellers.
+  3. **A guest companion**: on the roster with no login, tracked for planning.
+  4. **A viewer**: has a login and an explicit share (`TripMember`) but isn't
+     travelling. **View-only**, which D-122 already enforces in `app/scope.py`.
+  - *Demo is not a tier.* The demo server is a read-only server mode (YONDER-181,
+    D-198), not a kind of person.
+  - *No editor share yet.* Editing still comes with travelling (D-122). A
+    non-travelling editor would need its own decision.
+  - **`my_role`** on every `TripSummary` (and so every snapshot and MCP
+    `get_trip`): `owner` | `traveller` | `admin` (editing through admin sharing,
+    4.1) | `viewer`, from `scope.trip_role`. It is `viewer` exactly when
+    `can_edit` is false; `can_edit` stays for older app builds. The demo server
+    reports `viewer` on every trip.
+  - **`has_account`** on each traveller in a snapshot: true when a login is
+    linked to that roster person.
+  - **What a viewer sees: the timeline and the map, nothing personal** (owner,
+    2026-10-14: a viewer is *"invited to see the trip and not participate"*;
+    they *"just focus on timeline and map"*). That's the timeline, the places
+    and map, the trip PDF and travellers' names, each marked "Has login" or
+    "Guest · no login". **No** Discover (they can't run it and needn't care
+    about things to do), packing (*"that is personal"*, D-123), costs (D-183
+    already shows them none), journals (D-134), linked captures, or travellers'
+    profile details such as nationality. Viewers can't start Discovery runs;
+    the API now refuses them, as the web always did.
+  - **API:** a viewer's snapshot carries only `trip`, `activities`,
+    `travelers` and `places`. Discover, the discovery profile, packing,
+    captures and rates are left out.
+  - **Web:** a "View only" badge in the trip header. No Edit, Delete, Add,
+    Remove or Run controls. Only the Travellers and Timeline tabs (plus
+    Sharing). The Sharing tab splits people into
+    "Can edit (travellers with a login)" and "Can view", in words and icons,
+    not colour alone. The server still refuses viewers' writes
+    (`scope.trip_or_none`, `require_trip(edit=True)`); hiding only stops
+    offering them.
+  - **MCP:** the instructions tell agents that `viewer` means read-only. Every
+    write tool calls an edit-guarded `/api/v1` function, so writes are refused.
+  - Turning a guest into an account holder is a separate item with its own spec
+    (YONDER-260: invite links and templates).
+
+## 11. The demo server (D-198)
+
+- **D-198: A read-only demo server with one shared login (YONDER-181; owner,
+  2026-10-14).** It exists for App Review, external TestFlight and anyone
+  curious: *"They are there to view pre-seeded data, they cannot create new
+  records."* This replaces the 2026-09-27 plan for a writable demo.
+  - **One switch, one login.** `TX_DEMO_MODE=true` with `TX_DEMO_USERNAME`
+    (default `demo`) and `TX_DEMO_PASSWORD`. The password isn't a secret: the
+    sign-in page shows it and the app's "Try the demo" fills it in. There's no
+    separate reviewer account and no database column; the demo user is
+    whoever `TX_DEMO_USERNAME` names, created at startup, never an admin.
+  - **Every write is refused**, except signing in and out (`demo_guard`, the
+    outermost middleware). The API gets a 403 (`{"detail": …, "demo": true}`).
+    An HTMX action shows the message in the demo banner. `scope.can_edit_trip`
+    answers false, so every edit check follows from it.
+  - **Everything is visible.** The demo user owns the seeded trips, so
+    `my_role` is `owner` with `can_edit: false`. Edit controls hide on
+    `can_edit`, and tabs trim only for D-199's viewer. The server decides what
+    can be edited; demo isn't a user type.
+  - **Closed (404):** MCP, OAuth and its discovery documents, OIDC,
+    registration, password reset, ingest, admin and Users, Connections, Server
+    mail, Notifications, personal API tokens and connected apps.
+    `/api/v1/auth/methods` reports `password: true`, no OAuth or SSO, and
+    `demo: true`.
+  - **Nothing reaches the outside world.** The inbox poller, retention sweep
+    and health monitor don't start. The self-hosted services (Ollama, Photon,
+    SearXNG, ClamAV, AdventureLog, AirTrail, Valhalla) are blanked at startup.
+    Weather, rates, routes and places are stored in the seed. The only outbound
+    traffic is OpenStreetMap tiles for the PDF maps (allowed by the demo's
+    firewall).
+  - **It refuses to start** without sign-in, without the demo login, with mail
+    (SMTP or IMAP) or SSO configured, or on a database holding any user other
+    than the demo user. A real server can never be flipped into demo mode by
+    accident.
+  - **The sample data** (`app/demo_seed.py`) shows off the home profile and
+    travel discovery (owner, 2026-10-14). The demo user's traveller is **Jane
+    Doe**, British, based within 10 km of central London, flying from
+    **Heathrow**, with Sam as a guest companion with no login. She has three
+    trips:
+    - **Lisbon & Porto**, under way (day 2 of 5): British Airways out of
+      Heathrow, home on Ryanair into Stansted. Ryanair doesn't serve Heathrow;
+      Stansted is in London's metro group, so it's still home.
+    - **A Paris to Nice road trip** three weeks out, with BA flights either side.
+    - **New York** two months ago, on BA.
+    They come with Discover, a packing plan, costs (GBP) and a budget, journal
+    entries, and two captures waiting in Review. Her home profile keeps London
+    out of Discover.
+    - Bookings use sample names and `DEMO-` confirmation codes. Airlines are
+      real; Discover recommends real, long-standing places.
+    - Everything is written through the app's own paths inside
+      `demo.seeding()`, the one narrow lift of the read-only rule.
+    - Places come from the seed's own table (`SeedGeocoder`, also used by demo
+      reads). Weather and rates come from a built-in offline stand-in for
+      Open-Meteo and Frankfurter: fixed rates and rough climate averages,
+      illustrative only.
+  - **Shipped in the image, not fetched.** The seed is code in every release, so
+    it always matches the schema it writes. It's never pulled from GitHub at
+    run time, which would add an outbound dependency and a supply-chain risk.
+    It only runs on a demo server: the startup path and the CLI both check
+    `TX_DEMO_MODE`. Changing the data is a PR. A demo upgrade then runs
+    `demo-seed --replace` once.
+  - **Kept current, never wiped.** Nothing changes, so there is nothing to
+    reset. A nightly job (03:00 in `TX_DEMO_TIMEZONE`, default
+    Europe/London, and at startup) measures how far the in-progress trip has
+    drifted and shifts every seeded date by that many days. It refreshes the
+    weather and currency findings and rebuilds the waiting captures; running
+    it twice changes nothing. A re-seed (`demo-seed --replace`) runs only when a
+    release changes the seed. Managed from the command line only
+    (`demo-seed`, `demo-roll`, which refuse to run outside a demo server);
+    there's no demo admin. A refused write in the browser shows as a toast.
+  - **Hosting** (YONDER-126): its own stack on the home server, behind the
+    public ingress, firewalled from the LAN, with SQLite on a volume.
+    `demo.rundere.app` is a CNAME to `demorundere.example.net`.
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.
@@ -463,6 +583,11 @@ request forgery (SSRF) risk.
   at the same minute an end comes before a start. Notes are never next up. Only the
   viewer's own activities count (traveller tags, `app/trips/who.py`).
   `app/trips/nextup.py` is the one implementation. Owner-reported bug, YONDER-177. (proposed)
+  *Upcoming (YONDER-250):* the dashboard also returns `upcoming`, the viewer's next moments
+  within `window_h` hours (default 48, at most 168) across every trip they can see, at most
+  `limit` (default 12, at most 50), soonest first, by the same rule. Its first entry is
+  `next_activity`, so the Apple Watch rolls forward through it instead of rebuilding the
+  list from one trip's cached snapshot (SPEC-11 §6).
 - **D-186 — How per-user connections are built (YONDER-190/192; accepted by the
   owner 2026-10-12).**
   - *Airports:* the bundled table is mwgg/Airports (MIT, with time zones;

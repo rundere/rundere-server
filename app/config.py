@@ -123,6 +123,16 @@ class Settings(BaseSettings):
     # the operator creates a user and opts in (TX_AUTH_REQUIRED=true). The 4.0
     # test stack turns it ON.
     auth_required: bool = False
+    # YONDER-181 / D-198: a read-only public demo server (app/demo.py). One shared
+    # login; the password isn't a secret (the app's "Try the demo" fills it in).
+    demo_mode: bool = False
+    demo_username: str = "demo"
+    demo_password: str = ""
+    demo_timezone: str = "Europe/London"     # the nightly roll runs at 03:00 here
+    # YONDER-126 (D-197): other Run·dere servers' /health URLs this server watches and
+    # alerts on, comma-separated, e.g. https://demo.rundere.app/health. Set by the
+    # operator in the stack, never by a user, so it isn't a user-supplied fetch (D-152).
+    watch_urls: str = ""
     # HS256 signing key. MUST be set in prod (empty => a process-ephemeral key,
     # so tokens do not survive a restart — a loud dev-only fallback).
     jwt_secret: str = ""
@@ -256,6 +266,10 @@ class Settings(BaseSettings):
     oauth_app_redirect_uris: str = "https://rundere.app/auth/callback"
 
     app_version: str = "4.11.1"
+
+    @property
+    def watch_url_list(self) -> tuple[str, ...]:
+        return tuple(u.strip() for u in self.watch_urls.split(",") if u.strip())
 
     @property
     def base_currency_list(self) -> tuple[str, ...]:
