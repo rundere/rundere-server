@@ -22,6 +22,8 @@ _PATHS = {
     "plane": '<path d="M12 3v7l8 4v2l-8-2v4l2 2v1l-2-.5L10 21v-1l2-2v-4l-8 2v-2l8-4"/>',
     "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>',
     "alert": '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.01"/>',
+    # Edit: a pencil
+    "edit": '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
 }
 
 
