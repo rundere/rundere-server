@@ -131,7 +131,7 @@ if DEPS:
                     break
                 time.sleep(0.05)
             assert "Autoprocess Riad" in html and "waiting for your approval" in html
-            assert "Open in review" in html
+            assert "Open in Inbox" in html                 # D-200
             with SessionLocal() as s:
                 items = s.query(TravelItem).filter(TravelItem.batch_id == bid).all()
                 assert items and all((i.review or {}).get("action_taken") != "approved"

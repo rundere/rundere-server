@@ -1,0 +1,38 @@
+{# D-200 (YONDER-228): quick capture from any page, a sheet over where you are.
+   Paste a link or text; it files straight to the Inbox (D-158) and the result
+   panel polls as on the Capture page. Guides, files and directions links stay on
+   the Capture page. Self-contained (closes itself), because trip pages use a
+   different layout from the Inbox's. #}
+<div class="rd-sheet-backdrop" id="capsheet" onclick="if (event.target === this) this.remove()">
+<div class="rd-sheet" role="dialog" aria-modal="true" aria-labelledby="capsheet-title" tabindex="-1">
+  <div class="rd-sheet-head">
+    <h2 id="capsheet-title">Capture</h2>
+    <button type="button" class="rd-sheet-x" aria-label="Close"
+            onclick="document.getElementById('capsheet').remove()">×</button>
+  </div>
+  <div class="rd-sheet-body capsheet-body">
+    <p class="why">Paste a booking link or the text of a confirmation. Run·dere reads it and
+      puts it in your <a href="/inbox">Inbox</a> to approve.</p>
+    <form hx-post="/capture/web" hx-target="#capsheet-result" hx-swap="innerHTML"
+          hx-disabled-elt="button[type=submit]">
+      <label class="cap-lbl" for="capsheet-content">Link or text</label>
+      <textarea id="capsheet-content" name="content" class="cap-area mono" rows="4" required
+                placeholder="https://… or paste the confirmation"></textarea>
+      <div class="capsheet-actions">
+        <a class="act quiet" href="/capture">Files, email and more ways to capture</a>
+        <button class="act primary" type="submit">Capture</button>
+      </div>
+    </form>
+    <div id="capsheet-result"></div>
+  </div>
+</div>
+<script>
+(function () {
+  var s = document.getElementById('capsheet');
+  document.addEventListener('keydown', function esc(e) {
+    if (e.key === 'Escape' && document.getElementById('capsheet')) { s.remove(); document.removeEventListener('keydown', esc); }
+  });
+  var t = document.getElementById('capsheet-content'); if (t) t.focus();
+})();
+</script>
+</div>

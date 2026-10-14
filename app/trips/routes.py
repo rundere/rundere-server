@@ -369,6 +369,7 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         "day_groups": day_groups,
         "has_activities": bool(acts),
         "next_activity_id": _next_activity_id(session, trip, user),
+        "inbox_waiting": _inbox_waiting(session, trip, user),
         "linked_captures": _linked_captures(session, trip.id),
         **_push_state(trip, al),
         **_travelers_context(session, trip.id),
@@ -378,6 +379,16 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         **_costs_context(session, trip, user),
         "journal": _journal_context(session, trip, user),
     }
+
+
+def _inbox_waiting(session: Session, trip: Trip, user) -> int:
+    """D-200: the viewer's captures filed to this trip and still in the Inbox, for
+    the header's "N waiting in Inbox" link (the Inbox stays where you approve)."""
+    from app.review.routes import waiting_for_trip
+    try:
+        return waiting_for_trip(session, user, trip.id)
+    except Exception:                       # pragma: no cover - a hint, never a failure
+        return 0
 
 
 def _next_activity_id(session: Session, trip: Trip, user) -> str | None:

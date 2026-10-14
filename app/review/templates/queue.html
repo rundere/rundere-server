@@ -1,11 +1,14 @@
 {% extends "base.html" %}
+{% block title %}Inbox{% endblock %}
 {% block content %}
 <div class="app">
   {# Operations strip: status + the "run something over many items" controls,
      visually a separate plane from the per-item work below. #}
   <div class="ops">
     <div class="ops-row">
-      <h1 class="pagetitle">Review</h1>
+      <h1 class="pagetitle">Inbox</h1>
+      {% if trip_filter %}<span class="pill staged" title="Only captures filed to this trip">{{ trip_filter.name }}</span>
+      <a class="act tiny" href="/inbox?bucket={{ bucket }}">Show everything</a>{% endif %}
       {% include "_funnel.html" %}
       <div class="opsbtns">
         <button class="act tiny proc"

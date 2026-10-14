@@ -3,16 +3,16 @@
    current without a refresh. #}
 <nav class="rail" id="rail" aria-label="Filter by state"{% if oob %} hx-swap-oob="true"{% endif %}>
   <div class="rail-label">Queue</div>
-  <a class="filter {% if bucket=='attention' %}on{% endif %}" href="/review?bucket=attention">
+  <a class="filter {% if bucket=='attention' %}on{% endif %}" href="/inbox?bucket=attention{% if trip_filter %}&amp;trip={{ trip_filter.id }}{% endif %}">
     Needs you <span class="count">{{ counts.attention }}</span></a>
-  <a class="filter {% if bucket=='waiting' %}on{% endif %}" href="/review?bucket=waiting">
+  <a class="filter {% if bucket=='waiting' %}on{% endif %}" href="/inbox?bucket=waiting{% if trip_filter %}&amp;trip={{ trip_filter.id }}{% endif %}">
     Waiting for a trip <span class="count">{{ counts.waiting }}</span></a>
-  <a class="filter {% if bucket=='ready' %}on{% endif %}" href="/review?bucket=ready">
+  <a class="filter {% if bucket=='ready' %}on{% endif %}" href="/inbox?bucket=ready{% if trip_filter %}&amp;trip={{ trip_filter.id }}{% endif %}">
     Ready to Approve <span class="count">{{ counts.ready }}</span></a>
-  <a class="filter {% if bucket=='staged' %}on{% endif %}" href="/review?bucket=staged">
+  <a class="filter {% if bucket=='staged' %}on{% endif %}" href="/inbox?bucket=staged{% if trip_filter %}&amp;trip={{ trip_filter.id }}{% endif %}">
     Approved <span class="count">{{ counts.staged }}</span></a>
-  <a class="filter {% if bucket=='logged' %}on{% endif %}" href="/review?bucket=logged">
+  <a class="filter {% if bucket=='logged' %}on{% endif %}" href="/inbox?bucket=logged{% if trip_filter %}&amp;trip={{ trip_filter.id }}{% endif %}">
     Logged <span class="count">{{ counts.logged }}</span></a>
-  <a class="filter {% if bucket=='all' %}on{% endif %}" href="/review?bucket=all">
+  <a class="filter {% if bucket=='all' %}on{% endif %}" href="/inbox?bucket=all{% if trip_filter %}&amp;trip={{ trip_filter.id }}{% endif %}">
     Everything <span class="count">{{ counts.all }}</span></a>
 </nav>

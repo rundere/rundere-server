@@ -7,7 +7,8 @@
   <div class="bp-trip-head-row">
     <div>
       <h1 class="bp-h1">{{ trip.name }}</h1>
-      <div class="bp-daterange">{{ trip.start_display }} – {{ trip.end_display }}</div>
+      <div class="bp-daterange">{{ trip.start_display }} – {{ trip.end_display }}{% if inbox_waiting %}
+        · <a class="yn-inbox-waiting" href="/inbox?bucket=all&amp;trip={{ trip.id }}">{{ inbox_waiting }} waiting in Inbox</a>{% endif %}</div>
       {% if trip.has_notes %}<p class="bp-trip-notes">{{ trip.notes }}</p>{% endif %}
     </div>
     <div class="bp-trip-actions">
@@ -206,7 +207,7 @@
   </div>
 </section>
 <p class="bp-trip-notes">Items you linked to this trip from the
-  <a href="/review?bucket=all">review queue</a>. This is an in-house link,
+  <a href="/inbox?bucket=all">Inbox</a>. This is an in-house link,
   independent of AdventureLog.</p>
 </div>
 </section>

@@ -258,6 +258,12 @@ def _captured(request: Request, batch_id: str, user):
         "enabled": settings.auto_process})
 
 
+@router.get("/capture/sheet", response_class=HTMLResponse)
+def capture_sheet(request: Request):
+    """D-200: the global Capture button's sheet, over whatever page you're on."""
+    return templates.TemplateResponse(request, "_capture_sheet.html", {})
+
+
 @router.get("/capture/batch/{batch_id}", response_class=HTMLResponse)
 def capture_batch(batch_id: str, request: Request, n: int = 0,
                   session: Session = Depends(get_session)):
