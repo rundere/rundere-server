@@ -3,14 +3,20 @@
 {% block body %}
 <form class="card" method="post" action="/login">
   <div class="brand"><h1><span class="rd-lockup-stacked" role="img" aria-label="Run·dere"></span></h1><span>sign in</span></div>
+  {% if demo %}
+  <p class="sub">This is the Run·dere <strong>demo server</strong>: read-only sample trips,
+    reset nightly. Sign in as <strong>{{ demo.username }}</strong> with the password
+    <strong>{{ demo.password }}</strong>.</p>
+  {% else %}
   <p class="sub">Sign in to your Run·dere companion.</p>
+  {% endif %}
   {% if msg == "reset" %}<div class="ok">Password updated — sign in with your new password.</div>{% endif %}
   {% if error %}<div class="err">{{ error }}</div>{% endif %}
   <input type="hidden" name="next" value="{{ next }}">
   {% if password_allowed %}
   <label for="username">Username</label>
   <input id="username" name="username" autocomplete="username" autofocus
-         value="{{ username or '' }}" required>
+         value="{{ username or (demo.username if demo else '') }}" required>
   <label for="password">Password</label>
   <input id="password" name="password" type="password"
          autocomplete="current-password" required>
@@ -25,7 +31,7 @@
             color:var(--ink);text-decoration:none;font-weight:600">
     Sign in with {{ oidc_name }}</a>
   {% endif %}
-  {% if password_allowed %}
+  {% if password_allowed and not demo %}
   <div class="links">
     <a href="/forgot">Forgot password?</a>
     {% if registration_open %}<a href="/register">Create account</a>{% endif %}

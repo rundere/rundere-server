@@ -8,6 +8,12 @@
 {% set cu = request.state.user if request else none %}
 {% import "_settings_menu.html" as settings_menu with context %}
 {% set in_settings = settings_menu.in_settings %}
+{% if demo_mode is defined and demo_mode() %}
+{# D-198: every page on a demo server says so; refused writes land in #demo-msg. #}
+<div class="yn-demo-banner" role="note">{{ icon('lock', 14) }}
+  <strong>Demo server:</strong> read-only, view the sample trips. Changes aren't saved.
+  <span id="demo-msg" aria-live="polite"></span></div>
+{% endif %}
 <header class="appbar">
   <a class="wordmark" href="/" style="text-decoration:none" aria-label="Run·dere home" title="Run·dere — say “run there”">
     <span class="rd-mark" aria-hidden="true"></span><span class="rd-wordmark" role="img" aria-label="Run·dere"></span>

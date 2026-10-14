@@ -211,3 +211,14 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
   .yn-set-nav{top:0;max-height:100vh}
 }
 @media (max-width:1023px){.appbar .signout-btn{width:auto;padding:0 8px}}
+
+/* D-198: the demo server's banner, above the app header on every page. A refused
+   write's message shows as a toast at the bottom, seen wherever you clicked. */
+.yn-demo-banner{display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  padding:8px 16px;background:var(--warn-bg);color:var(--ink);
+  border-bottom:1px solid var(--line-strong);font-size:13px}
+.yn-demo-refusal{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:60;
+  max-width:calc(100vw - 32px);margin:0;padding:10px 14px;border-radius:var(--r);
+  background:var(--ink);color:var(--surface);box-shadow:var(--rd-shadow-raised);
+  font-size:13px;animation:yn-demo-fade 4.5s forwards}
+@keyframes yn-demo-fade{0%,85%{opacity:1}100%{opacity:0;visibility:hidden}}
