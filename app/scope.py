@@ -158,8 +158,12 @@ def can_view_trip(session, user, trip) -> bool:
 def can_edit_trip(session, user, trip) -> bool:
     """Full access: owner/traveller, or an admin when the owner shares (or the
     trip has no owner). Explicit (non-traveller) shares are view-only, so NOT
-    editors (D-122)."""
+    editors (D-122). A demo server edits nothing (D-198): every edit check, and
+    the API's `can_edit`, follows from this one answer."""
     if trip is None:
+        return False
+    from app import demo
+    if demo.enabled():
         return False
     if unrestricted(user):
         return True

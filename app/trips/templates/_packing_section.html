@@ -11,9 +11,11 @@
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('packing', true)">Expand all</button>
     <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('packing', false)">Collapse all</button>
     {% endif %}
+    {% if not read_only %}{# D-198: not on a demo server #}
     <a class="btn btn-secondary bp-sm" href="/trips/settings/packing-profile">Profile</a>
     <button class="btn btn-primary" hx-post="/trips/{{ trip.id }}/pack"
             hx-disabled-elt="this">{{ 'Re-generate' if packing_has else 'Generate packing plan' }}</button>
+    {% endif %}
   </div>
 </div>
 <div class="yn-sec-body">

@@ -363,6 +363,9 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
     return {
         "my_role": my_role,
         "view_only": my_role == "viewer",
+        # No edit controls: a viewer, or anyone on a demo server (D-198), where
+        # can_edit_trip is always false but every tab still shows.
+        "read_only": not scope.can_edit_trip(session, user, trip),
         "trip": {
             "id": trip.id, "name": trip.name,
             "start_display": fmt_date(trip.start_date) or "—",
