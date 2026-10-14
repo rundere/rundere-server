@@ -211,6 +211,13 @@ The page's own capture box is not a tab, because it needs no setup.
     own default checks nothing). `TX_INBOX_IMAP_CA_FILE` pins one certificate (Proton Bridge's
     self-signed one), with the hostname check relaxed because the pinned certificate is the
     guarantee; `TX_INBOX_IMAP_VERIFY=false` is an explicit, logged opt-out.
+  - *A shared mailbox is left alone (YONDER-229, 2026-10-12):* the reader may be pointed at
+    someone's own account (Proton: one account, many addresses, one INBOX). It reads only the
+    recipient headers (PEEK, nothing marked read) and handles only mail to its own plus
+    addresses; anything else — personal mail, the bare address — is never fetched, moved or
+    recorded. It remembers the highest UID it has looked at per folder, so a large mailbox
+    isn't rescanned on every new email. A message is removed from the folder only by MOVE or
+    UID EXPUNGE of that one message, never a folder-wide EXPUNGE.
   - *Not in v1:* a webhook front door for mail services that push mail over HTTP.
 
 ## 6. Proposed: iOS Share Extension feedback (D-163)
