@@ -701,3 +701,8 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 #costs-section[data-sub="plan"] .yn-subpanel[data-sub="plan"] { display: block; }
 #costs-section[data-sub="actual"] .yn-costs-act[data-for="plan"],
 #costs-section[data-sub="plan"] .yn-costs-act[data-for="actual"] { display: none; }
+
+/* D-199: the viewer's badge sits inside the Outfit page title; it's a capsule label
+   (Figtree), not a heading (YONDER-202 re-audit). */
+.yn-view-only-badge { font-family: var(--rd-font-body); font-size: 12px; font-weight: 600;
+  vertical-align: middle; }
