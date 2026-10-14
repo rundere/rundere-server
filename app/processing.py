@@ -43,7 +43,11 @@ def process_batch(session: Session, batch: IngestBatch,
     """Runs the chain for one batch; returns the new batch status."""
     from app.config import settings
     from extract.filescan import Scanner
-    result = extract_ingest_payload(batch.payload, llm=llm,
+    payload = batch.payload
+    if (payload or {}).get("capture_channel") == "file":    # YONDER-179: bytes from the store
+        from app import documents
+        payload = documents.pipeline_payload(session, payload)
+    result = extract_ingest_payload(payload, llm=llm,
                                     scanner=Scanner(settings.clamav_url))   # YONDER-243
     now = datetime.now(timezone.utc).isoformat()
     src = _source(batch, batch.payload)

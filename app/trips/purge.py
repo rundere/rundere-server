@@ -6,7 +6,8 @@ sweep each one explicitly. Two kinds of child:
 
 - **Trip-only data — deleted:** the timeline (activities and who each is for),
   the traveller roster, sharing, Discover (runs, findings, items, excluded
-  places), packing (plans and items) and expenses with their shares (SPEC-10).
+  places), packing (plans and items), expenses with their shares (SPEC-10) and
+  the files filed to it (documents, SPEC-8 D-196 — what was extracted stays).
 - **The person's own content — kept, unlinked:** captured booking emails and
   journal entries exist on their own, so they lose the trip link and stay in
   Review / the Journal, where they can be filed again.
@@ -25,8 +26,9 @@ def purge_trip(session: Session, trip) -> None:
     from app.trips import who
 
     tid = trip.id
-    from app import expenses as expenses_svc
+    from app import documents, expenses as expenses_svc
     expenses_svc.purge_trip(session, tid)
+    documents.purge_trip(session, tid)          # its files go at once (D-196)
     who.clear_activities(session, [a.id for a in session.query(TripActivity.id)
                                    .filter(TripActivity.trip_id == tid).all()])
     for model in (TripActivity, TripTraveler, TripMember,

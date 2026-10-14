@@ -451,7 +451,8 @@ def users_page(request: Request, msg: str = "", err: str = "", link: str = "",
         "users": users, "travelers": _travelers(session), "tmap": tmap,
         "me": admin, "registration_open": settings.auth_registration_open,
         "smtp": email_configured(), "smtp_summary": smtp_summary(),
-        "msg": msg, "err": err, "link": link, "link_for": link_for})
+        "msg": msg, "err": err, "link": link, "link_for": link_for,
+        "default_quota_mb": settings.document_quota_mb})
 
 
 def _private(user: User, admin: User) -> bool:
@@ -539,6 +540,27 @@ def users_set_email(user_id: str, email: str = Form(""),
     _audit(session, user, admin, "email_set")
     session.commit()
     return RedirectResponse(f"/users?msg=Email+updated+for+{user.username}", status_code=303)
+
+
+@router.post("/users/{user_id}/quota")
+def users_set_quota(user_id: str, quota_mb: str = Form(""),
+                    admin: User = Depends(authn.require_admin),
+                    session: Session = Depends(get_session)):
+    """An admin raises (or resets) one person's file-storage quota (SPEC-8 D-196).
+    The quota is the server's room, not the person's data, so it's settable
+    whatever their admin-sharing choice; blank = the deployment default."""
+    user = _u(session, user_id)
+    if user is None:
+        return RedirectResponse("/users?err=No+such+user", status_code=303)
+    raw = (quota_mb or "").strip()
+    if raw and (not raw.isdigit() or not 1 <= int(raw) <= 1_000_000):
+        return RedirectResponse("/users?err=" + quote_plus("Quota is a whole number of MB"),
+                                status_code=303)
+    user.document_quota_mb = int(raw) if raw else None
+    _audit(session, user, admin, "document_quota_set")
+    session.commit()
+    return RedirectResponse(f"/users?msg=File+quota+updated+for+{user.username}",
+                            status_code=303)
 
 
 @router.post("/users/{user_id}/reset-link")

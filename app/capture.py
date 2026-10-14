@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -303,7 +303,117 @@ def capture_page(request: Request, session: Session = Depends(get_session)):
     trips = _filing_trips(session, user)
     return templates.TemplateResponse(request, "capture.html", {
         "trips": trips, "recent": _recent_captures(session, user),
-        "channels": _channel_cards(session, user)})
+        "channels": _channel_cards(session, user), "files": _files_summary(session, user)})
+
+
+# ----------------------------------------------------------------- files (YONDER-179, D-196)
+def _files_summary(session: Session, user) -> dict | None:
+    """The Capture page's file box: None when file capture is off or there's
+    nobody signed in (files are always someone's own)."""
+    from app import documents
+    if user is None:
+        return None
+    enabled, _ = documents.status(session)
+    if not enabled:
+        return None
+    return {"used": documents._mb(documents.used_bytes(session, user)),
+            "quota": documents._mb(documents.quota_bytes(user)),
+            "max_mb": settings.document_max_mb}
+
+
+@router.post("/capture/file", response_class=HTMLResponse)
+async def capture_file(request: Request, session: Session = Depends(get_session)):
+    """The Capture page's file box: store, scan and capture one file, then show
+    the same self-polling result as any capture."""
+    from fastapi.concurrency import run_in_threadpool
+
+    from app import authn, documents, scope
+    from app.models import Trip
+    form = await request.form()
+    upload = form.get("file")
+
+    def _msg(ok, message):
+        return templates.TemplateResponse(request, "_capture_result.html",
+                                          {"ok": ok, "message": message})
+
+    def work():
+        user = authn.resolve_user(session, request)
+        if user is None:
+            return _msg(False, "Sign in to capture a file.")
+        if upload is None or not getattr(upload, "filename", ""):
+            return _msg(False, "Choose a file first.")
+        trip_id = (form.get("trip_id") or "").strip() or None
+        if trip_id and not scope.can_edit_trip(session, user, session.get(Trip, trip_id)):
+            return _msg(False, "You can't file captures to that trip.")
+        data = upload.file.read(settings.document_max_mb * 1024 * 1024 + 1)
+        try:
+            doc, created = documents.save(session, user, data, upload.filename,
+                                          source="web", trip_id=trip_id)
+        except (documents.Unavailable, documents.Refused) as err:
+            session.rollback()
+            return _msg(False, str(err)[:1].upper() + str(err)[1:] + ".")
+        if not created:
+            session.commit()
+            return _msg(True, f"You already captured “{doc.filename}”.")
+        batch_id = documents.queue_capture(session, doc, user,
+                                           notes=(form.get("notes") or "").strip() or None,
+                                           via="web")
+        session.commit()
+        return _captured(request, batch_id, user)
+    return await run_in_threadpool(work)
+
+
+@router.get("/capture/files", response_class=HTMLResponse)
+def capture_files(request: Request, session: Session = Depends(get_session)):
+    """Your files: what's stored, how much room it takes, and when each is removed."""
+    from app import authn, documents
+    from app.models import Document, Trip
+    user = authn.resolve_user(session, request)
+    if user is None:
+        return RedirectResponse("/login?next=/capture/files", status_code=303)
+    enabled, reason = documents.status(session)
+    rows = (session.query(Document).filter(Document.owner_id == user.id)
+            .order_by(Document.created_at.desc()).all())
+    trips = {t.id: t.name for t in session.query(Trip).filter(
+        Trip.id.in_([d.trip_id for d in rows if d.trip_id])).all()} if rows else {}
+    files = [{"id": d.id, "name": d.filename, "kind": documents.EXTENSION.get(
+                  d.content_type, "").lstrip(".").upper(),
+              "size": documents._mb(d.size_bytes), "trip": trips.get(d.trip_id or ""),
+              "added": d.created_at.strftime("%Y-%m-%d") if d.created_at else "",
+              "removed_on": documents.removal_date(session, d).isoformat(),
+              "purged": d.purged_at is not None, "notes": d.scan_notes} for d in rows]
+    return templates.TemplateResponse(request, "capture_files.html", {
+        "files": files, "enabled": enabled, "reason": reason,
+        "used": documents._mb(documents.used_bytes(session, user)),
+        "quota": documents._mb(documents.quota_bytes(user)),
+        "retention_months": settings.retention_months})
+
+
+@router.get("/capture/files/{doc_id}/download")
+def capture_file_download(doc_id: str, request: Request,
+                          session: Session = Depends(get_session)):
+    from app import authn, documents
+    from app.api_v1 import document_response
+    user = authn.resolve_user(session, request)
+    doc = documents.own(session, user, doc_id) if user else None
+    if doc is None:
+        return PlainTextResponse("Not found.", status_code=404)
+    data = documents.read(doc)
+    if data is None:
+        return PlainTextResponse("This file's stored copy has been removed.", status_code=410)
+    return document_response(doc, data)
+
+
+@router.post("/capture/files/{doc_id}/delete")
+def capture_file_delete(doc_id: str, request: Request,
+                        session: Session = Depends(get_session)):
+    from app import authn, documents
+    user = authn.resolve_user(session, request)
+    doc = documents.own(session, user, doc_id) if user else None
+    if doc is not None:
+        documents.delete(session, doc)
+        session.commit()
+    return RedirectResponse("/capture/files", status_code=303)
 
 
 def _own_batches(session: Session, user, limit: int):

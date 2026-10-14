@@ -191,6 +191,19 @@ class Settings(BaseSettings):
     # every captured email, attachments included, before anything parses it.
     # Empty = no antivirus; the static PDF checks (extract/filescan.py) always run.
     clamav_url: str = ""
+    # SPEC-8 D-196 (YONDER-179): the documents store — captured PDF/.ics/.eml files.
+    # A local folder the hoster picks; empty = file capture off. ClamAV
+    # (clamav_url) is required too: no unscanned file is ever stored.
+    documents_dir: str = ""
+    document_quota_mb: int = 1024            # per user; an admin can raise one user's
+    document_max_mb: int = 25                # per file
+    # D-196 retention: stored files and raw captures are removed this many months
+    # after their trip ends (or after they arrived, with no trip); the inbox's
+    # Dropped folder is moved to Trash after inbox_dropped_days. "" trash folder =
+    # the mailbox's own (\Trash special-use) folder.
+    retention_months: int = 12
+    inbox_dropped_days: int = 30
+    inbox_trash_folder: str = ""
     # Absolute base (e.g. https://yonder.home.example) for links in emails. Empty
     # => derive from the request that triggered the reset.
     public_base_url: str = ""

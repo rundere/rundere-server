@@ -52,6 +52,11 @@
               <p class="why" style="margin-top:8px">{{ u.username }} doesn't share with admins, so only
                 they can change their password or email.</p>
               {% endif %}
+              <form method="post" action="/users/{{ u.id }}/quota" class="lookup-row" style="margin-top:8px">
+                <input name="quota_mb" inputmode="numeric" placeholder="file quota MB (default {{ default_quota_mb }})"
+                       value="{{ u.document_quota_mb or '' }}">
+                <button class="act tiny" type="submit">Set file quota</button>
+              </form>
               <form method="post" action="/users/{{ u.id }}/traveler" class="lookup-row" style="margin-top:8px">
                 <select name="traveler_id" style="flex:1">
                   <option value="none">— none —</option>
