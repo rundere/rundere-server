@@ -47,6 +47,8 @@
 ] %}
 {% set show_admin = (cur_user is none) or cur_user.is_admin %}
 {% set you = you_all | rejectattr("needs_user") | list if cur_user is none else you_all %}
+{# D-198: a demo server has no connections to make (and no admin: the demo user isn't one). #}
+{% if demo_mode is defined and demo_mode() %}{% set you = you | rejectattr("match", "equalto", "/settings/integrations") | list %}{% endif %}
 {% set admin = ((admin_all | rejectattr("needs_user") | list) if cur_user is none else admin_all) if show_admin else [] %}
 {# Is the current page a settings page? (the hub, any entry, the admin area, About) #}
 {% set ns = namespace(on=cur_path.startswith('/settings') or cur_path.startswith('/admin') or cur_path.startswith('/about')) %}

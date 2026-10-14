@@ -62,3 +62,5 @@ def install(templates) -> None:
     templates.env.globals["review_badge"] = review_badge
     from app.assets import asset
     templates.env.globals["asset"] = asset
+    from app import demo
+    templates.env.globals["demo_mode"] = demo.enabled      # D-198: the banner

@@ -160,6 +160,24 @@ async def shed_load(request, call_next):
         _inflight -= 1
 
 
+@app.middleware("http")
+async def demo_guard(request, call_next):
+    """D-198 (YONDER-181): on a demo server, closed surfaces (MCP, OAuth, SSO,
+    registration, admin, …) answer 404 and every write other than signing in or
+    out is refused. Registered after shed_load, so it runs first (outermost):
+    nothing behind it ever sees a demo write."""
+    from app import demo
+    if not demo.enabled():
+        return await call_next(request)
+    path = request.url.path
+    if demo.is_closed(path):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "not available on the demo server"}, status_code=404)
+    if demo.refuses(request.method, path):
+        return demo.refusal(request)
+    return await call_next(request)
+
+
 # Review queue (D-18 / OQ-07): server-rendered, reached only via the internal
 # Traefik router — the public router exposes /ingest and nothing else.
 from fastapi.staticfiles import StaticFiles  # noqa: E402
@@ -268,7 +286,10 @@ def ownerless_counts(session) -> dict[str, int]:
 
 
 def startup() -> None:
+    from app import demo
     with SessionLocal() as session:
+        if demo.enabled():
+            demo.check_startup(session)     # D-198: raises, and the app doesn't start
         seed_rule_settings(session)
         if settings.auth_required:
             try:
@@ -302,6 +323,12 @@ def startup() -> None:
             langdata.seed_regional_rows(session)
         except Exception:                   # pragma: no cover
             log.exception("language data seed failed; discovery uses JSON fallback")
+    if demo.enabled():
+        # D-198: no background work on a demo server (no mail, no purges, no
+        # alerts). Only the nightly roll-forward of the sample trips runs.
+        _start_demo_jobs()
+        _mount_admin()
+        return
     try:
         # Email-forward capture (D-190): poll the admin's mailbox, if configured.
         from app import inbox
@@ -320,11 +347,22 @@ def startup() -> None:
         monitor.start()
     except Exception:                       # pragma: no cover
         log.exception("health monitor failed to start; admins get no alerts until it does")
+    _mount_admin()
+
+
+def _mount_admin() -> None:
     try:
         from app.admin import mount_admin
         mount_admin(app, engine)
     except Exception:                       # pragma: no cover
         log.exception("SQLAdmin failed to mount; API still serving")
+
+
+def _start_demo_jobs() -> None:
+    """D-198: seed the sample trips if they're missing, then keep them current
+    (app/demo_seed.py: at startup, then 03:00 daily)."""
+    from app import demo_seed
+    demo_seed.start(SessionLocal)
 
 
 @app.get("/health")

@@ -6,12 +6,12 @@
 <div class="card blueprint bp-trip-header">
   <div class="bp-trip-head-row">
     <div>
-      <h1 class="bp-h1">{{ trip.name }}</h1>
+      <h1 class="bp-h1">{{ trip.name }}{% if view_only %} <span class="tag tag-neutral yn-view-only-badge" title="Shared with you to view. You can't change this trip.">{{ icon('lock', 14) }}View only</span>{% endif %}</h1>
       <div class="bp-daterange">{{ trip.start_display }} – {{ trip.end_display }}</div>
       {% if trip.has_notes %}<p class="bp-trip-notes">{{ trip.notes }}</p>{% endif %}
     </div>
     <div class="bp-trip-actions">
-      {% if (trip.adventurelog_collection_id and al_connected) or al_show_push %}
+      {% if not read_only and ((trip.adventurelog_collection_id and al_connected) or al_show_push) %}
       {# Optional AdventureLog integration lives under Advanced — Run·dere is the
          first-party system (SPEC-8 D-146). #}
       <details class="yn-menu">
@@ -48,11 +48,13 @@
       {% endif %}
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Run·dere found</button>
+      {% if not read_only %}
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
       <button class="btn btn-danger"
               hx-post="/trips/{{ trip.id }}/delete"
               hx-confirm="Delete this trip and its activities?">Delete</button>
+      {% endif %}
     </div>
     <span id="push-msg"></span>
   </div>
@@ -62,11 +64,15 @@
   <nav class="yn-tabs" role="tablist" aria-label="Trip sections">
     <button type="button" role="tab" class="yn-tab" data-tab="travellers" onclick="ynTab(this.dataset.tab)">Travellers</button>
     <button type="button" role="tab" class="yn-tab" data-tab="timeline" onclick="ynTab(this.dataset.tab)">Timeline</button>
+    {# D-199: a viewer gets the timeline and map only. Discover, packing, costs,
+       journals and captures belong to the people travelling (owner, 2026-10-14). #}
+    {% if not view_only %}
     <button type="button" role="tab" class="yn-tab" data-tab="discovery" onclick="ynTab(this.dataset.tab)">Discovery</button>
     <button type="button" role="tab" class="yn-tab" data-tab="packing" onclick="ynTab(this.dataset.tab)">Packing</button>
     <button type="button" role="tab" class="yn-tab" data-tab="costs" onclick="ynTab(this.dataset.tab)">Costs</button>
     <button type="button" role="tab" class="yn-tab" data-tab="journal" onclick="ynTab(this.dataset.tab)">Journal</button>
     {% if linked_captures %}<button type="button" role="tab" class="yn-tab" data-tab="captures" onclick="ynTab(this.dataset.tab)">Captures</button>{% endif %}
+    {% endif %}
     {# Per-trip settings go last; Sharing is the first. #}
     {% if sharing %}<button type="button" role="tab" class="yn-tab" data-tab="sharing" onclick="ynTab(this.dataset.tab)">Sharing</button>{% endif %}
   </nav>
@@ -96,8 +102,10 @@
     <a class="btn btn-secondary bp-sm" href="/trips/{{ trip.id }}/timeline.pdf" target="_blank"
        rel="noopener" title="A printable itinerary to share with anyone">Export PDF</a>
     {% endif %}
+    {% if not read_only %}
     <button class="btn btn-primary"
             hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
+    {% endif %}
   </div>
 </div>
 <div class="yn-sec-body">
@@ -140,11 +148,13 @@
             {% if act.map_url %}
             <a class="btn btn-secondary bp-sm" href="{{ act.map_url }}" target="_blank" rel="noopener">Map&nbsp;↗</a>
             {% endif %}
+            {% if not read_only %}
             <button class="btn btn-secondary bp-sm"
                     hx-get="/trips/{{ trip.id }}/activity/{{ act.id }}/edit" hx-target="#modal-root">Edit</button>
             <button class="btn btn-danger bp-sm"
                     hx-post="/trips/{{ trip.id }}/activity/{{ act.id }}/delete"
                     hx-confirm="Delete this activity?">Delete</button>
+            {% endif %}
           </div>
         </div>
       </details>
@@ -154,15 +164,21 @@
   {% endfor %}
 {% else %}
   <div class="card blueprint bp-empty-card">
+    {% if read_only %}
+    <div class="bp-empty-msg">No activities on this trip yet.</div>
+    {% else %}
     <div class="bp-empty-msg">No activities yet. Add flights, lodging, tours and more to build the timeline.</div>
     <button class="btn btn-primary"
             hx-get="/trips/{{ trip.id }}/activity/new" hx-target="#modal-root">+ Add activity</button>
+    {% endif %}
   </div>
 {% endif %}
 </div>
 </section>
 </div>
 
+{# D-199: none of these panels are rendered for a viewer (see the tabs above). #}
+{% if not view_only %}
 <div class="yn-tabpanel" role="tabpanel" data-tab="discovery">
 {% include "_discovery_section.html" %}
 </div>
@@ -178,8 +194,9 @@
 <div class="yn-tabpanel" role="tabpanel" data-tab="journal">
 {% include "_journal_section.html" %}
 </div>
+{% endif %}
 
-{% if linked_captures %}
+{% if linked_captures and not view_only %}
 <div class="yn-tabpanel" role="tabpanel" data-tab="captures">
 <section class="yn-sec" id="sec-captures">
 <div class="bp-timeline-head">
@@ -226,21 +243,21 @@
   </form>
   {% endif %}
 
-  <h3 class="bp-h3" style="margin-top:10px">Travellers with access</h3>
+  <h3 class="bp-h3" style="margin-top:10px">Can edit (travellers with a login)</h3>
   {% if sharing.travellers %}
   <p class="bp-muted">Travellers on this trip who have a login get full access automatically:</p>
   <ul class="yn-share-list" style="list-style:none;padding:0;margin:6px 0;display:flex;flex-wrap:wrap;gap:6px">
-    {% for name in sharing.travellers %}<li class="chip">{{ name }} · full access</li>{% endfor %}
+    {% for name in sharing.travellers %}<li class="chip">{{ icon('edit', 14) }} {{ name }} · can edit</li>{% endfor %}
   </ul>
   {% else %}<p class="bp-muted">No travellers on this trip have a login yet. Add them as a traveller (and link their account) to grant access.</p>{% endif %}
 
-  <h3 class="bp-h3" style="margin-top:10px">Shared for viewing</h3>
+  <h3 class="bp-h3" style="margin-top:10px">Can view</h3>
   {% if sharing.members %}
   <p class="bp-muted">People who can view this trip but aren't travelling on it (read-only):</p>
   <ul class="yn-share-list" style="list-style:none;padding:0;margin:6px 0;display:flex;flex-direction:column;gap:6px">
     {% for m in sharing.members %}
     <li style="display:flex;align-items:center;gap:8px">
-      <span>{{ m.username }} · view-only</span>
+      <span>{{ icon('lock', 14) }} {{ m.username }} · can view</span>
       {% if sharing.can_share %}
       <form method="post" action="/trips/{{ trip.id }}/unshare" style="margin:0">
         <input type="hidden" name="user_id" value="{{ m.id }}">

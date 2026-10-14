@@ -158,16 +158,16 @@ if DEPS:
             st = client.get(f"/api/v1/trips/{tid}/discover/status",
                             headers=_bearer(viewer)).json()
             assert st["running"] is False and st["last_status"] is None
-            # a view-only sharer may research for themselves (as on the web)
+            # D-199: a view-only sharer can't start runs on someone else's trip. The
+            # web's Run button always refused them (403); the API now agrees.
             r = client.post(f"/api/v1/trips/{tid}/discover", headers=_bearer(viewer))
-            assert r.status_code == 202 and calls[-1]["user_id"] == viewer.id
-            assert calls[-1]["nationality"] == "US"
+            assert r.status_code == 403
             # a stranger can't start or watch anything
             assert client.post(f"/api/v1/trips/{tid}/discover",
                                headers=_bearer(stranger)).status_code == 404
             assert client.get(f"/api/v1/trips/{tid}/discover/status",
                               headers=_bearer(stranger)).status_code == 404
-            assert len(calls) == 2
+            assert len(calls) == 1
         finally:
             with SessionLocal() as s:
                 for r in s.query(DiscoveryRun).filter_by(trip_id=tid):

@@ -67,13 +67,20 @@ def viewer_moments(session: Session, trips: list[Trip], now: str, user=None):
     (auth off) filters nothing. Anything that began more than 60 days ago is left
     out of the query: it can't be the next thing, and a booking that long isn't
     what the card is for."""
+    from app.trips import nextup
+    return nextup.plan(viewer_activities(session, trips, now, user), now)
+
+
+def viewer_activities(session: Session, trips: list[Trip], now: str, user=None) -> list:
+    """The viewer's own activities on `trips` that can still matter at `now` (see
+    `viewer_moments`). /api/v1/dashboard fetches them once for both `next_activity`
+    and `upcoming` (YONDER-250)."""
     from datetime import timedelta
 
     from app.models import TripActivity
-    from app.trips import nextup
     ids = [t.id for t in trips]
     if not ids:
-        return None, []
+        return []
     cutoff = (date.fromisoformat(now[:10]) - timedelta(days=60)).isoformat()
     acts = (session.query(TripActivity)
             .filter(TripActivity.trip_id.in_(ids), TripActivity.starts_at >= cutoff).all())
@@ -82,7 +89,7 @@ def viewer_moments(session: Session, trips: list[Trip], now: str, user=None):
         tags = who.activity_map(session, [a.id for a in acts])
         me = getattr(user, "traveler_id", None)
         acts = [a for a in acts if not tags.get(a.id) or (me is not None and me in tags[a.id])]
-    return nextup.plan(acts, now)
+    return acts
 
 
 def _when_words(at: str, today: str) -> str:
