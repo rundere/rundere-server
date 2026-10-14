@@ -75,6 +75,11 @@ def _record(ok: bool, kind: str, ex: Exception | None = None) -> None:
     from datetime import datetime, timezone
     status.update(last_at=datetime.now(timezone.utc), last_ok=ok, last_kind=kind,
                   last_error=None if ok else explain(ex))
+    # Admin alerts (YONDER-253, D-197): explain() is the server's reply, never
+    # our password. A failed send can't be emailed about, hence Pushover & co.
+    from app import notify
+    notify.report("smtp", ok, category="mail", label="Outgoing email (SMTP)",
+                  detail=status["last_error"], threshold=1)
 
 
 def check_connection() -> tuple[bool, str]:

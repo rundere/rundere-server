@@ -273,6 +273,53 @@ request forgery (SSRF) risk.
   - **Settings for other hosters:** `TX_RETENTION_MONTHS` (default 12) and
     `TX_INBOX_DROPPED_DAYS` (default 30).
 
+## 9. Admin notifications (D-197)
+
+- **D-197: Admins are alerted when a service fails (YONDER-253; owner,
+  2026-10-13).** *"Notification as a function, and the first target supported
+  is Pushover … managed in App … so over time we add more Notification
+  targets."*
+  - **Targets** are rows (`notification_targets`) that admins manage in
+    Settings → Notifications, not env variables. Each has a kind (`pushover`
+    first; others plug into `app/notify/`), a name, the alert categories it
+    wants (mail, integrations, storage, jobs, ai, research; none = all) and an on/off
+    switch. Its credentials are encrypted at rest with secretbox (D-151, bound
+    to the row) and never shown again: Pushover's user key shows as "…ab12".
+    Each target has a "Send test" button and shows its last error.
+  - **What's watched** (`alert_states`, one row per thing):
+    - the email inbox (IMAP), reported by the reader on every read, plus a
+      check for a reader that has silently stopped;
+    - outgoing mail (SMTP), reported on every send and on an hourly sign-in
+      check that sends nothing;
+    - each enabled AirTrail and AdventureLog connection, checked hourly and
+      named by its owner's username;
+    - the documents store folder (missing, unwritable, or lost its marker);
+    - the ClamAV scanner;
+    - the daily retention sweep;
+    - the LLM (Ollama);
+    - the trip-research sources — **SearXNG, Open-Meteo and Frankfurter**
+      (owner, 2026-10-13: *"I am very worried that searxng is unreliable"*).
+      Each is probed hourly with a real request; SearXNG's counts as failing
+      when it answers with *no results*, its usual quiet failure, and the
+      alert names the search engines that didn't answer. Hourly, because
+      SearXNG's upstream engines throttle frequent automated queries. Every
+      real call is also counted (`discover/health.py`), the Notifications page
+      shows each source's failure rate since the server started, and a
+      Discovery run in which a source failed half or more of at least 3 calls
+      alerts on its own, then sends "recovered" after a healthy run.
+    Anything not configured isn't watched. A background monitor runs every
+    15 minutes, and the admin page has "Check now".
+  - **When:** an alert goes out when something starts failing (after 2 failures
+    in a row for the inbox, connections, scanner and LLM, so one dropped
+    connection pages nobody; after 1 for mail, the store and the sweep), once
+    every 24 hours while it still is, and once when it recovers (sent quietly).
+    Never per failed attempt.
+  - **Content:** the service's name, a short reason and at most a username.
+    Never a credential (mail and IMAP errors are already redacted), an email
+    address or anyone's content. The Pushover endpoint is fixed, so no URL is
+    taken from anyone (D-152). Sending happens off the caller's thread, so an
+    alert never slows or breaks the thing that failed.
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.

@@ -95,12 +95,39 @@ def task_key(resolver, place) -> str | None:
     return place.country if resolver.scope == "country" else place.city_key
 
 
+# A source that failed at least this share of its calls in a run (and at least
+# MIN_CALLS of them) alerts the admin (YONDER-253, D-197); a later run where it
+# mostly worked sends "recovered".
+FAIL_SHARE, MIN_CALLS = 0.5, 3
+
+
+def report_sources(during: dict) -> None:
+    """Tell the admin how SearXNG, Open-Meteo and Frankfurter did in this run."""
+    from app import notify
+    from discover import health
+    for source, st in during.items():
+        if st.calls < MIN_CALLS:
+            continue                      # too few calls to judge either way
+        bad = st.failed / st.calls >= FAIL_SHARE
+        noun = "searches" if source == health.SEARXNG else "requests"
+        detail = (f"in the last Discovery run, {st.failed} of {st.calls} {noun} failed"
+                  + (f" ({st.empty} came back empty)" if st.empty else ""))
+        if st.engines:
+            detail += " — engines not answering: " + ", ".join(
+                name for name, _ in st.engines.most_common(5))
+        notify.report(f"research-run:{source}", not bad, category="research",
+                      label=f"{health.LABELS.get(source, source)} during Discovery",
+                      detail=detail + ". Findings from it may be missing.", threshold=1)
+
+
 def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
              det_resolvers, llm_resolvers, home_profiles, excluded,
              discovery_profile, nationality, base_currencies, today,
              topic: str | None = None, place_key: str | None = None) -> None:
     """The worker body. Its OWN session (it runs off-request). Commits after each
     finding so the poll panel streams them in. Directly callable in tests."""
+    from discover import health
+    before = health.snapshot()
     try:
         with SessionLocal() as s:
             trip = s.get(Trip, trip_id)
@@ -166,6 +193,7 @@ def _execute(run_id: str, trip_id: str, *, resolve_airport, geocoder,
             run.phase = "done"
             run.finished_at = _now()
             s.commit()
+        report_sources(health.delta(before, health.snapshot()))
     except Exception as ex:                      # pragma: no cover - defensive
         log.exception("discovery run %s failed", run_id)
         try:

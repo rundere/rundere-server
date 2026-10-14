@@ -79,6 +79,9 @@ def fetch(frm: str, to: str, day: str) -> tuple[Decimal | None, str | None]:
         return None, None
     data = get_json(f"{base_url}/rates?{qs(base=frm, quotes=to, date=day)}",
                     timeout=FETCH_TIMEOUT)
+    from discover import health                  # admin alerts (D-197)
+    health.record(health.FRANKFURTER, health.DOWN if data is None else health.OK,
+                  "Frankfurter didn't answer" if data is None else None)
     if isinstance(data, list):           # v2: [{date, base, quote, rate}]
         row = next((r for r in data if isinstance(r, dict) and r.get("quote") == to), None)
         val, as_of = (row or {}).get("rate"), (row or {}).get("date")

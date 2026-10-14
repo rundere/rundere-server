@@ -69,17 +69,29 @@ def status(session: Session) -> tuple[bool, str | None]:
         return False, "file capture isn't set up on this server (TX_DOCUMENTS_DIR)"
     if not (settings.clamav_url or "").strip():
         return False, "file capture needs a virus scanner (TX_CLAMAV_URL)"
+    if folder_problem(session):
+        return False, "the file store isn't available right now"
+    return True, None
+
+
+def folder_problem(session: Session) -> str | None:
+    """What's wrong with the store folder, for the admin (and their alerts,
+    D-197); None when it's fine. Writes the marker on first use."""
+    root = _root()
+    if root is None:
+        return None
     if not root.is_dir() or not os.access(root, os.W_OK):
         log.error("documents: %s is missing or not writable", root)
-        return False, "the file store isn't available right now"
+        return f"the file store folder ({root}) is missing or can't be written to"
     marker = root / MARKER
     if not marker.exists():
         if session.query(Document.id).filter(Document.purged_at.is_(None)).first():
             log.error("documents: %s has no %s but files are on record — is the right "
                       "drive mounted? File capture is off until it is.", root, MARKER)
-            return False, "the file store isn't available right now"
+            return (f"the file store folder ({root}) has lost its {MARKER} marker while "
+                    "files are on record — is the right drive mounted? File capture is off")
         marker.write_text("Run·dere documents store (SPEC-8 D-196). Don't delete this file.\n")
-    return True, None
+    return None
 
 
 def _require(session: Session) -> Path:
@@ -119,7 +131,11 @@ def _scan(data: bytes, ctype: str, filename: str) -> str | None:
     from extract import filescan
     try:
         hit = filescan.clamav_scan(settings.clamav_url, filename or "upload", data)
-    except filescan.ScanUnavailable:
+    except filescan.ScanUnavailable as ex:
+        from app import notify
+        notify.report("antivirus", False, category="storage", label="Virus scanner",
+                      detail=f"the virus scanner isn't answering ({ex}) — an upload was refused",
+                      threshold=1)
         raise Unavailable("the virus scanner can't be reached, so nothing was stored — "
                           "try again shortly") from None
     if hit:

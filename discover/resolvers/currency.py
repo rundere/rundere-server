@@ -79,8 +79,13 @@ class CurrencyResolver:
         still accepted so a self-hosted v1 instance keeps working."""
         if base == symbol:
             return 1.0, None
+        from discover import health
         data = get_json(f"{self.base_url}/rates?{qs(base=base, quotes=symbol)}",
                         timeout=timeout)
+        # Admin alerts (D-197). A currency Frankfurter doesn't quote is an
+        # answer, not a failure — only no answer at all counts.
+        health.record(health.FRANKFURTER, health.DOWN if data is None else health.OK,
+                      "Frankfurter didn't answer" if data is None else None)
         if isinstance(data, list):
             row = next((r for r in data if isinstance(r, dict)
                         and r.get("quote") == symbol), None)

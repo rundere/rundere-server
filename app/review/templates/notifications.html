@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+{# Admin alerts (YONDER-253, SPEC-8 D-197): what's watched, what's failing, and
+   where alerts go. Credentials are write-only: a saved key shows as "…ab12". #}
+<div class="app">
+  <div class="ops"><div class="ops-row"><span class="pagetitle">Notifications</span></div></div>
+  <div class="mail-wrap">
+  {% if msg %}<div class="saved-note">{{ msg }}</div>{% endif %}
+  {% if err %}<div class="violations">{{ err }}</div>{% endif %}
+
+  <section class="mail-card">
+    <h2 class="cap-h">Health</h2>
+    <p class="why">Run·dere checks these every 15 minutes (connections and outgoing mail hourly) and
+      alerts the targets below when one starts failing, once a day while it still is, and when it
+      recovers. A single hiccup that fixes itself doesn't alert.</p>
+    {% if states %}
+    <table class="cap-files">
+      <thead><tr><th>Service</th><th>Status</th><th class="opt">Last checked</th></tr></thead>
+      <tbody>
+      {% for s in states %}
+        <tr>
+          <td>{{ s.label }}{% if s.failing and s.detail %}<div class="muted">{{ s.detail }}</div>{% endif %}</td>
+          <td class="num">{% if s.failing %}<span class="pill warn">failing</span>
+            {% if s.since %}<div class="muted">since {{ s.since.strftime('%Y-%m-%d %H:%M') }} UTC</div>{% endif %}
+            {% else %}<span class="pill ok">ok</span>{% endif %}</td>
+          <td class="opt num">{{ s.checked_at.strftime('%Y-%m-%d %H:%M') if s.checked_at else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Nothing checked yet — the first checks run a couple of minutes after the server starts.</p>
+    {% endif %}
+    <div class="mail-actions">
+      <form method="post" action="/settings/notifications/check">
+        <button class="act" type="submit">Check now</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="mail-card">
+    <h2 class="cap-h">Trip research sources</h2>
+    <p class="why">Every call Discovery and Costs made to these outside services since the server
+      started ({{ sources_since.strftime('%Y-%m-%d %H:%M') }} UTC). "Empty" is SearXNG answering with
+      nothing — its search engines timing out or refusing it — which quietly thins out research.
+      A Discovery run where a source fails half its calls or more sends an alert.</p>
+    <table class="cap-files">
+      <thead><tr><th>Source</th><th class="num">Calls</th><th class="num">Failed</th><th class="opt">Last failure</th></tr></thead>
+      <tbody>
+      {% for s in sources %}
+        <tr>
+          <td>{{ s.label }}{% if s.engines %}<div class="muted">engines not answering: {{ s.engines }}</div>{% endif %}</td>
+          <td class="num">{{ s.calls }}</td>
+          <td class="num">{% if s.calls %}{% if s.share and s.share >= 50 %}<span class="pill warn">{{ s.share }}%</span>{% else %}{{ s.share }}%{% endif %}
+            <div class="muted">{{ s.empty }} empty · {{ s.down }} no answer</div>{% else %}—{% endif %}</td>
+          <td class="opt">{% if s.last_at %}{{ s.last_at.strftime('%Y-%m-%d %H:%M') }} — {{ s.last }}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="mail-card">
+    <h2 class="cap-h">Where alerts go</h2>
+    {% if key_problem %}<div class="violations">Alert targets need a secrets key to store their
+      credentials: {{ key_problem }}</div>{% endif %}
+    {% if targets %}
+    <table class="cap-files">
+      <thead><tr><th>Target</th><th class="opt">Gets</th><th>Last sent</th><th></th></tr></thead>
+      <tbody>
+      {% for t in targets %}
+        <tr>
+          <td><b>{{ t.name }}</b> <span class="muted">{{ t.kind|capitalize }} · user {{ t.secret_hint or '' }}</span>
+            {% if not t.enabled %}<div><span class="pill">off</span></div>{% endif %}
+            {% if t.last_error %}<div class="muted">Last error: {{ t.last_error }}</div>{% endif %}</td>
+          <td class="opt">{% if t.categories %}{% for c in t.categories %}{{ categories[c].split(' — ')[0] if c in categories else c }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}everything{% endif %}</td>
+          <td class="num">{{ t.last_sent_at.strftime('%Y-%m-%d %H:%M') if t.last_sent_at else 'never' }}</td>
+          <td>
+            <form method="post" action="/settings/notifications/{{ t.id }}/test" style="display:inline">
+              <button class="act tiny" type="submit">Send test</button></form>
+            <form method="post" action="/settings/notifications/{{ t.id }}/toggle" style="display:inline">
+              <button class="act tiny" type="submit">{{ 'Turn off' if t.enabled else 'Turn on' }}</button></form>
+            <form method="post" action="/settings/notifications/{{ t.id }}/delete" style="display:inline"
+                  onsubmit="return confirm('Remove “{{ t.name }}”? Its credentials are deleted.');">
+              <button class="act tiny" type="submit">Remove</button></form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No targets yet — alerts are only written to the server log.</p>
+    {% endif %}
+  </section>
+
+  <section class="mail-card">
+    <h2 class="cap-h">Add Pushover</h2>
+    <p class="why">Create an application at <a href="https://pushover.net/apps/build" rel="noopener" target="_blank">pushover.net/apps</a>
+      (name it “Run·dere”) for its API token, and use the user key from your Pushover dashboard —
+      or a group key to reach several admins. Both are stored encrypted and never shown again.</p>
+    <form method="post" action="/settings/notifications/pushover" autocomplete="off">
+      <div class="field"><label for="n-name">Name</label>
+        <input id="n-name" name="name" value="{{ form.name if form else '' }}" placeholder="e.g. My phone"></div>
+      <div class="field"><label for="n-token">Application API token</label>
+        <input id="n-token" name="token" required autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label for="n-user">User or group key</label>
+        <input id="n-user" name="user_key" required autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label for="n-device">Device <span class="yn-help">— optional; blank = all your devices</span></label>
+        <input id="n-device" name="device" value="{{ form.device if form else '' }}"></div>
+      <div class="field"><label for="n-pri">Priority for alerts</label>
+        <select id="n-pri" name="priority">
+          {% for p, label in priorities.items() %}<option value="{{ p }}" {% if (form and form.priority|string == p|string) or (not form and p == 0) %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <span class="hint quiet">Recoveries always arrive quietly.</span></div>
+      <fieldset class="nt-cats"><legend>Send alerts about</legend>
+        {% for key, label in categories.items() %}
+        <label><input type="checkbox" name="categories" value="{{ key }}" checked> <span>{{ label }}</span></label>
+        {% endfor %}
+      </fieldset>
+      <button class="act primary" type="submit" {% if key_problem %}disabled{% endif %}>Add Pushover</button>
+    </form>
+  </section>
+  </div>
+</div>
+{% endblock %}

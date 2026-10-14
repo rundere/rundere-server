@@ -1223,6 +1223,49 @@ class Document(Base):
     purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class NotificationTarget(Base):
+    """Where admin alerts go (YONDER-253, SPEC-8 D-197): one Pushover
+    application/user pair today; other kinds later (app/notify/). Server-wide,
+    managed by admins in Settings → Notifications — not env variables.
+    `secret_ct` is the kind's credentials, encrypted at rest with secretbox
+    (D-151) and never shown again once saved; `config` holds the rest
+    (device, priority). `categories` lists the alert categories it wants
+    (empty = all)."""
+    __tablename__ = "notification_targets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    kind: Mapped[str] = mapped_column(String(16))                 # pushover
+    name: Mapped[str] = mapped_column(String(80), default="")
+    secret_ct: Mapped[str | None] = mapped_column(Text)
+    secret_hint: Mapped[str | None] = mapped_column(String(8))    # "…ab12" of the user key
+    config: Mapped[dict | None] = mapped_column(JsonCol)
+    categories: Mapped[list | None] = mapped_column(JsonCol)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    created_by: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(300))
+
+
+class AlertState(Base):
+    """One watched thing's health (D-197): "inbox", "smtp",
+    "integration:<user>:<kind>", … An alert goes out when it starts failing,
+    as a daily reminder while it still is, and when it recovers — never per
+    failed attempt."""
+    __tablename__ = "alert_states"
+
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    category: Mapped[str] = mapped_column(String(24))
+    label: Mapped[str] = mapped_column(String(120), default="")
+    failing: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    alerted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    last_alert_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detail: Mapped[str | None] = mapped_column(String(300))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class InboxMessage(Base):
     """One email the inbox poller handled, kept so the same message is never
     captured twice and the admin can see what was dropped and why (D-190). No

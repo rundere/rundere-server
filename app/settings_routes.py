@@ -255,3 +255,121 @@ def server_mail_check_inbox(request: Request, session: Session = Depends(get_ses
         f"Connected and signed in; {settings.inbox_folder} holds {n} message"
         f"{'' if n == 1 else 's'}. The server {'offers' if idle else 'does not offer'} "
         f"IMAP IDLE ({'instant' if idle else 'polled'} reading)."))
+
+
+# ------------------------------------------------------------------ notifications
+# Admin alerts (YONDER-253, SPEC-8 D-197): where they go, and what's failing
+# now. Targets are managed here rather than in env variables; a saved
+# credential is encrypted at rest and never shown again (D-151).
+
+def _notify_page(request: Request, session: Session, user, **flash) -> HTMLResponse:
+    from app import notify, secretbox
+    from app.models import AlertState, NotificationTarget
+    from app.notify import pushover
+    targets = session.query(NotificationTarget).order_by(NotificationTarget.created_at).all()
+    states = session.query(AlertState).order_by(AlertState.failing.desc(),
+                                                AlertState.label).all()
+    from discover import health
+    snap = health.snapshot()
+    sources = [{"label": health.LABELS[k], "calls": st.calls, "ok": st.ok,
+                "empty": st.empty, "down": st.down,
+                "share": round(100 * st.failed / st.calls) if st.calls else None,
+                "engines": ", ".join(f"{n} ({c})" for n, c in st.engines.most_common(4)),
+                "last": st.last_failure, "last_at": st.last_failure_at}
+               for k in health.LABELS for st in [snap.get(k, health.SourceStats())]]
+    return templates.TemplateResponse(request, "notifications.html", {
+        "sources": sources, "sources_since": health.since(),
+        "me": user, "targets": targets, "states": states,
+        "categories": notify.CATEGORIES, "priorities": pushover.PRIORITIES,
+        "key_problem": secretbox.problem(), **flash})
+
+
+@router.get("/settings/notifications", response_class=HTMLResponse)
+def notifications_page(request: Request, session: Session = Depends(get_session)):
+    from app import authn
+    return _notify_page(request, session, authn.require_admin(request))
+
+
+@router.post("/settings/notifications/pushover", response_class=HTMLResponse)
+def notifications_add_pushover(request: Request, name: str = Form(""), token: str = Form(""),
+                               user_key: str = Form(""), device: str = Form(""),
+                               priority: str = Form("0"), categories: list[str] = Form([]),
+                               session: Session = Depends(get_session)):
+    """Add a Pushover target. Checked for shape here; "Send test" proves it."""
+    from app import authn, notify, secretbox
+    from app.models import NotificationTarget
+    from app.notify import pushover
+    admin = authn.require_admin(request)
+    if not secretbox.available():
+        return _notify_page(request, session, admin, err=secretbox.problem())
+    try:
+        secrets, config = pushover.validate(token, user_key, device, priority)
+    except ValueError as err:
+        return _notify_page(request, session, admin, err=str(err)[:1].upper() + str(err)[1:] + ".",
+                            form={"name": name, "device": device, "priority": priority})
+    t = NotificationTarget(kind=pushover.KIND, name=(name.strip() or "Pushover")[:80],
+                           config=config, created_by=admin.id, enabled=True,
+                           categories=[c for c in categories if c in notify.CATEGORIES] or None,
+                           secret_hint=pushover.hint(secrets))
+    session.add(t)
+    session.flush()                         # the id is part of the encryption context
+    notify.set_secrets(t, secrets)
+    session.commit()
+    return _notify_page(request, session, admin,
+                        msg=f"Added “{t.name}”. Send a test to make sure it arrives.")
+
+
+def _target(session: Session, target_id: str):
+    from app.models import NotificationTarget
+    return session.get(NotificationTarget, target_id)
+
+
+@router.post("/settings/notifications/{target_id}/test", response_class=HTMLResponse)
+def notifications_test(request: Request, target_id: str,
+                       session: Session = Depends(get_session)):
+    from app import authn, notify
+    admin = authn.require_admin(request)
+    t = _target(session, target_id)
+    if t is None:
+        return _notify_page(request, session, admin, err="No such target.")
+    ok, note = notify.send_to(session, t, "Run·dere test notification",
+                              f"This is a test from Run·dere, sent by {admin.username}. "
+                              "Alerts about failing services arrive the same way.")
+    return _notify_page(request, session, admin,
+                        **({"msg": f"Sent to “{t.name}”."} if ok else
+                           {"err": f"“{t.name}” didn't take it: {note}"}))
+
+
+@router.post("/settings/notifications/{target_id}/toggle", response_class=HTMLResponse)
+def notifications_toggle(request: Request, target_id: str,
+                         session: Session = Depends(get_session)):
+    from app import authn
+    admin = authn.require_admin(request)
+    t = _target(session, target_id)
+    if t is not None:
+        t.enabled = not t.enabled
+        session.commit()
+    return _notify_page(request, session, admin)
+
+
+@router.post("/settings/notifications/{target_id}/delete", response_class=HTMLResponse)
+def notifications_delete(request: Request, target_id: str,
+                         session: Session = Depends(get_session)):
+    from app import authn
+    admin = authn.require_admin(request)
+    t = _target(session, target_id)
+    if t is not None:
+        session.delete(t)
+        session.commit()
+    return _notify_page(request, session, admin, msg="Removed.")
+
+
+@router.post("/settings/notifications/check", response_class=HTMLResponse)
+def notifications_check(request: Request, session: Session = Depends(get_session)):
+    """Run every health check now (alerts go out as usual)."""
+    from app import authn
+    from app.notify import monitor
+    admin = authn.require_admin(request)
+    monitor.run_once(force=True)
+    session.expire_all()
+    return _notify_page(request, session, admin, msg="Checked everything just now.")
