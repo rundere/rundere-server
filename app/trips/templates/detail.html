@@ -47,8 +47,6 @@
         </div>
       </details>
       {% endif %}
-      <button class="btn btn-secondary"
-              hx-get="/trips/{{ trip.id }}/derived-locations" hx-target="#modal-root">What Run·dere found</button>
       {% if not read_only %}
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
