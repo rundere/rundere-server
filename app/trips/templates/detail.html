@@ -64,11 +64,15 @@
   <nav class="yn-tabs" role="tablist" aria-label="Trip sections">
     <button type="button" role="tab" class="yn-tab" data-tab="travellers" onclick="ynTab(this.dataset.tab)">Travellers</button>
     <button type="button" role="tab" class="yn-tab" data-tab="timeline" onclick="ynTab(this.dataset.tab)">Timeline</button>
+    {# D-199: a viewer gets the timeline and map only. Discover, packing, costs,
+       journals and captures belong to the people travelling (owner, 2026-10-14). #}
+    {% if not view_only %}
     <button type="button" role="tab" class="yn-tab" data-tab="discovery" onclick="ynTab(this.dataset.tab)">Discovery</button>
-    {% if not view_only %}<button type="button" role="tab" class="yn-tab" data-tab="packing" onclick="ynTab(this.dataset.tab)">Packing</button>{% endif %}
+    <button type="button" role="tab" class="yn-tab" data-tab="packing" onclick="ynTab(this.dataset.tab)">Packing</button>
     <button type="button" role="tab" class="yn-tab" data-tab="costs" onclick="ynTab(this.dataset.tab)">Costs</button>
     <button type="button" role="tab" class="yn-tab" data-tab="journal" onclick="ynTab(this.dataset.tab)">Journal</button>
     {% if linked_captures %}<button type="button" role="tab" class="yn-tab" data-tab="captures" onclick="ynTab(this.dataset.tab)">Captures</button>{% endif %}
+    {% endif %}
     {# Per-trip settings go last; Sharing is the first. #}
     {% if sharing %}<button type="button" role="tab" class="yn-tab" data-tab="sharing" onclick="ynTab(this.dataset.tab)">Sharing</button>{% endif %}
   </nav>
@@ -173,16 +177,15 @@
 </section>
 </div>
 
+{# D-199: none of these panels are rendered for a viewer (see the tabs above). #}
+{% if not view_only %}
 <div class="yn-tabpanel" role="tabpanel" data-tab="discovery">
 {% include "_discovery_section.html" %}
 </div>
 
-{# Packing is per person (D-123) and needs edit access, so a viewer has none (D-199). #}
-{% if not view_only %}
 <div class="yn-tabpanel" role="tabpanel" data-tab="packing">
 {% include "_packing_section.html" %}
 </div>
-{% endif %}
 
 <div class="yn-tabpanel" role="tabpanel" data-tab="costs">
 {% include "_costs_section.html" %}
@@ -191,8 +194,9 @@
 <div class="yn-tabpanel" role="tabpanel" data-tab="journal">
 {% include "_journal_section.html" %}
 </div>
+{% endif %}
 
-{% if linked_captures %}
+{% if linked_captures and not view_only %}
 <div class="yn-tabpanel" role="tabpanel" data-tab="captures">
 <section class="yn-sec" id="sec-captures">
 <div class="bp-timeline-head">

@@ -603,6 +603,9 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
     from discover.places import derive_locations
 
     acts = list(trip_activities(session, trip.id))
+    # D-199: a viewer gets the timeline and map only. Discover, packing, the
+    # discovery profile and linked captures belong to the people travelling.
+    viewer = scope.trip_role(session, user, trip) == "viewer"
     from app.trips import who
     tags = who.activity_map(session, [a.id for a in acts])
     activities = [_activity_out(a, tags.get(a.id)) for a in acts]
@@ -628,6 +631,10 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
                   for p in derived.places]
     except Exception:                                   # never fail the snapshot on geocode
         places = []
+
+    if viewer:
+        return TripSnapshot(trip=_trip_summary(session, trip, user), activities=activities,
+                            travelers=travelers, places=places)
 
     # discovery findings — PER-USER (4.1): the caller's own Discover tab
     discovery = [_finding_out(f)

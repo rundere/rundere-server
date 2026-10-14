@@ -125,6 +125,11 @@ if DEPS:
         listed = {t["id"]: t["my_role"] for t in
                   client.get("/api/v1/trips", headers=_bearer(u["viewer"])).json()}
         assert listed[tid] == "viewer"
+        # Timeline and map only: nothing personal to the travellers (D-199).
+        v = snaps["viewer"].json()
+        assert v["activities"] and v["travelers"]
+        assert (v["discovery"], v["discovery_items"], v["packing"], v["captures"],
+                v["discovery_profile"], v["trip_rates"]) == ([], [], None, [], None, [])
 
     def test_api_refuses_a_viewers_writes(world):
         tid, u, _ = world
@@ -157,11 +162,12 @@ if DEPS:
         assert stranger.status_code == 404
         v, o = viewer.text, owner.text
         assert "View only" in v and "View only" not in o
-        for control in ("+ Add activity", "Edit trip", 'data-tab="packing"', "Run discovery",
-                        "Add guest", "/delete"):
+        tab = 'data-tab="{}" onclick'.format                         # the tab button itself
+        for control in ("+ Add activity", "Edit trip", "Run discovery", tab("discovery"),
+                        tab("packing"), tab("costs"), tab("journal"), "Add guest", "/delete"):
             assert control in o, control
             assert control not in v, control
-        assert "Tier dinner" in v                                   # the timeline is there
+        assert "Tier dinner" in v and tab("timeline") in v          # the timeline is there
         # Who can sign in, in words; nationality stays with the editors.
         assert "Has login" in v and "Guest · no login" in v
         assert 'title="Nationality">GB' in o and 'title="Nationality">GB' not in v

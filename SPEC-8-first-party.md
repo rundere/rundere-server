@@ -342,14 +342,21 @@ request forgery (SSRF) risk.
     reports `viewer` on every trip.
   - **`has_account`** on each traveller in a snapshot: true when a login is
     linked to that roster person.
-  - **What a viewer sees:** the timeline, map, trip PDF and travellers' names,
-    each marked "Has login" or "Guest · no login". **Not** packing (per person,
-    D-123), not travellers' profile details (nationality), and never journals
-    (D-134). Costs follow D-183, so a viewer sees no costs. Discover is per
-    person (4.1), so a viewer sees only their own findings. Viewers can't start
-    runs on someone else's trip; the API now refuses them, as the web did.
+  - **What a viewer sees: the timeline and the map, nothing personal** (owner,
+    2026-10-14: a viewer is *"invited to see the trip and not participate"*;
+    they *"just focus on timeline and map"*). That's the timeline, the places
+    and map, the trip PDF and travellers' names, each marked "Has login" or
+    "Guest · no login". **No** Discover (they can't run it and needn't care
+    about things to do), packing (*"that is personal"*, D-123), costs (D-183
+    already shows them none), journals (D-134), linked captures, or travellers'
+    profile details such as nationality. Viewers can't start Discovery runs;
+    the API now refuses them, as the web always did.
+  - **API:** a viewer's snapshot carries only `trip`, `activities`,
+    `travelers` and `places`. Discover, the discovery profile, packing,
+    captures and rates are left out.
   - **Web:** a "View only" badge in the trip header. No Edit, Delete, Add,
-    Remove or Run controls, no Packing tab. The Sharing tab splits people into
+    Remove or Run controls. Only the Travellers and Timeline tabs (plus
+    Sharing). The Sharing tab splits people into
     "Can edit (travellers with a login)" and "Can view", in words and icons,
     not colour alone. The server still refuses viewers' writes
     (`scope.trip_or_none`, `require_trip(edit=True)`); hiding only stops
