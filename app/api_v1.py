@@ -357,6 +357,10 @@ class DashboardOut(BaseModel):
     # its whole span), and what's under way now as each item's end moment.
     next_activity: MomentOut | None = None
     in_progress: list[MomentOut] = []
+    # YONDER-250 (SPEC-11 §6): the next moments within `window_h`, across every trip,
+    # soonest first; the first is `next_activity`. The Apple Watch rolls forward
+    # through it instead of rebuilding the list from one trip's cached snapshot.
+    upcoming: list[MomentOut] = []
     counts: dict[str, int]
     capture: dict[str, int]
     trip_count: int
@@ -720,11 +724,15 @@ def api_dashboard(now: Annotated[str | None, Query(
                       description="Your local wall-clock time, YYYY-MM-DDTHH:MM. Timeline "
                                   "times have no zone, so the app sends the device's time; "
                                   "the server's own clock is used when omitted.")] = None,
+                  window_h: Annotated[int, Query(
+                      ge=1, le=168, description="How far ahead `upcoming` looks, in hours.")] = 48,
+                  limit: Annotated[int, Query(
+                      ge=1, le=50, description="The most moments `upcoming` returns.")] = 12,
                   user=Depends(authn.current_user), session: Session = Depends(get_session)):
     from datetime import date
 
     from app.dashboard import (_capture_activity, _next_trip, _pipeline_counts,
-                               _trip_status, viewer_moments)
+                               _trip_status, viewer_activities)
     from app import clock
     from app.trips import nextup, who
     # The app's own clock when it sends one; else the caller's travel-profile
@@ -735,9 +743,12 @@ def api_dashboard(now: Annotated[str | None, Query(
     nxt = _next_trip(trips, today)
     upcoming = sum(1 for t in trips
                    if t.start_date and _trip_status(t, today) == "upcoming")
-    moment, under_way = viewer_moments(session, trips, now, user)
+    acts = viewer_activities(session, trips, now, user)
+    moment, under_way = nextup.plan(acts, now)
+    ahead = nextup.upcoming(acts, now, window_h=window_h, limit=limit)
     names = {t.id: t.name for t in trips}
-    tags = who.activity_map(session, [m.activity.id for m in [moment, *under_way] if m])
+    tags = who.activity_map(session, list({m.activity.id for m in [moment, *under_way, *ahead]
+                                           if m}))
 
     def _moment(m) -> MomentOut:
         a = m.activity
@@ -749,6 +760,7 @@ def api_dashboard(now: Annotated[str | None, Query(
         next_trip=NextTripOut(**nxt) if nxt else None,
         next_activity=_moment(moment) if moment else None,
         in_progress=[_moment(m) for m in under_way],
+        upcoming=[_moment(m) for m in ahead],
         counts=_pipeline_counts(session, user),
         capture=_capture_activity(session, today, user),
         trip_count=len(trips), upcoming_count=upcoming)

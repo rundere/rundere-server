@@ -62,6 +62,10 @@ struct Dashboard: Codable, Sendable {
     /// its end moment). Optional: pre-4.7.1 servers and older caches omit them.
     let next_activity: MomentOut?
     let in_progress: [MomentOut]?
+    /// YONDER-250: the next moments within `window_h` (default 48 h, up to `limit`,
+    /// default 12) across every trip, soonest first; the first is `next_activity`.
+    /// Optional: pre-4.12 servers omit it.
+    let upcoming: [MomentOut]?
     let counts: [String: Int]
     let capture: [String: Int]
     let trip_count: Int

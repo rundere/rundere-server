@@ -9,7 +9,7 @@ from types import SimpleNamespace as NS
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.trips.nextup import label, plan  # noqa: E402
+from app.trips.nextup import label, plan, upcoming  # noqa: E402
 
 try:
     from fastapi.testclient import TestClient
@@ -108,6 +108,35 @@ def test_labels_name_the_moment():
     assert label(m) == "Check-in"
     m, _ = plan([_a("dining", "2031-10-10T19:30")], "2031-10-10T00:00")
     assert label(m) == "Restaurant"                               # not "Reservation time"
+
+
+def _ahead(acts, now, window_h=48, limit=12):
+    return [(m.activity.id, m.edge) for m in upcoming(acts, now, window_h=window_h, limit=limit)]
+
+
+def test_upcoming_rolls_forward_through_the_weekend():
+    # YONDER-250: every moment ahead in the window, soonest first; the 09:00 tie
+    # keeps D-172's order (check out, then drive away).
+    assert _ahead(WEEKEND, "2031-10-10T20:30") == [
+        (HOTEL.id, "start"), (HOTEL.id, "end"), (DRIVE.id, "start"), (DRIVE.id, "end"),
+        (RENTAL.id, "end")]
+    # The first is always the Next-up card's moment.
+    for now in ("2031-10-10T18:00", "2031-10-10T23:00", "2031-10-11T10:00"):
+        m, _ = plan(WEEKEND, now)
+        assert _ahead(WEEKEND, now)[0] == (m.activity.id, m.edge)
+    assert _ahead(WEEKEND, "2031-10-12T19:00") == []
+
+
+def test_upcoming_honours_the_window_and_the_limit():
+    # 12 h from Fri 20:30 is Sat 08:30: only the check-in is inside it.
+    assert _ahead(WEEKEND, "2031-10-10T20:30", window_h=12) == [(HOTEL.id, "start")]
+    # The window's last minute is inside it (Sat 09:00 is 12 h 30 after 20:30).
+    assert _ahead(WEEKEND, "2031-10-10T20:30", window_h=13)[:3] == [
+        (HOTEL.id, "start"), (HOTEL.id, "end"), (DRIVE.id, "start")]
+    assert _ahead(WEEKEND, "2031-10-10T20:30", limit=2) == [(HOTEL.id, "start"), (HOTEL.id, "end")]
+    # A window crossing a month end.
+    late = _a("flight", "2031-11-01T06:00", aid="nov")
+    assert _ahead([late], "2031-10-31T20:00", window_h=12) == [("nov", "start")]
 
 
 if DEPS:
@@ -221,5 +250,60 @@ if DEPS:
             assert nu["kind"] == "activity" and nu["title"] == "Hotel Mesa Alta"
             assert nu["overline"] == "NEXT UP · CHECK-IN · TODAY 22:00"
             assert [(n["title"], n["label"]) for n in nu["in_progress"]] == [("Hertz", "Drop-off")]
+        finally:
+            _clean(tid)
+
+    def _flight_trip(owner_id, name):
+        with SessionLocal() as s:
+            t = Trip(name=name, source="manual", owner_id=owner_id,
+                     start_date="2031-10-11", end_date="2031-10-11")
+            s.add(t)
+            s.flush()
+            a = TripActivity(trip_id=t.id, type="flight", starts_at="2031-10-11T07:00",
+                             values={"when": "2031-10-11T07:00", "from": "PHX", "to": "DEN"})
+            s.add(a)
+            s.commit()
+            return t.id, a.id
+
+    def test_api_dashboard_upcoming_spans_every_trip():
+        # YONDER-250: the Watch's list covers all of the viewer's trips, not just the
+        # next trip's snapshot, and starts with next_activity.
+        owner = _user("nu-owner4")
+        tid, (rental, hotel, drive) = _weekend_trip(owner.id, "NU up weekend")
+        fid, flight = _flight_trip(owner.id, "NU up flight")
+        try:
+            d = client.get("/api/v1/dashboard", params={"now": "2031-10-10T20:30"},
+                           headers=_bearer(owner)).json()
+            got = [(m["activity"]["id"], m["edge"]) for m in d["upcoming"]]
+            assert got == [(hotel, "start"), (flight, "start"), (hotel, "end"),
+                           (drive, "start"), (drive, "end"), (rental, "end")]
+            first = d["upcoming"][0]
+            assert first == d["next_activity"]
+            assert {m["trip_name"] for m in d["upcoming"]} == {"NU up weekend", "NU up flight"}
+            short = client.get("/api/v1/dashboard",
+                               params={"now": "2031-10-10T20:30", "window_h": 12, "limit": 1},
+                               headers=_bearer(owner)).json()
+            assert [m["activity"]["id"] for m in short["upcoming"]] == [hotel]
+            for bad in ({"window_h": 0}, {"window_h": 169}, {"limit": 0}, {"limit": 51}):
+                assert client.get("/api/v1/dashboard", params=bad,
+                                  headers=_bearer(owner)).status_code == 422
+        finally:
+            _clean(tid, fid)
+
+    def test_api_dashboard_upcoming_is_scoped_to_the_viewer():
+        # Another user's trip never appears; on a shared trip, a booking tagged to
+        # another traveller isn't in my list either.
+        owner, stranger = _user("nu-owner5", traveler_id=401), _user("nu-stranger5")
+        tid, (_rental, hotel, _drive) = _weekend_trip(owner.id, "NU up private")
+        with SessionLocal() as s:
+            s.add(TripActivityTraveler(activity_id=hotel, traveler_id=402))
+            s.commit()
+        try:
+            d = client.get("/api/v1/dashboard", params={"now": "2031-10-10T20:30"},
+                           headers=_bearer(stranger)).json()
+            assert all(m["trip_id"] != tid for m in d["upcoming"])
+            mine = client.get("/api/v1/dashboard", params={"now": "2031-10-10T20:30"},
+                              headers=_bearer(owner)).json()
+            assert mine["upcoming"] and hotel not in {m["activity"]["id"] for m in mine["upcoming"]}
         finally:
             _clean(tid)
