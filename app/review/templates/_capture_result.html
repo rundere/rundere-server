@@ -2,7 +2,7 @@
 <div class="cap-msg {{ 'ok' if ok else 'err' }}">
   {{ message }}
   {% if ok and batch_id %}
-  <a class="cap-go" href="/review?bucket=all">Open the review queue →</a>
+  <a class="cap-go" href="/inbox?bucket=all">Open the Inbox →</a>
   {% elif ok and place_id %}
   <a class="cap-go" href="/places">File it to a trip →</a>
   {% endif %}

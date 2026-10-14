@@ -2,11 +2,11 @@
    Nothing here is approved: that stays a human act (D-31). #}
 <div class="cap-result-wrap">
 {% if state == 'waiting' %}
-  <div class="cap-msg ok">Captured. It is still being read. It will appear in the review queue shortly.
-    <a class="cap-go" href="/review?bucket=all">Open the review queue →</a></div>
+  <div class="cap-msg ok">Captured. It is still being read. It will appear in the Inbox shortly.
+    <a class="cap-go" href="/inbox?bucket=all">Open the Inbox →</a></div>
 {% elif state == 'empty' %}
-  <div class="cap-msg err">Captured, but nothing could be read from it. It is kept, and shows in the review queue
-    if it needs a hand. <a class="cap-go" href="/review?bucket=attention">Open the review queue →</a></div>
+  <div class="cap-msg err">Captured, but nothing could be read from it. It is kept, and shows in the Inbox
+    if it needs a hand. <a class="cap-go" href="/inbox?bucket=attention">Open the Inbox →</a></div>
 {% else %}
   <div class="cap-msg ok">Captured. {{ cards|length }} item{{ '' if cards|length == 1 else 's' }} waiting for your approval.</div>
   <div class="cap-cards">
@@ -17,7 +17,7 @@
       <div class="cap-card-head">{{ c.headline }}</div>
       {% if c.subline %}<div class="cap-card-sub">{{ c.subline }}</div>{% endif %}
       {% if c.note and c.bucket == 'attention' %}<div class="cap-card-note">{{ c.note }}</div>{% endif %}
-      <a class="act tiny" href="/review?bucket={{ c.bucket }}">Open in review</a>
+      <a class="act tiny" href="/inbox?bucket={{ c.bucket }}">Open in Inbox</a>
     </article>
     {% endfor %}
   </div>

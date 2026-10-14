@@ -20,7 +20,7 @@
       <div class="cap-pane" data-pane="capture" role="tabpanel">
       <p class="why">
         Paste a link, a page's source, or a Google or Apple Maps directions link. Run·dere reads it
-        and puts it in your review queue to approve. A Google or Apple Maps <em>place</em> link is
+        and puts it in your Inbox to approve. A Google or Apple Maps <em>place</em> link is
         kept in your <a href="/places">saved places</a> instead, to file to a trip when you are ready.
       </p>
       <form id="cap-form" hx-post="/capture/web" hx-target="#cap-result" hx-swap="innerHTML"
@@ -121,7 +121,7 @@
           </li>
           {% endfor %}
         </ul>
-        <a class="cap-go" href="/review?bucket=all">Open the review queue →</a>
+        <a class="cap-go" href="/inbox?bucket=all">Open the Inbox →</a>
         {% else %}
         <p class="why">Nothing captured yet.</p>
         {% endif %}
@@ -130,7 +130,7 @@
 
     <aside class="cap-ways" aria-labelledby="cap-ways-h">
       <h2 class="cap-ways-h" id="cap-ways-h">Other ways to capture</h2>
-      <p class="why">Set up once, and bookings reach your review queue from where you already are.</p>
+      <p class="why">Set up once, and bookings reach your Inbox from where you already are.</p>
       <ul class="cap-ways-list">
         {% for c in channels %}
         <li>

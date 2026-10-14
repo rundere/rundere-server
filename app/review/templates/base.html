@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Review Queue{% endblock %} · Run·dere</title>
+<title>{% block title %}Inbox{% endblock %} · Run·dere</title>
 <script src="{{ asset('/review/static/htmx.min.js') }}" defer></script>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/brand/icons/favicon.svg" type="image/svg+xml">
@@ -162,13 +162,6 @@ a{color:var(--accent)}
 .why{font-size:12px;color:var(--ink-2);margin:0}
 .actions{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);
   background:var(--surface);flex-wrap:wrap;align-items:center}
-.act{font:inherit;font-size:13px;padding:7px 13px;border-radius:var(--r);
-  border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);cursor:pointer}
-.act:hover{border-color:var(--ink-3)}
-.act:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.act.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
-.act.primary[disabled]{opacity:.45;cursor:not-allowed}
-.act.quiet{border-color:transparent;color:var(--ink-2)}
 .spacer{flex:1}
 .violations{margin:10px 16px 0;padding:8px 10px;border-radius:var(--r);
   background:var(--warn-bg);color:var(--warn);font-size:12.5px}
@@ -190,7 +183,6 @@ a{color:var(--accent)}
 .htab td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 .htab td.mono{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
 .rowacts{white-space:nowrap;display:flex;gap:6px}
-.act.tiny{font-size:12px;padding:3px 8px;text-decoration:none;display:inline-block}
 .lookup-row{display:flex;gap:6px}
 .lookup-row input{flex:1}
 .lookup{margin:6px 0 2px;padding:6px 9px;border-radius:var(--r);font-size:12.5px}
@@ -218,17 +210,6 @@ a{color:var(--accent)}
 .cbar.err{background:var(--crit-bg);color:var(--crit)}
 .cplan{padding:8px 12px;border-bottom:1px solid var(--line)}
 /* Sheets (design board: 24px radius; a sheet, not an inline expansion). */
-.rd-sheet-backdrop{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:16px;
-  background:color-mix(in srgb,#000 55%,transparent)}
-.rd-sheet{width:min(720px,100%);max-height:86vh;display:flex;flex-direction:column;outline:none;
-  background:var(--surface);border:1px solid var(--line);border-radius:var(--rd-radius-sheet);box-shadow:0 24px 64px rgba(0,0,0,.45);overflow:hidden}
-.rd-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;
-  border-bottom:1px solid var(--line)}
-.rd-sheet-head h2{margin:0;font-family:var(--display);font-weight:400;font-size:22px}
-.rd-sheet-x{border:0;background:none;color:var(--ink-2);font-size:22px;line-height:1;cursor:pointer;
-  min-width:44px;min-height:44px;border-radius:var(--rd-radius-control)}
-.rd-sheet-x:hover{color:var(--ink);background:var(--surface-sunk)}
-.rd-sheet-body{overflow:auto;padding:4px 0 0}
 .rd-sheet .cpanel{margin:0;border:0;border-radius:0}
 .rd-sheet .cactions{position:sticky;bottom:0;background:var(--surface);padding:14px 22px;
   display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--line)}
@@ -238,8 +219,6 @@ a{color:var(--accent)}
 .rd-sheet .cplan li{font-size:13px}
 .csys{display:inline-block;min-width:96px;font-weight:600;color:var(--ink)}
 .rd-sheet .jobcard>.act{display:none}   /* the sheet's own Close dismisses it */
-@media (max-width:640px){.rd-sheet-backdrop{place-items:end stretch;padding:0}
-  .rd-sheet{width:100%;max-height:92vh;border-radius:var(--rd-radius-sheet) var(--rd-radius-sheet) 0 0}}
 .cplan .chead{font-family:var(--mono);font-size:12px;color:var(--ink-2);margin-bottom:4px}
 .cplan ul{margin:0;padding-left:16px;list-style:none}
 .cplan li{font-size:12.5px;padding:2px 0;color:var(--ink-2)}
@@ -295,9 +274,6 @@ a{color:var(--accent)}
 .job-kind{font-family:var(--mono);font-size:12px;text-transform:uppercase;
   letter-spacing:.07em;color:var(--accent);font-weight:600}
 .job-phase{font-size:13px;color:var(--ink-2)}
-.job-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);
-  margin-left:auto;animation:jobpulse 1s ease-in-out infinite}
-@keyframes jobpulse{0%,100%{opacity:.25}50%{opacity:1}}
 .job-bar{height:6px;border-radius:var(--rd-radius-pill);background:var(--surface-sunk);
   border:1px solid var(--line);overflow:hidden;margin-bottom:6px}
 .job-bar>span{display:block;height:100%;background:var(--accent);transition:width .3s ease}
@@ -324,14 +300,6 @@ a{color:var(--accent)}
 .cap-card h3{font-family:var(--ui);font-size:14px;font-weight:600;margin-bottom:8px}  /* a label, not an Outfit heading (Outfit ≥ 20px) */
 .cap-card .why{margin:0 0 12px}
 .bm{text-decoration:none;display:inline-block;cursor:grab}
-.cap-lbl{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.07em;
-  color:var(--ink-3);margin:12px 0 4px}
-.cap-input,.cap-area{width:100%;background:var(--surface);color:var(--ink);
-  border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font-size:12.5px}
-.cap-input.mono,.cap-area.mono{font-family:var(--mono)}
-.cap-area{resize:vertical;min-height:110px}
-.cap-input:focus-visible,.cap-area:focus-visible{outline:2px solid var(--accent);
-  outline-offset:-1px;border-color:var(--accent)}
 .cap-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,1fr);gap:24px;align-items:start}
 @media (max-width:900px){.cap-main{grid-template-columns:1fr}}
 .cap-side{display:flex;flex-direction:column;gap:16px}
@@ -387,14 +355,6 @@ a{color:var(--accent)}
 .cap-keybox{padding:12px 14px;background:var(--surface-sunk);border:1px solid var(--line);
   border-radius:var(--rd-radius-control);margin-top:8px}
 .cap-trouble{margin-top:16px}.cap-trouble summary{cursor:pointer;color:var(--ink-2)}
-.cap-working{display:inline-flex;align-items:center;gap:8px;color:var(--ink-2)}
-.cap-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:12px}
-.cap-card-item{display:flex;flex-direction:column;gap:6px;padding:14px 16px;background:var(--surface);
-  border:1px solid var(--line);border-radius:var(--rd-radius-card)}
-.cap-card-top{display:flex;gap:6px;flex-wrap:wrap}
-.cap-card-head{font-weight:600}
-.cap-card-sub,.cap-card-note{font-size:13px;color:var(--ink-2)}
-.cap-card-note{color:var(--warn)}
 .cap-fields{margin:12px 0 0;display:flex;flex-direction:column;gap:2px}
 .cap-actions{margin-top:12px}
 .cap-file{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
@@ -420,10 +380,6 @@ a{color:var(--accent)}
 .nt-edit form{max-width:560px;padding:4px 0 8px}
 .cap-advanced{margin-top:10px;font-size:12.5px;color:var(--ink-3)}
 .cap-advanced summary{cursor:pointer}
-.cap-msg{margin-top:12px;padding:9px 11px;border-radius:var(--r);font-size:13px}
-.cap-msg.ok{background:var(--ok-bg);color:var(--ok)}
-.cap-msg.err{background:var(--warn-bg);color:var(--warn)}
-.cap-go{display:inline-block;margin-left:8px;font-size:12.5px}
 
 /* Root dashboard (3.8.1) */
 .dash{padding:20px;display:flex;flex-direction:column;gap:18px}

@@ -22,13 +22,17 @@ from sqlalchemy.orm.attributes import flag_modified
 import rules as rules_module
 from app import scope
 from app.db import SessionLocal, get_session
-from app.models import TravelItem
+from app.models import TravelItem, Trip
 from app.review import jobs
 from app.review import reasons as reason_text
 from app.review import summary as sm
 
 log = logging.getLogger("yonder.review")
 router = APIRouter(prefix="/review")
+# D-200 (YONDER-228): the queue is the Inbox, at /inbox. /review still answers
+# (redirects) so bookmarks and older app links work; the item and action URLs
+# under /review/… are unchanged.
+inbox_router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 from app.icons import install as _install_icons  # noqa: E402
 _install_icons(templates)
@@ -408,6 +412,7 @@ def _view(item: TravelItem) -> dict:
     return {
         "id": item.id,
         "bucket": bucket,
+        "trip_id": item.trip_id,
         "stages": _stage_path(bucket, review),
         "kind": sm.kind_label(payload),
         "headline": sm.headline(payload),
@@ -459,14 +464,45 @@ def _counts(views: list[dict]) -> dict:
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-def queue(request: Request, bucket: str = "attention",
+def review_moved(request: Request):
+    """D-200: the Review queue is now the Inbox. Keep the query (bucket, trip)."""
+    from fastapi.responses import RedirectResponse
+    q = request.url.query
+    return RedirectResponse("/inbox" + (f"?{q}" if q else ""), status_code=301)
+
+
+@inbox_router.get("/inbox", response_class=HTMLResponse)
+def queue(request: Request, bucket: str = "attention", trip: str | None = None,
           session: Session = Depends(get_session)):
     views = _all_views(session, scope.user_of(request))
+    trip_name = None
+    if trip:
+        # D-200: a trip's "waiting in Inbox" link narrows the Inbox to that trip;
+        # the Inbox stays the one place to approve. Only a trip the viewer can see.
+        t = session.get(Trip, trip)
+        if t is None or not scope.can_view_trip(session, scope.user_of(request), t):
+            trip = None
+        else:
+            trip_name = t.name
+            views = [v for v in views if v["trip_id"] == trip]
     shown = views if bucket == "all" else [v for v in views if v["bucket"] == bucket]
     return templates.TemplateResponse(request, "queue.html", {
         "items": shown, "counts": _counts(views),
         "bucket": bucket if bucket in BUCKETS else "attention",
+        "trip_filter": {"id": trip, "name": trip_name} if trip else None,
     })
+
+
+# Buckets an item is still waiting in, i.e. not yet logged (approved and committed).
+WAITING_BUCKETS = ("attention", "waiting", "ready", "staged")
+
+
+def waiting_for_trip(session: Session, user, trip_id: str) -> int:
+    """How many of the viewer's captures filed to this trip are still in the Inbox
+    (D-200): the trip header's "N waiting in Inbox"."""
+    items = (session.query(TravelItem).filter(scope.capture_filter(user),
+                                              TravelItem.trip_id == trip_id).all())
+    return sum(1 for i in items if _view(i)["bucket"] in WAITING_BUCKETS)
 
 
 def _to_process(session: Session, user=None) -> int:

@@ -340,3 +340,36 @@ What the Share Extension (and the app) can rely on. All calls use the app's bear
 - **Open question for the app side:** what the Apple Maps and Google Maps share sheets actually
   hand to an extension on current iOS (URL only, a `.vcf` card, or text). The server accepts a
   Maps URL or resolved fields, so it works either way; the app decides how to get them.
+
+## 10. Navigation: Capture everywhere, Review becomes the Inbox (D-200)
+
+- **D-200: Capture from anywhere; the review queue is the Inbox (YONDER-228; owner,
+  2026-10-12 and 2026-10-14).** Agreed first: keep Home as it is (Up Next) and Trips as
+  its own page; a Capture button available everywhere; Review becomes an **Inbox**.
+  - **Web sidebar:** Home · Trips · Journal, a divider, then Capture · Places · Inbox.
+    The first group is your trips and stories; the second is getting things in and
+    sorting them. Settings stays at the bottom. Capture keeps its sidebar link, since
+    its page holds the guides (email, share sheet, AI assistant).
+  - **Global Capture button**, at the top of the sidebar on every page (in the top bar
+    on phones, where it stands in for the Capture link).
+    - It's a *secondary* button, so a page keeps its one Beacon primary (Home's own
+      Capture stays the primary there).
+    - It opens a sheet over the current page: paste a link or text. It files straight
+      to the Inbox (D-158) and shows the same self-polling result as the Capture page.
+      Files, directions links and the guides stay on the Capture page.
+  - **The Inbox is at `/inbox`.** `/review` redirects there (301, keeping the query), so
+    bookmarks and older links work. The item and action URLs under `/review/…` are
+    unchanged, as is the wording inside ("Needs you", "Ready", "Approve").
+  - **Badge:** the Inbox's count is the items that need you (blocked on you), as
+    Review's was, not everything that arrived.
+  - **Per trip:** a trip with captures filed to it and still in the Inbox says
+    "N waiting in Inbox" in its header. That links to the Inbox narrowed to the trip
+    (`/inbox?trip=…`, only a trip you can see). There's no second queue: the Inbox is
+    where you approve.
+  - **Item detail opens as a sheet** on the web (already so, per the design board).
+  - **API unchanged:** `/api/v1/review…` keeps its paths so the shipped iOS app keeps
+    working. "Inbox" is a name in the interface; an alias can come later if it's worth it.
+  - **iOS:** tabs Today · Trips · **Capture** (centre) · Journal · **Inbox** (with the
+    badge), five being the iOS limit. Places stays where it is in the app. The share
+    sheet stays the main way to capture on iPhone.
+  - **Android (no app yet):** a Capture FAB, with tabs Today · Trips · Journal · Inbox.

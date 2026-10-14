@@ -5,7 +5,7 @@
      hx-trigger="load delay:{{ poll_ms }}ms" hx-target="this" hx-swap="outerHTML"{% endif %}>
   <div class="cap-msg ok">Captured.
     {% if enabled %}<span class="cap-working"><span class="job-dot" aria-hidden="true"></span> Reading it now…</span>
-    {% else %}It will be read when you press Process new captures in the review queue.
-    <a class="cap-go" href="/review?bucket=all">Open the review queue →</a>{% endif %}
+    {% else %}It will be read when you press Process new captures in the Inbox.
+    <a class="cap-go" href="/inbox?bucket=all">Open the Inbox →</a>{% endif %}
   </div>
 </div>

@@ -1,6 +1,6 @@
 {# Global app header, rendered above every page so the three surfaces read as
    ONE product. Wide screens show it as the design's 248px sidebar (theme.css);
-   narrow screens keep the top bar. The bar holds only the daily surfaces (Home, Review, Capture, Trips, Journal); every profile and
+   narrow screens keep the top bar. The bar holds only the daily surfaces (D-200: Home, Trips, Journal | Capture, Places, Inbox); every profile and
    administration page lives under Settings (/settings), which stays
    highlighted while you're on any of them. Active item is derived from the
    request path. #}
@@ -18,13 +18,21 @@
   <a class="wordmark" href="/" style="text-decoration:none" aria-label="Run·dere home" title="Run·dere — say “run there”">
     <span class="rd-mark" aria-hidden="true"></span><span class="rd-wordmark" role="img" aria-label="Run·dere"></span>
     <span>self-hosted</span></a>
+  {# D-200 (YONDER-228): Capture from anywhere. A secondary button, so a page keeps
+     its one Beacon primary; it opens the quick capture sheet over the page. #}
+  {% if not (demo_mode is defined and demo_mode()) %}{# D-198: nothing to capture on the read-only demo #}
+  <button class="navcap" type="button" hx-get="/capture/sheet" hx-target="#modal-root"
+          aria-label="Capture a booking">{{ icon('capture', 18) }}<span>Capture</span></button>
+  {% endif %}
+  {# D-200: your trips and stories, then getting things in and sorting them. #}
   <nav class="appnav" aria-label="Sections">
     <a href="/" class="{{ 'on' if p == '/' else '' }}"><span class="ni">{{ icon('home', 20) }}</span>Home</a>
-    <a href="/review" class="{{ 'on' if p in ('/review', '/review/') else '' }}"><span class="ni">{{ icon('review', 20) }}</span>Review{% set rb = review_badge(request) if request else 0 %}{% if rb %}<span class="navbadge" title="{{ rb }} need you">{{ rb }}</span>{% endif %}</a>
-    <a href="/capture" class="{{ 'on' if p.startswith('/capture') else '' }}"><span class="ni">{{ icon('capture', 20) }}</span>Capture</a>
     <a href="/trips" class="{{ 'on' if p.startswith('/trips') and not in_settings else '' }}"><span class="ni">{{ icon('trips', 20) }}</span>Trips</a>
-    <a href="/places" class="{{ 'on' if p.startswith('/places') else '' }}"><span class="ni">{{ icon('pin', 20) }}</span>Places</a>
     <a href="/journal" class="{{ 'on' if p.startswith('/journal') else '' }}"><span class="ni">{{ icon('journal', 20) }}</span>Journal</a>
+    <span class="navsep" role="separator" aria-hidden="true"></span>
+    <a href="/capture" class="{{ 'on' if p.startswith('/capture') else '' }}"><span class="ni">{{ icon('capture', 20) }}</span>Capture</a>
+    <a href="/places" class="{{ 'on' if p.startswith('/places') else '' }}"><span class="ni">{{ icon('pin', 20) }}</span>Places</a>
+    <a href="/inbox" class="{{ 'on' if p.startswith('/inbox') or p.startswith('/review/item') else '' }}"><span class="ni">{{ icon('review', 20) }}</span>Inbox{% set rb = review_badge(request) if request else 0 %}{% if rb %}<span class="navbadge" title="{{ rb }} need you">{{ rb }}</span>{% endif %}</a>
   </nav>
   <span class="grow"></span>
   <nav class="appnav" aria-label="Settings">

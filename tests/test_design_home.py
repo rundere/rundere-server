@@ -23,7 +23,7 @@ def _fixture():
 def test_home_has_greeting_search_queue_and_trips_not_old_tiles():
     html = _fixture().get("/").text
     assert "Good " in html and 'role="search"' in html and 'name="q"' in html
-    assert "Review queue" in html and "Upcoming trips" in html
+    assert "Inbox" in html and "Upcoming trips" in html      # D-200: the queue panel is the Inbox
     # one Beacon primary on Home: Capture
     assert html.count('class="act primary"') == 1
     for gone in ("Review pipeline", "Capture activity", "Go to", "dash-stage", "dash-card"):

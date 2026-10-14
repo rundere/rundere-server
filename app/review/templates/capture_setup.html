@@ -22,7 +22,7 @@
 
   <div class="cap-wrap cap-guide">
     <p class="why">The capture box is the everyday way in. These are set up once; after that, bookings
-      reach your review queue from where you already are. Pick one.</p>
+      reach your Inbox from where you already are. Pick one.</p>
 
     <nav class="cap-tabs" role="tablist" aria-label="Capture channels">
       {% for t in tabs %}
@@ -56,7 +56,7 @@
           card paste your key and the Ingest URL{% if ingest_is_public %} (<code>{{ ingest_url }}</code>){% endif %},
           then <b>Save</b>.</li>
         <li><b>Check it works:</b> open an email, press <b>Capture to Run·dere</b>. A message says
-          <i>Captured. batch_id=…</i>. The email then shows in your review queue after it has been read.</li>
+          <i>Captured. batch_id=…</i>. The email then shows in your Inbox after it has been read.</li>
       </ol>
       <details class="cap-trouble"><summary>If it doesn't work</summary>
         <ul>
@@ -105,7 +105,7 @@
           <p><a class="act primary bm" href="{{ bookmarklet|safe }}" onclick="return false">Capture to Run·dere</a></p></li>
         <li>Open a booking confirmation page and click the bookmark. A Run·dere tab opens, you may be asked to sign in,
           and the page is captured and read.</li>
-        <li><b>Check it works:</b> that tab ends with a card for what was found, with <b>Open in review</b>.</li>
+        <li><b>Check it works:</b> that tab ends with a card for what was found, with <b>Open in Inbox</b>.</li>
       </ol>
       <details class="cap-trouble"><summary>If it doesn't work</summary>
         <ul>
@@ -119,27 +119,27 @@
       {% if not inbox or not inbox.configured %}
       <p class="why"><b>Not set up on this server yet.</b> You will get your own address, like
         <code>trips+yourcode@your-server</code>. Forward any confirmation email to it, from any of your accounts,
-        and it waits in your review queue. An admin needs to connect the server's mailbox first.</p>
+        and it waits in your Inbox. An admin needs to connect the server's mailbox first.</p>
       {% elif not inbox.address %}
       <p class="why"><a href="/login?next=/capture/setup%3Ftab%3Demail">Sign in</a> to get your own address.</p>
       {% else %}
       <p class="why">This address is yours. Forward a booking confirmation to it, from any of your email accounts,
-        and moments later it is read and waits in your review queue. Nothing is filed until you approve it.</p>
+        and moments later it is read and waits in your Inbox. Nothing is filed until you approve it.</p>
       <div id="inbox-slot">{% with address = inbox.address, rotated = False %}{% include "_inbox_address.html" %}{% endwith %}</div>
       <ol class="cap-steps">
         <li>Copy your address.</li>
         <li>Forward a confirmation to it by hand, or add a forwarding rule. In Gmail: Settings → Filters → create a
           filter for the senders you care about → <i>Forward it to</i> your address (Gmail asks you to confirm the
-          address once; that confirmation email lands in your review queue — open the link in it). In Outlook:
+          address once; that confirmation email lands in your Inbox — open the link in it). In Outlook:
           Rules → <i>Forward to</i>.</li>
-        <li>Check it works: the booking shows in your review queue moments later.{% if inbox.ack and inbox.ack.to %}
+        <li>Check it works: the booking shows in your Inbox moments later.{% if inbox.ack and inbox.ack.to %}
           A <b>“Got it”</b> email goes to <code>{{ inbox.ack.to }}</code> as soon as it arrives.{% endif %}</li>
       </ol>
       {% if inbox.ack and not inbox.ack.to %}
       <p class="why cap-note">Add your email under <a href="/account">Settings → Account</a> to get a “Got it” email
         each time a forward arrives.</p>
       {% endif %}
-      <p class="why cap-note">Anyone who has this address can send things to your review queue, so keep it to yourself.
+      <p class="why cap-note">Anyone who has this address can send things to your Inbox, so keep it to yourself.
         If it leaks, make a new one; the old one stops working at once.</p>
       <button class="act" type="button" hx-post="/capture/setup/email-address" hx-target="#inbox-slot"
               hx-swap="innerHTML" hx-confirm="Make a new address? The current one stops working straight away.">Make a new address</button>
@@ -170,7 +170,7 @@
     {% elif tab == 'ios' %}
       <h2 class="cap-h">iPhone and iPad</h2>
       <p class="why">The Run·dere app adds <b>Run·dere</b> to the share sheet, so a booking page, a confirmation
-        email or a Maps place goes straight to your review queue. On iPad you can also drop a booking PDF,
+        email or a Maps place goes straight to your Inbox. On iPad you can also drop a booking PDF,
         calendar file or saved email onto the app.</p>
       <ol class="cap-steps">
         <li>Install the Run·dere app (ask whoever runs this server for the invite) and sign in to this server.</li>
@@ -216,7 +216,7 @@
           Leave any client id or secret empty: the assistant registers itself.</li>
         <li>Connect. Run·dere opens its own sign-in page, then asks <b>Allow access to your Run·dere data?</b> Choose <b>Allow</b>.</li>
         <li><b>Check it works:</b> ask the assistant <i>"Capture this page for me: https://…"</i>. It uses the
-          <code>capture_url</code> tool, and the item appears in your review queue.</li>
+          <code>capture_url</code> tool, and the item appears in your Inbox.</li>
       </ol>
       <details class="cap-trouble"><summary>Examples and other ways to connect</summary>
         <ul>

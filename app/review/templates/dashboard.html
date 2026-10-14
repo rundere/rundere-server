@@ -84,15 +84,15 @@
     </div>
 
     <div class="hm-cols">
-      <section class="hm-panel" aria-label="Review queue">
+      <section class="hm-panel" aria-label="Inbox">
         <div class="hm-panel-head">
-          <h2>Review queue</h2>
-          <a href="/review">{{ counts.attention }} need you · {{ counts.ready }} ready →</a>
+          <h2>Inbox</h2>
+          <a href="/inbox">{{ counts.attention }} need you · {{ counts.ready }} ready →</a>
         </div>
         {% if queue %}
         <ul class="hm-list">
           {% for q in queue %}
-          <li><a href="/review?bucket={{ q.bucket }}">
+          <li><a href="/inbox?bucket={{ q.bucket }}">
             <span class="hm-kind">{{ q.kind }}</span>
             <span class="hm-main"><b>{{ q.headline }}</b>{% if q.subline %}<small>{{ q.subline }}</small>{% endif %}</span>
             <span class="pill {{ 'warn' if q.bucket == 'attention' else 'ok' }}">{{ 'Needs you' if q.bucket == 'attention' else 'Ready' }}</span>

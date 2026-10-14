@@ -120,6 +120,7 @@ if DEPS:
         for control in ("+ Add activity", "Edit trip", "Run discovery", "Generate packing plan"):
             assert control not in page, control
         assert "View only" not in page                  # that badge is for viewers
+        assert 'class="navcap"' not in page              # D-200's Capture button: nothing to capture
 
     def test_sign_in_page_shows_the_demo_login(demo_on):
         page = client.get("/login").text

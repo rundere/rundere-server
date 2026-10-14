@@ -10,7 +10,7 @@ P = [("login", "/login", "anon"), ("register", "/register", "anon"), ("forgot", 
      ("capture-setup-gmail", "/capture/setup?tab=gmail", "jane"),
      ("capture-setup-ios", "/capture/setup?tab=ios", "jane"),
      ("capture-setup-mcp", "/capture/setup?tab=mcp", "jane"),
-     ("review", "/review", "jane"), ("review-home-profiles", "/review/home", "jane"),
+     ("inbox", "/inbox", "jane"), ("review-home-profiles", "/review/home", "jane"),
      ("journal", "/journal", "jane"), ("places", "/places", "jane"),
      ("trips", "/trips", "jane"),
      *[(f"trip-{t}", f"/trips/{LIS}#{t}", "jane") for t in
