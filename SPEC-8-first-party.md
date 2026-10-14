@@ -463,6 +463,11 @@ request forgery (SSRF) risk.
   at the same minute an end comes before a start. Notes are never next up. Only the
   viewer's own activities count (traveller tags, `app/trips/who.py`).
   `app/trips/nextup.py` is the one implementation. Owner-reported bug, YONDER-177. (proposed)
+  *Upcoming (YONDER-250):* the dashboard also returns `upcoming`, the viewer's next moments
+  within `window_h` hours (default 48, at most 168) across every trip they can see, at most
+  `limit` (default 12, at most 50), soonest first, by the same rule. Its first entry is
+  `next_activity`, so the Apple Watch rolls forward through it instead of rebuilding the
+  list from one trip's cached snapshot (SPEC-11 §6).
 - **D-186 — How per-user connections are built (YONDER-190/192; accepted by the
   owner 2026-10-12).**
   - *Airports:* the bundled table is mwgg/Airports (MIT, with time zones;
