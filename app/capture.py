@@ -881,8 +881,17 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
 
 
 @router.get("/about", response_class=HTMLResponse)
-def about(request: Request):
-    return templates.TemplateResponse(request, "about.html", {
+def about(request: Request, session: Session = Depends(get_session)):
+    """What Run·dere is, how to say it, what this server is and how to get the
+    app. Public on every server (YONDER-278, D-202): someone who lands on a
+    server cold, the demo included, can find out. Signed-out visitors get it in
+    the sign-in card and never see the version."""
+    from app import app_links, authn, demo
+    signed_in = (not settings.auth_required) or authn.resolve_user(session, request) is not None
+    return templates.TemplateResponse(request, "about.html" if signed_in else "about_public.html", {
+        "signed_in": signed_in,
         "version": settings.app_version,
+        "demo": demo.enabled(),
+        "contact": app_links.server_contact(),
         "repo_url": "https://github.com/jeeves5454/rundere-server",
     })

@@ -1,0 +1,122 @@
+{# The About page's content (YONDER-278, D-202). Public: signed-out visitors get it
+   in the sign-in card (about_public.html), signed-in people in the app
+   (about.html). Nothing here is about this server's users or data, and the
+   version is shown only to someone signed in. #}
+{% import "_get_app.html" as getapp %}
+<div class="about">
+  {# Dictionary-style name card: say it, hear it, know what it was called before. #}
+  <div class="rd-dict" lang="en">
+    <span class="rd-mark rd-mark-full rd-dict-mark" aria-hidden="true"></span>
+    <div>
+      <div class="rd-dict-head">
+        <span class="rd-dict-word"><span class="rd-wordmark" role="img" aria-label="Run·dere"></span></span>
+        <span class="rd-dict-say" title="Pronunciation">/ run-THAIR /</span>
+        <audio id="rd-say-audio" preload="none">
+          <source src="/brand/audio/rundere.m4a" type="audio/mp4">
+          <source src="/brand/audio/rundere.webm" type="audio/webm; codecs=opus">
+        </audio>
+        <button type="button" class="rd-dict-play" id="rd-say" hidden
+                aria-label="Hear how to say Run·dere" title="Hear it">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+        </button>
+      </div>
+      <div class="rd-dict-pos">noun · said like “run there”</div>
+      <p class="rd-dict-def">Your trips, from the booking email to the day you go — captured, planned and
+        ready, so all that's left is to run there. <span class="rd-dict-note">Formerly <b>Yonder</b>; renamed in 4.4.0.</span></p>
+    </div>
+  </div>
+  <script>
+  (function(){
+    // Plays the recorded pronunciation (design/audio: AAC for Safari/Chrome/Edge,
+    // Opus for browsers without AAC). If neither plays, the browser's voice says it.
+    var b = document.getElementById('rd-say'), a = document.getElementById('rd-say-audio');
+    var canSpeak = 'speechSynthesis' in window;
+    var canPlay = !!(a && a.canPlayType &&
+      (a.canPlayType('audio/mp4') || a.canPlayType('audio/webm; codecs=opus')));
+    if (!b || !(canPlay || canSpeak)) return;
+    function speak(){
+      if (!canSpeak) return;
+      var u = new SpeechSynthesisUtterance('Run there');
+      u.lang = 'en-US'; u.rate = 0.9;
+      window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+    }
+    b.hidden = false;
+    b.addEventListener('click', function(){
+      if (!canPlay) return speak();
+      a.currentTime = 0;
+      var p = a.play();
+      if (p && p.catch) p.catch(speak);
+    });
+    if (a) a.addEventListener('error', function(){ canPlay = false; });
+  })();
+  </script>
+
+  {# What it is, Run·dere-first (D-146): AdventureLog and AirTrail are optional extras. #}
+  <p class="about-lead">
+    <strong>Run·dere</strong> is a self-hosted travel planner. Forward a booking email, paste a link,
+    or drop in a PDF or calendar file: Run·dere reads it, you approve what it found, and it lands on
+    your trip's timeline and map. It also researches the places you're going, plans what to pack,
+    tracks and splits costs with the people you travel with, and keeps a travel journal. There's an
+    iPhone and iPad app, and AI assistants such as Claude can work with your trips when you let them.
+  </p>
+
+  <section class="about-sec">
+    <h2>This server</h2>
+    {% if demo %}
+    <p>This is the Run·dere <strong>demo server</strong>. It holds sample trips for one fictional
+      traveller: one under way, a road trip coming up and one from earlier in the year. Look around
+      the timeline, map, Discover research, packing, costs and journal. The demo is
+      <strong>read-only</strong>: you can see everything, but nothing can be added or changed, and the
+      sample trips' dates are moved forward each night so they stay current.
+      {% if not signed_in %}The sign-in details are on the <a href="/login">sign-in page</a>.{% endif %}</p>
+    <p>To capture your own bookings, run your own Run·dere server. See
+      <a href="https://rundere.app" target="_blank" rel="noopener">rundere.app</a>, and
+      <a href="https://rundere.app/privacy" target="_blank" rel="noopener">how the demo handles your data</a>.</p>
+    {% else %}
+    <p>This Run·dere server is run by whoever set it up. The trips, bookings and journal on it live
+      here, on this server: they aren't sent to the Run·dere developer.</p>
+    {% if contact %}<p>Questions about this server: <a href="{{ contact.href }}" rel="noopener">{{ contact.label }}</a></p>{% endif %}
+    {% endif %}
+  </section>
+
+  <section class="about-sec" id="get-app">
+    <h2>Get the app</h2>
+    {{ getapp.rows(get_app(request)) }}
+  </section>
+
+  <section class="about-sec">
+    <h2>More</h2>
+    <dl class="about-facts">
+      <dt>Website</dt><dd><a href="https://rundere.app" target="_blank" rel="noopener">rundere.app</a></dd>
+      <dt>Privacy</dt><dd><a href="https://rundere.app/privacy" target="_blank" rel="noopener">rundere.app/privacy</a></dd>
+      <dt>Help</dt><dd><a href="https://rundere.app/support" target="_blank" rel="noopener">rundere.app/support</a></dd>
+      {# AGPL-3.0 §13: anyone using this server over the network can get its source. #}
+      <dt>Source code</dt><dd><a href="{{ repo_url }}" target="_blank" rel="noopener">{{ repo_url }}</a></dd>
+      <dt>License</dt><dd>GNU Affero General Public License v3.0</dd>
+      {% if signed_in %}<dt>Version</dt><dd class="mono">{{ version }}</dd>{% endif %}
+    </dl>
+  </section>
+
+  <p class="about-credit">
+    Run·dere’s code was developed primarily with <strong>Claude</strong> (Anthropic).
+  </p>
+</div>
+
+<style>
+.about{padding:20px 22px;max-width:760px}
+.about-lead{font-size:15.5px;color:var(--ink-2);margin:0 0 22px}
+.about-sec{margin:0 0 22px}
+.about-sec h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
+  font-weight:600;margin:0 0 8px}
+.about-sec p{margin:0 0 8px;color:var(--ink-2)}
+.about-sec a{color:var(--accent)}
+.about-facts{display:grid;grid-template-columns:auto 1fr;gap:10px 20px;margin:0}
+.about-facts dt{color:var(--ink-3);font-size:12px;text-transform:uppercase;
+  letter-spacing:.07em;padding-top:2px;white-space:nowrap}
+.about-facts dd{margin:0;color:var(--ink);overflow-wrap:anywhere}
+.about-facts dd.mono{font-family:var(--mono);font-size:13px}
+.about-credit{padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--surface-sunk);color:var(--ink-2);font-size:14px;margin:0}
+</style>

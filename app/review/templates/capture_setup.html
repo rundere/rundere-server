@@ -172,8 +172,11 @@
       <p class="why">The Run·dere app adds <b>Run·dere</b> to the share sheet, so a booking page, a confirmation
         email or a Maps place goes straight to your Inbox. On iPad you can also drop a booking PDF,
         calendar file or saved email onto the app.</p>
+      {# YONDER-278 / YONDER-260: add this server to the app in one tap. #}
+      {% import "_get_app.html" as getapp %}
+      <div style="margin:0 0 14px">{{ getapp.rows(get_app(request)) }}</div>
       <ol class="cap-steps">
-        <li>Install the Run·dere app (ask whoever runs this server for the invite) and sign in to this server.</li>
+        <li>Install the Run·dere app, then add this server (the button above does it for you) and sign in.</li>
         <li>In Safari, Mail or Maps choose <b>Share → Run·dere</b>. A Maps place is saved and can be filed to a trip;
           directions ask for the travel day; anything else is captured.</li>
         <li><b>Check it works:</b> the capture shows under <a href="/capture">Recent captures</a>. Shared while
