@@ -581,6 +581,27 @@ request forgery (SSRF) risk.
   auth card, SQLAdmin) renders `<html data-theme="dark">` and its pre-paint script keeps
   dark unless the header toggle saved `tx-theme` in this browser. The tokens' OS-following
   light block stays for pages that set no `data-theme`; the iOS app keeps its own rule.
+- **D-202 — About is public on every server (YONDER-278; owner, 2026-10-15).** Someone
+  who lands on a Run·dere server cold, the demo included, can find out what it is, how to
+  say it and how to get the app. `/about` needs no sign-in, and every signed-out page
+  links to it ("About Run·dere · Get the app · rundere.app").
+  - **What it shows:**
+    - the name card with the recorded pronunciation, served by the server;
+    - what Run·dere is (D-146 wording);
+    - "This server": on a demo, what the demo is (D-198); otherwise, that the server is
+      run by its operator and the data stays there, with an optional `TX_SERVER_CONTACT`;
+    - Get the app;
+    - links to rundere.app, its privacy and help pages, and the source code (the
+      AGPL-3.0 §13 offer, now visible to signed-out users).
+  - **Never:** anything about the server's users or data. The version is shown only to
+    someone signed in.
+  - **Get the app:** one "Add this server to the Run·dere app" link,
+    `rundere://add-server?url=<origin>` (YONDER-260), serves every phone. The Android app
+    must handle the same scheme and parameters (YONDER-282). Only the install links
+    differ by platform: `TX_IOS_TESTFLIGHT_URL`, `TX_IOS_APP_STORE_URL` (which replaces
+    TestFlight) and `TX_ANDROID_APP_URL` (Android reads "coming later" until it's set).
+    Only https:// values are used. The sign-in page shows the compact form, which lists
+    only what someone can act on. (proposed)
 - **D-172 — Next up is the soonest moment, not the soonest item.** Every timed timeline
   activity is one or two moments: its start (`when`) and, when it has one, its end
   (`endWhen`) — a rental is a pick-up and a drop-off, a hotel a check-in and a check-out.

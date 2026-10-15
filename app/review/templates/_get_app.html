@@ -1,0 +1,40 @@
+{# "Get the app" (YONDER-278, D-202; the add-server link is YONDER-260). One
+   "Add to the Run·dere app" link serves every phone: the iOS app and, later, the
+   Android app both handle rundere://add-server. Only the install links differ.
+   compact=True (the sign-in page) shows only what someone can act on; the full
+   version (About, Capture) also lists what's coming. #}
+{% macro rows(ga, compact=False) %}
+<div class="rd-getapp{% if compact %} rd-getapp-compact{% endif %}">
+  <a class="rd-getapp-add" href="{{ ga.add_server }}">Add this server to the Run·dere app</a>
+  <p class="rd-getapp-note">Opens the app on your phone and adds this server, ready to sign in.</p>
+  {% if not compact or ga.ios_store or ga.ios_testflight or ga.android %}
+  <ul class="rd-getapp-list">
+    {% if ga.ios_store %}
+    <li><b>iPhone &amp; iPad:</b> <a href="{{ ga.ios_store }}" target="_blank" rel="noopener noreferrer">Get it on the App Store</a></li>
+    {% elif ga.ios_testflight %}
+    <li><b>iPhone &amp; iPad:</b> don't have the app? <a href="{{ ga.ios_testflight }}" target="_blank" rel="noopener noreferrer">Join the TestFlight beta</a></li>
+    {% elif not compact %}
+    <li><b>iPhone &amp; iPad:</b> the app is in private testing. Ask whoever runs this server for an invite.</li>
+    {% endif %}
+    {% if ga.android %}
+    <li><b>Android:</b> <a href="{{ ga.android }}" target="_blank" rel="noopener noreferrer">Get it on Google Play</a></li>
+    {% elif not compact %}
+    <li><b>Android:</b> coming later.</li>
+    {% endif %}
+  </ul>
+  {% endif %}
+</div>
+<style>
+.rd-getapp{display:flex;flex-direction:column;gap:6px}
+.rd-getapp-add{display:inline-flex;align-items:center;justify-content:center;align-self:flex-start;
+  min-height:var(--rd-control-sm,32px);padding:6px 14px;border-radius:var(--r);
+  border:1px solid var(--line-strong);color:var(--ink);background:var(--surface);
+  font-weight:600;text-decoration:none}
+.rd-getapp-add:hover{border-color:var(--accent);color:var(--accent)}
+.rd-getapp-compact .rd-getapp-add{align-self:stretch}
+.rd-getapp-note{margin:0;color:var(--ink-3);font-size:12.5px}
+.rd-getapp-list{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;
+  color:var(--ink-2);font-size:13px}
+.rd-getapp-list a{color:var(--accent)}
+</style>
+{% endmacro %}

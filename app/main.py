@@ -71,8 +71,10 @@ app.include_router(api_router)
 # (they authenticate clients themselves); /oauth/authorize resolves the signed-in
 # user itself so it can send them to /login with the WHOLE request as `next`.
 # YONDER-108: /mcp answers its own 401 (with the OAuth resource-metadata pointer).
+# YONDER-278 (D-202): /about is public, so a visitor who lands on a server (the demo
+# included) can find out what it is, how to say it and how to get the app.
 _PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
-                 "/setup", "/register", "/forgot", "/mcp"}
+                 "/setup", "/register", "/forgot", "/mcp", "/about"}
 _PUBLIC_PREFIX = ("/ingest", "/capture", "/review/static", "/trips/static", "/brand/",
                   "/api/v1/auth/", "/reset/", "/oidc/", "/oauth/", "/.well-known/")
 _ADMIN_PREFIX = ("/admin", "/users")

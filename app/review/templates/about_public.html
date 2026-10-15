@@ -1,0 +1,16 @@
+{% extends "authcard.html" %}
+{% block title %}About{% endblock %}
+{# Signed out (YONDER-278, D-202): the same About, in the sign-in card's frame,
+   so someone who lands on a server cold can find out what it is. #}
+{% block body %}
+<main class="card card-wide">
+  {% include "_about_body.html" %}
+  <p class="about-back"><a href="/login">Sign in</a></p>
+</main>
+<style>
+.card-wide{max-width:720px;padding:6px 4px}
+.about-back{margin:4px 22px 18px;font-size:13px}
+.about-back a{color:var(--accent);text-decoration:none}
+</style>
+{% endblock %}
+{% block authfoot %}{% endblock %}

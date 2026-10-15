@@ -20,7 +20,7 @@
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;background:var(--ground);color:var(--ink);
   font-family:var(--ui);font-size:14px;line-height:1.5;
-  display:flex;align-items:center;justify-content:center;padding:24px}
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px}
 .card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);
   border-radius:var(--r);padding:26px 24px}
 .brand{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:12px}
@@ -28,6 +28,7 @@ body{margin:0;min-height:100vh;background:var(--ground);color:var(--ink);
 .brand span{font-family:var(--mono);font-size:12px;text-transform:uppercase;
   letter-spacing:.09em;color:var(--ink-3)}
 .sub{color:var(--ink-2);font-size:13px;margin:0 0 18px}
+.sub a{color:var(--accent)}
 label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.07em;
   color:var(--ink-3);margin:12px 0 4px}
 input,select{width:100%;background:var(--surface-sunk);color:var(--ink);
@@ -46,9 +47,20 @@ button:hover{filter:brightness(1.05)}
 .links a{color:var(--accent);text-decoration:none}
 .links a:hover{text-decoration:underline}
 .hint{color:var(--ink-3);font-size:12px;margin:4px 0 0}
+/* YONDER-278: every signed-out page says where to find out more. */
+.authfoot{margin:0;font-size:12.5px;color:var(--ink-3);text-align:center}
+.authfoot a{color:var(--ink-2);text-decoration:none}
+.authfoot a:hover{color:var(--accent);text-decoration:underline}
+.getapp-sec{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.getapp-sec h2{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink-3);font-weight:600}
 </style>
 </head>
 <body>
 {% block body %}{% endblock %}
+{% block authfoot %}
+<p class="authfoot"><a href="/about">About Run·dere</a> · <a href="/about#get-app">Get the app</a> ·
+  <a href="https://rundere.app" target="_blank" rel="noopener">rundere.app</a></p>
+{% endblock %}
 </body>
 </html>

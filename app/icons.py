@@ -64,3 +64,5 @@ def install(templates) -> None:
     templates.env.globals["asset"] = asset
     from app import demo
     templates.env.globals["demo_mode"] = demo.enabled      # D-198: the banner
+    from app import app_links
+    templates.env.globals["get_app"] = app_links.get_app  # YONDER-278: Get the app rows

@@ -133,6 +133,12 @@ class Settings(BaseSettings):
     # alerts on, comma-separated, e.g. https://demo.rundere.app/health. Set by the
     # operator in the stack, never by a user, so it isn't a user-supplied fetch (D-152).
     watch_urls: str = ""
+    # YONDER-278 (D-202): the public About page and the sign-in page's "Get the app"
+    # rows. All optional; an empty one hides its line. Only https:// links are used.
+    ios_testflight_url: str = ""     # https://testflight.apple.com/join/…
+    ios_app_store_url: str = ""      # replaces the TestFlight line once the app is public
+    android_app_url: str = ""        # Play listing or test track; Android shows "Coming later" until set
+    server_contact: str = ""         # an email or https URL: "Questions about this server" on About
     # HS256 signing key. MUST be set in prod (empty => a process-ephemeral key,
     # so tokens do not survive a restart — a loud dev-only fallback).
     jwt_secret: str = ""

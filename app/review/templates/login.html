@@ -1,12 +1,14 @@
 {% extends "authcard.html" %}
+{% import "_get_app.html" as getapp %}
 {% block title %}Sign in{% endblock %}
 {% block body %}
 <form class="card" method="post" action="/login">
   <div class="brand"><h1><span class="rd-lockup-stacked" role="img" aria-label="Run·dere"></span></h1><span>sign in</span></div>
   {% if demo %}
+  {# D-198: read-only, and nothing is wiped; the sample dates move forward nightly. #}
   <p class="sub">This is the Run·dere <strong>demo server</strong>: read-only sample trips,
-    reset nightly. Sign in as <strong>{{ demo.username }}</strong> with the password
-    <strong>{{ demo.password }}</strong>.</p>
+    kept current every night. Sign in as <strong>{{ demo.username }}</strong> with the password
+    <strong>{{ demo.password }}</strong>. <a href="/about">What's the demo?</a></p>
   {% else %}
   <p class="sub">Sign in to your Run·dere companion.</p>
   {% endif %}
@@ -37,5 +39,11 @@
     {% if registration_open %}<a href="/register">Create account</a>{% endif %}
   </div>
   {% endif %}
+  {# YONDER-278 / YONDER-260: for someone opening this server's link on their phone,
+     before the app knows about it. Also on SSO-only hosts, where the form is hidden. #}
+  <div class="getapp-sec">
+    <h2>On your phone?</h2>
+    {{ getapp.rows(get_app(request), compact=True) }}
+  </div>
 </form>
 {% endblock %}
