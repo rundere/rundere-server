@@ -1,0 +1,18 @@
+# Template for your PRIVATE pre-publish denylist (scripts/prepublish.py).
+#
+# Copy to .prepublish.local.toml in the repo root (git-ignored, never committed)
+# and fill in what must never appear in a public repo: your names, email
+# addresses, home hostnames, public IP, usernames, home paths. In CI, put the
+# same TOML in the PREPUBLISH_DENYLIST secret.
+#
+# Matching is case-insensitive. A hit is always blocking.
+
+[deny]
+strings = [
+  "your-name",
+  "you@example.com",
+  "your-ddns-name.example.net",
+]
+regexes = [
+  # e.g. a home subnet: '\b10\.20\.\d{1,3}\.\d{1,3}\b'
+]

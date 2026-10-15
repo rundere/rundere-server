@@ -33,7 +33,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "httpx>=0.27"]
+# bandit + pip-audit: the pre-publish check's code and dependency scans
+# (scripts/prepublish.py, YONDER-287). Dev-only; the image doesn't install them.
+dev = ["pytest>=8.0", "httpx>=0.27", "bandit>=1.7.9", "pip-audit>=2.7"]
 
 [tool.setuptools]
 packages = ["app", "app.review", "app.trips", "resolve", "extract", "adapters", "adapters.targets", "discover", "discover.resolvers", "planning"]

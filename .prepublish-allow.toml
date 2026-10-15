@@ -1,0 +1,11 @@
+# Accepted pre-publish findings (scripts/prepublish.py, YONDER-287).
+#
+# Every entry needs a reason. Match as narrowly as you can: a rule plus a path,
+# and a fingerprint (from the report) when the finding is one specific value.
+# Fields: check, rule, path (glob), fingerprint, where (tree | history | commit),
+# reason (required).
+#
+# [[allow]]
+# rule = "private-ipv4"
+# path = "app/net_policy.py"
+# reason = "The SSRF policy lists the private ranges it refuses."
