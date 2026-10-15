@@ -23,12 +23,12 @@
 <div class="yn-arch-row">
   <span class="yn-arch-lbl">Trip type{% if packing_manual %} <span class="yn-arch-manual">· adjusted</span>{% endif %}:</span>
   {% for a in packing_archetypes %}
-  <span class="yn-arch-chip">{{ a.label }}<button class="yn-arch-x" title="Remove {{ a.label }}"
+  <span class="yn-arch-chip">{{ a.label }}{% if not read_only %}<button class="yn-arch-x" title="Remove {{ a.label }}"
       hx-post="/trips/{{ trip.id }}/pack/archetypes/remove"
       hx-vals='{"archetype_id": "{{ a.id }}"}'
-      hx-target="#packing-section" hx-swap="outerHTML" hx-disabled-elt="this">×</button></span>
+      hx-target="#packing-section" hx-swap="outerHTML" hx-disabled-elt="this">×</button>{% endif %}</span>
   {% endfor %}
-  {% if packing_archetype_options %}
+  {% if packing_archetype_options and not read_only %}
   <select class="input yn-arch-add" name="archetype_id"
           hx-post="/trips/{{ trip.id }}/pack/archetypes/add"
           hx-target="#packing-section" hx-swap="outerHTML" hx-trigger="change">
@@ -37,8 +37,8 @@
   </select>
   {% endif %}
 </div>
-<p class="bp-trip-notes yn-arch-note">Adjust the trip type above and the plan re-generates —
-  your ticked-off items are kept. Generated {{ packing_when }}.</p>
+<p class="bp-trip-notes yn-arch-note">{% if not read_only %}Adjust the trip type above and the plan re-generates —
+  your ticked-off items are kept. {% endif %}Generated {{ packing_when }}.</p>
 {% endif %}
 
 {% if packing_warnings %}
@@ -65,6 +65,7 @@
       <span class="bp-group-count" id="pc-{{ grp.category }}">{{ grp.packed }}/{{ grp.total }}</span></summary>
     <div class="card blueprint bp-daycard yn-findings">
       {% for i in grp.rows %}{% include "_packing_item.html" %}{% endfor %}
+      {% if not read_only %}{# D-198 / YONDER-261 #}
       <form class="yn-pack-add" hx-post="/trips/{{ trip.id }}/pack-item/add"
             hx-target="#packing-section" hx-swap="outerHTML">
         <input type="hidden" name="category" value="{{ grp.category }}">
@@ -79,6 +80,7 @@
         </select>
         <button class="btn btn-ghost bp-sm" type="submit">Add</button>
       </form>
+      {% endif %}
     </div>
   </details>
   {% endfor %}
@@ -94,9 +96,11 @@
           <div class="yn-pack-label">{{ i.label }}</div>
           <div class="yn-pack-reason">{{ i.reason }}{% if i.swap_for %} → swapped for {{ i.swap_for }}{% endif %}</div>
         </div>
+        {% if not read_only %}
         <button class="btn btn-ghost bp-sm"
                 hx-post="/trips/{{ trip.id }}/pack-item/{{ i.id }}/keep"
                 hx-target="#packing-section" hx-swap="outerHTML">Bring anyway</button>
+        {% endif %}
       </div>
       {% endfor %}
     </div>

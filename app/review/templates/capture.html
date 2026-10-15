@@ -18,6 +18,11 @@
         <button type="button" role="tab" class="cap-tab" data-pane="recent" aria-selected="false">Recent captures{% if recent %}<span class="cap-tab-st">{{ recent|length }}</span>{% endif %}</button>
       </nav>
       <div class="cap-pane" data-pane="capture" role="tabpanel">
+      {% if demo_mode() %}
+      {# D-198 / YONDER-261: the read-only demo doesn't offer a capture it would refuse. #}
+      <p class="why">Capturing is off on the demo server. The sample trips show what
+        captured bookings turn into; Recent captures lists the ones they came from.</p>
+      {% else %}
       <p class="why">
         Paste a link, a page's source, or a Google or Apple Maps directions link. Run·dere reads it
         and puts it in your Inbox to approve. A Google or Apple Maps <em>place</em> link is
@@ -105,6 +110,7 @@
         </div>
       </form>
       <div id="cap-file-result" aria-live="polite"></div>
+      {% endif %}
       {% endif %}
       </div>
 

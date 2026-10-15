@@ -172,6 +172,21 @@ if DEPS:
         assert "Has login" in v and "Guest · no login" in v
         assert 'title="Nationality">GB' in o and 'title="Nationality">GB' not in v
 
+    def test_web_trip_list_pencil_only_for_editors(world):
+        # YONDER-261: the card's quick edit isn't offered on a view-only share.
+        tid, u, _ = world
+        settings.auth_required = True
+        try:
+            viewer = client.get("/trips?status=past", headers=_bearer(u["viewer"])).text \
+                + client.get("/trips", headers=_bearer(u["viewer"])).text
+            owner = client.get("/trips?status=past", headers=_bearer(u["owner"])).text \
+                + client.get("/trips", headers=_bearer(u["owner"])).text
+        finally:
+            settings.auth_required = False
+        edit = f'hx-get="/trips/{tid}/edit?next=/trips"'
+        assert f"/trips/{tid}" in viewer and edit not in viewer
+        assert edit in owner
+
     def test_web_sharing_tab_names_can_edit_and_can_view(world):
         tid, u, _ = world
         settings.auth_required = True

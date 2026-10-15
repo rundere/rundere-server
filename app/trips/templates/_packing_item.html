@@ -2,6 +2,18 @@
    label actions so an inline edit swaps in place (no page reload). Quantity,
    bag and label edits here are per-trip only — they never touch the master
    packing catalog, only this trip's generated row. #}
+{% if read_only %}
+{# D-198 / YONDER-261: where the trip can't be edited (a demo server), the row
+   says what's packed without offering to change it. #}
+<div class="yn-pack-row yn-filterable{% if i.packed %} yn-packed{% endif %}{% if i.edited %} yn-edited{% endif %}">
+  <span class="yn-pack-check" role="img" aria-label="{{ 'Packed' if i.packed else 'Not packed' }}">{{ '✓' if i.packed else '' }}</span>
+  <div class="yn-pack-main">
+    <div class="yn-pack-label">{{ i.label }}</div>
+    {% if i.reason %}<div class="yn-pack-reason">{{ i.reason }}</div>{% endif %}
+  </div>
+  <div class="yn-pack-controls yn-pack-ro"><span class="yn-mono">×{{ i.quantity }}</span> <span>{{ i.bag_label }}</span></div>
+</div>
+{% else %}
 <div class="yn-pack-row yn-filterable{% if i.packed %} yn-packed{% endif %}{% if i.edited %} yn-edited{% endif %}">
   <button class="yn-pack-check" aria-label="{{ 'Packed' if i.packed else 'Mark packed' }}"
           hx-post="/trips/{{ trip_id }}/pack-item/{{ i.id }}/{{ 'unpack' if i.packed else 'pack' }}"
@@ -37,3 +49,4 @@
             hx-target="closest .yn-pack-row" hx-swap="outerHTML">Remove</button>
   </div>
 </div>
+{% endif %}

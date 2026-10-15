@@ -10,7 +10,7 @@
   <span class="yn-finding-btns">
     {% if f.has_rates %}<button class="btn btn-secondary bp-sm"
       hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/calculator" hx-target="#modal-root">Calculator</button>{% endif %}
-    {% if not f.ended %}<button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun"
+    {% if not f.ended and not read_only %}<button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun"
             hx-disabled-elt="this">Refresh rates</button>{% endif %}
   </span>
   <details class="yn-finding-more"><summary class="yn-run-meta">Details</summary>
@@ -72,6 +72,9 @@
     {% endfor %}
   </details>
   {% endif %}
+  {# D-198 / YONDER-261: no edit buttons where the trip can't be edited (a demo
+     server, a view-only share). The server refuses these writes anyway. #}
+  {% if not read_only %}
   <div class="yn-finding-btns">
     {% if f.rerunnable %}
     <button class="btn btn-secondary bp-sm"
@@ -86,6 +89,7 @@
             hx-disabled-elt="this">{{ 'Unlock' if f.locked else 'Lock' }}</button>
     {% endif %}
   </div>
+  {% endif %}
 </details>
 {% endif %}
 {% endmacro %}

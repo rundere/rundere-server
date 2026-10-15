@@ -26,8 +26,10 @@
            first (owner, 2026-10-14, YONDER-255). #}
         <div class="yn-tcard-head">
           <h3 class="yn-tcard-name"><a class="yn-tcard-link" href="/trips/{{ trip.id }}">{{ trip.name }}</a></h3>
+          {% if trip.can_edit %}
           <button type="button" class="yn-tcard-edit" title="Edit trip" aria-label="Edit {{ trip.name }}"
                   hx-get="/trips/{{ trip.id }}/edit?next=/trips" hx-target="#modal-root">{{ icon("edit", 18) }}</button>
+          {% endif %}
         </div>
         <div class="yn-tcard-meta">
           <span>{{ trip.range_short or 'No dates' }}</span>
@@ -57,6 +59,6 @@
 {% else %}
   <div class="card blueprint bp-empty-card">
     <div class="bp-empty-msg">No trips yet.</div>
-    <button class="btn btn-primary" hx-get="/trips/new" hx-target="#modal-root">+ New trip</button>
+    {% if not demo_mode() %}<button class="btn btn-primary" hx-get="/trips/new" hx-target="#modal-root">+ New trip</button>{% endif %}
   </div>
 {% endif %}
