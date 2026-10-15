@@ -24,3 +24,23 @@ jobs:
         run: |
           python tests/validate.py | tail -1
           # e.g. "35/35 cases behaved as expected" — the regression contract.
+
+  # YONDER-287: the pre-publish check (scripts/prepublish.py). Report-only until
+  # the public-launch steps clear the baseline (YONDER-59); then drop
+  # continue-on-error to make it a required gate. The private denylist comes from
+  # the PREPUBLISH_DENYLIST secret and is never in the repo.
+  prepublish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install .[dev]
+      - name: pre-publish check (current files)
+        env:
+          PREPUBLISH_DENYLIST: ${{ secrets.PREPUBLISH_DENYLIST }}
+        run: python scripts/prepublish.py
