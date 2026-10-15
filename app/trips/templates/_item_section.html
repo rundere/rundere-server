@@ -3,7 +3,7 @@
    Row actions: add to timeline (form filled in from the row), map, website,
    source, hide. Sources for the city are a view you flip to, not a list that
    is always there. #}
-{% import "_finding_card.html" as fc %}
+{% import "_finding_card.html" as fc with context %}
 {% macro section(s, trip) %}
 {% if s.cities | length > 1 %}
 <div class="yn-city-chips" role="tablist" aria-label="Cities">
@@ -29,9 +29,11 @@
               data-label="Sources ({{ c.sources | length }})"
               onclick="ynSources(this)">Sources ({{ c.sources | length }})</button>
       {% endif %}
+      {% if not read_only %}{# D-198 / YONDER-261: the demo doesn't offer what it refuses #}
       <button class="btn btn-ghost bp-sm"
               hx-get="/trips/{{ trip.id }}/finding/{{ f.id }}/edit" hx-target="#modal-root">Edit summary</button>
-      {% if f.rerunnable and not f.external %}
+      {% endif %}
+      {% if f.rerunnable and not f.external and not read_only %}
       <button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/finding/{{ f.id }}/rerun"
               hx-disabled-elt="this">Re-run</button>
       {% endif %}
@@ -81,7 +83,7 @@
           <td class="yn-item-actions">
             {% if i.on_timeline %}
             <a class="yn-on-tl" href="#timeline" onclick="ynTab('timeline')">On timeline{% if i.on_timeline.when %} · {{ i.on_timeline.when }}{% endif %}</a>
-            {% elif not i.hidden and not i.heads_up %}
+            {% elif not i.hidden and not i.heads_up and not read_only %}
             <button class="btn btn-secondary bp-sm"
                     hx-get="/trips/{{ trip.id }}/discovery-item/{{ i.id }}/to-timeline"
                     hx-target="#modal-root">Add to timeline</button>
@@ -92,7 +94,7 @@
                aria-label="Website for {{ i.name }}">Site</a>{% endif %}
             {% if i.source_url %}<a class="yn-icon-link" href="{{ i.source_url }}" target="_blank" rel="noopener"
                aria-label="Source for {{ i.name }}">Source</a>{% endif %}
-            {% if i.hidden %}
+            {% if i.hidden and not read_only %}
             {# Why it's hidden: "not my thing" (the default) is what agents read as a dislike. #}
             <select class="input bp-sm yn-hide-reason" name="reason" aria-label="Why {{ i.name }} is hidden"
                     hx-post="/trips/{{ trip.id }}/discovery-item/{{ i.id }}/hide" hx-vals='{"hidden": "1"}'
@@ -100,11 +102,13 @@
               {% for k, label in hide_reasons %}<option value="{{ k }}" {% if k == i.hidden_reason %}selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
             {% endif %}
+            {% if not read_only %}
             <button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/discovery-item/{{ i.id }}/hide"
                     hx-vals='{"hidden": "{{ '0' if i.hidden else '1' }}"}'
                     hx-target="#discovery-section" hx-swap="outerHTML"
                     title="{{ 'Show it again' if i.hidden else 'Hide — counts as not my thing; change the reason once hidden' }}"
                     aria-label="{{ 'Show' if i.hidden else 'Hide' }} {{ i.name }}">{{ 'Show' if i.hidden else 'Hide' }}</button>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

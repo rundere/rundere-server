@@ -3,7 +3,9 @@
 {% block content %}
 <div class="bp-head">
   <h1 class="bp-h1">Trips</h1>
+  {% if not demo_mode() %}{# D-198 / YONDER-261 #}
   <button class="btn btn-primary" hx-get="/trips/new" hx-target="#modal-root">+ New trip</button>
+  {% endif %}
 </div>
 
 {% if has_any %}

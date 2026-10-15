@@ -157,6 +157,42 @@ if DEPS:
                         json={"type": "note", "values": {"title": "x"}}, headers=h)
         assert r.status_code == 403
 
+    def _write_controls(html: str) -> list[str]:
+        """Controls that would send a write, or open a form for one. Sign out is
+        the demo's one allowed write; a cost's "View" opens read-only."""
+        import re
+        found = re.findall(r'hx-post="([^"]+)"', html)
+        found += re.findall(r'hx-get="([^"]*(?:/edit|/new|to-timeline)[^"]*)"', html)
+        found += re.findall(r'href="(/trips/new[^"]*)"', html)
+        found += re.findall(r'<form[^>]*method="post"[^>]*action="([^"]+)"', html, re.I)
+        return [f for f in found if f != "/logout" and not re.search(r"/costs/.*/edit$", f)]
+
+    def test_the_demo_offers_no_write_controls(seeded, monkeypatch):
+        # YONDER-261 (D-198): the demo refuses every write, so it doesn't offer one.
+        _, uid = seeded
+        h = _bearer(uid)
+        with SessionLocal() as s:
+            ids = [t.id for t in demo_seed.seeded_trips(s)]
+        pages = ["/", "/trips", "/trips?status=past", "/journal", "/places", "/capture",
+                 *(f"/trips/{i}" for i in ids)]
+        for path in pages:
+            html = client.get(path, headers=h).text
+            assert _write_controls(html) == [], path
+        france = client.get(f"/trips/{_france_id()}", headers=h).text
+        assert "yn-pack-row" in france and "Not packed" in france    # packing still shows
+        assert "yn-item" in france                                    # and the Discover rows
+
+        # The same pages on a real server still offer them to the trip's owner.
+        monkeypatch.setattr(settings, "demo_mode", False)
+        assert "yn-tcard-edit" in client.get("/trips", headers=h).text
+        france = client.get(f"/trips/{_france_id()}", headers=h).text
+        assert "/pack-item/" in france and "/discovery-item/" in france and "/lock" in france
+        assert "＋ Journal note" in client.get("/", headers=h).text
+
+    def _france_id():
+        with SessionLocal() as s:
+            return _trips(s)["demo:france"].id
+
     # ------------------------------------------------------------------ cli
     def test_the_cli_refuses_outside_a_demo_server(capsys):
         assert settings.demo_mode is False

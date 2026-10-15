@@ -6,10 +6,10 @@
     <div class="dash-hero">
       <div>
         <h1>Saved places</h1>
-        <p>Places you kept from a Google or Apple Maps link. File one to a trip now, with or without a date.</p>
+        <p>Places you kept from a Google or Apple Maps link.{% if not demo_mode() %} File one to a trip now, with or without a date.{% endif %}</p>
       </div>
       <div class="dash-hero-actions">
-        <a class="act tiny" href="/capture">＋ Save a place</a>
+        {% if not demo_mode() %}<a class="act tiny" href="/capture">＋ Save a place</a>{% endif %}{# D-198 / YONDER-261 #}
         <a class="act tiny" href="/">← Home</a>
       </div>
     </div>

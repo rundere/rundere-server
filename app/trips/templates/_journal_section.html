@@ -7,14 +7,16 @@
     <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Journal">▾</button>
     <h2 class="bp-h2">Journal</h2>
   </div>
+  {% if not demo_mode() %}{# D-198 / YONDER-261 #}
   <div class="bp-head-actions">
     <a class="btn btn-secondary" href="/journal">Write an entry</a>
   </div>
+  {% endif %}
 </div>
 <div class="yn-sec-body">
 {% if not journal %}
-<p class="bp-empty">No journal entries on this trip yet. Link one from the
-  <a href="/journal">Journal</a> page — only you see your entries here.</p>
+<p class="bp-empty">No journal entries on this trip yet.{% if not demo_mode() %} Link one from the
+  <a href="/journal">Journal</a> page — only you see your entries here.{% endif %}</p>
 {% else %}
 {% for g in journal %}
 <section class="bp-group">

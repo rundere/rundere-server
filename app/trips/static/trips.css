@@ -326,6 +326,14 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 .yn-pack-label-input:focus { border-color: var(--color-accent); outline: none;
   background: var(--color-surface); }
 .yn-pack-reason { font-size: 13px; color: var(--color-neutral-600); margin-top: 1px; }
+/* Read-only rows (D-198 demo, YONDER-261): a status mark, not a button. */
+span.yn-pack-check { display: inline-flex; align-items: center; justify-content: center;
+  cursor: default; box-sizing: border-box; }
+span.yn-pack-check:hover { border-color: var(--color-neutral-400); }
+.yn-pack-row.yn-packed span.yn-pack-check:hover { border-color: var(--color-accent); }
+.yn-pack-label { font-size: 15px; font-weight: 600; color: var(--color-text); }
+.yn-pack-row.yn-packed .yn-pack-label { text-decoration: line-through; color: var(--color-neutral-600); }
+.yn-pack-ro { display: flex; gap: 10px; font-size: 13px; color: var(--color-neutral-600); }
 /* Wraps qty/bag/remove as one unit. `contents` on wide screens means it's invisible
    to layout — those three stay direct flex children of .yn-pack-row exactly as
    before; only the <=640px rule below turns it into a real (wrapping) flex group,

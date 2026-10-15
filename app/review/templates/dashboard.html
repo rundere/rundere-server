@@ -22,11 +22,13 @@
         {% endif %}
         <p>Capture a booking, review what Run·dere found, then watch your trips fill in.</p>
       </div>
+      {% if not demo_mode() %}{# D-198 / YONDER-261: the read-only demo doesn't offer writes #}
       <div class="dash-hero-actions">
         <a class="act primary" href="/capture">{{ icon('capture', 18) }} Capture</a>
         <a class="act" href="/journal">＋ Journal note</a>
         <a class="act" href="/trips/new?next=/trips">＋ New trip</a>
       </div>
+      {% endif %}
     </div>
 
     <form class="hm-search" action="/trips" method="get" role="search">
@@ -78,7 +80,7 @@
       {% else %}
       <div class="dash-empty">
         <span>No trip coming up yet.</span>
-        <a class="act tiny" href="/trips/new?next=/trips">＋ Plan a trip</a>
+        {% if not demo_mode() %}<a class="act tiny" href="/trips/new?next=/trips">＋ Plan a trip</a>{% endif %}
       </div>
       {% endif %}
     </div>
@@ -122,7 +124,7 @@
           {% endfor %}
         </div>
         {% else %}
-        <p class="hm-empty">No trips coming up. <a href="/trips/new?next=/trips">Plan one</a>.</p>
+        <p class="hm-empty">No trips coming up.{% if not demo_mode() %} <a href="/trips/new?next=/trips">Plan one</a>.{% endif %}</p>
         {% endif %}
       </section>
     </div>

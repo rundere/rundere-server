@@ -2,7 +2,11 @@
    Root element carries id="journal-panel"; every mutation hx-swaps this outerHTML,
    so the form resets and the list refreshes together (app/journal_web.py). #}
 <div id="journal-panel">
+  {# D-198 / YONDER-261: the read-only demo shows the entries without the compose
+     box or the per-entry actions. #}
+  {% set ro = demo_mode() %}
 
+  {% if not ro %}
   <form class="cap-card" style="padding:0" hx-post="/journal"
         hx-target="#journal-panel" hx-swap="outerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset()">
@@ -29,10 +33,11 @@
       <button type="submit" class="act primary">Save note</button>
     </div>
   </form>
+  {% endif %}
 
   {% if not groups %}
   <div class="dash-empty" style="margin-top:14px">
-    <span>No journal entries yet — write your first one above.</span>
+    <span>No journal entries yet{% if not ro %} — write your first one above{% endif %}.</span>
   </div>
   {% else %}
   <div style="margin-top:6px;color:var(--ink-3);font-size:12px">
@@ -51,6 +56,9 @@
           {% for tag in e.tags %}<span class="pill">{{ tag }}</span>{% endfor %}
         </div>
         <div style="white-space:pre-wrap;margin:6px 0 10px">{{ e.body }}</div>
+        {% if ro %}
+        {% for t in e.trips if t.id == e.trip_id %}<span class="age">{{ t.name }}</span>{% endfor %}
+        {% else %}
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <select name="trip_id" class="cap-input sm" style="width:auto;font-size:12px;padding:4px 8px"
                   hx-post="/journal/{{ e.id }}/attach" hx-target="#journal-panel"
@@ -64,6 +72,7 @@
                   hx-target="#journal-panel" hx-swap="outerHTML"
                   hx-confirm="Delete this journal entry?">Delete</button>
         </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>

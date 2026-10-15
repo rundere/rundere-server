@@ -211,7 +211,11 @@ def _list_context(session: Session, q: str, status: str, user=None) -> dict:
     pack = packing_progress(session, [t.id for t in trips], user)
 
     def disp(t):
-        return _trip_display(t, acts_by_trip.get(t.id, ()), today, pack.get(t.id))
+        d = _trip_display(t, acts_by_trip.get(t.id, ()), today, pack.get(t.id))
+        # The card's pencil only where the edit would be accepted: not a
+        # view-only share (D-122), not a demo server (D-198, YONDER-261).
+        d["can_edit"] = scope.can_edit_trip(session, user, t)
+        return d
 
     groups = []
     if tab == "upcoming":
@@ -306,7 +310,10 @@ def _sharing_context(session: Session, trip: Trip, user=None) -> dict:
                        if roster_tids else [])
     traveller_user_ids = {u.id for u in traveller_users}
     owner = session.get(User, trip.owner_id) if trip.owner_id else None
-    can_share = bool(user.is_admin or (trip.owner_id and trip.owner_id == user.id))
+    from app import demo
+    # Not on a demo server (D-198, YONDER-261): the share would be refused.
+    can_share = bool(user.is_admin or (trip.owner_id and trip.owner_id == user.id)) \
+        and not demo.read_only()
     # An explicit share only makes sense for a user who isn't already the owner,
     # a traveller (full access already), or shared.
     add_choices = [u for u in session.query(User).order_by(User.username).all()
