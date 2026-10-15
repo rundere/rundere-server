@@ -12,6 +12,7 @@ build/
 dist/
 
 # secrets & local state — never commit
+.prepublish.local.toml
 .env
 .env.*
 !.env.example
