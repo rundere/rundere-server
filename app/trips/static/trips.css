@@ -725,10 +725,15 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
    A vertical 1px line (Night 600 in dark, the border token in light) down each
    day's items, an 8px node per item, and the next moment's node lit: Silver with
    the brand glow in dark, ink with a Beacon ring in light (the glow is dark-only). */
-.yn-tl { position: relative; }
-.yn-tl::before { content: ""; position: absolute; top: 0; bottom: 0; left: 23px;
-  width: 1px; background: var(--rd-border); pointer-events: none; }
+/* The line is drawn per row, node to node, so it never runs through an opened
+   item's detail panel; the card clips to its radius so a panel or row hover
+   doesn't spill past the rounded corners. */
+.yn-tl { position: relative; overflow: hidden; }
 .yn-tl .yn-actrow { padding-left: 40px; position: relative; }
+.yn-tl .yn-actrow::before { content: ""; position: absolute; top: 0; bottom: 0; left: 23px;
+  width: 1px; background: var(--rd-border); pointer-events: none; }
+.yn-tl .bp-act:first-child > .yn-actrow::before { top: 50%; }
+.yn-tl .bp-act:last-child > .yn-actrow::before { bottom: 50%; }
 .yn-tl-node { position: absolute; left: 20px; top: 50%; width: 8px; height: 8px;
   margin-top: -4px; border-radius: var(--rd-radius-pill); background: var(--rd-surface);
   box-shadow: inset 0 0 0 1px var(--rd-border); box-sizing: border-box; }

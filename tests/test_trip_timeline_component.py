@@ -74,3 +74,12 @@ if DEPS:
             assert 'class="yn-tl-node"' in html and "is-next" not in html
         finally:
             _clean(tid)
+
+    def test_line_stays_out_of_opened_panels_and_inside_the_card():
+        # The line is drawn per row (node to node), never down the whole card, so an
+        # opened item's detail panel has no line through it; the card clips to its
+        # radius so a panel's background doesn't spill past the rounded corners.
+        css = (ROOT / "app/trips/static/trips.css").read_text()
+        assert ".yn-tl::before" not in css
+        assert ".yn-tl .yn-actrow::before" in css
+        assert ".yn-tl { position: relative; overflow: hidden; }" in css

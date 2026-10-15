@@ -97,6 +97,9 @@ if DEPS:
             drive = next(a for a in s.query(m.TripActivity).filter_by(trip_id=france.id)
                          if a.type == "drive")
             assert drive.geo["route"]["polyline"]
+            # Its Map button opens the saved directions, not a text search.
+            from app.trips.types import map_url
+            assert map_url("drive", drive.values) == "https://maps.app.goo.gl/SWTsFzrYAUioGcgJ7"
             # Seeding again does nothing unless asked to replace.
             assert demo_seed.seed(s, today=TODAY)["seeded"] is False
 
