@@ -171,6 +171,16 @@ if DEPS:
         demo.check_startup(s)
         assert authn.verify_password("new-pass", s.query(User).one().password_hash)
 
+    def test_startup_turns_off_the_request_log(demo_on, monkeypatch):
+        # YONDER-277: uvicorn's access line carries the visitor's IP; a demo
+        # server writes none. Warnings and errors still log.
+        import logging
+        access = logging.getLogger("uvicorn.access")
+        monkeypatch.setattr(access, "disabled", False)
+        demo.check_startup(_fresh_session())
+        assert access.disabled is True
+        assert not logging.getLogger("rundere.demo").disabled
+
     def test_off_by_default_nothing_changes():
         assert settings.demo_mode is False
         assert not demo.refuses("GET", "/trips")

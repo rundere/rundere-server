@@ -396,6 +396,11 @@ request forgery (SSRF) risk.
     Weather, rates, routes and places are stored in the seed. The only outbound
     traffic is OpenStreetMap tiles for the PDF maps (allowed by the demo's
     firewall).
+  - **No request log (YONDER-277, owner 2026-10-15).** A demo server turns off
+    uvicorn's access log, whose lines carry the visitor's IP. Traffic is counted
+    in aggregate only, by country and region: the proxy pipeline strips the IP
+    before anything is stored for analytics. The runbook (§8) and the
+    rundere.app privacy page describe the same thing.
   - **It refuses to start** without sign-in, without the demo login, with mail
     (SMTP or IMAP) or SSO configured, or on a database holding any user other
     than the demo user. A real server can never be flipped into demo mode by
