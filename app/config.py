@@ -271,7 +271,7 @@ class Settings(BaseSettings):
     # that ships its own app bundle needs to change them. Empty = no app client.
     oauth_app_redirect_uris: str = "https://rundere.app/auth/callback"
 
-    app_version: str = "4.12.4"
+    app_version: str = "4.12.5"
 
     @property
     def watch_url_list(self) -> tuple[str, ...]:
