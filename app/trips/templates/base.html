@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -18,8 +18,9 @@
 <link rel="stylesheet" href="{{ asset('/trips/static/trips.css') }}">
 <script>
 // Apply the saved theme BEFORE first paint so there is no light/dark flash.
-(function(){try{var t=localStorage.getItem('tx-theme');
-  if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+// No saved choice means dark, whatever the OS prefers (D-201).
+(function(){var t;try{t=localStorage.getItem('tx-theme');}catch(e){}
+  document.documentElement.setAttribute('data-theme',t||'dark');})();
 function txToggleTheme(){var r=document.documentElement,c=r.getAttribute('data-theme');
   var n=c==='dark'?'light':(c==='light'?'dark':
     (window.matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark'));

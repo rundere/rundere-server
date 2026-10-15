@@ -45,3 +45,12 @@ if DEPS:
         assert base and all("--rd-" in v for v in base), base
         # no per-theme re-declaration is left: tokens.css owns dark/light
         assert theme.count("--ground:") == 1 and trips.count("--color-bg:") == 1
+
+    def test_web_ui_defaults_to_dark():
+        # D-201: dark unless this browser saved a choice, whatever the OS prefers.
+        for path in ("/", "/trips", "/login"):
+            html = client.get(path, follow_redirects=True).text
+            assert '<html lang="en" data-theme="dark">' in html, path
+            assert "t||'dark'" in html, path
+        admin = (ROOT / "app/review/admin_templates/sqladmin/base.html").read_text()
+        assert "t||'dark'" in admin

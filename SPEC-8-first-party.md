@@ -571,6 +571,11 @@ request forgery (SSRF) risk.
   design README's 44px touch target stays the default; every interactive control is at least
   the system's small size (`--rd-control-sm`, 32px). The theme toggle, selects, disclosure
   summaries and tab buttons use the floor rather than 44. Nothing goes below 32. (proposed)
+- **D-201 — The web UI is dark until the person picks light.** Owner decision 2026-10-14:
+  dark is the default on the web whatever the OS prefers. Every base template (app, trips,
+  auth card, SQLAdmin) renders `<html data-theme="dark">` and its pre-paint script keeps
+  dark unless the header toggle saved `tx-theme` in this browser. The tokens' OS-following
+  light block stays for pages that set no `data-theme`; the iOS app keeps its own rule.
 - **D-172 — Next up is the soonest moment, not the soonest item.** Every timed timeline
   activity is one or two moments: its start (`when`) and, when it has one, its end
   (`endWhen`) — a rental is a pick-up and a drop-off, a hotel a check-in and a check-out.
