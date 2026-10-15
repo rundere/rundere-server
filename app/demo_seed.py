@@ -232,7 +232,10 @@ TRIPS = [
            _pt("to", "NCE", (43.6584, 7.2159))]),
          ("drive", (23, "09:30"), (23, "18:30"),
           {"route": "Paris → Nice (A6 / A7 / A8)", "from": "Paris", "to": "Nice",
-           "distance": "930 km"},
+           "distance": "930 km",
+           # The saved directions link, so Map opens the route itself rather than a
+           # search for the route's text (owner, 2026-10-14).
+           "mapLink": "https://maps.app.goo.gl/SWTsFzrYAUioGcgJ7"},
           [_pt("from", "Paris", "paris"), _pt("to", "Nice", "nice")]),
          ("lodging", (23, "19:00"), (26, "09:00"),
           {"name": "Villa Promenade (sample)", "type": "Hotel",
