@@ -13,6 +13,8 @@ Nothing they do changes anything, and nothing reaches the outside world:
   is timeline-and-map only, the wrong thing for a showcase).
 - **Closed doors.** No MCP, OAuth, OIDC, registration, password reset, ingest
   or admin. Sign-in is a plain username and password.
+- **No request log.** uvicorn's access log (each request with the visitor's IP)
+  is switched off (YONDER-277).
 - **No background work.** The inbox poller, retention sweep and health monitor
   don't start. The seeded trips are kept current by the nightly roll-forward
   (`app.demo_seed`), which writes to the database directly.
@@ -109,6 +111,7 @@ def check_startup(session) -> None:
     if problems:
         raise DemoMisconfigured("demo mode refused: " + "; ".join(problems))
     _cut_home_services()
+    _quiet_request_log()
     ensure_demo_user(session)
     log.warning("DEMO MODE: read-only showcase server; every write is refused")
 
@@ -119,6 +122,15 @@ def check_startup(session) -> None:
 # rely on the compose file remembering to.
 _HOME_SERVICES = ("ollama_url", "photon_url", "searxng_url", "clamav_url",
                   "adventurelog_url", "airtrail_url", "valhalla_url")
+
+
+def _quiet_request_log() -> None:
+    """A demo server writes no per-request log (YONDER-277). uvicorn's access
+    line carries the visitor's real IP (the image runs `--proxy-headers`), and
+    nobody can change anything on the demo, so there's nothing to debug from it.
+    Warnings and errors still log. Traffic is counted by country and region,
+    without IPs, in the proxy's pipeline instead (the privacy page says so)."""
+    logging.getLogger("uvicorn.access").disabled = True
 
 
 def _cut_home_services() -> None:
