@@ -37,8 +37,10 @@ Exit status: 0 = no blocking findings, 1 = blocking findings, 2 = bad config.
 from __future__ import annotations
 
 import argparse
+import base64
 import fnmatch
 import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -47,6 +49,7 @@ import subprocess
 import sys
 import threading
 import tomllib
+import urllib.parse
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -133,6 +136,35 @@ PERSONAL_EMAIL = re.compile(
     r"\b[A-Za-z0-9._%+-]+@(?:gmail|googlemail|proton|protonmail|pm|outlook|hotmail|live|yahoo|icloud|me|aol)"
     r"\.(?:com|me|ch|ca|co\.uk)\b", re.I)
 
+# Booking details that are personal when real (warnings: fixtures use made-up ones).
+PERSONAL_RULES: list[tuple[str, re.Pattern]] = [
+    ("booking-reference", re.compile(
+        r"(?i)\b(?:pnr|booking(?:\s+(?:ref(?:erence)?|code|no\.?|number))?|confirmation(?:\s+(?:code|no\.?|number|#))?|"
+        r"record\s+locator|reservation(?:\s+(?:code|no\.?|number))?)\b[\s:#=\"'-]{1,6}"
+        r"(?P<v>(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5,8})\b")),
+    ("ticket-number", re.compile(r"(?i)\b(?:e-?ticket|ticket)(?:\s*(?:no\.?|number|#))?[^0-9\n]{0,12}(?P<v>\d{3}[- ]?\d{10})\b")),
+    ("phone-number", re.compile(r"(?<![\w+])(?P<v>\+\d{1,3}[ .-]?(?:\(\d{1,4}\)[ .-]?)?\d{2,4}[ .-]?\d{3,4}[ .-]?\d{3,4})(?!\d)")),
+]
+
+# Public IPv4 addresses: a home server's public address is the one thing a
+# private subnet can't stand in for. Well-known public services are named, not
+# flagged; version strings and spec section numbers (§3.1.3.5) are skipped.
+IPV4 = re.compile(r"(?<![\d.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?![\d.])")
+KNOWN_PUBLIC = [
+    ipaddress.ip_network(n) for n in (
+        "1.1.1.1/32", "1.0.0.1/32", "9.9.9.9/32", "149.112.112.112/32", "8.8.8.8/32", "8.8.4.4/32",
+        "208.67.222.222/32", "208.67.220.220/32",        # public DNS resolvers
+        "93.184.216.34/32",                              # example.com
+        "160.79.104.0/21",                               # Anthropic's published outbound range
+        "75.2.60.5/32",                                  # Netlify's load balancer (rundere.app DNS)
+    )]
+SPEC_CONTEXT = re.compile(r"(?i)§|\bsection\b|\brfc\b|\bversion\b|==|>=|<=")
+LOCKFILES = ("uv.lock", "poetry.lock", "package-lock.json", "yarn.lock", "Pipfile.lock")
+
+# Encoded copies: a secret or a name hidden in base64 or URL-encoding is still there.
+B64_RUN = re.compile(r"[A-Za-z0-9+/]{24,}={0,2}")
+PCT = re.compile(r"%[0-9A-Fa-f]{2}")
+
 # Files that have no business in a repository.
 FORBIDDEN_NAMES = [
     "*.sql", "*.sql.gz", "*.sqlite", "*.sqlite3", "*.db", "*.dump", "*.bak", "*.backup",
@@ -172,6 +204,13 @@ def load_allowlist(path: Path = ALLOW_FILE) -> list[dict]:
         if not (e.get("rule") or e.get("check")):
             raise ConfigError(f"{path.name}: entry {i + 1} names no rule or check")
     return entries
+
+
+def denylist_text(path: Path = DENY_FILE) -> str:
+    text = os.environ.get("PREPUBLISH_DENYLIST", "")
+    if not text and path.exists():
+        text = path.read_text()
+    return text
 
 
 def load_denylist(path: Path = DENY_FILE) -> tuple[list[str], list[re.Pattern]]:
@@ -218,39 +257,77 @@ class Scanner:
 
     def scan_text(self, text: str, path: str, where: str) -> list[Finding]:
         out: list[Finding] = []
+        is_lockfile = path.rsplit("/", 1)[-1] in LOCKFILES
 
-        def add(check, rule, sev, lineno, value, detail=""):
-            out.append(Finding(check, rule, sev, path, lineno, detail or mask(value), fingerprint(value), where))
+        def add(check, rule, sev, lineno, value, detail="", via=""):
+            d = detail or mask(value)
+            out.append(Finding(check, rule, sev, path, lineno, f"{d} (in {via} text)" if via else d,
+                               fingerprint(value), where))
 
         for lineno, line in enumerate(text.splitlines(), 1):
             if len(line) > 20_000:          # minified or embedded data: scan, but don't drown
                 line = line[:20_000]
-            for rule, rx in SECRET_RULES:
-                for m in rx.finditer(line):
-                    if rule == "credentials-in-url" and PLACEHOLDER.search(m.group(0).split("@")[0]):
-                        continue            # postgres://user:CHANGE_ME@db — a template, not a secret
-                    add("secrets", rule, BLOCK, lineno, m.group(0))
-            for m in ASSIGNED_SECRET.finditer(line):
-                value = m.group("value")
-                if PLACEHOLDER.search(value) or PLACEHOLDER.search(line) or ALPHABET.search(value):
-                    continue
-                if not m.group("quote") and (CODE_EXPR.match(value) or line[m.end("value"):m.end("value") + 1] == "("):
-                    continue
-                if entropy(value) >= 3.5 and not value.isdigit():
-                    add("secrets", "assigned-secret", BLOCK, lineno, value,
-                        f"{m.group('name')} = {mask(value)}")
-            for s, rx in self.deny_strings:
-                for m in rx.finditer(line):
-                    add("denylist", "deny-string", BLOCK, lineno, m.group(0))
-            for rx in self.deny_regexes:
-                for m in rx.finditer(line):
-                    add("denylist", "deny-regex", BLOCK, lineno, m.group(0))
+            self._sensitive(line, lineno, add)
             for rule, rx in INFRA_RULES:
                 for m in rx.finditer(line):
                     add("infra", rule, WARN, lineno, m.group(0), m.group(0) if rule != "home-path" else mask(m.group(0)))
-            for m in PERSONAL_EMAIL.finditer(line):
-                add("email", "personal-email", WARN, lineno, m.group(0))
+            if not is_lockfile and not SPEC_CONTEXT.search(line):
+                for m in IPV4.finditer(line):
+                    try:
+                        ip = ipaddress.ip_address(m.group(1))
+                    except ValueError:
+                        continue
+                    if ip.is_global and not any(ip in n for n in KNOWN_PUBLIC):
+                        add("infra", "public-ipv4", WARN, lineno, m.group(1), m.group(1))
+            for rule, rx in PERSONAL_RULES:
+                for m in rx.finditer(line):
+                    add("personal", rule, WARN, lineno, m.group("v"))
+            # The same line, decoded: base64 runs and URL-encoding.
+            for via, decoded in self._decoded(line):
+                self._sensitive(decoded, lineno, lambda *a, **k: add(*a, via=via, **k))
         return out
+
+    def _sensitive(self, line: str, lineno: int, add) -> None:
+        """The checks that matter even when hidden in encoded text."""
+        for rule, rx in SECRET_RULES:
+            for m in rx.finditer(line):
+                if rule == "credentials-in-url" and PLACEHOLDER.search(m.group(0).split("@")[0]):
+                    continue            # postgres://user:CHANGE_ME@db — a template, not a secret
+                add("secrets", rule, BLOCK, lineno, m.group(0))
+        for m in ASSIGNED_SECRET.finditer(line):
+            value = m.group("value")
+            if PLACEHOLDER.search(value) or PLACEHOLDER.search(line) or ALPHABET.search(value):
+                continue
+            if not m.group("quote") and (CODE_EXPR.match(value) or line[m.end("value"):m.end("value") + 1] == "("):
+                continue
+            if entropy(value) >= 3.5 and not value.isdigit():
+                add("secrets", "assigned-secret", BLOCK, lineno, value, f"{m.group('name')} = {mask(value)}")
+        for s, rx in self.deny_strings:
+            for m in rx.finditer(line):
+                add("denylist", "deny-string", BLOCK, lineno, m.group(0))
+        for rx in self.deny_regexes:
+            for m in rx.finditer(line):
+                add("denylist", "deny-regex", BLOCK, lineno, m.group(0))
+        for m in PERSONAL_EMAIL.finditer(line):
+            add("email", "personal-email", WARN, lineno, m.group(0))
+
+    @staticmethod
+    def _decoded(line: str) -> list[tuple[str, str]]:
+        views = []
+        if PCT.search(line):
+            u = urllib.parse.unquote(line)
+            if u != line:
+                views.append(("url-encoded", u))
+        for m in B64_RUN.finditer(line):
+            run = m.group(0)
+            try:
+                raw = base64.b64decode(run + "=" * (-len(run) % 4), validate=False)
+                txt = raw.decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                continue                    # binary (an embedded image) or not base64 at all
+            if len(txt) >= 12 and sum(c.isprintable() or c in "\n\t" for c in txt) / len(txt) > 0.95:
+                views.append(("base64", txt))
+        return views
 
     def scan_name(self, path: str, where: str) -> list[Finding]:
         """The path itself can leak (a username in a directory name)."""
@@ -363,7 +440,8 @@ def check_history(scanner: Scanner) -> list[Finding]:
             continue
         h, an, ae, cn, ce, body = parts
         for e in (ae, ce):
-            if e and not e.endswith("noreply.github.com") and e != "noreply@anthropic.com":
+            if e and not e.endswith("noreply.github.com") and e not in ("noreply@anthropic.com",
+                                                                         "noreply@github.com"):
                 emails[e] += 1
         for f in scanner.scan_text(body, f"commit {h[:10]}", "commit"):
             out.append(f)
@@ -437,6 +515,164 @@ def check_deps() -> list[Finding]:
     return findings
 
 
+# Licences that can be combined with the AGPL-3.0 server. Anything else, or a
+# package that doesn't declare one, is a warning to look at.
+AGPL_COMPATIBLE = re.compile(
+    r"(?i)\b(mit|bsd|apache|isc|psf|python software foundation|mpl|mozilla|lgpl|lesser general|"
+    r"gplv3|gpl-3|gnu general public license v3|agpl|affero|unlicense|cc0|zlib|hpnd|0bsd|"
+    r"public domain|historical permission)")
+GPL2_ONLY = re.compile(r"(?i)gpl-?2\.0-only|gplv2(?!\+)|gnu general public license v2 \(gplv2\)")
+
+
+def _runtime_distributions() -> dict[str, object]:
+    """The project's runtime dependencies, transitively (not the dev extra)."""
+    from importlib import metadata
+    try:
+        from packaging.requirements import Requirement
+    except ImportError:                    # packaging ships with pip; fall back to names only
+        Requirement = None
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    todo = list(pyproject.get("project", {}).get("dependencies", []))
+    seen: dict[str, object] = {}
+    while todo:
+        req = todo.pop()
+        if Requirement:
+            r = Requirement(req)
+            if r.marker and not r.marker.evaluate({"extra": ""}):
+                continue
+            name = r.name
+        else:
+            name = re.split(r"[<>=!~;\[ ]", req, maxsplit=1)[0]
+        key = name.lower().replace("_", "-")
+        if key in seen:
+            continue
+        try:
+            dist = metadata.distribution(name)
+        except metadata.PackageNotFoundError:
+            continue
+        seen[key] = dist
+        todo.extend(dist.requires or [])
+    return seen
+
+
+def check_licences() -> list[Finding]:
+    out = []
+    for key, dist in sorted(_runtime_distributions().items()):
+        meta = dist.metadata
+        text = " ".join(filter(None, [meta.get("License-Expression", ""), meta.get("License", "")[:200],
+                                      *[c for c in meta.get_all("Classifier") or [] if c.startswith("License ::")]]))
+        label = f"{meta['Name']}=={dist.version}"
+        if GPL2_ONLY.search(text) and not AGPL_COMPATIBLE.search(text.replace("GPLv2", "")):
+            out.append(Finding("licences", "gpl2-only", WARN, label, 0, "GPL-2.0-only can't be combined with AGPL-3.0"))
+        elif not text.strip():
+            out.append(Finding("licences", "unknown-licence", WARN, label, 0, "no licence declared in its metadata"))
+        elif not AGPL_COMPATIBLE.search(text):
+            out.append(Finding("licences", "check-licence", WARN, label, 0, f"licence to check: {text[:80]}"))
+    return out
+
+
+MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+
+
+def check_doc_links() -> list[Finding]:
+    """Relative links in Markdown that point at nothing."""
+    out = []
+    for path in tracked_files():
+        if not path.endswith(".md"):
+            continue
+        p = ROOT / path
+        if not p.is_file():
+            continue
+        for lineno, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
+            for m in MD_LINK.finditer(line):
+                target = m.group(1)
+                if re.match(r"(?i)^(?:[a-z][a-z0-9+.-]*:|#|//)", target):
+                    continue                # URLs, mailto:, anchors
+                local = target.split("#", 1)[0].split("?", 1)[0]
+                local = re.sub(r":\d+(?:-\d+)?$", "", local)       # file.py:42
+                if local and not (p.parent / urllib.parse.unquote(local)).exists():
+                    out.append(Finding("docs", "broken-link", WARN, path, lineno, f"no such file: {local}"))
+    return out
+
+
+def check_naming() -> list[Finding]:
+    """The old name, Yonder (renamed in 4.4.0): one summary, not one per line."""
+    counts: Counter = Counter()
+    for path in tracked_files():
+        p = ROOT / path
+        if not p.is_file() or p.stat().st_size > MAX_SCAN_BYTES:
+            continue
+        text = read_blob_text(p.read_bytes())
+        if text:
+            n = len(re.findall(r"\bYonder\b", text))
+            if n:
+                counts[path] = n
+    if not counts:
+        return []
+    top = ", ".join(f"{p} ({n})" for p, n in counts.most_common(5))
+    return [Finding("naming", "old-name", WARN, "(repository)", 0,
+                    f"'Yonder' appears {sum(counts.values())} times in {len(counts)} files; most in {top}")]
+
+
+# --------------------------------------------------------------------------- rewrite rules
+def write_rewrite_rules(out_dir: Path, deny_text: str) -> list[str]:
+    """Turn the private denylist into git-filter-repo inputs, so a history rewrite
+    and the check that verifies it share one source of truth. Never writes into
+    the repository: out_dir must be outside it."""
+    data = tomllib.loads(deny_text) if deny_text.strip() else {}
+    deny, rewrite = data.get("deny", {}), data.get("rewrite", {})
+    ident, drop = data.get("identity", {}), data.get("drop", {})
+    if ROOT in out_dir.resolve().parents or out_dir.resolve() == ROOT:
+        raise ConfigError("--rewrite-rules must point outside the repository")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def rules_for(match: str, repl: str, is_regex: bool) -> list[str]:
+        src = match if is_regex else re.escape(match)
+        lines = []
+        if not is_regex and repl.isalpha() and match.isalpha():
+            # Keep the case of each occurrence: NAME→REPL, Name→Repl, name→repl.
+            for m, r in ((match.upper(), repl.upper()), (match.title(), repl.title()), (match.lower(), repl.lower())):
+                lines.append(f"literal:{m}==>{r}")
+        lines.append(f"regex:(?i){src}==>{repl}")
+        return lines
+
+    text_rules: list[str] = []
+    for sstr in deny.get("strings", []):
+        text_rules += rules_for(sstr, rewrite.get(sstr, "redacted"), False)
+    for rx in deny.get("regexes", []):
+        text_rules += rules_for(rx, rewrite.get(rx, "redacted"), True)
+    (out_dir / "replace-text.txt").write_text("\n".join(text_rules) + "\n")
+    msg_rules = text_rules + [r"regex:Merge pull request #(\d+) from==>Merge PR \1 (private archive) from"]
+    (out_dir / "replace-message.txt").write_text("\n".join(msg_rules) + "\n")
+    (out_dir / "drop-paths.txt").write_text("\n".join(drop.get("paths", [])) + "\n")
+    written = ["replace-text.txt", "replace-message.txt", "drop-paths.txt"]
+    if ident.get("noreply"):
+        keep = {"noreply@anthropic.com", "noreply@github.com"}
+        name = ident.get("name") or ident["noreply"].split("+", 1)[-1].split("@", 1)[0]
+        seen, lines = set(), []
+        for fmt in ("%an%x00%ae", "%cn%x00%ce"):
+            for rec in git("log", "--all", f"--format={fmt}").decode("utf-8", "replace").splitlines():
+                n, _, e = rec.partition("\0")
+                if not e or e in keep or e.endswith("users.noreply.github.com") or "[bot]" in n or (n, e) in seen:
+                    continue
+                seen.add((n, e))
+                lines.append(f"{name} <{ident['noreply']}> {n} <{e}>")
+        (out_dir / "mailmap").write_text("\n".join(lines) + "\n")
+        written.append("mailmap")
+    (out_dir / "README.txt").write_text(
+        "Generated by scripts/prepublish.py --rewrite-rules from your PRIVATE denylist.\n"
+        "Contains your private strings: keep it out of every repository.\n\n"
+        "Run on a fresh MIRROR clone, never on your working repository:\n"
+        "  git clone --mirror <repo> rewrite.git && cd rewrite.git\n"
+        "  uv tool run --from git-filter-repo git-filter-repo \\\n"
+        "    --invert-paths --paths-from-file drop-paths.txt \\\n"
+        "    --replace-text replace-text.txt --replace-message replace-message.txt \\\n"
+        "    --mailmap mailmap --force\n"
+        "Then verify: clone it and run prepublish.py --history with PREPUBLISH_DENYLIST set.\n"
+        "Push the result only to a NEW repository (GitHub keeps PRs of the old one).\n")
+    return written
+
+
 # --------------------------------------------------------------------------- report
 def report(findings: list[Finding], history: bool, denylist_on: bool) -> str:
     lines = [f"# Pre-publish check ({'full history' if history else 'current files'})", ""]
@@ -476,7 +712,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-tools", action="store_true", help="skip bandit and pip-audit")
     ap.add_argument("--json", metavar="PATH", help="also write the findings as JSON")
     ap.add_argument("--out", metavar="PATH", help="write the report here instead of stdout")
+    ap.add_argument("--rewrite-rules", metavar="DIR",
+                    help="write git-filter-repo rules from the private denylist into DIR (outside the repo), then exit")
     args = ap.parse_args(argv)
+    if args.rewrite_rules:
+        try:
+            written = write_rewrite_rules(Path(args.rewrite_rules), denylist_text())
+        except (ConfigError, tomllib.TOMLDecodeError) as e:
+            print(f"prepublish: {e}", file=sys.stderr)
+            return 2
+        print(f"wrote {', '.join(written)} to {args.rewrite_rules} (contains your private strings)")
+        return 0
     try:
         allow = load_allowlist()
         deny_strings, deny_regexes = load_denylist()
@@ -484,11 +730,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"prepublish: {e}", file=sys.stderr)
         return 2
     scanner = Scanner(deny_strings, deny_regexes)
-    findings = check_tree(scanner) + check_decisions()
+    findings = check_tree(scanner) + check_decisions() + check_doc_links() + check_naming()
     if args.history:
         findings += check_history(scanner)
     if not args.no_tools:
-        findings += check_bandit() + check_deps()
+        findings += check_bandit() + check_deps() + check_licences()
     # Deduplicate (the same blob can be reached from the tree and history).
     unique: dict[tuple, Finding] = {}
     for f in findings:

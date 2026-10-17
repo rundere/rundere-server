@@ -52,7 +52,8 @@ def test_denylist_blocks_case_insensitively_and_in_paths(monkeypatch):
 
 def test_placeholder_credentials_in_urls_are_skipped():
     assert not _scan("postgresql://travel:CHANGE_ME_DB_PASSWORD@db:5432/travel")
-    assert any(f.rule == "credentials-in-url" for f in _scan(f"postgresql://travel:{RANDOM}@db/x"))
+    url = "postgresql://travel:" + RANDOM + "@db/x"          # assembled, so this file stays clean
+    assert any(f.rule == "credentials-in-url" for f in _scan(url))
 
 
 def test_infra_and_email_are_warnings():
@@ -96,3 +97,55 @@ def test_the_repo_itself_has_no_blocking_secrets():
     leaks = [f for f in found if f.check == "secrets"
              and f.rule not in ("assigned-secret", "credentials-in-url")]
     assert not leaks, [(f.rule, f.path, f.line) for f in leaks]
+
+
+def test_encoded_copies_are_decoded():
+    import base64
+    s = pp.Scanner(["needle"], [])
+    hidden = base64.b64encode(b"contact needle@example.com today").decode()
+    assert [f.rule for f in s.scan_text("x " + hidden, "a.md", "tree")] == ["deny-string"]
+    found = s.scan_text("q=nee%64le", "a.md", "tree")          # %64 = d
+    assert any("url-encoded" in f.detail for f in found)
+    png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"   # binary: ignored
+    assert not s.scan_text(png, "a.md", "tree")
+
+
+def test_personal_formats_and_public_ips():
+    def rules(t):
+        return {f.rule for f in _scan(t)}
+    assert rules("PNR: P9ZD4H") == {"booking-reference"}
+    assert rules("e-ticket no. 0142365789012") == {"ticket-number"}
+    assert rules("call +44 20 7946 0958") == {"phone-number"}
+    assert rules("server at 52.10.20.30") == {"public-ipv4"}
+    assert not rules("resolver 9.9.9.9")                     # a named public service
+    assert not rules("see RFC 6749 section 4.1.2.1")         # a section number
+    assert not rules("pypdf>=6.19.0")
+    assert not pp.Scanner([], []).scan_text("x 52.10.20.30", "uv.lock", "tree")   # lockfile versions
+
+
+DENY_EXAMPLE = """
+[deny]
+strings = ["Fred", "me@home.example"]
+[rewrite]
+"Fred" = "Alex"
+"me@home.example" = "owner@example.com"
+[drop]
+paths = ["NOTES.md"]
+"""
+
+
+def test_rewrite_rules_keep_case_and_stay_outside_the_repo(tmp_path):
+    written = pp.write_rewrite_rules(tmp_path / "rules", DENY_EXAMPLE)
+    text = (tmp_path / "rules" / "replace-text.txt").read_text()
+    assert "literal:FRED==>ALEX" in text and "literal:Fred==>Alex" in text and "literal:fred==>alex" in text
+    assert "owner@example.com" in text and "NOTES.md" in (tmp_path / "rules" / "drop-paths.txt").read_text()
+    assert "Merge PR" in (tmp_path / "rules" / "replace-message.txt").read_text()
+    assert "mailmap" not in written                        # no [identity] given
+    with pytest.raises(pp.ConfigError):
+        pp.write_rewrite_rules(pp.ROOT / "rules-here", DENY_EXAMPLE)
+
+
+def test_doc_links_and_naming_run_on_the_repo():
+    assert isinstance(pp.check_doc_links(), list)
+    names = pp.check_naming()
+    assert all(f.check == "naming" for f in names) and len(names) <= 1
