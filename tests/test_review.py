@@ -191,16 +191,16 @@ def test_passenger_context_draws_from_traveller_profiles():
     from app.models import TravelerIdentity
     with SessionLocal() as s:
         s.query(TravelerIdentity).delete()
-        s.add(TravelerIdentity(display_name="Daniel Okafor", kind="self",
-                               aliases=["OKAFOR/DANIEL"]))
+        s.add(TravelerIdentity(display_name="Kenji Nakamura", kind="self",
+                               aliases=["NAKAMURA/KENJI"]))
         s.add(TravelerIdentity(display_name="Pat Example", kind="guest"))
         s.commit()
         payload = {"item_type": "flight",
-                   "travelers": [{"raw_name": "OKAFOR/DANIEL MR"},
+                   "travelers": [{"raw_name": "NAKAMURA/KENJI MR"},
                                  {"raw_name": "Unknown Person"}]}
         ctx = _passenger_context(s, payload)
         assert ctx["have_identities"]
-        me = next(r for r in ctx["identities"] if r["name"] == "Daniel Okafor")
+        me = next(r for r in ctx["identities"] if r["name"] == "Kenji Nakamura")
         assert me["selected"] and me["kind"] == "self"        # matched a doc name
         assert "Unknown Person" in ctx["unmatched"]           # forces a profile
         assert _passenger_context(s, {"item_type": "lodging"}) is None

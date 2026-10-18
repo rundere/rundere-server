@@ -163,6 +163,10 @@ KNOWN_PUBLIC = [
 SPEC_CONTEXT = re.compile(r"(?i)§|\bsection\b|\brfc\b|\bversion\b|==|>=|<=")
 LOCKFILES = ("uv.lock", "poetry.lock", "package-lock.json", "yarn.lock", "Pipfile.lock")
 
+# Embedded files (an image in HTML): their base64 is noise to a word search and
+# yields false hits; the decoded view below still checks any text inside them.
+DATA_URI = re.compile(r"data:[\w.+/-]+;base64,[A-Za-z0-9+/=]{16,}")
+
 # Encoded copies: a secret or a name hidden in base64 or URL-encoding is still there.
 B64_RUN = re.compile(r"[A-Za-z0-9+/]{24,}={0,2}")
 PCT = re.compile(r"%[0-9A-Fa-f]{2}")
@@ -269,12 +273,13 @@ class Scanner:
         for lineno, line in enumerate(text.splitlines(), 1):
             if len(line) > 20_000:          # minified or embedded data: scan, but don't drown
                 line = line[:20_000]
-            self._sensitive(line, lineno, add)
+            plain = DATA_URI.sub("data:…", line) if "base64," in line else line
+            self._sensitive(plain, lineno, add)
             for rule, rx in INFRA_RULES:
-                for m in rx.finditer(line):
+                for m in rx.finditer(plain):
                     add("infra", rule, WARN, lineno, m.group(0), m.group(0) if rule != "home-path" else mask(m.group(0)))
-            if not is_lockfile and not SPEC_CONTEXT.search(line):
-                for m in IPV4.finditer(line):
+            if not is_lockfile and not SPEC_CONTEXT.search(plain):
+                for m in IPV4.finditer(plain):
                     try:
                         ip = ipaddress.ip_address(m.group(1))
                     except ValueError:
@@ -282,7 +287,7 @@ class Scanner:
                     if ip.is_global and not any(ip in n for n in KNOWN_PUBLIC):
                         add("infra", "public-ipv4", WARN, lineno, m.group(1), m.group(1))
             for rule, rx in PERSONAL_RULES:
-                for m in rx.finditer(line):
+                for m in rx.finditer(plain):
                     add("personal", rule, WARN, lineno, m.group("v"))
             # The same line, decoded: base64 runs and URL-encoding.
             for via, decoded in self._decoded(line):

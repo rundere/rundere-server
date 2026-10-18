@@ -152,3 +152,10 @@ def test_doc_links_and_naming_run_on_the_repo():
     assert isinstance(pp.check_doc_links(), list)
     names = pp.check_naming()
     assert all(f.check == "naming" for f in names) and len(names) <= 1
+
+
+def test_embedded_image_data_is_not_searched_for_words():
+    s = pp.Scanner(["Okafor"], [])
+    noise = "abc" + "Okafor" + "Q" * 40                    # a word that happens to appear in base64
+    assert not s.scan_text('<img src="data:image/png;base64,' + noise + '">', "a.html", "tree")
+    assert s.scan_text("plain Okafor text", "a.md", "tree")

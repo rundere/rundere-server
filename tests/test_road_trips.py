@@ -286,8 +286,8 @@ def test_reviewer_address_fix_drops_guessed_coords_only():
 
 def test_street_address_stop_fills_the_address_field():
     from extract.directions_common import _parse_place
-    p = _parse_place("2074 Donald Harbour Pkwy, Locust Hill, ON")
-    assert p["address"] == "2074 Donald Harbour Pkwy, Locust Hill, ON"
+    p = _parse_place("100 Harbour Ridge Pkwy, Maple Grove, ON")
+    assert p["address"] == "100 Harbour Ridge Pkwy, Maple Grove, ON"
     assert "address" not in _parse_place("Heritage Square, Phoenix, NM")
 
 

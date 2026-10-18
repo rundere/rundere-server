@@ -89,13 +89,13 @@ if DEPS:
 
     def test_picker_only_on_multi_traveller_trip():
         solo, _ = _trip("at-solo", ["AT Solo"])
-        duo, ids = _trip("at-duo", ["AT Daniel", "AT Amara"])
+        duo, ids = _trip("at-duo", ["AT Kenji", "AT Kenta"])
         try:
             assert "Who is this for" not in client.get(f"/trips/{solo}/activity/new").text
             html = client.get(f"/trips/{duo}/activity/new").text
-            assert "Who is this for" in html and "AT Amara" in html
+            assert "Who is this for" in html and "AT Kenta" in html
         finally:
-            _cleanup("at-solo", "at-duo", travellers=("AT Solo", "AT Daniel", "AT Amara"))
+            _cleanup("at-solo", "at-duo", travellers=("AT Solo", "AT Kenji", "AT Kenta"))
 
     def test_web_tag_show_edit_and_cleanup():
         tid, ids = _trip("at-web", ["AT Web A", "AT Web B"])

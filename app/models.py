@@ -425,8 +425,8 @@ class TravelerIdentity(Base):
 
     AirTrail only holds the account holder's own flight history, so exactly one
     row is kind="self" — the person matching the AirTrail user — and everyone
-    else is a guest. Names on tickets vary wildly ("OKAFOR/DANIEL MR",
-    "R OKAFOR"), so each identity carries aliases; matching is on normalised
+    else is a guest. Names on tickets vary wildly ("NAKAMURA/KENJI MR",
+    "K NAKAMURA"), so each identity carries aliases; matching is on normalised
     token sets (resolve/identity.py). Per-deployment personal config, managed
     in the admin UI, never hardcoded (same principle as HomeProfile).
     """

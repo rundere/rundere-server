@@ -83,7 +83,7 @@ def _parse_place(segment: str) -> dict:
         place["city"] = parts[0]
         place["region"] = parts[1]
     elif len(parts) >= 2:
-        # A street line ("2074 Donald Harbour Pkwy, Locust Hill, ON"): it IS the
+        # A street line ("100 Harbour Ridge Pkwy, Maple Grove, ON"): it IS the
         # stop's address, so Review shows it in the From/To address field.
         place["address"] = seg
     return place

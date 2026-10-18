@@ -16,7 +16,7 @@ from resolve.identity import (Identity, match_identity, name_tokens,
 
 SELF = Identity(id="1", display_name="Alex Vardhan", kind="self",
                 aliases=("VARDHAN/ALEX MR",), airtrail_user_id="u-1")
-GUEST = Identity(id="2", display_name="Priya Vardhan", kind="guest")
+GUEST = Identity(id="2", display_name="Mei Chen", kind="guest")
 OTHER = Identity(id="3", display_name="Sam Okafor", kind="guest")
 ALL = [SELF, GUEST, OTHER]
 
@@ -41,9 +41,9 @@ def test_middle_name_still_matches():
 def test_similar_family_member_is_not_confused_with_self():
     """THE dangerous false positive: a shared surname must not make a
     relative's ticket look like yours."""
-    ident, _, _ = match_identity("Priya Vardhan", ALL)
+    ident, _, _ = match_identity("Mei Chen", ALL)
     assert ident is GUEST
-    ident2, _, _ = match_identity("PRIYA VARDHAN MRS", ALL)
+    ident2, _, _ = match_identity("MEI CHEN MRS", ALL)
     assert ident2 is GUEST
 
 
@@ -62,7 +62,7 @@ def test_guest_only_booking_excludes_airtrail():
     """RULE-10's whole purpose: a flight the account holder was not on is not
     their flight history."""
     payload = {"item_type": "flight",
-               "travelers": [{"raw_name": "Priya Vardhan"},
+               "travelers": [{"raw_name": "Mei Chen"},
                              {"raw_name": "Sam Okafor"}]}
     tr = resolve_travelers(payload, ALL)
     assert tr.self_on_booking is False
@@ -72,7 +72,7 @@ def test_guest_only_booking_excludes_airtrail():
 def test_self_plus_guests_includes_airtrail():
     payload = {"item_type": "flight",
                "travelers": [{"raw_name": "VARDHAN/ALEX MR"},
-                             {"raw_name": "Priya Vardhan"}]}
+                             {"raw_name": "Mei Chen"}]}
     tr = resolve_travelers(payload, ALL)
     assert tr.self_on_booking is True
     assert [t["role"] for t in tr.travelers] == ["self", "guest"]

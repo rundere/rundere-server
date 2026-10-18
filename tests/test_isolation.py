@@ -231,13 +231,13 @@ if DEPS:
         settings.auth_required = True
         try:
             r = client.post("/trips/settings/travel-profile", headers=_bearer(u),
-                            data={"nationality": "ca", "aliases": "OKAFOR/DANIEL\nR OKAFOR",
+                            data={"nationality": "ca", "aliases": "NAKAMURA/KENJI\nK NAKAMURA",
                                   "airtrail_user_id": "", "notes": "vip"},
                             follow_redirects=False)
             assert r.status_code == 200
             with SessionLocal() as s:
                 t = s.get(TravelerIdentity, tid)
-                assert t.nationality == "CA" and "R OKAFOR" in (t.aliases or []) and t.notes == "vip"
+                assert t.nationality == "CA" and "K NAKAMURA" in (t.aliases or []) and t.notes == "vip"
             # a user with no linked traveller gets the guidance state, not an editor
             u2 = _user("tp-nolink")            # no traveler_id
             r2 = client.get("/trips/settings/travel-profile", headers=_bearer(u2),
