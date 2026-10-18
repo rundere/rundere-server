@@ -25,7 +25,7 @@ a fingerprint (the first 12 hex characters of its SHA-256), so you can share it.
 | secrets | private keys; GitHub, AWS, Slack, Google, Stripe, Anthropic and OpenAI token formats; JWTs; passwords in URLs; long random-looking values assigned to secret-ish names | blocking |
 | denylist | **your** private strings: names, emails, hostnames, IP ranges, paths (see below) | blocking |
 | files | dumps, databases, keys, `.env`, `*.local.*` configs, `.claude/`; files over 1 MB | blocking |
-| infra | `.home.example` / `.lan` / DDNS hostnames, private IPv4 literals, home-directory paths; **public** IPv4 addresses (well-known public DNS, example.com and Anthropic's published range are named, not flagged; spec section numbers and lockfiles are skipped) | warning |
+| infra | `.lan` / `.internal` / `.home.arpa` / mDNS-style home hostnames and DDNS hostnames, private IPv4 literals, home-directory paths; **public** IPv4 addresses (well-known public DNS, example.com and Anthropic's published range are named, not flagged; spec section numbers and lockfiles are skipped) | warning |
 | email | personal webmail addresses | warning |
 | personal | booking references, ticket numbers and phone numbers | warning |
 | decisions | a cited D-number that no committed spec defines | warning |
