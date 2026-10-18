@@ -1,0 +1,85 @@
+# Run·dere — example DEMO stack: a read-only showcase server (SPEC-8 D-198)
+#
+# One shared login, fictional sample trips seeded on first start and moved
+# forward nightly; every write is refused, nothing reaches the outside world,
+# and no request is logged. docs/demo-server.md covers isolation, monitoring
+# and upgrades. Never point it at a real database: it refuses to start on one
+# holding any user but the demo login.
+#
+# Isolation: give the demo its own network, shared only with the reverse proxy,
+# so it can't reach your other services by name. Better still, firewall its
+# container address from your LAN (docs/demo-server.md).
+
+services:
+  rundere-demo:
+    image: ghcr.io/jeeves5454/rundere-server:latest    # same image as production
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      # ---- demo mode (D-198) ----
+      TX_DEMO_MODE: "true"
+      TX_DEMO_USERNAME: demo
+      # Not a secret: the sign-in page shows it.
+      TX_DEMO_PASSWORD: "CHANGE_ME_DEMO_PASSWORD"
+      TX_DEMO_TIMEZONE: Europe/London          # the nightly roll runs at 03:00 here
+      # TX_IOS_TESTFLIGHT_URL: https://testflight.apple.com/join/XXXXXXXX
+      # ---- its own database: SQLite on the volume below ----
+      TX_DATABASE_URL: sqlite:////data/demo.db
+      TX_ARTIFACTS_DIR: /data/artifacts
+      TX_MAP_TILE_CACHE_DIR: /data/tile-cache  # PDF map tiles, fetched once each
+      TX_DISCOVERY_BASE_CURRENCIES: "GBP"
+      # ---- sign-in: required, password only ----
+      TX_AUTH_REQUIRED: "true"
+      TX_AUTH_COOKIE_SECURE: "true"
+      TX_FORWARDED_ALLOW_IPS: "*"
+      # Its OWN secret, never production's: openssl rand -base64 32
+      TX_JWT_SECRET: "CHANGE_ME_DEMO_JWT_SECRET"
+      TX_PUBLIC_BASE_URL: https://demo.example.com
+      TX_OIDC_ENABLED: "false"
+      # Demo mode blanks the self-hosted services itself; empty here so nobody
+      # wonders. Mail and SSO must stay unset: demo mode refuses to start otherwise.
+      TX_OLLAMA_URL: ""
+      TX_PHOTON_URL: ""
+      TX_SEARXNG_URL: ""
+      TX_CLAMAV_URL: ""
+      TX_AUTO_PROCESS: "false"
+    volumes:
+      # demo.db, the tile cache and an empty artifacts folder. Safe to delete:
+      # the next start re-seeds.
+      - /srv/rundere-demo/data:/data
+    # The demo writes no request log (demo mode turns uvicorn's access log off);
+    # what it does log is capped, so nothing about visitors piles up.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Public resolvers, not your LAN's: the demo's lookups stay out of your DNS.
+    dns:
+      - 1.1.1.1
+      - 9.9.9.9
+    networks:
+      - demo-edge
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=demo-edge"
+      - "traefik.http.routers.rundere-demo.rule=Host(`demo.example.com`)"
+      - "traefik.http.routers.rundere-demo.entrypoints=websecure"
+      - "traefik.http.routers.rundere-demo.tls=true"
+      - "traefik.http.routers.rundere-demo.tls.certresolver=letsencrypt"
+      # A per-IP rate limit, and no identity headers from outside.
+      - "traefik.http.routers.rundere-demo.middlewares=rundere-demo-ratelimit,rundere-demo-strip-ident"
+      - "traefik.http.middlewares.rundere-demo-ratelimit.ratelimit.average=20"
+      - "traefik.http.middlewares.rundere-demo-ratelimit.ratelimit.burst=60"
+      - "traefik.http.middlewares.rundere-demo-ratelimit.ratelimit.period=1s"
+      - "traefik.http.middlewares.rundere-demo-strip-ident.headers.customrequestheaders.X-Authentik-Username="
+      - "traefik.http.middlewares.rundere-demo-strip-ident.headers.customrequestheaders.X-Forwarded-User="
+      - "traefik.http.middlewares.rundere-demo-strip-ident.headers.customrequestheaders.X-Auth-Request-User="
+      - "traefik.http.middlewares.rundere-demo-strip-ident.headers.customrequestheaders.Remote-User="
+      - "traefik.http.routers.rundere-demo.service=rundere-demo-svc"
+      - "traefik.http.services.rundere-demo-svc.loadbalancer.server.port=8000"
+
+networks:
+  demo-edge:
+    external: true          # created once, shared only with the reverse proxy

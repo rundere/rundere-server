@@ -65,7 +65,7 @@ Identical flow to the Gmail add-on, with Calendar scopes.
    docker exec -it yonder-yonder-1 python -m app.cli create-key gcal-addon
    ```
    Leave the Ingest URL as default unless you changed the public hostname in
-   `portainer-stack.yml`. **Save** — stored in your script's User Properties, never in
+   your stack. **Save** — stored in your script's User Properties, never in
    code. If you already made a key for the Gmail add-on you can reuse it, but a
    distinct `gcal-addon` key makes the ingest logs easier to read.
 

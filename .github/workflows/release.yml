@@ -12,7 +12,7 @@
 #
 # Push auth uses the built-in GITHUB_TOKEN (packages: write) — no PAT needed to
 # PUSH. Portainer PULLS the (private) package with your PAT as a registry
-# credential (read:packages). See portainer-stack.yml.
+# credential (read:packages). See docs/self-hosting.md.
 name: release
 
 on:

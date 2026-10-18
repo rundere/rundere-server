@@ -181,9 +181,10 @@ The package is private; give Portainer a registry credential (Registries → Add
 Custom: `ghcr.io`, your GitHub username, a PAT with `read:packages`). To build
 locally instead, `docker build -t yonder:latest .` still works.
 
-**2. Deploy the stack.** [`portainer-stack.yml`](portainer-stack.yml) is a
-reference Compose/stack definition — use it with `docker compose`, Portainer,
-or any orchestrator you prefer. Set the two `CHANGE_ME_DB_PASSWORD` occurrences,
+**2. Deploy the stack.** [`deploy/docker-compose.example.yml`](deploy/docker-compose.example.yml)
+is a reference Compose/stack definition — use it with `docker compose`, Portainer,
+or any orchestrator you prefer. [docs/self-hosting.md](docs/self-hosting.md) walks
+through it, and [docs/demo-server.md](docs/demo-server.md) covers a read-only demo server. Set the two `CHANGE_ME_DB_PASSWORD` occurrences,
 set `TX_SECRETS_KEY` and `TX_JWT_SECRET`, and fill in the rest from the section above.
 AirTrail and AdventureLog are connected per person in the app, not here. The reference stack declares env vars
 inline (some orchestrators can't interpolate `.env` files); adapt to your setup.

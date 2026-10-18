@@ -1,0 +1,152 @@
+# Run·dere — example production stack (Docker Compose or a Portainer stack)
+#
+# Copy this file, replace every CHANGE_ME and example host, and deploy it.
+# docs/self-hosting.md walks through each part. This example assumes Traefik as
+# the reverse proxy on an external network called `proxy`; any reverse proxy
+# that terminates TLS and forwards X-Forwarded-Proto works.
+#
+# Conventions:
+#   - Settings are inline (Portainer can't read .env files). With plain Docker
+#     Compose you can move them to an env_file instead.
+#   - `expose:`, not `ports:`: only the reverse proxy talks to the app.
+#   - In a label, a literal `$` is written `$$`.
+#
+# Two hostnames, optional: a PUBLIC one (internet, Let's Encrypt) and a LAN-only
+# one (your own CA). Single-host setups can drop the LAN routers.
+#   - rundere.example.com        public: web UI, plus the machine endpoints the
+#                                iOS app and AI assistants use
+#   - rundere.home.example       LAN only, password sign-in
+
+services:
+  rundere:
+    image: ghcr.io/jeeves5454/rundere-server:latest    # pin a version (e.g. 4.12.5) for rollbacks
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      # Database: the password must match POSTGRES_PASSWORD below.
+      TX_DATABASE_URL: postgresql+psycopg://travel:CHANGE_ME_DB_PASSWORD@rundere-db:5432/travel
+      TX_ARTIFACTS_DIR: /data/artifacts
+      # /ingest (Gmail and Calendar add-ons): rate limit and clock-skew window.
+      TX_INGEST_RATE_LIMIT: "30"
+      TX_INGEST_RATE_WINDOW_SECONDS: "300"
+      TX_INGEST_MAX_SKEW_SECONDS: "300"
+      # AirTrail / AdventureLog are optional per-user connections (SPEC-8 D-150),
+      # added by each person under Settings → Connections. Hosts a connection may
+      # reach on your LAN over http (D-152); everything else must be public https.
+      # TX_INTEGRATION_ALLOWED_HOSTS: "airtrail:3000,adventurelog-server"
+      # Optional local AI and lookups (everything works without them, D-146):
+      # TX_OLLAMA_URL: http://ollama:11434
+      # TX_OLLAMA_MODEL: qwen3:14b
+      # TX_LLM_TIMEOUT_SECONDS: "600"
+      # TX_PHOTON_URL: http://photon:2322          # self-hosted geocoding
+      # TX_SEARXNG_URL: http://searxng:8080        # self-hosted search for Discover
+      TX_DISCOVERY_BASE_CURRENCIES: "USD"           # the currencies Discover converts from
+      # Road routing for road trips, tried in order; unset ones are skipped.
+      # TX_ROUTING_PROVIDERS: "valhalla,ors,osrm"
+      # TX_VALHALLA_URL: ""        # http://valhalla:8002/route, or Stadia Maps
+      # TX_VALHALLA_API_KEY: ""    # Stadia Maps only
+      # TX_ORS_API_KEY: ""         # openrouteservice.org (free key tier)
+      # TX_OSRM_URL: https://router.project-osrm.org   # public demo server; "" = off
+      # PDF trip maps: XYZ raster tiles. OSM's own tiles are fine for light use;
+      # a busy server should run its own tile server.
+      # TX_MAP_TILE_URL: https://tile.openstreetmap.org/{z}/{x}/{y}.png
+      # TX_MAP_TILE_ATTRIBUTION: "© OpenStreetMap contributors"
+      # ---- Sign-in ----
+      TX_AUTH_REQUIRED: "true"            # keep on for any server others can reach
+      TX_AUTH_COOKIE_SECURE: "true"
+      # Trust the reverse proxy's X-Forwarded-Proto so the app builds https:// URLs.
+      # "*" is safe only because the app is reachable through the proxy alone
+      # (expose:, not ports:). Otherwise list the proxy's address.
+      TX_FORWARDED_ALLOW_IPS: "*"
+      TX_JWT_SECRET: "CHANGE_ME_JWT_SECRET"           # openssl rand -base64 32
+      # Encrypts each person's integration tokens at rest (D-151). Back it up apart
+      # from the database. Rotate with TX_SECRETS_KEYS="v2:<new>,v1:<old>" and
+      # `python -m app.cli secrets-rotate`.
+      TX_SECRETS_KEY: "CHANGE_ME_SECRETS_KEY"         # openssl rand -base64 32
+      # Optional single sign-on (any OIDC provider, e.g. Authentik). It can be
+      # forced on the public host and left password-only on the LAN host.
+      # Register the redirect URI https://rundere.example.com/oidc/callback.
+      TX_OIDC_ENABLED: "false"
+      # TX_OIDC_ISSUER: https://auth.example.com/application/o/rundere/
+      # TX_OIDC_CLIENT_ID: "CHANGE_ME_OIDC_CLIENT_ID"
+      # TX_OIDC_CLIENT_SECRET: "CHANGE_ME_OIDC_CLIENT_SECRET"
+      # TX_OIDC_HOSTS: rundere.example.com
+      # TX_OIDC_FORCE_HOSTS: rundere.example.com
+      # TX_OIDC_REDIRECT_URL: ""    # empty = follow the host the user came in on
+      # ---- Email (password resets, alerts). Gmail: implicit TLS on 465 with an App Password ----
+      # TX_SMTP_HOST: smtp.example.com
+      # TX_SMTP_PORT: "465"
+      # TX_SMTP_SSL: "true"
+      # TX_SMTP_USER: CHANGE_ME@example.com
+      # TX_SMTP_PASSWORD: "CHANGE_ME_SMTP_PASSWORD"
+      # TX_SMTP_FROM: CHANGE_ME@example.com
+      # Scan every captured email and file before parsing (YONDER-243; required for
+      # file capture). Run a clamav-rest container next to this one.
+      # TX_CLAMAV_URL: http://clamav-rest:9000
+      # Email-forward capture (docs/email-forward.md): a mailbox you own that
+      # accepts plus addressing, read over IMAP. Off while unset.
+      # TX_INBOX_ADDRESS: trips@example.com
+      # TX_INBOX_IMAP_HOST: imap.example.com
+      # TX_INBOX_IMAP_USER: trips@example.com
+      # TX_INBOX_IMAP_PASSWORD: "CHANGE_ME_APP_PASSWORD"
+      # Watch other Run·dere servers' /health and alert on failures (D-197).
+      # TX_WATCH_URLS: https://other-server.example.com/health
+      # The public About page's "Get the app" rows (D-202). https:// links only.
+      # TX_IOS_TESTFLIGHT_URL: https://testflight.apple.com/join/XXXXXXXX
+      # TX_IOS_APP_STORE_URL: https://apps.apple.com/app/idXXXXXXXXXX
+      # TX_ANDROID_APP_URL: https://play.google.com/store/apps/details?id=…
+      # TX_SERVER_CONTACT: you@example.com    # "Questions about this server" on About
+      # Public base URL: OAuth/MCP metadata, token audience, email links.
+      # Changing it later invalidates every OAuth token (AI assistants, the iOS app).
+      TX_PUBLIC_BASE_URL: https://rundere.example.com
+    volumes:
+      # Content-addressed originals of every capture (D-15). Back this up.
+      - /srv/rundere/artifacts:/data/artifacts
+    depends_on:
+      - rundere-db
+    networks:
+      - proxy
+      - rundere-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      # LAN host (optional): everything, your own CA.
+      - "traefik.http.routers.rundere-lan.rule=Host(`rundere.home.example`)"
+      - "traefik.http.routers.rundere-lan.entrypoints=websecure"
+      - "traefik.http.routers.rundere-lan.tls=true"
+      - "traefik.http.routers.rundere-lan.service=rundere-svc"
+      # Public host: everything, Let's Encrypt. Add your own middlewares here
+      # (CrowdSec, geoblocking): note that AI assistants such as Claude call the
+      # machine endpoints (/mcp, /oauth/*, /.well-known/*, /api/v1) from their
+      # provider's servers, so a geoblock must allow those ranges.
+      - "traefik.http.routers.rundere.rule=Host(`rundere.example.com`)"
+      - "traefik.http.routers.rundere.entrypoints=websecure"
+      - "traefik.http.routers.rundere.tls=true"
+      - "traefik.http.routers.rundere.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.rundere.middlewares=rundere-strip-ident"
+      - "traefik.http.routers.rundere.service=rundere-svc"
+      # Nobody outside may assert an identity header to the app.
+      - "traefik.http.middlewares.rundere-strip-ident.headers.customrequestheaders.X-Authentik-Username="
+      - "traefik.http.middlewares.rundere-strip-ident.headers.customrequestheaders.X-Forwarded-User="
+      - "traefik.http.middlewares.rundere-strip-ident.headers.customrequestheaders.X-Auth-Request-User="
+      - "traefik.http.middlewares.rundere-strip-ident.headers.customrequestheaders.Remote-User="
+      - "traefik.http.services.rundere-svc.loadbalancer.server.port=8000"
+
+  rundere-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: travel
+      POSTGRES_PASSWORD: CHANGE_ME_DB_PASSWORD
+      POSTGRES_DB: travel
+    volumes:
+      # Must be local disk, never NFS: Postgres corrupts on NFS.
+      - /srv/rundere/postgres:/var/lib/postgresql/data
+    networks:
+      - rundere-internal
+
+networks:
+  proxy:
+    external: true          # your reverse proxy's network
+  rundere-internal: {}      # app ↔ database only
