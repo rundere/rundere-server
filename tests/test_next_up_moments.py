@@ -70,7 +70,7 @@ def test_boundaries_are_exact():
 
 
 def test_items_without_an_end_and_all_day_items():
-    dinner = _a("dining", "2031-10-10T19:30", name="Frontier")
+    dinner = _a("dining", "2031-10-10T19:30", name="Mesa Diner")
     assert _next([dinner], "2031-10-10T19:00") == (dinner.id, "start")
     assert _next([dinner], "2031-10-10T19:30") is None           # a single moment: gone once it starts
     assert _now([dinner], "2031-10-10T19:45") == []

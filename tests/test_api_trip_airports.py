@@ -48,7 +48,7 @@ if DEPS:
                 s.add(TripActivity(trip_id=t.id, type="flight", starts_at=when,
                                    values={"from": frm, "to": to}))
             s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2031-04-01T15:00",
-                               values={"name": "Park Hyatt"}))
+                               values={"name": "Harbour Park Hotel"}))
             s.commit()
             tid = t.id
         try:

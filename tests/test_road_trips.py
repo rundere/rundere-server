@@ -90,8 +90,8 @@ def test_stop_label_and_address():
     assert stop_label(plaza) == "Heritage Square"
     assert stop_address(plaza) == "Heritage Square, Phoenix, NM"
     # a reviewer-typed street address wins, keeping the name and city
-    plaza["address"] = "303 Heritage Way NW"
-    assert stop_address(plaza) == "Heritage Square, 303 Heritage Way NW, Phoenix"
+    plaza["address"] = "210 Heritage Way NW"
+    assert stop_address(plaza) == "Heritage Square, 210 Heritage Way NW, Phoenix"
 
 
 # ---------------------------------------------------- manual Road trip fill-in
@@ -205,7 +205,7 @@ def test_saved_maps_link_wins_the_map_button():
     assert map_url("tour", {"location": "Camelback Peak", "mapLink": apple}) == apple
     assert map_url("event", {"venue": "Balloon Fiesta Park", "mapLink": goo}) == goo
     # entries made before the Map field: a Maps URL pasted as the Source still wins
-    assert map_url("dining", {"name": "Frontier", "sourceLink": goo}) == goo
+    assert map_url("dining", {"name": "Mesa Diner", "sourceLink": goo}) == goo
     # a non-maps Source never becomes the map link
     u = map_url("tour", {"location": "Camelback Peak", "sourceLink": "https://viator.com/x"})
     assert u.startswith("https://www.google.com/maps/search/")
@@ -226,7 +226,7 @@ def _drive_payload():
                 "arrival": {"place": {"raw": "Heritage Square, Phoenix, NM",
                                       "name": "Heritage Square, Phoenix, NM",
                                       "city": "Phoenix", "region": "NM",
-                                      "address": "303 Heritage Way NW",
+                                      "address": "210 Heritage Way NW",
                                       "lat": 35.09, "lon": -106.67},
                             "time": {"local": "2026-10-03", "precision": "date"}},
                 "waypoints": [],
@@ -243,7 +243,7 @@ def test_committed_drive_keeps_from_to_distance_and_link():
     assert atype == "drive"
     assert v["route"] == "Phoenix International Sunport → Heritage Square"
     assert v["from"] == "Phoenix International Sunport"
-    assert v["to"] == "Heritage Square, 303 Heritage Way NW, Phoenix"   # the edited address
+    assert v["to"] == "Heritage Square, 210 Heritage Way NW, Phoenix"   # the edited address
     assert v["distance"] == "21 km (13 mi) · ~19 min"
     assert v["mapLink"] == GMAPS
     _, lodging = build_yonder_activity(

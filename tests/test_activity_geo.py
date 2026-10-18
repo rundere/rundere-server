@@ -60,7 +60,7 @@ def _loc(table=None, airports=None, route_url="http://osrm"):
 def test_fingerprint_tracks_only_location_values():
     if not DEPS:
         return
-    base = {"name": "Hotel Palo Verde", "address": "2000 Palo Verde Ave Ave NW", "notes": "x"}
+    base = {"name": "Hotel Palo Verde", "address": "1450 Palo Verde Ave NW", "notes": "x"}
     fp = geo.fingerprint("lodging", base)
     assert geo.fingerprint("lodging", {**base, "notes": "late check-in",
                                        "confirmation": "123"}) == fp
@@ -70,16 +70,16 @@ def test_fingerprint_tracks_only_location_values():
 def test_lodging_located_from_name_and_address():
     if not DEPS:
         return
-    loc = _loc({"2000 Palo Verde Ave": (35.098, -106.664)})
+    loc = _loc({"1450 Cottonwood": (35.098, -106.664)})
     g = geo.locate_activity("lodging", {"name": "Hotel Palo Verde",
-                                        "address": "2000 Palo Verde Ave Ave NW, Phoenix"},
+                                        "address": "1450 Palo Verde Ave NW, Phoenix"},
                             locator=loc)
     assert g["complete"] is True
     [p] = g["points"]
     assert (p["role"], p["lat"], p["lon"], p["source"]) == ("place", 35.098, -106.664, "photon")
     # a full address (with its city) is searched on its own first — a long
     # property name in front of it spoils Photon's match
-    assert loc.geocoder.asked[0] == "2000 Palo Verde Ave Ave NW, Phoenix"
+    assert loc.geocoder.asked[0] == "1450 Palo Verde Ave NW, Phoenix"
 
 
 def test_maps_place_link_pin_beats_geocoding():
@@ -145,16 +145,16 @@ def test_drive_without_link_routes_between_from_and_to(monkeypatch):
 def test_unchanged_complete_geo_is_reused_and_partial_is_retried():
     if not DEPS:
         return
-    v = {"name": "Frontier", "address": "2400 Central Ave SE"}
-    first = geo.locate_activity("dining", v, locator=_loc({"2400 Central": (35.08, -106.62)}))
-    again = _loc({"2400 Central": (9.0, 9.0)})
+    v = {"name": "Mesa Diner", "address": "2600 Mesa Verde Ave SE"}
+    first = geo.locate_activity("dining", v, locator=_loc({"2600 Mesa Verde": (35.08, -106.62)}))
+    again = _loc({"2600 Mesa Verde": (9.0, 9.0)})
     assert geo.locate_activity("dining", {**v, "notes": "cash only"}, old_geo=first,
                                locator=again) is first
     assert again.geocoder.asked == []
     missing = geo.locate_activity("dining", v, locator=_loc({}))
     assert missing["complete"] is False and missing["points"] == []
     retried = geo.locate_activity("dining", v, old_geo=missing,
-                                  locator=_loc({"2400 Central": (35.08, -106.62)}))
+                                  locator=_loc({"2600 Mesa Verde": (35.08, -106.62)}))
     assert retried["complete"] is True
     assert geo.locate_activity("note", {"title": "x"}, locator=_loc()) is None
 
@@ -193,7 +193,7 @@ def test_backfill_locates_old_activities_once(monkeypatch):
         s.add(t)
         s.flush()
         s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2027-01-01",
-                           values={"name": "Hotel Palo Verde", "address": "2000 Palo Verde Ave Ave NW"}))
+                           values={"name": "Hotel Palo Verde", "address": "1450 Palo Verde Ave NW"}))
         s.add(TripActivity(trip_id=t.id, type="note", starts_at="", values={"title": "n"}))
         s.commit()
         tid = t.id
@@ -235,13 +235,13 @@ def test_saving_an_activity_stores_its_geo(monkeypatch):
     try:
         r = client.post(f"/api/v1/trips/{tid}/activities", headers=h, json={
             "type": "lodging", "values": {"name": "Hotel Palo Verde",
-                                          "address": "2000 Palo Verde Ave Ave NW"}})
+                                          "address": "1450 Palo Verde Ave NW"}})
         assert r.status_code == 201, r.text
         assert r.json()["geo"]["points"][0]["lat"] == 35.098
         aid = r.json()["id"]
         # an edit that doesn't move it keeps the stored geo; one that does re-locates
         r = client.patch(f"/api/v1/trips/{tid}/activities/{aid}", headers=h, json={
-            "values": {"name": "Hotel Palo Verde", "address": "2000 Palo Verde Ave Ave NW",
+            "values": {"name": "Hotel Palo Verde", "address": "1450 Palo Verde Ave NW",
                        "notes": "late arrival"}})
         assert r.json()["geo"]["points"][0]["lat"] == 35.098
         r = client.patch(f"/api/v1/trips/{tid}/activities/{aid}", headers=h, json={
@@ -262,28 +262,28 @@ def test_live_misses_from_the_new_mexico_trip(monkeypatch):
       the hotels the trip already has before asking Photon."""
     if not DEPS:
         return
-    loc = _loc({"501 Hot Springs St": (33.13, -107.25)})
+    loc = _loc({"415 Hot Springs Ln": (33.13, -107.25)})
     g = geo.locate_activity("lodging", {
         "name": "Desert Springs Retreat",
-        "address": "501 Hot Springs St, Wickenburg, NM 87901, United States"},
+        "address": "415 Hot Springs Ln, Wickenburg, NM 87901, United States"},
         locator=loc)
     assert g["complete"] and g["points"][0]["lat"] == 33.13
-    assert loc.geocoder.asked[0].startswith("501 Hot Springs St")
+    assert loc.geocoder.asked[0].startswith("415 Hot Springs Ln")
 
-    loc = _loc({"Cactus Ridge Suites by Marriott Glendale, 311 Ocotillo Ln": (32.41, -104.23)})
-    g = geo.locate_activity("lodging", {"name": "Cactus Ridge Suites by Marriott Glendale",
-                                        "address": "311 Ocotillo Ln"}, locator=loc)
+    loc = _loc({"Cactus Ridge Suites Glendale, 418 Ocotillo Ln": (32.41, -104.23)})
+    g = geo.locate_activity("lodging", {"name": "Cactus Ridge Suites Glendale",
+                                        "address": "418 Ocotillo Ln"}, locator=loc)
     assert g["complete"] and loc.geocoder.asked[0].startswith("Cactus Ridge")
 
     from resolve import routing
     monkeypatch.setattr(routing, "route", lambda pts, base_url=None, timeout=8:
                         routing.RouteEstimate(80.0, 60, "pl"))
-    known = {geo._norm("Phoenix Marriott Saguaro Vista Hotel"): (35.168, -106.587),
+    known = {geo._norm("Phoenix Camelback Vista Hotel"): (35.168, -106.587),
              geo._norm("Mesquite Springs Spa Resort"): (35.584, -106.102)}
     loc = geo.Locator(geocoder=_Geocoder({}), airport=lambda c: None,
                       route_url="http://osrm", known=known)
     g = geo.locate_activity("drive", {
-        "route": "Phoenix Marriott Saguaro Vista Hotel → Mesquite Springs Spa Resort"}, locator=loc)
+        "route": "Phoenix Camelback Vista Hotel → Mesquite Springs Spa Resort"}, locator=loc)
     assert [(p["role"], p["source"]) for p in g["points"]] == [("from", "trip"), ("to", "trip")]
     assert g["complete"] and g["route"]["polyline"] == "pl"
     assert loc.geocoder.asked == []                  # never needed Photon
@@ -302,7 +302,7 @@ def test_backfill_second_pass_uses_the_trips_own_places(monkeypatch):
         return
     from resolve import routing
     monkeypatch.setattr(routing, "route", lambda pts, base_url=None, timeout=8: None)
-    table = {"5151 Saguaro Vista Rd NE": (35.168, -106.587)}
+    table = {"4800 Camelback Vista Rd NE": (35.168, -106.587)}
     monkeypatch.setattr(geo.Locator, "default",
                         classmethod(lambda cls, known=None: _loc(table)))
     with SessionLocal() as s:
@@ -310,11 +310,11 @@ def test_backfill_second_pass_uses_the_trips_own_places(monkeypatch):
         s.add(t)
         s.flush()
         s.add(TripActivity(trip_id=t.id, type="drive", starts_at="2027-05-01T09:00",
-                           values={"route": "Phoenix Marriott Saguaro Vista Hotel → "
-                                            "Phoenix Marriott Saguaro Vista Hotel"}))
+                           values={"route": "Phoenix Camelback Vista Hotel → "
+                                            "Phoenix Camelback Vista Hotel"}))
         s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2027-05-01T15:00",
-                           values={"name": "Phoenix Marriott Saguaro Vista Hotel",
-                                   "address": "5151 Saguaro Vista Rd NE, Phoenix, NM"}))
+                           values={"name": "Phoenix Camelback Vista Hotel",
+                                   "address": "4800 Camelback Vista Rd NE, Phoenix, NM"}))
         s.commit()
         tid = t.id
         try:

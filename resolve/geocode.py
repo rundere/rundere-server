@@ -98,9 +98,9 @@ class PhotonGeocoder:
         # POI tier: ADDRESS-first, comma-separated, exactly as a postal address
         # is written. Booking confirmations almost always print the street
         # address — you need it to get there — so this is usually available and
-        # is by far the most reliable input. Measured: "311 Ocotillo Ln, Glendale,
+        # is by far the most reliable input. Measured: "418 Ocotillo Ln, Glendale,
         # US" resolves to the correct building, while jamming the property name
-        # and address into one string ("Cactus Ridge Suites 311 Ocotillo Ln") returns
+        # and address into one string ("Cactus Ridge Suites 418 Ocotillo Ln") returns
         # nothing at all, and a bare chain name matches the WRONG branch.
         #
         # Area tier: the city, qualified by region and country. The fallback

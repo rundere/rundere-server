@@ -289,7 +289,7 @@ def test_lodging_type_defaults_hotel_and_infers_resort():
         if kind:
             p["lodging"]["lodging_kind"] = kind
         return C.build_lodging(p, collection_id="c1")
-    assert lodge("SureStay Plus by Best Western")["type"] == "hotel"     # default
+    assert lodge("Desert Star Suites")["type"] == "hotel"     # default
     assert lodge("Mesquite Springs Spa Resort")["type"] == "resort"         # inferred
     assert lodge("Anywhere", kind="camping")["type"] == "campground"    # kind map
 
@@ -357,7 +357,7 @@ def test_coordinates_rounded_to_adventurelog_precision():
                     "check_in": {"local": "2026-10-04", "precision": "date"},
                     "check_out": {"local": "2026-10-06", "precision": "date"},
                     "place": {"lat": 35.5849387, "lon": -106.1024807,
-                              "address": "242 Mesquite Springs Rd"}},
+                              "address": "77 Mesquite Springs Rd"}},
     }
     body = C.build_lodging(lodging, collection_id="c1")
     assert body["latitude"] == 35.584939

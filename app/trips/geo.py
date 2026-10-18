@@ -86,7 +86,7 @@ def _queries(atype: str, role: str, tried: tuple[str, ...], values: dict) -> lis
     is searched by the ADDRESS alone first — Photon finds a postal address and
     a long property name in front of it ruins the match (resolve/geocode.py
     measured this); then name + address, then the name. A bare street line
-    ("311 Ocotillo Ln") needs the name beside it to pick the right town. A road
+    ("418 Ocotillo Ln") needs the name beside it to pick the right town. A road
     trip with only a route ("A → B") takes its ends from the route."""
     if atype in ("lodging", "dining") and (values.get("address") or "").strip():
         name = (values.get("name") or "").strip()
@@ -127,7 +127,7 @@ class Locator:
         self._geocoder = geocoder
         self._airport = airport
         # Places already located on the same trip, by normalised name/label:
-        # "Phoenix Marriott Saguaro Vista Hotel" in a drive's route is the hotel
+        # "Phoenix Camelback Vista Hotel" in a drive's route is the hotel
         # the trip already has, not a fresh guess (see trip_places()).
         self.known: dict[str, tuple[float, float]] = known or {}
         # None = the configured router chain; a string pins one OSRM ("" = off)
