@@ -26,7 +26,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -81,7 +81,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -1016,14 +1016,14 @@
             "flight_number": "204",
             "departure": {
               "place": {
-                "raw": "BLR",
-                "iata": "BLR",
+                "raw": "NBO",
+                "iata": "NBO",
                 "icao": "HKJK"
               },
               "time": {
                 "local": "2026-08-11T02:30:00",
                 "precision": "datetime",
-                "tz": "Asia/Kolkata",
+                "tz": "Africa/Nairobi",
                 "origin": "document"
               }
             },
@@ -1185,7 +1185,7 @@
             "fixture_promoted": false
           },
           "booking_group_id": "PNR-P9ZD4H",
-          "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+          "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
           "item_type": "flight",
           "extraction": {
             "extractor": "jsonld",
@@ -1240,7 +1240,7 @@
                   "icao": "ACA",
                   "kind": "airline"
                 },
-                "flight_number": "888",
+                "flight_number": "652",
                 "leg_index": 0,
                 "departure": {
                   "place": {
@@ -1706,7 +1706,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -1761,7 +1761,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -1972,7 +1972,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -2027,7 +2027,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -2235,7 +2235,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -2290,7 +2290,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -2501,7 +2501,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -2556,7 +2556,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -2770,7 +2770,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -2825,7 +2825,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -3033,7 +3033,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -3088,7 +3088,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -3320,7 +3320,7 @@
             "fixture_promoted": false
           },
           "booking_group_id": "PNR-P9ZD4H",
-          "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+          "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
           "item_type": "flight",
           "extraction": {
             "extractor": "jsonld",
@@ -3375,7 +3375,7 @@
                   "icao": "ACA",
                   "kind": "airline"
                 },
-                "flight_number": "888",
+                "flight_number": "652",
                 "leg_index": 0,
                 "departure": {
                   "place": {
@@ -3609,7 +3609,7 @@
             "fixture_promoted": false
           },
           "booking_group_id": "PNR-P9ZD4H",
-          "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+          "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
           "item_type": "flight",
           "extraction": {
             "extractor": "jsonld",
@@ -3664,7 +3664,7 @@
                   "icao": "ACA",
                   "kind": "airline"
                 },
-                "flight_number": "888",
+                "flight_number": "652",
                 "leg_index": 0,
                 "departure": {
                   "place": {
@@ -3865,7 +3865,7 @@
             "fixture_promoted": false
           },
           "booking_group_id": "PNR-P9ZD4H",
-          "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+          "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
           "item_type": "flight",
           "extraction": {
             "extractor": "jsonld",
@@ -4591,7 +4591,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -4646,7 +4646,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -4866,7 +4866,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -4921,7 +4921,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -6503,7 +6503,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -6558,7 +6558,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -6774,7 +6774,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2026-09-14:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -6829,7 +6829,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {

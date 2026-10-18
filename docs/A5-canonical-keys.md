@@ -54,7 +54,7 @@ signatures are lowercase hyphen-joined token sets.
   by re-keying those items with `force_date=True`. Deliberate: rare case
   routed through an existing guard instead of complicating the common key.
 - Number normalization: strip carrier prefix and leading zeros, keep suffix
-  letter (`AC 0888` → `888`, `888A` stays).
+  letter (`AC 0652` → `652`, `652A` stays).
 
 ### Lodging (OQ-12)
 - `name_sig` = tokens of `property_name`, minus articles (multilingual),
@@ -106,7 +106,7 @@ never invents an anchor.
 ## Sample-data note
 
 `samples.json` predates this spec and carries old-format keys
-(`flight:AC:0888:2026-09-14:YYZ` — zero-padded number, no PNR form). Rules only
+(`flight:AC:0652:2026-09-14:YYZ` — zero-padded number, no PNR form). Rules only
 test key *presence/uniqueness*, not format, so the 35 cases still pass
 (verified). Migrate the sample keys opportunistically when samples are next
 regenerated.

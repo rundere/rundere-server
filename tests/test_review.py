@@ -269,7 +269,7 @@ def _flight_payload():
         "item_type": "flight", "booking_status": "changed",
         "booking_reference": "TEST01",
         "flight": {
-            "flight_number": "1830",
+            "flight_number": "4826",
             "marketing_carrier": {"name": "Test Air", "iata": "TA"},
             "departure": {"place": {"raw": "AAA", "iata": "AAA"},
                           # the failure this whole flow exists to fix: a date
@@ -334,7 +334,7 @@ def test_blank_edit_is_not_a_change():
     def run():
         p = _flight_payload()
         assert _apply_edit(p, "/flight/departure/time", "", "datetime") is False
-        assert _apply_edit(p, "/flight/flight_number", "1830", "text") is False
+        assert _apply_edit(p, "/flight/flight_number", "4826", "text") is False
     _skip_or(run)
 
 

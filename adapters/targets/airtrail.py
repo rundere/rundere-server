@@ -36,7 +36,7 @@ def _read_capped(resp, max_bytes: int | None) -> str:
 
 
 def _digits(value: str) -> str:
-    """"AC9338" / "8721" / "AC 8721" -> "8721". AirTrail stores the carrier
+    """"AC9338" / "9338" / "AC 9338" -> "9338". AirTrail stores the carrier
     prefix inside flightNumber (A4 Q1), so comparing raw strings would miss
     duplicates that differ only in formatting."""
     return "".join(c for c in str(value or "") if c.isdigit()).lstrip("0")

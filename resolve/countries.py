@@ -1,6 +1,6 @@
 """Country display names from CLDR via Babel (SPEC-8 D-148, YONDER-190).
 
-Trip names are minted from a country ("Cayman Islands 2031"), and used to come
+Trip names are minted from a country ("Aruba 2031"), and used to come
 from AdventureLog's country list. CLDR is already bundled with Babel (the
 currency code uses it too), so names no longer depend on an integration.
 """
@@ -11,7 +11,7 @@ from functools import lru_cache
 
 @lru_cache(maxsize=1)
 def country_names() -> dict[str, str]:
-    """{ISO alpha-2: English name}, e.g. {"KY": "Cayman Islands"}."""
+    """{ISO alpha-2: English name}, e.g. {"AW": "Aruba"}."""
     try:
         from babel import Locale
         terr = Locale.parse("en").territories

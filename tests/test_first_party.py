@@ -27,7 +27,7 @@ NOW = datetime.now(timezone.utc).isoformat()
 def test_bundled_airports_cover_codes_with_time_zones():
     from resolve import airports
     for code, tz, country in (("YYZ", "America/Toronto", "CA"), ("LIS", "Europe/Lisbon", "PT"),
-                              ("BLR", "Asia/Kolkata", "IN"), ("GCM", "America/Cayman", "KY")):
+                              ("NBO", "Africa/Nairobi", "KE"), ("AUA", "America/Aruba", "AW")):
         a = airports.lookup(code)
         assert a is not None and a.tz == tz and a.country == country
     assert airports.lookup("EGLL").iata == "LHR"                      # ICAO works too
@@ -43,7 +43,7 @@ def test_bundled_airports_cover_codes_with_time_zones():
 def test_country_names_come_from_cldr():
     from resolve.countries import country_names
     names = country_names()
-    assert names["KY"] == "Cayman Islands" and names["IN"] == "India"
+    assert names["AW"] == "Aruba" and names["KE"] == "Kenya"
 
 
 def test_external_targets_only_for_connected_systems():
