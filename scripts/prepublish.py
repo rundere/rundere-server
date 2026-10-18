@@ -10,7 +10,7 @@ reach a public repository, and for code-level risk:
   denylist     YOUR private strings (names, emails, hostnames, IP ranges, paths),
                read from a file that is never committed (.prepublish.local.toml),
                or from the PREPUBLISH_DENYLIST environment variable in CI
-  infra        home-network detail: .home.example / DDNS hosts, private IPv4
+  infra        home-network detail: .lan / .internal-style and DDNS hosts, private IPv4
                literals, home-directory paths (warnings: some are legitimate)
   email        personal webmail addresses (warnings)
   files        files that shouldn't be in a repo at all (dumps, databases, keys,
@@ -122,7 +122,9 @@ CODE_EXPR = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
 ALPHABET = re.compile(r"abcdefgh|ABCDEFGH|0123456789")
 PLACEHOLDER = re.compile(
     r"(?i)change[_-]?me|example|placeholder|dummy|sample|your[_-]|xxxx|<[^>]+>|\$\{|\{\{|redacted|"
-    r"not[_-]?a[_-]?real|fake|test[_-]?only|ui[_-]?check|^(.)\1+$")
+    r"not[_-]?a[_-]?real|fake|test[_-]?only|ui[_-]?check|^(.)\1+$|"
+    # Labelled throwaways, as good as CHANGE_ME (owner, 2026-10-17): devonly, dev-only, not-for-prod.
+    r"dev[_-]?only|not[_-]?for[_-]?prod")
 
 # Home-network and personal detail that is often fine in examples: warnings.
 INFRA_RULES: list[tuple[str, re.Pattern]] = [

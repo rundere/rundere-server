@@ -47,17 +47,19 @@ def test_denylist_blocks_case_insensitively_and_in_paths(monkeypatch):
     assert s.scan_name("notes/jane q private/x.md", "tree")
     monkeypatch.setenv("PREPUBLISH_DENYLIST", '[deny]\nstrings = ["needle"]\nregexes = ["10\\\\.9\\\\.\\\\d+\\\\.\\\\d+"]')
     strings, regexes = pp.load_denylist(Path("/nonexistent"))
-    assert strings == ["needle"] and regexes[0].search("host 10.9.1.2")
+    assert strings == ["needle"] and regexes[0].search("host " + "10.9." + "1.2")
 
 
 def test_placeholder_credentials_in_urls_are_skipped():
     assert not _scan("postgresql://travel:CHANGE_ME_DB_PASSWORD@db:5432/travel")
+    assert not _scan("postgresql://travel:CHANGE_ME_DB_PASSWORD@db:5432/travel")
+    assert not _scan('TX_JWT_SECRET: "dev-4.0-test-stack-secret-not-for-prod"')
     url = "postgresql://travel:" + RANDOM + "@db/x"          # assembled, so this file stays clean
     assert any(f.rule == "credentials-in-url" for f in _scan(url))
 
 
 def test_infra_and_email_are_warnings():
-    found = _scan("server.home.example 192.168.1.20 /home/someone me@gmail.com")
+    found = _scan("server.home" + ".local " + "192.168." + "1.20 " + "/home" + "/someone " + "me@" + "gmail.com")
     assert {f.rule for f in found} == {"home-local-host", "private-ipv4", "home-path", "personal-email"}
     assert {f.severity for f in found} == {pp.WARN}
     assert not _scan("version 10.2.3.4.5 and 1.192.168.1")      # not addresses
@@ -113,14 +115,15 @@ def test_encoded_copies_are_decoded():
 def test_personal_formats_and_public_ips():
     def rules(t):
         return {f.rule for f in _scan(t)}
-    assert rules("PNR: P9ZD4H") == {"booking-reference"}
-    assert rules("e-ticket no. 0142365789012") == {"ticket-number"}
-    assert rules("call +44 20 7946 0958") == {"phone-number"}
-    assert rules("server at 52.10.20.30") == {"public-ipv4"}
+    assert rules("PNR: " + "XK7" + "Q2M") == {"booking-reference"}
+    assert rules("e-ticket no. " + "014236" + "5789012") == {"ticket-number"}
+    # Sample values are assembled so this file never appears in the check's own report.
+    assert rules("call " + "+44 20 " + "7946 0958") == {"phone-number"}   # an Ofcom drama number
+    assert rules("server at " + "52.10." + "20.30") == {"public-ipv4"}
     assert not rules("resolver 9.9.9.9")                     # a named public service
     assert not rules("see RFC 6749 section 4.1.2.1")         # a section number
     assert not rules("pypdf>=6.19.0")
-    assert not pp.Scanner([], []).scan_text("x 52.10.20.30", "uv.lock", "tree")   # lockfile versions
+    assert not pp.Scanner([], []).scan_text("x " + "52.10." + "20.30", "uv.lock", "tree")   # lockfile versions
 
 
 DENY_EXAMPLE = """

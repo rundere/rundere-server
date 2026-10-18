@@ -9,3 +9,9 @@
 # rule = "private-ipv4"
 # path = "app/net_policy.py"
 # reason = "The SSRF policy lists the private ranges it refuses."
+
+[[allow]]
+rule = "assigned-secret"
+path = "tests/test_connections.py"
+fingerprint = "22bfa9876dd1"
+reason = "A made-up AirTrail token for the connection tests (owner, 2026-10-17); never a real credential."
