@@ -155,7 +155,7 @@ def test_doc_links_and_naming_run_on_the_repo():
 
 
 def test_embedded_image_data_is_not_searched_for_words():
-    s = pp.Scanner(["Okafor"], [])
-    noise = "abc" + "Okafor" + "Q" * 40                    # a word that happens to appear in base64
+    s = pp.Scanner(["Quokka"], [])
+    noise = "abc" + "Quokka" + "Q" * 40                    # a word that happens to appear in base64
     assert not s.scan_text('<img src="data:image/png;base64,' + noise + '">', "a.html", "tree")
-    assert s.scan_text("plain Okafor text", "a.md", "tree")
+    assert s.scan_text("plain Quokka text", "a.md", "tree")

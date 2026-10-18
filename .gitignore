@@ -27,6 +27,8 @@ adventurelog-backup-*.sql
 Database/
 
 # large probe/scratch output with real personal travel data
+# audit screenshots: captured locally, never committed (YONDER-289)
+docs/design-review/shots/
 probe-results.json
 probe_targets_output*.json
 scratch/
