@@ -266,7 +266,7 @@ Extraction reuses the JSON-LD reader for web pages (most booking pages embed sch
 
 ## Daily workflow
 
-0. **Open the dashboard** — the app's root URL (`/`, e.g. `https://yonder.home.example/`)
+0. **Open the dashboard** — the app's root URL (`/`, e.g. `https://rundere.home.example/`)
    is a home page: the trip coming up next, a live snapshot of the review
    pipeline (needs you / waiting / ready / approved / logged), today's capture
    activity, and quick links into Capture, Review, Trips, and every settings
@@ -387,7 +387,7 @@ TX_OIDC_HOSTS=yonder.example.net
 TX_OIDC_FORCE_HOSTS=yonder.example.net
 ```
 
-`yonder.example.net` always signs in through Authentik (redirect URI `https://yonder.example.net/oidc/callback`); `yonder.home.example` shows only the username/password form. To offer SSO on the LAN too, leave `TX_OIDC_HOSTS` empty and add the LAN callback as a second redirect URI in Authentik. Emailed password-reset links (built from `TX_PUBLIC_BASE_URL`) still open on a forced host; the new password is used on the LAN.
+`yonder.example.net` always signs in through Authentik (redirect URI `https://yonder.example.net/oidc/callback`); `rundere.home.example` shows only the username/password form. To offer SSO on the LAN too, leave `TX_OIDC_HOSTS` empty and add the LAN callback as a second redirect URI in Authentik. Emailed password-reset links (built from `TX_PUBLIC_BASE_URL`) still open on a forced host; the new password is used on the LAN.
 
 ---
 

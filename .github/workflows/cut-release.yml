@@ -18,7 +18,7 @@
 #                directly because a tag pushed with GITHUB_TOKEN doesn't trigger
 #                other workflows.)
 #
-# Plane sync stays manual (LAN-only): scripts/plane_release_sync.py vX.Y.Z.
+# The tracker sync stays manual (the maintainer's private Plane; RELEASING.md).
 name: cut release
 
 on:

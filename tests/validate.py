@@ -7,7 +7,7 @@ The validator supports exactly the keywords used by travel-item.schema.json:
   pattern, anyOf, allOf, oneOf, if/then, items, minimum, maximum, minItems,
   format (uuid, date-time, date).
 
-On Homeserver, replace validate_schema() with the real `jsonschema` library.
+On the server, replace validate_schema() with the real `jsonschema` library.
 check_rules() has no equivalent and must be kept.
 """
 import collections, json, re, sys, uuid

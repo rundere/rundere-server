@@ -220,7 +220,7 @@ class Settings(BaseSettings):
     retention_months: int = 12
     inbox_dropped_days: int = 30
     inbox_trash_folder: str = ""
-    # Absolute base (e.g. https://yonder.home.example) for links in emails. Empty
+    # Absolute base (e.g. https://rundere.example.com) for links in emails. Empty
     # => derive from the request that triggered the reset.
     public_base_url: str = ""
 

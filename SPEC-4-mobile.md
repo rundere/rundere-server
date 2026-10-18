@@ -47,7 +47,7 @@ Three tabs mirroring the web's daily surfaces — **Home** (dashboard), **Review
 Multiple **server profiles**, each a URL + **trust mode** (bare IP / step-ca root / public CA), health-checked via `/health`. Security toggles: require-FaceID, sign out (clear Keychain + cache), token status, active backend. No SQLAdmin functions in-app for v1.
 
 ### E — Built-in MCP server (was old 4.0)
-First-party MCP over the **same `/api/v1` service layer**, using **Yonder-token auth**; supersedes the broken `mcp-adventurelog-server` (`/home/user/docker/adventurelog/mcp/`: no Note/Checklist tools, broken Authentik JWKS). Tools v1: list/get trips (+ snapshot), read review queue, approve/commit, trigger/read discovery, read packing, capture a URL — honoring per-user scope. Natural home for the trip-prep skill's Phase-2 ambitions.
+First-party MCP over the **same `/api/v1` service layer**, using **Yonder-token auth**; supersedes the broken `mcp-adventurelog-server` (a separate self-hosted MCP server: no Note/Checklist tools, broken Authentik JWKS). Tools v1: list/get trips (+ snapshot), read review queue, approve/commit, trigger/read discovery, read packing, capture a URL — honoring per-user scope. Natural home for the trip-prep skill's Phase-2 ambitions.
 
 ## Data: isolation, sharing, snapshot
 

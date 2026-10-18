@@ -95,7 +95,7 @@ jobs:
   # auto-generated notes, then syncs the version line in README/docs so they
   # never drift from pyproject.toml again. Issue tracking lives in Plane
   # (self-hosted, LAN-only) which GitHub-hosted runners can't reach — that
-  # half of the release is run by hand via scripts/plane_release_sync.py
+  # half of the release is done by hand (RELEASING.md, 'Syncing the tracker')
   # (see RELEASING.md).
   publish:
     needs: image

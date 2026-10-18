@@ -1,7 +1,7 @@
 """Root dashboard (3.8.1) — the service's front door.
 
 Before this, the app answered only under /review, /capture, /trips and /admin —
-the bare domain (`yonder.home.example`) had no handler for `/` and 404'd. This
+the bare domain (`rundere.home.example`) had no handler for `/` and 404'd. This
 gives the root a server-rendered landing page: the three daily surfaces
 (Capture, Review, Trips), the trip coming up next, and a live snapshot of what's
 moving through the capture pipeline. Pipeline counts are read through the review

@@ -159,3 +159,8 @@ def test_embedded_image_data_is_not_searched_for_words():
     noise = "abc" + "Quokka" + "Q" * 40                    # a word that happens to appear in base64
     assert not s.scan_text('<img src="data:image/png;base64,' + noise + '">', "a.html", "tree")
     assert s.scan_text("plain Quokka text", "a.md", "tree")
+
+
+def test_home_path_is_a_directory_not_an_app_route():
+    assert any(f.rule == "home-path" for f in _scan("data in " + "/home" + "/someone/x"))
+    assert not any(f.rule == "home-path" for f in _scan('hx-post="/review/home/delete"'))

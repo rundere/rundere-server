@@ -208,7 +208,7 @@ request forgery (SSRF) risk.
     README leaves the location open: any local disk works. A network share
     works too, but a hard-mounted NFS share hangs uploads while the NAS is
     away, so a local folder backed up to the NAS is the recommended setup. The
-    owner's deployment uses a folder on `/media/user/1TB_Vol21`. Bytes live
+    owner's deployment uses a folder on a local data disk. Bytes live
     at `<dir>/<owner_id>/<sha256>`, as in D-153.
   - **What:** PDF, .ics and .eml only. The type is decided from the file's
     content, never its name. Nothing else is stored; D-153's "no photos, audio
@@ -443,7 +443,7 @@ request forgery (SSRF) risk.
     there's no demo admin. A refused write in the browser shows as a toast.
   - **Hosting** (YONDER-126): its own stack on the home server, behind the
     public ingress, firewalled from the LAN, with SQLite on a volume.
-    `demo.rundere.app` is a CNAME to `demorundere.example.net`.
+    `demo.rundere.app` is a CNAME to the home server's dynamic-DNS name.
 
 ## Build order
 

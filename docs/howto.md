@@ -72,7 +72,7 @@ The built-in Capture page requires no external client.
 
 ## 7 The dashboard — your starting point
 
-Open Run·dere's root URL (e.g. `https://yonder.home.example/`) and you land on the
+Open Run·dere's root URL (e.g. `https://rundere.example.com/`) and you land on the
 **dashboard**, not a 404. It's the front door for daily use:
 
 - **What's next** — the trip currently under way, or the soonest upcoming one,

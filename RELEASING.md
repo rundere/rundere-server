@@ -67,16 +67,12 @@ uv run python scripts/build_airports.py    # rewrites resolve/data/airports.json
 
 Commit it only if the diff looks sane (the script prints the airport count).
 
-## Syncing to Plane
+## Syncing the tracker
 
-Plane (`plane.home.example`) is only reachable from inside the homelab
-network — GitHub-hosted runners can't reach it, so this step isn't part of
-CI. After a release ships, run:
-
-```bash
-export PLANE_API_KEY=...   # Plane workspace API token
-python3 scripts/plane_release_sync.py vX.Y.Z
-```
+Work is tracked in the maintainer's own Plane, which isn't public and isn't
+reachable from GitHub's runners, so this step isn't part of CI. After a release
+ships, the maintainer closes the shipped items there and files a release item
+with its notes (the Plane MCP connector does this from a Claude session).
 
 This reads the GitHub release notes for that tag and:
 
