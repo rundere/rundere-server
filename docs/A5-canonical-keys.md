@@ -93,7 +93,7 @@ signatures are lowercase hyphen-joined token sets.
 
 ### Scheduled ground (rail/bus/ferry)
 Mirrors the flight shape with operator + service number + station code
-(`rail:EUR:9024:2026-09-20:GBSPX`, backward-compatible with the existing
+(`rail:EUR:9024:2027-09-19:GBSPX`, backward-compatible with the existing
 sample). PNR form first when a booking reference exists.
 
 ## Dispatcher
@@ -106,7 +106,7 @@ never invents an anchor.
 ## Sample-data note
 
 `samples.json` predates this spec and carries old-format keys
-(`flight:AC:0652:2026-09-14:YYZ` — zero-padded number, no PNR form). Rules only
+(`flight:AC:0652:2027-09-13:YYZ` — zero-padded number, no PNR form). Rules only
 test key *presence/uniqueness*, not format, so the 35 cases still pass
 (verified). Migrate the sample keys opportunistically when samples are next
 regenerated.

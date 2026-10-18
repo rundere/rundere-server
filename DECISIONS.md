@@ -1153,7 +1153,7 @@ not the fix for this class of email.
 
 The correction field required `HH:MM` with a literal colon, so a reviewer typing
 `0720` was rejected by the browser and, on the paths where it slipped through,
-`_apply_edit` stored `2026-11-20T0720` verbatim — an invalid datetime that every
+`_apply_edit` stored `2027-11-19T0720` verbatim — an invalid datetime that every
 downstream check then refused, leaving the item stuck. `_normalize_local` now
 accepts `07:20`, `0720`, and space-separated forms, normalises to
 `YYYY-MM-DDTHH:MM`, keeps a bare date as date-only (D-06 precision), and returns
@@ -1315,7 +1315,7 @@ and waits for the return leg — which routinely arrives in a separate email.
 
 Consequences:
 - The mint span is the whole journey, so a middle leg that never touches home
-  (ORD→PHX) still resolves into the enclosing trip.
+  (MDW→PHX) still resolves into the enclosing trip.
 - A genuine one-way (relocation) defers, then escalates to review on the D-24
   TTL. Correct: a one-way move is not a round trip and a human should say what
   it is.

@@ -128,18 +128,18 @@ def test_process_toast_wording():
 
 def test_normalize_local_accepts_colonless_time():
     """Regression (2026-08-04): the review datetime field rejected '0720' and,
-    when a value slipped through, stored '2026-11-20T0720' — an invalid datetime
+    when a value slipped through, stored '2027-11-19T0720' — an invalid datetime
     that every downstream check then rejected. Both forms must normalise to
     HH:MM, a bare date must stay date-only, and junk must be refused."""
     if not DEPS:
         return
     from app.review.routes import _normalize_local
-    assert _normalize_local("2026-11-20T0720") == "2026-11-20T07:20"
-    assert _normalize_local("2026-11-20 07:20") == "2026-11-20T07:20"
-    assert _normalize_local("2026-11-20T7:20") == "2026-11-20T07:20"
-    assert _normalize_local("2026-11-20") == "2026-11-20"      # date-only preserved
+    assert _normalize_local("2027-11-19T0720") == "2027-11-19T07:20"
+    assert _normalize_local("2027-11-19 07:20") == "2027-11-19T07:20"
+    assert _normalize_local("2027-11-19T7:20") == "2027-11-19T07:20"
+    assert _normalize_local("2027-11-19") == "2027-11-19"      # date-only preserved
     assert _normalize_local("garbage") is None
-    assert _normalize_local("2026-11-20T25:00") is None        # invalid hour
+    assert _normalize_local("2027-11-19T25:00") is None        # invalid hour
 
 
 def test_logged_bucket_detection():

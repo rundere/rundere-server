@@ -145,13 +145,13 @@ def _flight_payload():
                                     "iata": "YYZ", "lat": 43.6, "lon": -79.6,
                                     "country": "CA", "city": "Toronto",
                                     "tz": "America/Toronto"},
-                          "time": {"local": "2026-11-20T07:20", "precision": "datetime",
+                          "time": {"local": "2027-11-19T07:20", "precision": "datetime",
                                    "tz": "America/Toronto", "origin": "document"}},
             "arrival": {"place": {"raw": "O'Hare", "name": "O'Hare",
                                   "iata": "ORD", "lat": 41.98, "lon": -87.9,
                                   "country": "US", "city": "Chicago",
                                   "tz": "America/Chicago"},
-                        "time": {"local": "2026-11-20T08:58", "precision": "datetime",
+                        "time": {"local": "2027-11-19T08:58", "precision": "datetime",
                                  "tz": "America/Chicago", "origin": "document"}},
         },
     }
@@ -164,7 +164,7 @@ def _add(session, payload, *, targets, approved=True, collection_action="created
                   "collection_action": collection_action,
                   "collection_name": collection_name,
                   "collection_id": collection_id,
-                  "collection_start": "2026-11-20", "collection_end": "2026-11-29",
+                  "collection_start": "2027-11-19", "collection_end": "2026-11-29",
                   "self_on_booking": True}
     it = TravelItem(
         item_type=payload["item_type"], schema_version="1.4.0",
@@ -189,14 +189,14 @@ def _skip():
 
 def test_utc_conversion_and_date_only_synthesis():
     _skip()
-    assert C._to_utc_z({"local": "2026-11-20T07:20", "precision": "datetime",
-                        "tz": "America/Toronto"}) == "2026-11-20T12:20:00.000Z"
+    assert C._to_utc_z({"local": "2027-11-19T07:20", "precision": "datetime",
+                        "tz": "America/Toronto"}) == "2027-11-19T12:20:00.000Z"
     # no zone -> cannot convert safely, never emit naive local
-    assert C._to_utc_z({"local": "2026-11-20T07:20", "precision": "datetime",
+    assert C._to_utc_z({"local": "2027-11-19T07:20", "precision": "datetime",
                         "tz": None}) is None
     # date-only -> bare date + synthesized flag
-    val, synth = C._al_datetime({"local": "2026-11-20", "precision": "date"})
-    assert val == "2026-11-20" and synth is True
+    val, synth = C._al_datetime({"local": "2027-11-19", "precision": "date"})
+    assert val == "2027-11-19" and synth is True
 
 
 def test_resolver_prefers_flown_then_fallback_then_caches():
@@ -456,7 +456,7 @@ def test_execute_writes_in_order_records_attempts_and_status():
     assert fbody["from"] == "CYYZ" and fbody["to"] == "KORD"
     assert fbody["airline"] == "ACA"
     assert fbody["seats"][0]["userId"] == "vu75"
-    assert fbody["date"] == "2026-11-20" and fbody["datePrecision"] == "day"
+    assert fbody["date"] == "2027-11-19" and fbody["datePrecision"] == "day"
     # one CommitAttempt per real write (collection, 2 locations? here 2 places)
     assert s.query(CommitAttempt).filter_by(item_id=it.id).count() >= 4
     assert it.status["adventurelog"] == "committed"
@@ -477,9 +477,9 @@ def test_airtrail_sends_local_date_and_time_separately():
         p, airports=airports, airlines={"AC": Airline(49, "AC", "AC", icao="ACA")},
         self_uid="u1")
     assert err is None
-    assert body["departure"] == "2026-11-20T00:00:00Z"      # local DATE only
+    assert body["departure"] == "2027-11-19T00:00:00Z"      # local DATE only
     assert body["departureTime"] == "07:20"                 # local HH:MM
-    assert body["arrival"] == "2026-11-20T00:00:00Z"
+    assert body["arrival"] == "2027-11-19T00:00:00Z"
     assert body["arrivalTime"] == "08:58"
 
 
@@ -488,7 +488,7 @@ def test_airtrail_date_only_arrival_sends_no_bare_date():
     time — AirTrail rejects that. Both go null."""
     _skip()
     p = _flight_payload()
-    p["flight"]["arrival"]["time"] = {"local": "2026-11-20", "precision": "date"}
+    p["flight"]["arrival"]["time"] = {"local": "2027-11-19", "precision": "date"}
     body, _ = C.build_airtrail_flight(
         p, airports={"YYZ": Airport(1, "YYZ", icao="CYYZ"),
                      "ORD": Airport(2, "ORD", icao="KORD")},
@@ -511,7 +511,7 @@ def test_transportation_recovers_tz_from_resolved_airport():
         def get(self, code): return airports.get(code)
     tb, synth = C.build_transportation(p, collection_id="c1", airports=R())
     assert synth is False                        # NOT "time unknown"
-    assert tb["date"].startswith("2026-11-20T12:20")   # 07:20 EST -> 12:20Z
+    assert tb["date"].startswith("2027-11-19T12:20")   # 07:20 EST -> 12:20Z
     assert tb["start_timezone"] == "America/Toronto"
 
 
@@ -634,7 +634,7 @@ def test_update_patches_prior_records_in_place():
     prior = _mk(s, _flight_payload(), targets=["adventurelog.transportation", "airtrail.flight"],
                 commit=_committed_results(("adventurelog.transportation", "tr-9")))
     p = _flight_payload()                              # same flight, later time
-    p["flight"]["departure"]["time"]["local"] = "2026-11-20T09:20"
+    p["flight"]["departure"]["time"]["local"] = "2027-11-19T09:20"
     it = _mk(s, p, targets=["adventurelog.transportation", "airtrail.flight"],
              revision={"action": "update", "prior_item_id": prior.id})
     al, at = FakeAL(), FakeAT(duplicate={"id": "flt-live"})   # AirTrail natural-key hit
@@ -770,7 +770,7 @@ def _add_linked(s, targets):
     """An approved item linked to a fresh Yonder trip that spans its dates."""
     from app.models import Trip
     tr = Trip(name="United States — November 2026",
-              start_date="2026-11-20", end_date="2026-11-29")
+              start_date="2027-11-19", end_date="2026-11-29")
     s.add(tr); s.commit()
     it = _add(s, _flight_payload(), targets=targets)
     it.trip_id = tr.id
@@ -882,7 +882,7 @@ def test_yonder_trip_minted_alongside_new_adventurelog_collection():
                  targets=["adventurelog.collection", "yonder.activity"])
     minter.canonical_key = "flight:pnr:MINT1:AC:9471:YYZ"
     minter.resolution = {**minter.resolution,
-                         "mint_group": "MINTTEST1:2026-11-20..2026-11-29",
+                         "mint_group": "MINTTEST1:2027-11-19..2026-11-29",
                          "is_minter": True, "mint_yonder_trip": True}
     minter.owner_id = "user-minter"          # captured via a user-scoped key
     s.commit()
@@ -891,7 +891,7 @@ def test_yonder_trip_minted_alongside_new_adventurelog_collection():
     attach = _add(s, attach_payload, targets=["yonder.activity"])
     attach.canonical_key = "flight:pnr:ATTACH1:AC:9472:ORD"
     attach.resolution = {**attach.resolution,
-                         "mint_group": "MINTTEST1:2026-11-20..2026-11-29",
+                         "mint_group": "MINTTEST1:2027-11-19..2026-11-29",
                          "is_minter": False, "mint_yonder_trip": True}
     s.commit()
 
@@ -906,7 +906,7 @@ def test_yonder_trip_minted_alongside_new_adventurelog_collection():
     trip = trips[0]
     assert trip.source == "resolver"
     assert trip.name == "United States — November 2026"
-    assert trip.start_date == "2026-11-20" and trip.end_date == "2026-11-29"
+    assert trip.start_date == "2027-11-19" and trip.end_date == "2026-11-29"
     assert trip.adventurelog_collection_id == "coll-1"   # linked to the mint
     assert trip.owner_id == "user-minter"                # owned like the capture
     assert minter.trip_id == trip.id and attach.trip_id == trip.id
@@ -932,7 +932,7 @@ def test_resolver_minted_trip_stays_open_for_open_capture():
                  targets=["adventurelog.collection", "yonder.activity"])
     minter.canonical_key = "flight:pnr:MINT3:AC:8783:YYZ"
     minter.resolution = {**minter.resolution,
-                         "mint_group": "MINTTEST3:2026-11-20..2026-11-29",
+                         "mint_group": "MINTTEST3:2027-11-19..2026-11-29",
                          "is_minter": True, "mint_yonder_trip": True}
     s.commit()
 
@@ -962,7 +962,7 @@ def test_yonder_trip_mint_deferred_until_minter_commits():
     attach = _add(s, attach_payload, targets=["yonder.activity"])
     attach.canonical_key = "flight:pnr:ATTACH2:AC:8782:YUL"
     attach.resolution = {**attach.resolution,
-                         "mint_group": "MINTTEST2:2026-11-20..2026-11-29",
+                         "mint_group": "MINTTEST2:2027-11-19..2026-11-29",
                          "is_minter": False, "mint_yonder_trip": True}
     s.commit()
 
@@ -1089,7 +1089,7 @@ def test_only_a_six_character_record_locator_goes_to_airtrail():
     airline record locator (Sabre PNR). Anything else stays on Run·dere's own
     record and isn't sent — AirTrail rejected a whole flight over a longer one."""
     _skip()
-    assert C.airline_record_locator(" bcq-dta ") == "JMVRLE"
+    assert C.airline_record_locator(" jmv-rle ") == "JMVRLE"
     assert C.airline_record_locator("AB12CD") == "AB12CD"
     for bad in ("1234567890", "BOOKING-12345", "ABC12", "", None, "AB 12 CD 9"):
         assert C.airline_record_locator(bad) is None, bad

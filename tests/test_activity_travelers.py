@@ -103,7 +103,7 @@ if DEPS:
         try:
             # B's flight only
             client.post(f"/trips/{tid}/activity", data={
-                "activity_kind": "flight", "when": "2026-11-20T07:20",
+                "activity_kind": "flight", "when": "2027-11-19T07:20",
                 "travelers_shown": "1", "traveler_ids": [str(b)]})
             with SessionLocal() as s:
                 act = s.query(TripActivity).filter_by(trip_id=tid).one().id
@@ -117,13 +117,13 @@ if DEPS:
             assert f'value="{a}"\n                 checked' not in modal
             # ticking both = everyone -> stored as no rows, no chips shown
             client.post(f"/trips/{tid}/activity/{act}", data={
-                "activity_kind": "flight", "when": "2026-11-20T07:20",
+                "activity_kind": "flight", "when": "2027-11-19T07:20",
                 "travelers_shown": "1", "traveler_ids": [str(a), str(b)]})
             assert _tags(act) == []
             assert "bp-who-tag" not in client.get(f"/trips/{tid}").text
             # removing a traveller drops their tags
             client.post(f"/trips/{tid}/activity/{act}", data={
-                "activity_kind": "flight", "when": "2026-11-20T07:20",
+                "activity_kind": "flight", "when": "2027-11-19T07:20",
                 "travelers_shown": "1", "traveler_ids": [str(a)]})
             assert _tags(act) == [a]
             client.post(f"/trips/{tid}/travelers/{a}/remove")
@@ -133,7 +133,7 @@ if DEPS:
                 s.add(TripTraveler(trip_id=tid, traveler_id=a, role="companion"))
                 s.commit()
             client.post(f"/trips/{tid}/activity/{act}", data={
-                "activity_kind": "flight", "when": "2026-11-20T07:20",
+                "activity_kind": "flight", "when": "2027-11-19T07:20",
                 "travelers_shown": "1", "traveler_ids": [str(b)]})
             client.post(f"/trips/{tid}/activity/{act}/delete")
             with SessionLocal() as s:
@@ -163,7 +163,7 @@ if DEPS:
         tid, _ = _trip("at-private", [], owner_id=owner.id)
         with SessionLocal() as s:
             act = TripActivity(trip_id=tid, type="flight",
-                               values={"when": "2026-11-20T07:20"}, starts_at="2026-11-20T07:20")
+                               values={"when": "2027-11-19T07:20"}, starts_at="2027-11-19T07:20")
             s.add(act)
             s.commit()
             aid = act.id
@@ -192,7 +192,7 @@ if DEPS:
         h = _bearer(u)
         try:
             r = client.post(f"/api/v1/trips/{tid}/activities", headers=h,
-                            json={"type": "flight", "values": {"when": "2026-11-20T07:20"},
+                            json={"type": "flight", "values": {"when": "2027-11-19T07:20"},
                                   "traveler_ids": [a]})
             assert r.status_code == 201 and r.json()["traveler_ids"] == [a]
             aid = r.json()["id"]

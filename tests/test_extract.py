@@ -55,9 +55,9 @@ FLIGHT_LD = {
         "@type": "Flight", "flightNumber": "AC652",
         "airline": {"@type": "Airline", "name": "Air Canada", "iataCode": "AC"},
         "departureAirport": {"@type": "Airport", "name": "Toronto Pearson", "iataCode": "YYZ"},
-        "departureTime": "2026-09-14T18:30:00-04:00",
+        "departureTime": "2027-09-13T18:30:00-04:00",
         "arrivalAirport": {"@type": "Airport", "name": "Heathrow", "iataCode": "LHR"},
-        "arrivalTime": "2026-09-15T06:40:00+01:00",
+        "arrivalTime": "2027-09-14T06:40:00+01:00",
     },
 }
 
@@ -77,7 +77,7 @@ def test_jsonld_flight():
     f = p["flight"]
     assert f["flight_number"] == "652"          # carrier prefix stripped
     assert f["departure"]["place"]["iata"] == "YYZ"
-    assert f["departure"]["time"] == {"local": "2026-09-14T18:30",
+    assert f["departure"]["time"] == {"local": "2027-09-13T18:30",
                                       "precision": "datetime", "tz": None,
                                       "origin": "document"}   # offset dropped, never guessed
     assert p["travelers"][0]["raw_name"] == "Pat Example"
@@ -117,11 +117,11 @@ def test_jsonld_flight_regional_operator_and_reservation_id():
             "departureAirport": {"@type": "Airport",
                 "name": "Toronto-Pearson International Airport, Terminal 1",
                 "iataCode": "YYZ"},
-            "departureTime": "2026-11-20T07:20:00-05:00",
+            "departureTime": "2027-11-19T07:20:00-05:00",
             "arrivalAirport": {"@type": "Airport",
                 "name": "Chicago O'Hare International Airport, Terminal 1",
                 "iataCode": "ORD"},
-            "arrivalTime": "2026-11-20T08:58:00-06:00",
+            "arrivalTime": "2027-11-19T08:58:00-06:00",
         },
     }
     items = jsonld.extract_jsonld(_ld_html(doc))
@@ -133,9 +133,9 @@ def test_jsonld_flight_regional_operator_and_reservation_id():
     assert f["marketing_carrier"]["iata"] == "AC"       # from the number, not QK
     assert f["operating_carrier"]["iata"] == "QK"       # provider kept as operating
     assert f["departure"]["place"]["iata"] == "YYZ"
-    assert f["departure"]["time"]["local"] == "2026-11-20T07:20"
+    assert f["departure"]["time"]["local"] == "2027-11-19T07:20"
     assert f["arrival"]["place"]["iata"] == "ORD"
-    assert f["arrival"]["time"]["local"] == "2026-11-20T08:58"
+    assert f["arrival"]["time"]["local"] == "2027-11-19T08:58"
     assert p["booking_reference"] == "JMVRLE"           # read from reservationId
 
 
@@ -144,7 +144,7 @@ def test_jsonld_lodging_and_graph():
         "@type": "LodgingReservation", "reservationNumber": "HX-1",
         "reservationFor": {"@type": "LodgingBusiness", "name": "Test Hotel",
                            "address": {"addressLocality": "London", "addressCountry": "GB"}},
-        "checkinTime": "2026-09-15T15:00:00", "checkoutTime": "2026-09-18T11:00:00",
+        "checkinTime": "2027-09-14T15:00:00", "checkoutTime": "2027-09-17T11:00:00",
     }
     items = jsonld.extract_jsonld(_ld_html({"@graph": [lodging]}))
     assert len(items) == 1

@@ -112,12 +112,12 @@ def test_drive_fills_blanks_from_its_map_link(monkeypatch):
         return
     from app.trips.enrich import enrich_activity_values
     _stub_link(monkeypatch)
-    out = enrich_activity_values("drive", {"mapLink": GMAPS, "when": "2026-10-03T09:00"})
+    out = enrich_activity_values("drive", {"mapLink": GMAPS, "when": "2027-10-02T09:00"})
     assert out["route"] == "Phoenix International Sunport → Sedona Plaza"
     assert out["from"] == "Phoenix International Sunport"
     assert out["to"] == "Sedona Plaza, Sedona, NM"
     assert out["distance"] == "210 km (130 mi) · ~2 h 10 min"
-    assert out["endWhen"] == "2026-10-03T11:10"          # departure + drive time
+    assert out["endWhen"] == "2027-10-02T11:10"          # departure + drive time
 
 
 def test_drive_fill_never_overwrites_and_skips_other_types(monkeypatch):
@@ -126,7 +126,7 @@ def test_drive_fill_never_overwrites_and_skips_other_types(monkeypatch):
     from app.trips.enrich import enrich_activity_values
     _stub_link(monkeypatch)
     typed = {"mapLink": GMAPS, "route": "Scenic way", "distance": "about 3 hours",
-             "when": "2026-10-03"}
+             "when": "2027-10-02"}
     out = enrich_activity_values("drive", typed)
     assert out["route"] == "Scenic way" and out["distance"] == "about 3 hours"
     assert "endWhen" not in out                  # a date-only departure has no clock
@@ -150,7 +150,7 @@ def test_api_add_drive_activity_fills_distance(monkeypatch):
                  auth_source="local")
         s.add(u)
         s.flush()
-        t = Trip(name="Road trip test", start_date="2026-10-02", end_date="2026-10-11",
+        t = Trip(name="Road trip test", start_date="2027-10-01", end_date="2027-10-10",
                  owner_id=u.id)
         s.add(t)
         s.commit()
@@ -160,7 +160,7 @@ def test_api_add_drive_activity_fills_distance(monkeypatch):
         r = TestClient(app).post(
             f"/api/v1/trips/{tid}/activities",
             headers={"Authorization": f"Bearer {token}"},
-            json={"type": "drive", "values": {"mapLink": GMAPS, "when": "2026-10-03T09:00"}})
+            json={"type": "drive", "values": {"mapLink": GMAPS, "when": "2027-10-02T09:00"}})
         assert r.status_code == 201, r.text
         body = r.json()
         assert body["values"]["distance"].startswith("210 km")
@@ -222,13 +222,13 @@ def _drive_payload():
                 "departure": {"place": {"raw": "Phoenix International Sunport",
                                         "name": "Phoenix International Sunport",
                                         "lat": 35.04, "lon": -106.61},
-                              "time": {"local": "2026-10-03", "precision": "date"}},
+                              "time": {"local": "2027-10-02", "precision": "date"}},
                 "arrival": {"place": {"raw": "Heritage Square, Phoenix, NM",
                                       "name": "Heritage Square, Phoenix, NM",
                                       "city": "Phoenix", "region": "NM",
                                       "address": "210 Heritage Way NW",
                                       "lat": 35.09, "lon": -106.67},
-                            "time": {"local": "2026-10-03", "precision": "date"}},
+                            "time": {"local": "2027-10-02", "precision": "date"}},
                 "waypoints": [],
                 "route": {"provider": "google_maps", "source_url": GMAPS,
                           "distance_km": 21.3, "duration_minutes": 19,
@@ -304,7 +304,7 @@ def test_capture_form_offers_yonder_trips_and_pins_the_pick():
     from app.resolving import _link_chosen_trip
     client = TestClient(app)
     with SessionLocal() as s:
-        t = Trip(name="Capture pick test", start_date="2026-10-02", end_date="2026-10-11")
+        t = Trip(name="Capture pick test", start_date="2027-10-01", end_date="2027-10-10")
         s.add(t)
         s.commit()
         tid = t.id
@@ -315,7 +315,7 @@ def test_capture_form_offers_yonder_trips_and_pins_the_pick():
     assert "AdventureLog collection" in page.text
 
     r = client.post("/capture/web", data={
-        "path": "google", "content": GMAPS, "travel_date": "2026-10-03", "trip_id": tid})
+        "path": "google", "content": GMAPS, "travel_date": "2027-10-02", "trip_id": tid})
     assert r.status_code == 200 and "Captured" in r.text
     with SessionLocal() as s:
         b = [b for b in s.query(IngestBatch).all()
