@@ -74,7 +74,7 @@
 
   <div class="field"><label for="tp-alias">Name-on-ticket aliases <span class="yn-help">— one per line; matches flights printed under name variants</span></label>
     <textarea id="tp-alias" class="input" name="aliases" rows="3"
-              placeholder="e.g. OKAFOR/DANIEL MR">{{ (trav.aliases or []) | join('\n') }}</textarea></div>
+              placeholder="e.g. NAKAMURA/KENJI MR">{{ (trav.aliases or []) | join('\n') }}</textarea></div>
 
   <div class="field"><label for="tp-at">AirTrail user id <span class="yn-help">— optional; your AirTrail connection (Settings → Connections) normally covers this</span></label>
     <input id="tp-at" class="input" name="airtrail_user_id" value="{{ trav.airtrail_user_id or '' }}"></div>

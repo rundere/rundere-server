@@ -163,7 +163,7 @@ def _next_up(session: Session, trips: list[Trip], today: str, user=None,
 
 def greeting_name(session: Session, user) -> str:
     """Who Home greets (YONDER-218): the first name of the person's traveller
-    ("Daniel" from "Daniel Okafor"), not their username; the username only when
+    ("Kenji" from "Kenji Nakamura"), not their username; the username only when
     no traveller is linked."""
     if user is None:
         return ""

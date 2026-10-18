@@ -300,10 +300,10 @@ def test_transportation_carries_description_and_timezones():
     timezones."""
     _skip()
     p = _flight_payload()
-    p["travelers"] = [{"raw_name": "Daniel Okafor"}]
+    p["travelers"] = [{"raw_name": "Kenji Nakamura"}]
     body, _ = C.build_transportation(p, collection_id="c1")
     assert "Booking Ref: JMVRLE" in body["description"]
-    assert "Daniel Okafor" in body["description"]
+    assert "Kenji Nakamura" in body["description"]
     assert body["start_timezone"] == "America/Toronto"
     assert body["end_timezone"] == "America/New_York"
 
@@ -1013,7 +1013,7 @@ def test_ground_modes_map_to_adventurelog_enum():
 
 def test_committed_flight_tagged_with_its_passengers_on_a_shared_trip():
     """4.1: on a multi-traveller trip, a committed flight is tagged with the
-    passengers the booking names (Amara's flight isn't everyone's), matched
+    passengers the booking names (Kenta's flight isn't everyone's), matched
     against the trip's own roster; an inferred passenger never tags."""
     _skip()
     from app.models import TravelerIdentity, TripActivity, TripTraveler

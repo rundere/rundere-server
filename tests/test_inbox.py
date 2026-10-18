@@ -314,7 +314,7 @@ if DEPS:
             addr = inbox.user_address(s, _user(s))
         from app.review import autoprocess
         monkeypatch.setattr(autoprocess, "kick", lambda user: None)
-        personal = _mail("Daniel <me@pm.example>", msgid="<personal-1@x>")
+        personal = _mail("Kenji <me@pm.example>", msgid="<personal-1@x>")
         bare = _mail(MAILBOX, msgid="<bare-1@x>")
         fake = FakeIMAP({b"1": personal, b"2": _mail(addr), b"3": bare})
         monkeypatch.setattr(inbox, "_connect", lambda: fake)

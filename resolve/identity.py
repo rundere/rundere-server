@@ -5,8 +5,8 @@ guestName string. Only flights the account holder was actually on may be
 written there — a flight booked for family alone is not the owner's flight
 history — and that exclusion is enforced HERE, at resolution, not at commit.
 
-Airlines print names in shapes no two agree on: "OKAFOR/DANIEL MR",
-"DANIEL OKAFOR", "Okafor, Daniel", "R OKAFOR". Matching therefore compares a
+Airlines print names in shapes no two agree on: "NAKAMURA/KENJI MR",
+"KENJI NAKAMURA", "Nakamura, Kenji", "K NAKAMURA". Matching therefore compares a
 normalised token SET, so word order, punctuation, honorifics and middle names
 do not decide whether someone is you.
 """
@@ -43,7 +43,7 @@ def normalize_name(raw: str) -> str:
 
 
 def name_tokens(raw: str) -> frozenset[str]:
-    """Token set, ignoring single-letter initials — "R OKAFOR" should not match
+    """Token set, ignoring single-letter initials — "K NAKAMURA" should not match
     every other person whose name contains an R."""
     return frozenset(t for t in normalize_name(raw).split() if len(t) > 1)
 
@@ -53,7 +53,7 @@ def match_identity(raw_name: str,
     """(identity, match_source, confidence).
 
     Exact on the full normalised string first; then token-set containment,
-    which is what makes "OKAFOR/DANIEL MR" and "Daniel Okafor" the same person
+    which is what makes "NAKAMURA/KENJI MR" and "Kenji Nakamura" the same person
     without letting a shared surname alone match a different family member.
     """
     want_norm = normalize_name(raw_name)
@@ -74,8 +74,8 @@ def match_identity(raw_name: str,
                 continue
             overlap = len(have & want_tokens)
             # Require every token of the shorter name to appear in the longer
-            # one: "Daniel Okafor" vs "Daniel Kumar Okafor" matches; "Daniel Okafor"
-            # vs "Amara Okafor" does not, because "amara" is not "daniel".
+            # one: "Kenji Nakamura" vs "Kenji Hiroshi Nakamura" matches; "Kenji Nakamura"
+            # vs "Kenta Nakamura" does not, because "kenta" is not "kenji".
             if overlap and overlap == min(len(have), len(want_tokens)) and overlap >= 2:
                 score = overlap / max(len(have), len(want_tokens))
                 if score > best[1]:

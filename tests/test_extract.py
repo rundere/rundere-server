@@ -205,7 +205,7 @@ def test_ical_allday_and_rrule():
 
 # Outlook/Exchange invite: Windows TZID + a VTIMEZONE block whose STANDARD/
 # DAYLIGHT sub-components carry their OWN DTSTART:16010101 and RRULE (the real
-# shape of the DC Spirit Game / Wanita's invites that regressed).
+# shape of a league game invite from a colleague that regressed).
 INVITE_OUTLOOK = "\r\n".join([
     "BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:REQUEST",
     "PRODID:Microsoft Exchange Server 2010",
@@ -218,7 +218,7 @@ INVITE_OUTLOOK = "\r\n".join([
     "TZOFFSETFROM:-0500", "TZOFFSETTO:-0400", "END:DAYLIGHT",
     "END:VTIMEZONE",
     "BEGIN:VEVENT", "UID:040000008200E00074C5B7101A82E008@exchange",
-    "SUMMARY;LANGUAGE=en-US:DC Spirit Game/HH before- game at 7pm",
+    "SUMMARY;LANGUAGE=en-US:League Game/HH before- game at 7pm",
     "LOCATION;LANGUAGE=en-US:Audi Field",
     "DTSTART;TZID=Eastern Standard Time:20260726T160000",
     "DTEND;TZID=Eastern Standard Time:20260726T223000",
@@ -275,7 +275,7 @@ GCAL_TIMED = {
     "start": {"dateTime": "2026-09-01T18:30:00-04:00", "timeZone": "America/New_York"},
     "end": {"dateTime": "2026-09-01T20:30:00-04:00", "timeZone": "America/New_York"},
     "organizer": {"email": "tricia@example.com", "displayName": "Tricia"},
-    "attendees": [{"email": "owner@example.com"}, {"displayName": "No Email"}],
+    "attendees": [{"email": "traveller@example.test"}, {"displayName": "No Email"}],
 }
 
 
@@ -289,7 +289,7 @@ def test_gcal_timed_event():
     assert e["end"]["tz"] == "America/New_York"
     assert e["venue"]["raw"].startswith("Silver Diner")
     assert e["organizer"] == "tricia@example.com"
-    assert e["attendees"] == ["owner@example.com"]     # the email-less guest dropped
+    assert e["attendees"] == ["traveller@example.test"]     # the email-less guest dropped
     assert e["gcal_event_id"] == "abc@google.com"          # iCalUID, not the instance id
     assert items[0]["booking_status"] == "confirmed"
 
@@ -376,7 +376,7 @@ def test_maps_url_coords_stay_out_of_extraction():
     route.source_url and are applied at resolve, so extraction stays schema-valid
     (D-61). This is the regression guard for the schema-invalid coord bug."""
     url = ("https://www.google.com/maps/dir/"
-           "2074+Donald+Harbour+Pkwy,+Locust+Hill,+ON+L0H+1J0,+Canada/Port Calloway,+Ontario/"
+           "100+Harbour+Ridge+Pkwy,+Maple+Grove,+ON+Z9Z+9Z9,+Canada/Port Calloway,+Ontario/"
            "@44.07,-78.5,9z/data=!3m1!4b1!1m5!1m1!1s0xabc:0xdef!2m2!1d-79.3832123!2d43.6532456"
            "!1m5!1m1!1s0x123:0x456!2m2!1d-76.4930295!2d44.2334401!3e0")
     items = maps_url.extract_maps_url(url, {"travel_date": "2026-08-14"})
@@ -802,4 +802,4 @@ def test_directions_stop_place_city_state_splits_on_the_city():
     assert (p["city"], p["region"]) == ("Phoenix", "NM")
     p = _parse_place("Toronto, ON, Canada")
     assert (p["city"], p["region"]) == ("Toronto", "ON")
-    assert "city" not in _parse_place("2074 Donald Harbour Pkwy, Locust Hill, ON")
+    assert "city" not in _parse_place("100 Harbour Ridge Pkwy, Maple Grove, ON")

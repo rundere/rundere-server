@@ -412,7 +412,7 @@
       "properties": {
         "raw_name": {
           "type": "string",
-          "description": "Verbatim, e.g. MEHTA/DANIELMR. Never normalised in place."
+          "description": "Verbatim, e.g. OKAFOR/DANIELMR. Never normalised in place."
         },
         "given": {
           "type": [

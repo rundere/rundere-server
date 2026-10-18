@@ -610,7 +610,7 @@ def test_apply_maps_coords_from_url_and_bare_coordinate():
     src = ("https://www.google.com/maps/dir/100+Harbour+Ridge+Pkwy/Port Calloway/@x/data=!1m1!2m2"
            "!1d-79.3832123!2d43.6532456!1m1!2m2!1d-76.4930295!2d44.2334401!3e0")
     pay = {"item_type": "ground_transport", "ground_transport": {
-        "departure": {"place": {"raw": "2074 Donald Harbour Pkwy, Locust Hill, ON"}},
+        "departure": {"place": {"raw": "100 Harbour Ridge Pkwy, Maple Grove, ON"}},
         "arrival": {"place": {"raw": "Port Calloway, Ontario", "city": "Port Calloway"}},
         "waypoints": [],
         "route": {"provider": "google_maps", "source_url": src}}}
@@ -838,7 +838,7 @@ def test_taxi_to_an_airport_keys_and_files_to_its_trip():
 
     taxi = {"item_type": "ground_transport", "booking_status": "confirmed",
             "cost": {"amount": 21.93, "currency": "USD"},
-            "travelers": [{"raw_name": "Daniel Okafor"}],
+            "travelers": [{"raw_name": "Kenji Nakamura"}],
             "ground_transport": {
                 "mode": "car", "service_number": "4", "round_trip": False,
                 "route": {"distance_km": None, "duration_minutes": None},

@@ -40,7 +40,7 @@ def test_greeting_by_hour_and_name():
 
 
 def test_greeting_uses_the_traveller_name_and_the_viewers_clock():
-    """YONDER-218: "Daniel", not "admin"; and the page re-reads the hour from the
+    """YONDER-218: "Kenji", not "admin"; and the page re-reads the hour from the
     browser, because the server may run on UTC."""
     import uuid
     from types import SimpleNamespace
@@ -49,10 +49,10 @@ def test_greeting_uses_the_traveller_name_and_the_viewers_clock():
     from app.db import SessionLocal
     from app.models import TravelerIdentity
     with SessionLocal() as s:
-        t = TravelerIdentity(display_name=f"Daniel Okafor{uuid.uuid4().hex[:4]}", kind="guest")
+        t = TravelerIdentity(display_name=f"Kenji Nakamura{uuid.uuid4().hex[:4]}", kind="guest")
         s.add(t)
         s.flush()
-        assert greeting_name(s, SimpleNamespace(username="admin", traveler_id=t.id)) == "Daniel"
+        assert greeting_name(s, SimpleNamespace(username="admin", traveler_id=t.id)) == "Kenji"
         assert greeting_name(s, SimpleNamespace(username="admin", traveler_id=None)) == "admin"
         assert greeting_name(s, None) == ""
         s.rollback()
