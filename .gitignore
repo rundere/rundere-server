@@ -51,10 +51,7 @@ tests/fixtures/raw/
 
 # internal working notes — local only, never in the public repo
 HANDOFF.md
-DECISIONS.md
-OPEN_QUESTIONS.md
 A4-PROBE-NOTES.md
-SPEC-1.1-web-capture.md
 
 # operator deployment copy (real paths/secrets) — real stacks live in the private
 # rundere-ops repo; this repo keeps generic deploy/*.example.yml (YONDER-290)

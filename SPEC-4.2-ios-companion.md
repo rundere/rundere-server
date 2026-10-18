@@ -4,7 +4,7 @@
 > Run·dere, bundle ID `app.rundere.ios`). Paths below under `ios/` now live there.
 
 Status: **plan, not started** (2026-09-25). Written after 4.1.1 shipped, for
-the agent that picks up the iOS work. Read with [`ios/README.md`](ios/README.md),
+the agent that picks up the iOS work. Read with the iOS app repository's README,
 [`SPEC-4-mobile.md`](SPEC-4-mobile.md) (the original 4.0 Companion spec,
 decisions D-110–D-116) and [`SPEC-4-phase3-api.md`](SPEC-4-phase3-api.md).
 Plane: label **v4.2**, module **4.0 Companion - iOS App** (and the JSON API /
@@ -74,7 +74,7 @@ mentions drf-spectacular, a Django library; Yonder is FastAPI.)
 > **Superseded by SPEC-8 D-194 (2026-10-13).** The app signs in through
 > Run·dere's own OAuth server with the built-in `rundere-ios` client instead of
 > this handoff; nothing below was built. App brief:
-> [`docs/handoff/YONDER-175-ios-oauth-sign-in.md`](docs/handoff/YONDER-175-ios-oauth-sign-in.md).
+> the maintainer's hand-off brief for YONDER-175 (private).
 Server-brokered PKCE handoff — the app never talks to Authentik directly:
 1. App makes `code_verifier`/`code_challenge`, opens
    `ASWebAuthenticationSession` at
@@ -161,7 +161,7 @@ editing is out of scope for 4.2.
 > post-deploy verification.
 
 > **Implementation brief for YONDER-107/108:**
-> [`docs/handoff/YONDER-107-108-claude-connector.md`](docs/handoff/YONDER-107-108-claude-connector.md)
+> the maintainer's hand-off brief for YONDER-107/108 (private)
 > (self-contained, for a cloud session without Plane/homelab access).
 Goal: use Yonder from **claude.ai** (and the Claude mobile app, which uses the
 same account's connectors) for travel planning — read trips, timeline,

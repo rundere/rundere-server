@@ -183,7 +183,7 @@ FORBIDDEN_NAMES = [
 FORBIDDEN_EXCEPT = [".env.example", "*.example.json", "*.example.toml", "*.example.yml"]
 
 D_CITE = re.compile(r"\bD-(\d{1,3})\b")
-D_DEFINE = re.compile(r"\*\*D-(\d{1,3})\b")                      # **D-123 — …
+D_DEFINE = re.compile(r"\*\*D-[0]*(\d{1,3})\b|^#+\s*D-[0]*(\d{1,3})\b(?!\s*[–-]\s*D-)", re.M)  # **D-123 — … or ## D-01 — …
 D_RANGE = re.compile(r"\bD-(\d{1,3})\s*[–-]\s*D-(\d{1,3})\b")     # D-110–D-116 (section headings)
 
 
@@ -472,7 +472,7 @@ def check_decisions() -> list[Finding]:
         if text is None:
             continue
         if path.endswith(".md"):
-            defined.update(int(n) for n in D_DEFINE.findall(text))
+            defined.update(int(a or b) for a, b in D_DEFINE.findall(text))
             # A range in a heading ("## D-110–D-116 — …") defines that block of decisions.
             for a, b in D_RANGE.findall(text):
                 if re.search(rf"^#+.*D-{a}\s*[–-]\s*D-{b}", text, re.M):

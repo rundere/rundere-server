@@ -86,7 +86,11 @@ def test_allowlist_needs_a_reason(tmp_path):
 
 
 def test_decision_patterns():
-    assert pp.D_DEFINE.findall("- **D-201 — dark by default") == ["201"]
+    def defined(text):
+        return [a or b for a, b in pp.D_DEFINE.findall(text)]
+    assert defined("- **D-201 — dark by default") == ["201"]
+    assert defined("## D-01 — Standalone FastAPI app") == ["1"]          # heading, zero-padded
+    assert defined("## D-110–D-116 — see SPEC-4") == []                  # a range is handled apart
     assert pp.D_RANGE.findall("## D-110–D-116 — see SPEC-4") == [("110", "116")]
     assert pp.D_CITE.findall("per D-15 and D-198.") == ["15", "198"]
 
