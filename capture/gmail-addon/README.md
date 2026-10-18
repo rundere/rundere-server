@@ -61,7 +61,7 @@ method and is dropped, D-164.)
    docker exec -it yonder-yonder-1 python -m app.cli create-key <client-name>
    ```
    Leave the Ingest URL as the default unless you changed the public hostname
-   in `portainer-stack.yml`. Click **Save** — the key is stored in your
+   in your stack. Click **Save** — the key is stored in your
    script's User Properties, never in code.
 
 ## Using it

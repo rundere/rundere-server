@@ -56,8 +56,8 @@ OPEN_QUESTIONS.md
 A4-PROBE-NOTES.md
 SPEC-1.1-web-capture.md
 
-# operator deployment copy (real paths/secrets) — the repo keeps the generic
-# portainer-stack.yml reference instead
+# operator deployment copy (real paths/secrets) — real stacks live in the private
+# rundere-ops repo; this repo keeps generic deploy/*.example.yml (YONDER-290)
 yonder-stack.yml
 
 # Local Claude Code tooling config

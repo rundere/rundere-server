@@ -1,4 +1,4 @@
-# Dev/verification stack ONLY — production is portainer-stack.yml in Portainer.
+# Dev/verification stack ONLY. For production see deploy/docker-compose.example.yml.
 # Throwaway ports and password; brings the app up on http://localhost:8100.
 #   docker compose -f docker-compose.dev.yml up -d --build
 #   docker compose -f docker-compose.dev.yml down -v

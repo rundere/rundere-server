@@ -196,7 +196,7 @@ Design:
   a Yonder bearer token anyway. Optionally restrict `/mcp` to Anthropic's IP
   ranges. **Keep Authentik on the browser pages** (`/login`, `/oauth/authorize`,
   the web app), so the sign-in page itself is never naked on the internet.
-  Also bring `portainer-stack.yml` in line with the live labels (it only
+  Also bring the reference stack file in line with the live labels (it only
   shows `/ingest` today).
 
 **Not tied to Authentik (owner, 2026-09-25).** Yonder is always the token
