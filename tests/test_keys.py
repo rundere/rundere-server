@@ -18,37 +18,37 @@ from resolve.keys import (KeyResult, event_key, flight_key, geohash, keys_for,
 def test_flight_cross_channel_collapse():
     """Airline email (PNR) + gcal entry (no PNR) + manage-booking capture (PNR)
     → one flight. THE core A5 requirement."""
-    email = flight_key("AC", "0888", "2026-09-14", "YYZ", pnr="T4WNX8")
-    gcal = flight_key("AC", 888, "2026-09-14", "yyz")          # no PNR
-    web = flight_key("ac", "AC652", "2026-09-14", "YYZ", pnr="T4WNX8")
+    email = flight_key("AC", "0652", "2027-09-13", "YYZ", pnr="T4WNX8")
+    gcal = flight_key("AC", 652, "2027-09-13", "yyz")          # no PNR
+    web = flight_key("ac", "AC652", "2027-09-13", "YYZ", pnr="t4wnx8")
 
-    assert email.primary == web.primary == "flight:pnr:T4WNX8:AC:888:YYZ"
-    assert gcal.primary == "flight:AC:888:2026-09-14:YYZ"
+    assert email.primary == web.primary == "flight:pnr:T4WNX8:AC:652:YYZ"
+    assert gcal.primary == "flight:AC:652:2027-09-13:YYZ"
     assert matches(email, gcal) and matches(email, web) and matches(gcal, web)
 
 
 def test_flight_survives_past_midnight_schedule_change():
     """OQ-10: the exact failure the date-anchored key had."""
-    before = flight_key("AC", "888", "2026-09-14", "YYZ", pnr="T4WNX8")
-    after = flight_key("AC", "888", "2026-09-15", "YYZ", pnr="T4WNX8")
+    before = flight_key("AC", "652", "2027-09-13", "YYZ", pnr="T4WNX8")
+    after = flight_key("AC", "652", "2027-09-14", "YYZ", pnr="T4WNX8")
     assert before.primary == after.primary          # update chain intact
 
 
 def test_flight_number_normalization():
-    assert normalize_flight_number("0888") == "888"
-    assert normalize_flight_number("AC 0888", "AC") == "888"
-    assert normalize_flight_number(888) == "888"
-    assert normalize_flight_number("888A") == "888A"
+    assert normalize_flight_number("0652") == "652"
+    assert normalize_flight_number("AC 0652", "AC") == "652"
+    assert normalize_flight_number(652) == "652"
+    assert normalize_flight_number("652A") == "652A"
     # PNR reuse across legs: same PNR, different legs → different keys
-    leg1 = flight_key("AC", "888", "2026-09-14", "YYZ", pnr="T4WNX8")
-    leg2 = flight_key("AC", "889", "2026-09-22", "LHR", pnr="T4WNX8")
+    leg1 = flight_key("AC", "652", "2027-09-13", "YYZ", pnr="T4WNX8")
+    leg2 = flight_key("AC", "889", "2027-09-21", "LHR", pnr="T4WNX8")
     assert not matches(leg1, leg2)
 
 
 def test_flight_force_date_disambiguates_repeated_segment():
     """Weekly commuter: same PNR, same flight number, two dates (RULE-17c)."""
-    mon1 = flight_key("AC", "444", "2026-09-14", "YYZ", pnr="ABC123", force_date=True)
-    mon2 = flight_key("AC", "444", "2026-09-21", "YYZ", pnr="ABC123", force_date=True)
+    mon1 = flight_key("AC", "444", "2027-09-13", "YYZ", pnr="ABC123", force_date=True)
+    mon2 = flight_key("AC", "444", "2027-09-20", "YYZ", pnr="ABC123", force_date=True)
     assert mon1.primary != mon2.primary
     assert not matches(mon1, mon2)
 
@@ -57,21 +57,21 @@ def test_flight_force_date_disambiguates_repeated_segment():
 
 def test_lodging_name_variants_collapse():
     """OQ-12: the three Hoxton spellings from HANDOFF."""
-    a = lodging_key("The Hoxton, Shoreditch", "2026-09-15", city="London")
-    b = lodging_key("Hoxton Shoreditch", "2026-09-15", city="London")
-    c = lodging_key("The Hoxton — Shoreditch London", "2026-09-15", city="London")
-    assert a.primary == b.primary == c.primary == "lodging:hoxton-shoreditch:2026-09-15"
+    a = lodging_key("The Hoxton, Shoreditch", "2027-09-14", city="London")
+    b = lodging_key("Hoxton Shoreditch", "2027-09-14", city="London")
+    c = lodging_key("The Hoxton — Shoreditch London", "2027-09-14", city="London")
+    assert a.primary == b.primary == c.primary == "lodging:hoxton-shoreditch:2027-09-14"
 
 
 def test_lodging_confirmation_number_bridges_date_change():
     """A modified booking (new check-in) keeps its conf number → still matches."""
-    orig = lodging_key("The Hoxton, Shoreditch", "2026-09-15",
+    orig = lodging_key("The Hoxton, Shoreditch", "2027-09-14",
                        city="London", confirmation="HX-99201")
-    moved = lodging_key("Hoxton Shoreditch", "2026-09-16",
+    moved = lodging_key("Hoxton Shoreditch", "2027-09-15",
                         city="London", confirmation="HX99201")
     assert orig.primary == moved.primary == "lodging:conf:HX99201"
     # and a conf-less capture of the same stay still collapses via name form
-    bare = lodging_key("Hoxton, Shoreditch", "2026-09-15", city="London")
+    bare = lodging_key("Hoxton, Shoreditch", "2027-09-14", city="London")
     assert matches(orig, bare)
 
 
@@ -85,16 +85,16 @@ def test_lodging_diacritics_and_articles():
 
 def test_event_title_variants_collapse():
     """OQ-13: ticketing email vs calendar invite wording."""
-    email = event_key("Your tickets: Hamilton", "2026-09-18",
+    email = event_key("Your tickets: Hamilton", "2027-09-17",
                       venue_name="Victoria Palace Theatre", city="London")
-    gcal = event_key("Hamilton — Victoria Palace Theatre", "2026-09-18",
+    gcal = event_key("Hamilton — Victoria Palace Theatre", "2027-09-17",
                      venue_name="Victoria Palace Theatre", city="London")
-    assert email.primary == gcal.primary == "event:2026-09-18:hamilton"
+    assert email.primary == gcal.primary == "event:2027-09-17:hamilton"
 
 
 def test_event_gcal_id_alternate():
-    a = event_key("Hamilton", "2026-09-18", gcal_event_id="abc123xyz")
-    b = event_key("Completely Different Listing Title", "2026-09-18",
+    a = event_key("Hamilton", "2027-09-17", gcal_event_id="abc123xyz")
+    b = event_key("Completely Different Listing Title", "2027-09-17",
                   gcal_event_id="abc123xyz")
     assert matches(a, b)                     # gcal id bridges title divergence
 
@@ -124,9 +124,9 @@ def test_geohash_known_value():
 # ---------------------------------------------------------------- ground
 
 def test_rail_mirrors_flight_shape():
-    r = scheduled_ground_key("train", "EUR", "9024", "2026-09-20", "GBSPX")
-    assert r.primary == "rail:EUR:9024:2026-09-20:GBSPX"
-    with_pnr = scheduled_ground_key("train", "EUR", "9024", "2026-09-20",
+    r = scheduled_ground_key("train", "EUR", "9024", "2027-09-19", "GBSPX")
+    assert r.primary == "rail:EUR:9024:2027-09-19:GBSPX"
+    with_pnr = scheduled_ground_key("train", "EUR", "9024", "2027-09-19",
                                     "GBSPX", pnr="XZ88P1")
     assert matches(r, with_pnr)
 
@@ -175,16 +175,16 @@ def test_dispatcher_flight_payload():
             # Provider object, matching the schema (a plain string here hid a
             # real dispatcher bug until the jsonld extractor emitted the true shape)
             "marketing_carrier": {"name": "Air Canada", "iata": "AC", "kind": "airline"},
-            "flight_number": "888",
+            "flight_number": "652",
             "departure": {"place": {"name": "Toronto Pearson", "iata": "YYZ"},
-                          "time": _dt("2026-09-14T18:30:00")},
+                          "time": _dt("2027-09-13T18:30:00")},
             "arrival": {"place": {"name": "Heathrow", "iata": "LHR"},
-                        "time": _dt("2026-09-15T06:40:00", tz="Europe/London")},
+                        "time": _dt("2027-09-14T06:40:00", tz="Europe/London")},
         },
     }
     r = keys_for(payload)
-    assert r.primary == "flight:pnr:T4WNX8:AC:888:YYZ"
-    assert "flight:AC:888:2026-09-14:YYZ" in r.alternates
+    assert r.primary == "flight:pnr:T4WNX8:AC:652:YYZ"
+    assert "flight:AC:652:2027-09-13:YYZ" in r.alternates
 
 
 def test_dispatcher_road_uses_capture_context_date():
@@ -236,13 +236,13 @@ def test_flight_without_iata_is_unkeyable_but_names_the_reason():
         "item_type": "flight",
         "flight": {
             "marketing_carrier": {"name": "Air Canada", "iata": "AC"},
-            "flight_number": "8780",
+            "flight_number": "9471",
             "departure": {"place": {"name": "Toronto-Pearson International",
                                     "city": "Toronto", "country": "CA"},
-                          "time": {"local": "2026-11-20", "precision": "date"}},
-            "arrival": {"place": {"name": "R. Reagan Washington National",
-                                  "city": "Washington", "country": "US"},
-                        "time": {"local": "2026-11-20", "precision": "date"}},
+                          "time": {"local": "2027-11-19", "precision": "date"}},
+            "arrival": {"place": {"name": "Chicago O'Hare International",
+                                  "city": "Chicago", "country": "US"},
+                        "time": {"local": "2027-11-19", "precision": "date"}},
         },
     }
     assert keys_for(payload) is None
@@ -251,20 +251,20 @@ def test_flight_without_iata_is_unkeyable_but_names_the_reason():
     # Supplying the codes makes it key normally — this is what the review-queue
     # edit does on save, so the item then leaves the queue.
     payload["flight"]["departure"]["place"]["iata"] = "YYZ"
-    payload["flight"]["arrival"]["place"]["iata"] = "DCA"
+    payload["flight"]["arrival"]["place"]["iata"] = "ORD"
     r = keys_for(payload)
-    assert r is not None and r.primary == "flight:AC:8780:2026-11-20:YYZ"
+    assert r is not None and r.primary == "flight:AC:9471:2027-11-19:YYZ"
 
 
 def test_normalize_flight_number_strips_foreign_prefix():
     """A number carrying its own marketing code ('AC9471') must normalise even
     when a DIFFERENT operating carrier is supplied — the regional-operator case
     (2026-08-04) that used to raise and discard a whole JSON-LD extraction."""
-    assert normalize_flight_number("AC9471", "QK") == "8780"
-    assert normalize_flight_number("AC9471") == "8780"
-    assert normalize_flight_number("AC 0888", "AC") == "888"
-    assert normalize_flight_number("888A") == "888A"          # suffix survives
-    assert normalize_flight_number(888) == "888"
+    assert normalize_flight_number("AC9471", "QK") == "9471"
+    assert normalize_flight_number("AC9471") == "9471"
+    assert normalize_flight_number("AC 0652", "AC") == "652"
+    assert normalize_flight_number("652A") == "652A"          # suffix survives
+    assert normalize_flight_number(652) == "652"
 
 
 def test_unkeyable_reason_falls_back_to_unknown_type():
@@ -277,7 +277,7 @@ def test_unkeyable_reason_falls_back_to_unknown_type():
 
 
 def test_purity_and_determinism():
-    args = ("AC", "888", "2026-09-14", "YYZ")
+    args = ("AC", "652", "2027-09-13", "YYZ")
     assert flight_key(*args, pnr="T4WNX8") == flight_key(*args, pnr="T4WNX8")
     assert token_signature("The Hoxton — Shoreditch") == \
         token_signature("the hoxton shoreditch")

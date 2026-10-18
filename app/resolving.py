@@ -334,8 +334,8 @@ def _trip_envelope(session: Session, item: TravelItem, payload: dict,
 
 def _journey_destination(members: list) -> str | None:
     """The ISO country of a journey's DESTINATION — the non-home airport where
-    the traveller dwells longest. A trip through Munich to Bangalore stays ~1 day
-    in Munich (a layover) and ~3 weeks in Bangalore, so the biggest gap between a
+    the traveller dwells longest. A trip through Frankfurt to Nairobi stays ~1 day
+    in Frankfurt (a layover) and ~3 weeks in Nairobi, so the biggest gap between a
     leg's arrival and the next leg's departure sits at the real destination. This
     is why naming the trip from the first leg's arrival country was wrong: it
     picked the layover. Ties and missing times fall back to the last non-home
@@ -596,7 +596,7 @@ def resolve_item(session: Session, item: TravelItem,
         if anchor_eligible:
             # Name the trip after the JOURNEY's destination — the turnaround the
             # traveller dwells at — computed ONCE for every leg, so a layover
-            # country (Munich on the way to India) never wins and no two legs of
+            # country (Frankfurt on the way to Kenya) never wins and no two legs of
             # one journey disagree on the name. Fall back to this leg's own
             # arrival country only if the journey destination is unknown.
             code = journey_dest
@@ -607,7 +607,7 @@ def resolve_item(session: Session, item: TravelItem,
                         break
             if code:
                 # Name the trip the way AdventureLog names countries, not by raw
-                # ISO code ("Cayman Islands", not "KY").
+                # ISO code ("Aruba", not "AW").
                 code = str(code).upper()
                 mint_country = (country_names or {}).get(code, code)
         coll = resolve_collection(

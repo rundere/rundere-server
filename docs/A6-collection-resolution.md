@@ -65,7 +65,7 @@ escalation check — a collection minted yesterday adopts yesterday's orphans.
   items, which was its only plausible consumer. Revisit only if a concrete
   need appears.
 
-## Bangalore (OQ-01, owner)
+## Family-tie cities (OQ-01, owner)
 
-A **normal destination**. Flights logged, trips created, nothing suppressed.
-`home_profiles` seeding must NOT include Bangalore.
+A city you have family ties to, or once lived in, is a **normal destination**. Flights logged, trips created, nothing suppressed.
+`home_profiles` seeding includes only places you actually live.

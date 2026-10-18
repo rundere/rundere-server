@@ -293,39 +293,39 @@ def _leg(ref, num, frm, to, dep_at, arr_at, *, from_home=False, to_home=False,
 
 def test_journey_destination_picks_longest_dwell_not_a_layover():
     """The destination heuristic (2026-08-05): among a journey's legs, the trip's
-    destination is where the traveller dwells longest. Munich (arrival to next
-    departure ~12h) is a layover; Bangalore (~3 weeks) is the destination."""
+    destination is where the traveller dwells longest. Frankfurt (arrival to next
+    departure ~12h) is a layover; Nairobi (~3 weeks) is the destination."""
     from app.resolving import _journey_destination
     members = [
-        ("2026-12-18T08:00", {"to_home": False, "arr_order": "2026-12-18T22:00",
+        ("2031-05-02T08:00", {"to_home": False, "arr_order": "2031-05-02T22:00",
                               "arr_country": "DE"}, "a"),   # layover, ~12h
-        ("2026-12-19T10:00", {"to_home": False, "arr_order": "2026-12-20T01:00",
-                              "arr_country": "IN"}, "b"),   # destination, ~3wk
-        ("2027-01-10T06:00", {"to_home": False, "arr_order": "2027-01-10T08:00",
-                              "arr_country": "IN"}, "c"),   # layover home-bound
-        ("2027-01-10T12:00", {"to_home": True, "arr_order": "2027-01-10T20:00",
+        ("2031-05-03T10:00", {"to_home": False, "arr_order": "2031-05-04T01:00",
+                              "arr_country": "KE"}, "b"),   # destination, ~3wk
+        ("2031-05-25T06:00", {"to_home": False, "arr_order": "2031-05-25T08:00",
+                              "arr_country": "KE"}, "c"),   # layover home-bound
+        ("2031-05-25T12:00", {"to_home": True, "arr_order": "2031-05-25T20:00",
                               "arr_country": None}, "d"),
     ]
-    assert _journey_destination(members) == "IN"
+    assert _journey_destination(members) == "KE"
 
 
 def test_multileg_journey_named_by_destination_not_layover():
-    """End-to-end: a Toronto→Munich→Bangalore … →Toronto trip must be ONE journey
-    named after India (the long stay), not Germany (the Munich layover), with
+    """End-to-end: a Toronto→Frankfurt→Nairobi … →Toronto trip must be ONE journey
+    named after Kenya (the long stay), not Germany (the Frankfurt layover), with
     every leg agreeing on that one name — the real-data bug the owner reported."""
     def run():
         with SessionLocal() as s:
             _seed_home(s)
             s.query(ItemKey).delete(); s.query(TravelItem).delete(); s.commit()
             for lg in (
-                _leg("J1", "1", "HHH", "MUC", "2026-12-18T08:00", "2026-12-18T22:00",
+                _leg("J1", "1", "HHH", "FRA", "2031-05-02T08:00", "2031-05-02T22:00",
                      from_home=True, arr_country="DE"),
-                _leg("J2", "2", "MUC", "BLR", "2026-12-19T10:00", "2026-12-20T01:00",
-                     dep_country="DE", arr_country="IN"),
-                _leg("J3", "3", "BLR", "DEL", "2027-01-10T06:00", "2027-01-10T08:00",
-                     dep_country="IN", arr_country="IN"),
-                _leg("J4", "4", "DEL", "HHH", "2027-01-10T12:00", "2027-01-10T20:00",
-                     to_home=True, dep_country="IN"),
+                _leg("J2", "2", "FRA", "NBO", "2031-05-03T10:00", "2031-05-04T01:00",
+                     dep_country="DE", arr_country="KE"),
+                _leg("J3", "3", "NBO", "ADD", "2031-05-25T06:00", "2031-05-25T08:00",
+                     dep_country="KE", arr_country="ET"),
+                _leg("J4", "4", "ADD", "HHH", "2031-05-25T12:00", "2031-05-25T20:00",
+                     to_home=True, dep_country="ET"),
             ):
                 _add_item(s, lg)
             resolve_pending(s, adventurelog=None)
@@ -336,9 +336,9 @@ def test_multileg_journey_named_by_destination_not_layover():
                 minters += 1 if r.get("is_minter") else 0
             assert len(names) == 1                        # every leg, one name
             name = names.pop()
-            # India, not Germany (the layover) — named from CLDR, not a raw ISO
+            # Kenya, not Germany (the layover) — named from CLDR, not a raw ISO
             # code, now that names don't need AdventureLog (D-148).
-            assert name.startswith("India")
+            assert name.startswith("Kenya")
             assert minters == 1                           # one minter for the journey
     _skip_or(run)
 
@@ -440,7 +440,7 @@ def test_journey_envelope_ignores_a_not_yet_annotated_sibling():
             # A pre-existing, unrelated home-arrival flight far in the future --
             # stands in for "some other already-resolved trip" that a broken
             # envelope search could wrongly latch onto.
-            decoy = _leg("DECOY9", "9", "MUC", "HHH", "2027-12-18T08:00",
+            decoy = _leg("DECOY9", "9", "FRA", "HHH", "2027-12-18T08:00",
                          "2027-12-18T14:00", to_home=True, dest_country="DE")
             _add_item(s, decoy)
 
@@ -546,7 +546,7 @@ def test_adventurelog_miss_does_not_hold_an_item_filed_to_a_rundere_trip():
 
 
 def test_middle_leg_inherits_the_enclosing_trip():
-    """A leg that never touches home (IAD->PHX) still belongs to the journey
+    """A leg that never touches home (MDW->PHX) still belongs to the journey
     bounded by the home departure and the home return."""
     def run():
         from app.resolving import _trip_envelope, load_home_profiles
@@ -567,9 +567,9 @@ def test_middle_leg_inherits_the_enclosing_trip():
             # Two legs on the SAME DAY, as a real connection: ordering them by
             # date alone leaves the tie to chance, which can put the middle leg
             # before the departure from home and hide the closed journey.
-            leg("10", "HHH", "IAD", "2027-10-02T08:00", "2027-10-02T10:30",
+            leg("10", "HHH", "MDW", "2027-10-02T08:00", "2027-10-02T10:30",
                 from_home=True)
-            mid_payload, mid = leg("11", "IAD", "PHX", "2027-10-02T13:00",
+            mid_payload, mid = leg("11", "MDW", "PHX", "2027-10-02T13:00",
                                    "2027-10-02T15:40")
             leg("12", "PHX", "HHH", "2027-10-11T07:00", "2027-10-11T14:20",
                 to_home=True)

@@ -112,7 +112,7 @@ class FakeAT:
         self.calls = []
         self.duplicate = duplicate
         self._airports = {"YYZ": Airport(21292, "YYZ", icao="CYYZ"),
-                          "DCA": Airport(999, "DCA", icao="KDCA")}
+                          "ORD": Airport(999, "ORD", icao="KORD")}
         self._airlines = {"AC": Airline(49, "AC", "Air Canada", icao="ACA")}
     def list_flights(self):
         return []
@@ -137,7 +137,7 @@ def _flight_payload():
     return {
         "item_type": "flight", "booking_reference": "JMVRLE",
         "flight": {
-            "flight_number": "8780",
+            "flight_number": "9471",
             "marketing_carrier": {"name": "Air Canada", "iata": "AC"},
             "operating_carrier": {"name": "Jazz", "iata": "QK"},
             "cabin_class": "economy",
@@ -145,14 +145,14 @@ def _flight_payload():
                                     "iata": "YYZ", "lat": 43.6, "lon": -79.6,
                                     "country": "CA", "city": "Toronto",
                                     "tz": "America/Toronto"},
-                          "time": {"local": "2026-11-20T07:20", "precision": "datetime",
+                          "time": {"local": "2027-11-19T07:20", "precision": "datetime",
                                    "tz": "America/Toronto", "origin": "document"}},
-            "arrival": {"place": {"raw": "Reagan National", "name": "Reagan National",
-                                  "iata": "DCA", "lat": 38.8, "lon": -77.0,
-                                  "country": "US", "city": "Washington",
-                                  "tz": "America/New_York"},
-                        "time": {"local": "2026-11-20T08:58", "precision": "datetime",
-                                 "tz": "America/New_York", "origin": "document"}},
+            "arrival": {"place": {"raw": "O'Hare", "name": "O'Hare",
+                                  "iata": "ORD", "lat": 41.98, "lon": -87.9,
+                                  "country": "US", "city": "Chicago",
+                                  "tz": "America/Chicago"},
+                        "time": {"local": "2027-11-19T08:58", "precision": "datetime",
+                                 "tz": "America/Chicago", "origin": "document"}},
         },
     }
 
@@ -164,11 +164,11 @@ def _add(session, payload, *, targets, approved=True, collection_action="created
                   "collection_action": collection_action,
                   "collection_name": collection_name,
                   "collection_id": collection_id,
-                  "collection_start": "2026-11-20", "collection_end": "2026-11-29",
+                  "collection_start": "2027-11-19", "collection_end": "2026-11-29",
                   "self_on_booking": True}
     it = TravelItem(
         item_type=payload["item_type"], schema_version="1.4.0",
-        canonical_key="flight:pnr:JMVRLE:AC:8780:YYZ",
+        canonical_key="flight:pnr:JMVRLE:AC:9471:YYZ",
         source={"type": "gmail"},
         extraction={"extractor": "jsonld", "payload": payload},
         resolution=resolution,
@@ -189,14 +189,14 @@ def _skip():
 
 def test_utc_conversion_and_date_only_synthesis():
     _skip()
-    assert C._to_utc_z({"local": "2026-11-20T07:20", "precision": "datetime",
-                        "tz": "America/Toronto"}) == "2026-11-20T12:20:00.000Z"
+    assert C._to_utc_z({"local": "2027-11-19T07:20", "precision": "datetime",
+                        "tz": "America/Toronto"}) == "2027-11-19T12:20:00.000Z"
     # no zone -> cannot convert safely, never emit naive local
-    assert C._to_utc_z({"local": "2026-11-20T07:20", "precision": "datetime",
+    assert C._to_utc_z({"local": "2027-11-19T07:20", "precision": "datetime",
                         "tz": None}) is None
     # date-only -> bare date + synthesized flag
-    val, synth = C._al_datetime({"local": "2026-11-20", "precision": "date"})
-    assert val == "2026-11-20" and synth is True
+    val, synth = C._al_datetime({"local": "2027-11-19", "precision": "date"})
+    assert val == "2027-11-19" and synth is True
 
 
 def test_resolver_prefers_flown_then_fallback_then_caches():
@@ -233,7 +233,7 @@ def test_airtrail_flight_carries_custom_fields():
     p = _flight_payload()
     p["flight"]["ticket_numbers"] = ["0149876543210"]
     body, err = C.build_airtrail_flight(
-        p, airports={"YYZ": Airport(1, "YYZ"), "DCA": Airport(2, "DCA")},
+        p, airports={"YYZ": Airport(1, "YYZ"), "ORD": Airport(2, "ORD")},
         airlines={"AC": Airline(49, "AC", "Air Canada")}, self_uid="u1")
     assert err is None
     assert body["customFields"] == {"booking_reference": "JMVRLE",
@@ -247,13 +247,13 @@ def test_airtrail_flight_sends_code_strings_not_objects():
     _skip()
     p = _flight_payload()
     airports = {"YYZ": Airport(1, "YYZ", icao="CYYZ"),
-                "DCA": Airport(2, "DCA")}                 # no icao -> IATA fallback
+                "ORD": Airport(2, "ORD")}                 # no icao -> IATA fallback
     airlines = {"AC": Airline(49, "AC", "Air Canada", icao="ACA")}
     body, err = C.build_airtrail_flight(p, airports=airports, airlines=airlines,
                                         self_uid="u1")
     assert err is None
     assert body["from"] == "CYYZ"                          # ICAO preferred
-    assert body["to"] == "DCA"                             # IATA fallback (no ICAO)
+    assert body["to"] == "ORD"                             # IATA fallback (no ICAO)
     assert body["airline"] == "ACA"                        # ICAO, never "AC"
     assert isinstance(body["from"], str) and isinstance(body["airline"], str)
 
@@ -264,7 +264,7 @@ def test_seat_class_maps_premium_economy_to_airtrail_enum():
     _skip()
     p = _flight_payload()
     p["flight"]["cabin_class"] = "premium_economy"
-    airports = {"YYZ": Airport(1, "YYZ", icao="CYYZ"), "DCA": Airport(2, "DCA", icao="KDCA")}
+    airports = {"YYZ": Airport(1, "YYZ", icao="CYYZ"), "ORD": Airport(2, "ORD", icao="KORD")}
     body, _ = C.build_airtrail_flight(
         p, airports=airports, airlines={"AC": Airline(49, "AC", "AC", icao="ACA")},
         self_uid="u1")
@@ -289,7 +289,7 @@ def test_lodging_type_defaults_hotel_and_infers_resort():
         if kind:
             p["lodging"]["lodging_kind"] = kind
         return C.build_lodging(p, collection_id="c1")
-    assert lodge("SureStay Plus by Best Western")["type"] == "hotel"     # default
+    assert lodge("Desert Star Suites")["type"] == "hotel"     # default
     assert lodge("Mesquite Springs Spa Resort")["type"] == "resort"         # inferred
     assert lodge("Anywhere", kind="camping")["type"] == "campground"    # kind map
 
@@ -305,7 +305,7 @@ def test_transportation_carries_description_and_timezones():
     assert "Booking Ref: JMVRLE" in body["description"]
     assert "Kenji Nakamura" in body["description"]
     assert body["start_timezone"] == "America/Toronto"
-    assert body["end_timezone"] == "America/New_York"
+    assert body["end_timezone"] == "America/Chicago"
 
 
 def test_transportation_recovers_timezone_from_station_coordinates():
@@ -357,7 +357,7 @@ def test_coordinates_rounded_to_adventurelog_precision():
                     "check_in": {"local": "2026-10-04", "precision": "date"},
                     "check_out": {"local": "2026-10-06", "precision": "date"},
                     "place": {"lat": 35.5849387, "lon": -106.1024807,
-                              "address": "242 Mesquite Springs Rd"}},
+                              "address": "77 Mesquite Springs Rd"}},
     }
     body = C.build_lodging(lodging, collection_id="c1")
     assert body["latitude"] == 35.584939
@@ -378,7 +378,7 @@ def test_build_airtrail_flight_refuses_when_unresolved():
     p = _flight_payload()
     body, err = C.build_airtrail_flight(p, airports={}, airlines={}, self_uid="u1")
     assert body is None and "airport" in err
-    airports = {"YYZ": Airport(1, "YYZ"), "DCA": Airport(2, "DCA")}
+    airports = {"YYZ": Airport(1, "YYZ"), "ORD": Airport(2, "ORD")}
     body, err = C.build_airtrail_flight(p, airports=airports, airlines={}, self_uid="u1")
     assert body is None and "airline" in err
 
@@ -390,13 +390,13 @@ def test_airtrail_flight_needs_no_airtrail_ids_and_defaults_the_seat():
     _skip()
     from resolve import airports as airports_mod
     p = _flight_payload()
-    airports = {"YYZ": airports_mod.lookup("YYZ"), "DCA": airports_mod.lookup("DCA")}
+    airports = {"YYZ": airports_mod.lookup("YYZ"), "ORD": airports_mod.lookup("ORD")}
     assert airports["YYZ"].id is None
     body, err = C.build_airtrail_flight(
         p, airports=airports, airlines={"AC": Airline(49, "AC", "Air Canada", icao="ACA")},
         self_uid=None)
     assert err is None
-    assert (body["from"], body["to"], body["airline"]) == ("CYYZ", "KDCA", "ACA")
+    assert (body["from"], body["to"], body["airline"]) == ("CYYZ", "KORD", "ACA")
     assert body["seats"][0]["userId"] == "<USER_ID>"
 
 
@@ -444,19 +444,19 @@ def test_execute_writes_in_order_records_attempts_and_status():
         by_type.setdefault(kind, []).append(body)
     assert al.calls[0][0] == "collection"                       # ordered first
     assert all(loc["collection_id"] == "coll-1" for loc in by_type["location"])
-    assert len(by_type["location"]) == 2                        # YYZ + DCA
+    assert len(by_type["location"]) == 2                        # YYZ + ORD
     tr = by_type["transportation"][0]
     assert tr["collection"] == "coll-1" and tr["type"] == "plane"
-    assert tr["start_code"] == "YYZ" and tr["end_code"] == "DCA"
+    assert tr["start_code"] == "YYZ" and tr["end_code"] == "ORD"
     # airtrail flight: combined number, resolved ids, self seat
     fbody = at.calls[0][1]
     assert fbody["flightNumber"] == "AC9471"
     # /api/flight/save wants CODE STRINGS: airports by ICAO (IATA fallback),
     # airline by ICAO only.
-    assert fbody["from"] == "CYYZ" and fbody["to"] == "KDCA"
+    assert fbody["from"] == "CYYZ" and fbody["to"] == "KORD"
     assert fbody["airline"] == "ACA"
     assert fbody["seats"][0]["userId"] == "vu75"
-    assert fbody["date"] == "2026-11-20" and fbody["datePrecision"] == "day"
+    assert fbody["date"] == "2027-11-19" and fbody["datePrecision"] == "day"
     # one CommitAttempt per real write (collection, 2 locations? here 2 places)
     assert s.query(CommitAttempt).filter_by(item_id=it.id).count() >= 4
     assert it.status["adventurelog"] == "committed"
@@ -472,14 +472,14 @@ def test_airtrail_sends_local_date_and_time_separately():
     _skip()
     p = _flight_payload()                            # dep 07:20, arr 08:58 local
     airports = {"YYZ": Airport(1, "YYZ", icao="CYYZ"),
-                "DCA": Airport(2, "DCA", icao="KDCA")}
+                "ORD": Airport(2, "ORD", icao="KORD")}
     body, err = C.build_airtrail_flight(
         p, airports=airports, airlines={"AC": Airline(49, "AC", "AC", icao="ACA")},
         self_uid="u1")
     assert err is None
-    assert body["departure"] == "2026-11-20T00:00:00Z"      # local DATE only
+    assert body["departure"] == "2027-11-19T00:00:00Z"      # local DATE only
     assert body["departureTime"] == "07:20"                 # local HH:MM
-    assert body["arrival"] == "2026-11-20T00:00:00Z"
+    assert body["arrival"] == "2027-11-19T00:00:00Z"
     assert body["arrivalTime"] == "08:58"
 
 
@@ -488,10 +488,10 @@ def test_airtrail_date_only_arrival_sends_no_bare_date():
     time — AirTrail rejects that. Both go null."""
     _skip()
     p = _flight_payload()
-    p["flight"]["arrival"]["time"] = {"local": "2026-11-20", "precision": "date"}
+    p["flight"]["arrival"]["time"] = {"local": "2027-11-19", "precision": "date"}
     body, _ = C.build_airtrail_flight(
         p, airports={"YYZ": Airport(1, "YYZ", icao="CYYZ"),
-                     "DCA": Airport(2, "DCA", icao="KDCA")},
+                     "ORD": Airport(2, "ORD", icao="KORD")},
         airlines={"AC": Airline(49, "AC", "AC", icao="ACA")}, self_uid="u1")
     assert body["arrival"] is None and body["arrivalTime"] is None
 
@@ -505,13 +505,13 @@ def test_transportation_recovers_tz_from_resolved_airport():
         p["flight"][end]["time"]["tz"] = None
         p["flight"][end]["place"]["tz"] = None
     airports = {"YYZ": Airport(1, "YYZ", tz="America/Toronto"),
-                "DCA": Airport(2, "DCA", tz="America/New_York")}
+                "ORD": Airport(2, "ORD", tz="America/Chicago")}
 
     class R:
         def get(self, code): return airports.get(code)
     tb, synth = C.build_transportation(p, collection_id="c1", airports=R())
     assert synth is False                        # NOT "time unknown"
-    assert tb["date"].startswith("2026-11-20T12:20")   # 07:20 EST -> 12:20Z
+    assert tb["date"].startswith("2027-11-19T12:20")   # 07:20 EST -> 12:20Z
     assert tb["start_timezone"] == "America/Toronto"
 
 
@@ -543,11 +543,11 @@ def test_airport_dedup_queries_by_iata_with_wide_radius():
     point. Non-airport places stay tight."""
     _skip()
     al = FakeAL()
-    C._existing_location(al, {"iata": "DEL", "name": "Bole Intl.",
-                              "lat": 28.55, "lon": 77.09})
+    C._existing_location(al, {"iata": "ADD", "name": "Bole Intl.",
+                              "lat": 8.98, "lon": 38.80})
     C._existing_location(al, {"name": "Some Hotel", "lat": 1.0, "lon": 2.0})
     searches = [b for k, b in al.calls if k == "search"]
-    assert searches[0] == {"query": "DEL", "radius_km": 2.0}      # IATA + wide
+    assert searches[0] == {"query": "ADD", "radius_km": 2.0}      # IATA + wide
     assert searches[1] == {"query": "Some Hotel", "radius_km": 0.5}   # name + tight
 
 
@@ -634,7 +634,7 @@ def test_update_patches_prior_records_in_place():
     prior = _mk(s, _flight_payload(), targets=["adventurelog.transportation", "airtrail.flight"],
                 commit=_committed_results(("adventurelog.transportation", "tr-9")))
     p = _flight_payload()                              # same flight, later time
-    p["flight"]["departure"]["time"]["local"] = "2026-11-20T09:20"
+    p["flight"]["departure"]["time"]["local"] = "2027-11-19T09:20"
     it = _mk(s, p, targets=["adventurelog.transportation", "airtrail.flight"],
              revision={"action": "update", "prior_item_id": prior.id})
     al, at = FakeAL(), FakeAT(duplicate={"id": "flt-live"})   # AirTrail natural-key hit
@@ -722,7 +722,7 @@ def test_transportation_skipped_when_already_in_collection():
               collection_action="matched_exact", collection_id="coll-x")
     al, at = FakeAL(), FakeAT()
     al.collection_records["coll-x"] = {"transportations": [
-        {"id": "tr-existing", "type": "plane", "start_code": "YYZ", "end_code": "DCA"}]}
+        {"id": "tr-existing", "type": "plane", "start_code": "YYZ", "end_code": "ORD"}]}
     env = C.commit_item(s, it, al, at, identities=[Ident("self", "vu75")],
                         airports=at.airport_reference(), airlines=at.airline_reference(),
                         dry_run=False)
@@ -770,7 +770,7 @@ def _add_linked(s, targets):
     """An approved item linked to a fresh Yonder trip that spans its dates."""
     from app.models import Trip
     tr = Trip(name="United States — November 2026",
-              start_date="2026-11-20", end_date="2026-11-29")
+              start_date="2027-11-19", end_date="2026-11-29")
     s.add(tr); s.commit()
     it = _add(s, _flight_payload(), targets=targets)
     it.trip_id = tr.id
@@ -880,18 +880,18 @@ def test_yonder_trip_minted_alongside_new_adventurelog_collection():
 
     minter = _add(s, _flight_payload(),
                  targets=["adventurelog.collection", "yonder.activity"])
-    minter.canonical_key = "flight:pnr:MINT1:AC:8780:YYZ"
+    minter.canonical_key = "flight:pnr:MINT1:AC:9471:YYZ"
     minter.resolution = {**minter.resolution,
-                         "mint_group": "MINTTEST1:2026-11-20..2026-11-29",
+                         "mint_group": "MINTTEST1:2027-11-19..2026-11-29",
                          "is_minter": True, "mint_yonder_trip": True}
     minter.owner_id = "user-minter"          # captured via a user-scoped key
     s.commit()
 
     attach_payload = _flight_payload()
     attach = _add(s, attach_payload, targets=["yonder.activity"])
-    attach.canonical_key = "flight:pnr:ATTACH1:AC:8781:DCA"
+    attach.canonical_key = "flight:pnr:ATTACH1:AC:9472:ORD"
     attach.resolution = {**attach.resolution,
-                         "mint_group": "MINTTEST1:2026-11-20..2026-11-29",
+                         "mint_group": "MINTTEST1:2027-11-19..2026-11-29",
                          "is_minter": False, "mint_yonder_trip": True}
     s.commit()
 
@@ -906,7 +906,7 @@ def test_yonder_trip_minted_alongside_new_adventurelog_collection():
     trip = trips[0]
     assert trip.source == "resolver"
     assert trip.name == "United States — November 2026"
-    assert trip.start_date == "2026-11-20" and trip.end_date == "2026-11-29"
+    assert trip.start_date == "2027-11-19" and trip.end_date == "2026-11-29"
     assert trip.adventurelog_collection_id == "coll-1"   # linked to the mint
     assert trip.owner_id == "user-minter"                # owned like the capture
     assert minter.trip_id == trip.id and attach.trip_id == trip.id
@@ -932,7 +932,7 @@ def test_resolver_minted_trip_stays_open_for_open_capture():
                  targets=["adventurelog.collection", "yonder.activity"])
     minter.canonical_key = "flight:pnr:MINT3:AC:8783:YYZ"
     minter.resolution = {**minter.resolution,
-                         "mint_group": "MINTTEST3:2026-11-20..2026-11-29",
+                         "mint_group": "MINTTEST3:2027-11-19..2026-11-29",
                          "is_minter": True, "mint_yonder_trip": True}
     s.commit()
 
@@ -962,7 +962,7 @@ def test_yonder_trip_mint_deferred_until_minter_commits():
     attach = _add(s, attach_payload, targets=["yonder.activity"])
     attach.canonical_key = "flight:pnr:ATTACH2:AC:8782:YUL"
     attach.resolution = {**attach.resolution,
-                         "mint_group": "MINTTEST2:2026-11-20..2026-11-29",
+                         "mint_group": "MINTTEST2:2027-11-19..2026-11-29",
                          "is_minter": False, "mint_yonder_trip": True}
     s.commit()
 
@@ -1089,13 +1089,13 @@ def test_only_a_six_character_record_locator_goes_to_airtrail():
     airline record locator (Sabre PNR). Anything else stays on Run·dere's own
     record and isn't sent — AirTrail rejected a whole flight over a longer one."""
     _skip()
-    assert C.airline_record_locator(" bcq-dta ") == "JMVRLE"
+    assert C.airline_record_locator(" jmv-rle ") == "JMVRLE"
     assert C.airline_record_locator("AB12CD") == "AB12CD"
     for bad in ("1234567890", "BOOKING-12345", "ABC12", "", None, "AB 12 CD 9"):
         assert C.airline_record_locator(bad) is None, bad
     p = _flight_payload()
     p["booking_reference"] = "HB-4471929902"                  # a booking site's
-    airports = {"YYZ": Airport(1, "YYZ", icao="CYYZ"), "DCA": Airport(2, "DCA", icao="KDCA")}
+    airports = {"YYZ": Airport(1, "YYZ", icao="CYYZ"), "ORD": Airport(2, "ORD", icao="KORD")}
     body, err = C.build_airtrail_flight(
         p, airports=airports, airlines={"AC": Airline(49, "AC", "AC", icao="ACA")},
         self_uid="u1")

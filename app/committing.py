@@ -1198,13 +1198,13 @@ def _existing_location(adventurelog, place: dict) -> str | None:
     from live data (2026-08-05):
 
     - **Airports query by IATA, not name.** Swarm-imported airports are named
-      e.g. "Jomo Kenyatta International Airport (BLR)", which our extracted names
-      ("…Bengaluru", "Bole Intl.") don't match; but the IATA in parens
-      does. The proximity filter drops the junk a bare code pulls in ('DEL' also
-      matches Spanish 'del …').
+      e.g. "Jomo Kenyatta International Airport (NBO)", which our extracted names
+      ("…Nairobi", "Bole Intl.") don't match; but the IATA in parens
+      does. The proximity filter drops the junk a bare code pulls in ('LAS' also
+      matches Spanish 'las …').
     - **Airports need a looser radius (~2 km).** A Swarm check-in sits at a
       terminal while our geocode is the airport reference point — measured 1.0 km
-      apart for DEL, 1.15 km for YYZ, so the old 0.5 km MISSED them and would
+      apart for NBO, 1.15 km for YYZ, so the old 0.5 km MISSED them and would
       have created duplicates. Non-airport places stay tight so two nearby
       properties never merge."""
     iata = (place.get("iata") or "").upper()

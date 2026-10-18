@@ -26,7 +26,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -81,7 +81,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -104,10 +104,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T18:35:00",
+                "local": "2027-09-13T18:35:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-14T22:35:00Z",
+                "utc": "2027-09-13T22:35:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -129,10 +129,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -290,7 +290,7 @@
         "fixture_promoted": true
       },
       "booking_group_id": "HTL-40517",
-      "canonical_key": "lodging:the-hoxton-shoreditch:2026-09-15",
+      "canonical_key": "lodging:the-hoxton-shoreditch:2027-09-14",
       "item_type": "lodging",
       "extraction": {
         "extractor": "jsonld",
@@ -343,17 +343,17 @@
               "adventurelog_location_id": null
             },
             "check_in": {
-              "local": "2026-09-15T15:00:00",
+              "local": "2027-09-14T15:00:00",
               "precision": "datetime",
               "tz": "Europe/London",
-              "utc": "2026-09-15T14:00:00Z",
+              "utc": "2027-09-14T14:00:00Z",
               "origin": "document"
             },
             "check_out": {
-              "local": "2026-09-20T11:00:00",
+              "local": "2027-09-19T11:00:00",
               "precision": "datetime",
               "tz": "Europe/London",
-              "utc": "2026-09-20T10:00:00Z",
+              "utc": "2027-09-19T10:00:00Z",
               "origin": "document"
             },
             "room_type": "Roomy King",
@@ -371,8 +371,8 @@
         "self_on_booking": true,
         "duplicate_of": null,
         "supersedes": null,
-        "deferred_until": "2026-09-15T00:00:00Z",
-        "deferred_reason": "no collection covers 2026-09-15..2026-09-20; lodging cannot mint one",
+        "deferred_until": "2027-09-14T00:00:00Z",
+        "deferred_reason": "no collection covers 2027-09-14..2027-09-19; lodging cannot mint one",
         "targets": []
       },
       "commit": null,
@@ -460,17 +460,17 @@
               "adventurelog_location_id": null
             },
             "start": {
-              "local": "2026-09-17T19:30:00",
+              "local": "2027-09-16T19:30:00",
               "precision": "datetime",
               "tz": "Europe/London",
-              "utc": "2026-09-17T18:30:00Z",
+              "utc": "2027-09-16T18:30:00Z",
               "origin": "document"
             },
             "end": {
-              "local": "2026-09-17T21:45:00",
+              "local": "2027-09-16T21:45:00",
               "precision": "datetime",
               "tz": "Europe/London",
-              "utc": "2026-09-17T20:45:00Z",
+              "utc": "2027-09-16T20:45:00Z",
               "origin": "document"
             },
             "all_day": false,
@@ -495,8 +495,8 @@
             "id": "c0ffee00-0000-4000-8000-00000000abcd",
             "name": "United Kingdom — September 2026",
             "score": 0.94,
-            "start": "2026-09-14",
-            "end": "2026-09-22"
+            "start": "2027-09-13",
+            "end": "2027-09-21"
           },
           {
             "id": "c0ffee00-0000-4000-8000-00000000dcba",
@@ -568,7 +568,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "EUR-ABC123",
-      "canonical_key": "rail:EUR:9024:2026-09-20:GBSPX",
+      "canonical_key": "rail:EUR:9024:2027-09-19:GBSPX",
       "item_type": "ground_transport",
       "extraction": {
         "extractor": "llm",
@@ -614,10 +614,10 @@
                 "geocode_source": "photon"
               },
               "time": {
-                "local": "2026-09-20T14:01:00",
+                "local": "2027-09-19T14:01:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-20T13:01:00Z",
+                "utc": "2027-09-19T13:01:00Z",
                 "origin": "document"
               },
               "terminal": null,
@@ -634,10 +634,10 @@
                 "geocode_source": "photon"
               },
               "time": {
-                "local": "2026-09-20T17:20:00",
+                "local": "2027-09-19T17:20:00",
                 "precision": "datetime",
                 "tz": "Europe/Paris",
-                "utc": "2026-09-20T15:20:00Z",
+                "utc": "2027-09-19T15:20:00Z",
                 "origin": "document"
               },
               "terminal": null,
@@ -947,7 +947,7 @@
           "event": {
             "title": "Dinner at Septime",
             "start": {
-              "local": "2026-09-21T20:00:00",
+              "local": "2027-09-20T20:00:00",
               "precision": "datetime",
               "tz": "Europe/Paris",
               "origin": "document"
@@ -1016,14 +1016,14 @@
             "flight_number": "204",
             "departure": {
               "place": {
-                "raw": "BLR",
-                "iata": "BLR",
+                "raw": "NBO",
+                "iata": "NBO",
                 "icao": "HKJK"
               },
               "time": {
                 "local": "2026-08-11T02:30:00",
                 "precision": "datetime",
-                "tz": "Asia/Kolkata",
+                "tz": "Africa/Nairobi",
                 "origin": "document"
               }
             },
@@ -1105,7 +1105,7 @@
                 "iata": "TORONTO"
               },
               "time": {
-                "local": "2026-09-14T18:35:00",
+                "local": "2027-09-13T18:35:00",
                 "precision": "sortof",
                 "origin": "document"
               }
@@ -1116,7 +1116,7 @@
                 "iata": "LHR"
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "origin": "document"
               }
@@ -1185,7 +1185,7 @@
             "fixture_promoted": false
           },
           "booking_group_id": "PNR-P9ZD4H",
-          "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+          "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
           "item_type": "flight",
           "extraction": {
             "extractor": "jsonld",
@@ -1240,7 +1240,7 @@
                   "icao": "ACA",
                   "kind": "airline"
                 },
-                "flight_number": "888",
+                "flight_number": "652",
                 "leg_index": 0,
                 "departure": {
                   "place": {
@@ -1263,10 +1263,10 @@
                     "distance_from_home_km": 0.0
                   },
                   "time": {
-                    "local": "2026-09-14T18:35:00",
+                    "local": "2027-09-13T18:35:00",
                     "precision": "datetime",
                     "tz": "America/Toronto",
-                    "utc": "2026-09-14T22:35:00Z",
+                    "utc": "2027-09-13T22:35:00Z",
                     "origin": "document"
                   },
                   "terminal": "1",
@@ -1288,10 +1288,10 @@
                     "adventurelog_location_id": null
                   },
                   "time": {
-                    "local": "2026-09-15T06:40:00",
+                    "local": "2027-09-14T06:40:00",
                     "precision": "datetime",
                     "tz": "Europe/London",
-                    "utc": "2026-09-15T05:40:00Z",
+                    "utc": "2027-09-14T05:40:00Z",
                     "origin": "document"
                   },
                   "terminal": "2",
@@ -1441,7 +1441,7 @@
             "fixture_promoted": false
           },
           "booking_group_id": "PNR-P9ZD4H",
-          "canonical_key": "flight:AC:0889:2026-09-22:LHR",
+          "canonical_key": "flight:AC:0889:2027-09-21:LHR",
           "item_type": "flight",
           "extraction": {
             "extractor": "jsonld",
@@ -1514,10 +1514,10 @@
                     "adventurelog_location_id": null
                   },
                   "time": {
-                    "local": "2026-09-22T11:15:00",
+                    "local": "2027-09-21T11:15:00",
                     "precision": "datetime",
                     "tz": "Europe/London",
-                    "utc": "2026-09-22T10:15:00Z",
+                    "utc": "2027-09-21T10:15:00Z",
                     "origin": "document"
                   },
                   "terminal": "2",
@@ -1544,10 +1544,10 @@
                     "distance_from_home_km": 0.0
                   },
                   "time": {
-                    "local": "2026-09-22T14:30:00",
+                    "local": "2027-09-21T14:30:00",
                     "precision": "datetime",
                     "tz": "America/Toronto",
-                    "utc": "2026-09-22T18:30:00Z",
+                    "utc": "2027-09-21T18:30:00Z",
                     "origin": "document"
                   },
                   "terminal": "1",
@@ -1706,7 +1706,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -1761,7 +1761,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -1784,10 +1784,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T20:10:00",
+                "local": "2027-09-13T20:10:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-15T00:10:00Z",
+                "utc": "2027-09-14T00:10:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -1809,10 +1809,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -1972,7 +1972,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -2027,7 +2027,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -2050,10 +2050,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T20:10:00",
+                "local": "2027-09-13T20:10:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-15T00:10:00Z",
+                "utc": "2027-09-14T00:10:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -2075,10 +2075,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -2235,7 +2235,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -2290,7 +2290,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -2313,10 +2313,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T20:10:00",
+                "local": "2027-09-13T20:10:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-15T00:10:00Z",
+                "utc": "2027-09-14T00:10:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -2338,10 +2338,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -2501,7 +2501,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -2556,7 +2556,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -2579,10 +2579,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T20:10:00",
+                "local": "2027-09-13T20:10:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-15T00:10:00Z",
+                "utc": "2027-09-14T00:10:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -2604,10 +2604,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -2770,7 +2770,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -2825,7 +2825,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -2848,10 +2848,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T18:35:00",
+                "local": "2027-09-13T18:35:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-14T22:35:00Z",
+                "utc": "2027-09-13T22:35:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -2873,10 +2873,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -3033,7 +3033,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -3088,7 +3088,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -3111,10 +3111,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T18:35:00",
+                "local": "2027-09-13T18:35:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-14T22:35:00Z",
+                "utc": "2027-09-13T22:35:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -3136,10 +3136,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -3320,7 +3320,7 @@
             "fixture_promoted": false
           },
           "booking_group_id": "PNR-P9ZD4H",
-          "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+          "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
           "item_type": "flight",
           "extraction": {
             "extractor": "jsonld",
@@ -3375,7 +3375,7 @@
                   "icao": "ACA",
                   "kind": "airline"
                 },
-                "flight_number": "888",
+                "flight_number": "652",
                 "leg_index": 0,
                 "departure": {
                   "place": {
@@ -3398,10 +3398,10 @@
                     "distance_from_home_km": 0.0
                   },
                   "time": {
-                    "local": "2026-09-14T18:35:00",
+                    "local": "2027-09-13T18:35:00",
                     "precision": "datetime",
                     "tz": "America/Toronto",
-                    "utc": "2026-09-14T22:35:00Z",
+                    "utc": "2027-09-13T22:35:00Z",
                     "origin": "document"
                   },
                   "terminal": "1",
@@ -3423,10 +3423,10 @@
                     "adventurelog_location_id": null
                   },
                   "time": {
-                    "local": "2026-09-15T06:40:00",
+                    "local": "2027-09-14T06:40:00",
                     "precision": "datetime",
                     "tz": "Europe/London",
-                    "utc": "2026-09-15T05:40:00Z",
+                    "utc": "2027-09-14T05:40:00Z",
                     "origin": "document"
                   },
                   "terminal": "2",
@@ -3609,7 +3609,7 @@
             "fixture_promoted": false
           },
           "booking_group_id": "PNR-P9ZD4H",
-          "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+          "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
           "item_type": "flight",
           "extraction": {
             "extractor": "jsonld",
@@ -3664,7 +3664,7 @@
                   "icao": "ACA",
                   "kind": "airline"
                 },
-                "flight_number": "888",
+                "flight_number": "652",
                 "leg_index": 0,
                 "departure": {
                   "place": {
@@ -3687,10 +3687,10 @@
                     "distance_from_home_km": 0.0
                   },
                   "time": {
-                    "local": "2026-09-14T18:35:00",
+                    "local": "2027-09-13T18:35:00",
                     "precision": "datetime",
                     "tz": "America/Toronto",
-                    "utc": "2026-09-14T22:35:00Z",
+                    "utc": "2027-09-13T22:35:00Z",
                     "origin": "document"
                   },
                   "terminal": "1",
@@ -3712,10 +3712,10 @@
                     "adventurelog_location_id": null
                   },
                   "time": {
-                    "local": "2026-09-15T06:40:00",
+                    "local": "2027-09-14T06:40:00",
                     "precision": "datetime",
                     "tz": "Europe/London",
-                    "utc": "2026-09-15T05:40:00Z",
+                    "utc": "2027-09-14T05:40:00Z",
                     "origin": "document"
                   },
                   "terminal": "2",
@@ -3865,7 +3865,7 @@
             "fixture_promoted": false
           },
           "booking_group_id": "PNR-P9ZD4H",
-          "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+          "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
           "item_type": "flight",
           "extraction": {
             "extractor": "jsonld",
@@ -3938,10 +3938,10 @@
                     "adventurelog_location_id": null
                   },
                   "time": {
-                    "local": "2026-09-22T11:15:00",
+                    "local": "2027-09-21T11:15:00",
                     "precision": "datetime",
                     "tz": "Europe/London",
-                    "utc": "2026-09-22T10:15:00Z",
+                    "utc": "2027-09-21T10:15:00Z",
                     "origin": "document"
                   },
                   "terminal": "2",
@@ -3968,10 +3968,10 @@
                     "distance_from_home_km": 0.0
                   },
                   "time": {
-                    "local": "2026-09-22T14:30:00",
+                    "local": "2027-09-21T14:30:00",
                     "precision": "datetime",
                     "tz": "America/Toronto",
-                    "utc": "2026-09-22T18:30:00Z",
+                    "utc": "2027-09-21T18:30:00Z",
                     "origin": "document"
                   },
                   "terminal": "1",
@@ -4591,7 +4591,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -4646,7 +4646,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -4669,10 +4669,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T18:35:00",
+                "local": "2027-09-13T18:35:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-14T22:35:00Z",
+                "utc": "2027-09-13T22:35:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -4694,10 +4694,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -4866,7 +4866,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -4921,7 +4921,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -4944,10 +4944,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T18:35:00",
+                "local": "2027-09-13T18:35:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-14T22:35:00Z",
+                "utc": "2027-09-13T22:35:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -4969,10 +4969,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -5130,7 +5130,7 @@
         "fixture_promoted": true
       },
       "booking_group_id": "HTL-40517",
-      "canonical_key": "lodging:the-hoxton-shoreditch:2026-09-15",
+      "canonical_key": "lodging:the-hoxton-shoreditch:2027-09-14",
       "item_type": "lodging",
       "extraction": {
         "extractor": "jsonld",
@@ -5183,17 +5183,17 @@
               "adventurelog_location_id": null
             },
             "check_in": {
-              "local": "2026-09-15T15:00:00",
+              "local": "2027-09-14T15:00:00",
               "precision": "datetime",
               "tz": "Europe/London",
-              "utc": "2026-09-15T14:00:00Z",
+              "utc": "2027-09-14T14:00:00Z",
               "origin": "document"
             },
             "check_out": {
-              "local": "2026-09-20T11:00:00",
+              "local": "2027-09-19T11:00:00",
               "precision": "datetime",
               "tz": "Europe/London",
-              "utc": "2026-09-20T10:00:00Z",
+              "utc": "2027-09-19T10:00:00Z",
               "origin": "document"
             },
             "room_type": "Roomy King",
@@ -5211,8 +5211,8 @@
         "self_on_booking": true,
         "duplicate_of": null,
         "supersedes": null,
-        "deferred_until": "2026-09-15T00:00:00Z",
-        "deferred_reason": "no collection covers 2026-09-15..2026-09-20; lodging cannot mint one",
+        "deferred_until": "2027-09-14T00:00:00Z",
+        "deferred_reason": "no collection covers 2027-09-14..2027-09-19; lodging cannot mint one",
         "targets": [],
         "match_attempted": true
       },
@@ -6503,7 +6503,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -6558,7 +6558,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -6581,10 +6581,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T18:35:00",
+                "local": "2027-09-13T18:35:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-14T22:35:00Z",
+                "utc": "2027-09-13T22:35:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -6606,10 +6606,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",
@@ -6639,8 +6639,8 @@
             "id": "c0ffee00-0000-4000-8000-00000000abcd",
             "name": "United Kingdom — September 2026",
             "score": 0.91,
-            "start": "2026-09-14",
-            "end": "2026-09-22"
+            "start": "2027-09-13",
+            "end": "2027-09-21"
           }
         ],
         "self_on_booking": true,
@@ -6774,7 +6774,7 @@
         "fixture_promoted": false
       },
       "booking_group_id": "PNR-P9ZD4H",
-      "canonical_key": "flight:AC:0888:2026-09-14:YYZ",
+      "canonical_key": "flight:AC:0652:2027-09-13:YYZ",
       "item_type": "flight",
       "extraction": {
         "extractor": "jsonld",
@@ -6829,7 +6829,7 @@
               "icao": "ACA",
               "kind": "airline"
             },
-            "flight_number": "888",
+            "flight_number": "652",
             "leg_index": 0,
             "departure": {
               "place": {
@@ -6852,10 +6852,10 @@
                 "distance_from_home_km": 0.0
               },
               "time": {
-                "local": "2026-09-14T18:35:00",
+                "local": "2027-09-13T18:35:00",
                 "precision": "datetime",
                 "tz": "America/Toronto",
-                "utc": "2026-09-14T22:35:00Z",
+                "utc": "2027-09-13T22:35:00Z",
                 "origin": "document"
               },
               "terminal": "1",
@@ -6877,10 +6877,10 @@
                 "adventurelog_location_id": null
               },
               "time": {
-                "local": "2026-09-15T06:40:00",
+                "local": "2027-09-14T06:40:00",
                 "precision": "datetime",
                 "tz": "Europe/London",
-                "utc": "2026-09-15T05:40:00Z",
+                "utc": "2027-09-14T05:40:00Z",
                 "origin": "document"
               },
               "terminal": "2",

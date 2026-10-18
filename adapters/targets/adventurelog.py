@@ -125,8 +125,8 @@ class AdventureLogClient:
 
         Collection names go INTO AdventureLog (D-23: "{country} — {Month Year}"),
         so the country should be spelled the way AdventureLog spells it. Using
-        the raw code produced "KY — July 2023" instead of "Cayman Islands —
-        July 2023" on the first real run.
+        the raw code produced "AW — July 2031" instead of "Aruba —
+        July 2031" on the first real run.
         """
         out: dict[str, str] = {}
         path = "/api/countries/"
@@ -160,8 +160,8 @@ class AdventureLogClient:
         matched and would have created duplicates next to the user's 7000+ Swarm
         locations. The working endpoint is the dedicated `/api/search/?query=`,
         which returns a `locations` array. We keep the client-side proximity
-        filter (search relevance is loose — bare 'DEL' also matches Spanish
-        'del …' places 14000 km away) and return candidates NEAREST-first."""
+        filter (search relevance is loose — bare 'LAS' also matches Spanish
+        'las …' places 14000 km away) and return candidates NEAREST-first."""
         from resolve.home import haversine_km
         q = urllib.parse.urlencode({"query": query})
         status, parsed, raw = self._request("GET", f"/api/search/?{q}")

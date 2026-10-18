@@ -157,9 +157,9 @@ def _normalize_local(raw: str) -> str | None:
     """Parse a reviewer-typed date/time into a schema DateTimeLocal `local`.
 
     Accepts a bare date, or a date and time with the time written as `07:20` OR
-    `0720` OR space-separated (`2026-11-20 07:20`). Returns `YYYY-MM-DD` or
+    `0720` OR space-separated (`2027-11-19 07:20`). Returns `YYYY-MM-DD` or
     `YYYY-MM-DDTHH:MM`, or None if it can't be read — the earlier code stored the
-    raw string verbatim, so `2026-11-20T0720` (no colon) reached the payload as
+    raw string verbatim, so `2027-11-19T0720` (no colon) reached the payload as
     an invalid datetime that every downstream check then rejected."""
     m = _LOCAL_RE.fullmatch((raw or "").strip().replace(" ", "T"))
     if not m:

@@ -218,7 +218,7 @@ def test_lodging_with_type_field_saves_as_lodging_not_flight():
     r = client.post(f"/trips/{tid}/activity", data={
         "activity_kind": "lodging", "when": "2026-10-08T15:00",
         "name": "Inn of the Sandpiper", "type": "hotel",
-        "address": "113 Washington Ave"})
+        "address": "27 Adobe Row"})
     assert r.headers.get("HX-Redirect") == f"/trips/{tid}"
     with SessionLocal() as s:
         a = s.query(TripActivity).filter(TripActivity.trip_id == tid).one()
@@ -310,11 +310,11 @@ def test_activity_map_url_per_type():
     u = m("flight", {"from": "YYZ", "to": "LIS"})
     assert u.startswith("https://www.google.com/maps/search/") and "YYZ%20airport" in u
     # lodging -> name + address
-    assert "Sandpiper" in m("lodging", {"name": "Inn of the Sandpiper", "address": "113 Washington"})
+    assert "Sandpiper" in m("lodging", {"name": "Inn of the Sandpiper", "address": "27 Adobe"})
     # event -> venue
-    assert "Meow%20Wolf" in m("event", {"name": "Show", "venue": "Meow Wolf"})
+    assert "Canyon%20Light%20Gallery" in m("event", {"name": "Show", "venue": "Canyon Light Gallery"})
     # restaurant -> name + address
-    assert "Geronimo" in m("dining", {"name": "Geronimo", "address": "724 Canyon Rd"})
+    assert "Saffron" in m("dining", {"name": "Saffron", "address": "640 Arroyo Ln"})
     # train -> station; cruise -> port
     assert "station" in m("train", {"from": "Gare du Nord"})
     assert "terminal" in m("cruise", {"departurePort": "Miami"})

@@ -86,7 +86,7 @@ def build_format_schema(schema: dict) -> dict:
     # iata is here for the SAME reason as address/city/country (D-29): under
     # grammar constraint an optional key is one the model never emits, so airport
     # codes that WERE printed in the document (e.g. an itinerary table
-    # "Toronto YYZ Munich MUC") were silently dropped, leaving every multi-leg
+    # "Toronto YYZ Frankfurt FRA") were silently dropped, leaving every multi-leg
     # flight un-keyable. Required-but-nullable forces a conscious choice.
     place_always = {"address", "city", "country", "iata"}
 
@@ -146,8 +146,8 @@ Rules — every one of these exists because of a real past failure:
 - NEVER invent a time. If the document gives only a date, use precision "date" and local "YYYY-MM-DD". If it gives date+time, precision "datetime" and local "YYYY-MM-DDTHH:MM". Do not write 00:00 for an unknown time.
 - precision MUST match local exactly: precision "datetime" requires local to contain "THH:MM"; precision "date" requires local to be "YYYY-MM-DD" with no time. A date-only local with precision "datetime" is a contradiction — never emit it.
 - Times are LOCAL wall-clock as printed in the document. Set tz only when the document names a real IANA zone (Area/Location); otherwise null. Set origin to "document".
-- flight_number is digits only, optional single letter suffix (e.g. "888", not "AC652"). The airline goes in marketing_carrier as an object {"name": ..., "iata": ...}: a flight printed as "AC 1830" means iata "AC"; a United confirmation means United Airlines even if legs only show numbers. Also set the top-level provider the same way.
-- Airport iata codes: whenever the document prints a 3-letter uppercase code, put it in departure.place.iata / arrival.place.iata — INCLUDING compact itinerary tables that pair each city with its code. In a row like "Toronto YYZ Munich MUC" the departure is YYZ and the arrival is MUC; the next row "Munich MUC Bangalore BLR" is departure MUC, arrival BLR. Set iata to null only when NO code is printed — never invent one from a city name.
+- flight_number is digits only, optional single letter suffix (e.g. "652", not "AC652"). The airline goes in marketing_carrier as an object {"name": ..., "iata": ...}: a flight printed as "AC 4826" means iata "AC"; a United confirmation means United Airlines even if legs only show numbers. Also set the top-level provider the same way.
+- Airport iata codes: whenever the document prints a 3-letter uppercase code, put it in departure.place.iata / arrival.place.iata — INCLUDING compact itinerary tables that pair each city with its code. In a row like "Toronto YYZ Frankfurt FRA" the departure is YYZ and the arrival is FRA; the next row "Frankfurt FRA Nairobi NBO" is departure FRA, arrival NBO. Set iata to null only when NO code is printed — never invent one from a city name.
 - booking_status: "confirmed" for confirmations, "cancelled" for cancellations, "changed" when the subject or body says the booking was modified/changed/rescheduled — a modification notice is NOT "confirmed" — "planned" for invites/plans, pending/unknown otherwise.
 - booking_reference: the confirmation/booking/PNR code (check the subject line), or null.
 - Every item MUST include the detail object named by its item_type: item_type "flight" requires a "flight" object, "lodging" requires "lodging", "event" requires "event", and train/bus/car-rental items are item_type "ground_transport" and require a "ground_transport" object (set its mode).

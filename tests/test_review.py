@@ -128,18 +128,18 @@ def test_process_toast_wording():
 
 def test_normalize_local_accepts_colonless_time():
     """Regression (2026-08-04): the review datetime field rejected '0720' and,
-    when a value slipped through, stored '2026-11-20T0720' — an invalid datetime
+    when a value slipped through, stored '2027-11-19T0720' — an invalid datetime
     that every downstream check then rejected. Both forms must normalise to
     HH:MM, a bare date must stay date-only, and junk must be refused."""
     if not DEPS:
         return
     from app.review.routes import _normalize_local
-    assert _normalize_local("2026-11-20T0720") == "2026-11-20T07:20"
-    assert _normalize_local("2026-11-20 07:20") == "2026-11-20T07:20"
-    assert _normalize_local("2026-11-20T7:20") == "2026-11-20T07:20"
-    assert _normalize_local("2026-11-20") == "2026-11-20"      # date-only preserved
+    assert _normalize_local("2027-11-19T0720") == "2027-11-19T07:20"
+    assert _normalize_local("2027-11-19 07:20") == "2027-11-19T07:20"
+    assert _normalize_local("2027-11-19T7:20") == "2027-11-19T07:20"
+    assert _normalize_local("2027-11-19") == "2027-11-19"      # date-only preserved
     assert _normalize_local("garbage") is None
-    assert _normalize_local("2026-11-20T25:00") is None        # invalid hour
+    assert _normalize_local("2027-11-19T25:00") is None        # invalid hour
 
 
 def test_logged_bucket_detection():
@@ -269,7 +269,7 @@ def _flight_payload():
         "item_type": "flight", "booking_status": "changed",
         "booking_reference": "TEST01",
         "flight": {
-            "flight_number": "1830",
+            "flight_number": "4826",
             "marketing_carrier": {"name": "Test Air", "iata": "TA"},
             "departure": {"place": {"raw": "AAA", "iata": "AAA"},
                           # the failure this whole flow exists to fix: a date
@@ -334,7 +334,7 @@ def test_blank_edit_is_not_a_change():
     def run():
         p = _flight_payload()
         assert _apply_edit(p, "/flight/departure/time", "", "datetime") is False
-        assert _apply_edit(p, "/flight/flight_number", "1830", "text") is False
+        assert _apply_edit(p, "/flight/flight_number", "4826", "text") is False
     _skip_or(run)
 
 

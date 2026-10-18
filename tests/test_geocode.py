@@ -82,19 +82,19 @@ def test_address_query_is_tried_before_city():
     """Booking emails print the street address; using it is what turns a
     city-centroid guess into the actual building."""
     g = _StubPhoton({})
-    g.geocode_place({"raw": "Hotel", "name": "Hotel", "address": "311 Ocotillo Ln",
+    g.geocode_place({"raw": "Hotel", "name": "Hotel", "address": "418 Ocotillo Ln",
                      "city": "Glendale", "region": "Arizona", "country": "US"})
     assert g.queries, "no query issued"
-    assert g.queries[0].startswith("311 Ocotillo Ln"), g.queries[0]
+    assert g.queries[0].startswith("418 Ocotillo Ln"), g.queries[0]
     assert "Arizona" in g.queries[0]      # region disambiguates Glendale CA/NM
 
 
 def test_street_level_hit_is_poi_city_hit_is_area():
-    street = _StubPhoton({"Pompa": [{"geometry": {"coordinates": [-104.23, 32.41]},
+    street = _StubPhoton({"Ocotillo": [{"geometry": {"coordinates": [-104.23, 32.41]},
                                      "properties": {"housenumber": "311",
                                                     "street": "Ocotillo Ln",
                                                     "city": "Glendale", "countrycode": "US"}}]})
-    r = street.geocode_place({"raw": "H", "name": "H", "address": "311 Ocotillo Ln",
+    r = street.geocode_place({"raw": "H", "name": "H", "address": "418 Ocotillo Ln",
                               "city": "Glendale", "country": "US"})
     assert r is not None and r.precision == "poi"
 
@@ -116,17 +116,17 @@ def test_formatted_address_geocodes_without_structured_fields():
     """A Google Maps pick / iCal LOCATION is the whole address in one string,
     with no structured city or country. A street-level hit for it is
     self-verifying, and fills city/region/country/address."""
-    addr = "CAA Ed Lakeshore Playhouse Theatre, 244 Victoria St, Toronto, ON M5B 1V8, Canada"
-    g = _StubPhoton({"Victoria": [_street_feature(
-        43.655, -79.379, name="Ed Lakeshore Playhouse Theatre", housenumber="244",
-        street="Victoria Street", city="Toronto", state="Ontario", cc="CA")]})
+    addr = "Lakeshore Playhouse, 512 Front St W, Toronto, ON M5V 0A1, Canada"
+    g = _StubPhoton({"Front": [_street_feature(
+        43.655, -79.379, name="Lakeshore Playhouse", housenumber="512",
+        street="Front Street West", city="Toronto", state="Ontario", cc="CA")]})
     r = g.geocode_place({"raw": addr, "name": addr})
     assert r is not None and r.confidence == "verified" and r.precision == "poi"
     assert r.city == "Toronto" and r.country == "CA"
-    assert r.region == "Ontario" and r.address == "244 Victoria Street"
+    assert r.region == "Ontario" and r.address == "512 Front Street West"
     out = apply_geocode({"raw": addr, "name": addr}, r)
     assert out["city"] == "Toronto" and out["country"] == "CA"
-    assert out["region"] == "Ontario" and out["address"] == "244 Victoria Street"
+    assert out["region"] == "Ontario" and out["address"] == "512 Front Street West"
 
 
 def test_address_tier_trusts_a_building_not_a_centroid():

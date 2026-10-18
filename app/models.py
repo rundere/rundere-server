@@ -398,7 +398,7 @@ class Artifact(Base):
 
 class HomeProfile(Base):
     """Effective-dated home config (D-07): a 2013 flight is judged against the
-    home in force then. Bangalore must NOT be seeded here (OQ-01)."""
+    home in force then. Only places you actually live are seeded here (OQ-01)."""
     __tablename__ = "home_profiles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

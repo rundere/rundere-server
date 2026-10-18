@@ -10,8 +10,8 @@ from resolve.revision import (PriorItem, changed_pointers, content_hash, decide)
 BASE = {"item_type": "lodging", "booking_status": "confirmed",
         "booking_reference": "ABC123",
         "lodging": {"property_name": "Test Hotel",
-                    "check_in": {"local": "2026-09-15", "precision": "date"},
-                    "check_out": {"local": "2026-09-18", "precision": "date"}}}
+                    "check_in": {"local": "2027-09-14", "precision": "date"},
+                    "check_out": {"local": "2027-09-17", "precision": "date"}}}
 
 
 def test_hash_is_key_order_independent():
@@ -35,7 +35,7 @@ def test_identical_recapture_is_no_change():
 
 def test_real_change_is_update_with_pointers():
     changed = {**BASE, "lodging": {**BASE["lodging"],
-                                   "check_out": {"local": "2026-09-19",
+                                   "check_out": {"local": "2027-09-18",
                                                  "precision": "date"}}}
     prior = PriorItem(id="i1", content_hash=content_hash(BASE))
     d = decide(changed, prior, prior_payload=BASE)

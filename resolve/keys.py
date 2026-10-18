@@ -116,7 +116,7 @@ def _result(primary: str, *alts: str | None) -> KeyResult:
 # ---------------------------------------------------------------- flight
 
 def normalize_flight_number(number: str | int, carrier: str | None = None) -> str:
-    """'AC 0888' / '0888' / 888 → '888'; optional suffix letter survives ('888A')."""
+    """'AC 0652' / '0652' / 652 → '652'; optional suffix letter survives ('652A')."""
     s = _code(str(number))
     if carrier:
         c = _code(carrier)

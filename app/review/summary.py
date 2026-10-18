@@ -68,7 +68,7 @@ def headline(payload: dict) -> str:
 
 
 def subline(payload: dict) -> str:
-    """Route/place and dates: 'Toronto YYZ → Grand Cayman GCM · 30 Jun 2023'."""
+    """Route/place and dates: 'Toronto YYZ → Oranjestad AUA · 30 Jun 2031'."""
     t = payload.get("item_type")
     if t == "flight":
         f = payload.get("flight") or {}

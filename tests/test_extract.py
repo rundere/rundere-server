@@ -55,9 +55,9 @@ FLIGHT_LD = {
         "@type": "Flight", "flightNumber": "AC652",
         "airline": {"@type": "Airline", "name": "Air Canada", "iataCode": "AC"},
         "departureAirport": {"@type": "Airport", "name": "Toronto Pearson", "iataCode": "YYZ"},
-        "departureTime": "2026-09-14T18:30:00-04:00",
+        "departureTime": "2027-09-13T18:30:00-04:00",
         "arrivalAirport": {"@type": "Airport", "name": "Heathrow", "iataCode": "LHR"},
-        "arrivalTime": "2026-09-15T06:40:00+01:00",
+        "arrivalTime": "2027-09-14T06:40:00+01:00",
     },
 }
 
@@ -75,9 +75,9 @@ def test_jsonld_flight():
     assert p["item_type"] == "flight"
     assert p["booking_reference"] == "T4WNX8"
     f = p["flight"]
-    assert f["flight_number"] == "888"          # carrier prefix stripped
+    assert f["flight_number"] == "652"          # carrier prefix stripped
     assert f["departure"]["place"]["iata"] == "YYZ"
-    assert f["departure"]["time"] == {"local": "2026-09-14T18:30",
+    assert f["departure"]["time"] == {"local": "2027-09-13T18:30",
                                       "precision": "datetime", "tz": None,
                                       "origin": "document"}   # offset dropped, never guessed
     assert p["travelers"][0]["raw_name"] == "Pat Example"
@@ -117,11 +117,11 @@ def test_jsonld_flight_regional_operator_and_reservation_id():
             "departureAirport": {"@type": "Airport",
                 "name": "Toronto-Pearson International Airport, Terminal 1",
                 "iataCode": "YYZ"},
-            "departureTime": "2026-11-20T07:20:00-05:00",
+            "departureTime": "2027-11-19T07:20:00-05:00",
             "arrivalAirport": {"@type": "Airport",
-                "name": "R. Reagan Washington National Airport, Terminal 1",
-                "iataCode": "DCA"},
-            "arrivalTime": "2026-11-20T08:58:00-05:00",
+                "name": "Chicago O'Hare International Airport, Terminal 1",
+                "iataCode": "ORD"},
+            "arrivalTime": "2027-11-19T08:58:00-06:00",
         },
     }
     items = jsonld.extract_jsonld(_ld_html(doc))
@@ -129,13 +129,13 @@ def test_jsonld_flight_regional_operator_and_reservation_id():
     _assert_valid(items)
     p = items[0]
     f = p["flight"]
-    assert f["flight_number"] == "8780"
+    assert f["flight_number"] == "9471"
     assert f["marketing_carrier"]["iata"] == "AC"       # from the number, not QK
     assert f["operating_carrier"]["iata"] == "QK"       # provider kept as operating
     assert f["departure"]["place"]["iata"] == "YYZ"
-    assert f["departure"]["time"]["local"] == "2026-11-20T07:20"
-    assert f["arrival"]["place"]["iata"] == "DCA"
-    assert f["arrival"]["time"]["local"] == "2026-11-20T08:58"
+    assert f["departure"]["time"]["local"] == "2027-11-19T07:20"
+    assert f["arrival"]["place"]["iata"] == "ORD"
+    assert f["arrival"]["time"]["local"] == "2027-11-19T08:58"
     assert p["booking_reference"] == "JMVRLE"           # read from reservationId
 
 
@@ -144,7 +144,7 @@ def test_jsonld_lodging_and_graph():
         "@type": "LodgingReservation", "reservationNumber": "HX-1",
         "reservationFor": {"@type": "LodgingBusiness", "name": "Test Hotel",
                            "address": {"addressLocality": "London", "addressCountry": "GB"}},
-        "checkinTime": "2026-09-15T15:00:00", "checkoutTime": "2026-09-18T11:00:00",
+        "checkinTime": "2027-09-14T15:00:00", "checkoutTime": "2027-09-17T11:00:00",
     }
     items = jsonld.extract_jsonld(_ld_html({"@graph": [lodging]}))
     assert len(items) == 1
@@ -466,12 +466,12 @@ def test_normalize_fills_iata_from_raw_airport_code():
                     "departure": {"place": {"raw": "YYZ"},
                                   "time": {"local": "2026-10-02T14:30",
                                            "precision": "datetime"}},
-                    "arrival": {"place": {"raw": "Dulles Intl (IAD)"},
+                    "arrival": {"place": {"raw": "Midway Intl (MDW)"},
                                 "time": {"local": "2026-10-02T16:02",
                                          "precision": "datetime"}}}}
     out = normalize_payload(p)
     assert out["flight"]["departure"]["place"]["iata"] == "YYZ"
-    assert out["flight"]["arrival"]["place"]["iata"] == "IAD"   # parsed from parens
+    assert out["flight"]["arrival"]["place"]["iata"] == "MDW"   # parsed from parens
     assert p["flight"]["departure"]["place"].get("iata") is None  # input untouched
 
 

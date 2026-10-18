@@ -87,16 +87,16 @@ def test_flight_derives_from_airport_reference():
 
 
 def test_never_flown_airport_resolves_via_injected_lookup():
-    """The flown reference wouldn't have BLR; the injected resolver (its DB
+    """The flown reference wouldn't have NBO; the injected resolver (its DB
     backing in prod) still resolves it — so a first trip to a new country is not
     silently dropped."""
-    acts = [_act("flight", {"from": "YYZ", "to": "BLR"})]
+    acts = [_act("flight", {"from": "YYZ", "to": "NBO"})]
     resolver = _StubAirports({
         "YYZ": _airport("CA", "Toronto"),
-        "BLR": _airport("IN", "Bengaluru"),
+        "NBO": _airport("KE", "Nairobi"),
     })
     out = derive_locations(acts, resolve_airport=resolver, geocoder=_NO_GEO)
-    assert "IN" in out.countries
+    assert "KE" in out.countries
 
 
 def test_unresolvable_airport_code_is_dropped():
