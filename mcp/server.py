@@ -7,7 +7,7 @@ script is the alternative for hosts that can reach Yonder's `/api/v1` but not
 `/mcp`: the same tools, as a thin client of the same endpoints, so it inherits
 all auth + per-user scoping.
 
-Run:  YONDER_URL=https://yonder.home.example YONDER_TOKEN=ypat_… python mcp/server.py
+Run:  YONDER_URL=https://rundere.example.com YONDER_TOKEN=ypat_… python mcp/server.py
 
 Config (env):
   YONDER_URL       base URL of the Yonder app (default http://localhost:8000)

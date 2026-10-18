@@ -29,7 +29,7 @@ only be revoked all at once, by resetting the user's password.)
 
 | var | meaning |
 |---|---|
-| `YONDER_URL` | base URL of the Yonder app (e.g. `https://yonder.home.example`) |
+| `YONDER_URL` | base URL of the Yonder app (e.g. `https://rundere.example.com`) |
 | `YONDER_TOKEN` | **preferred**: a personal API token (`ypat_…`) |
 | `YONDER_USER` / `YONDER_PASSWORD` | alternative: the script logs in and re-logs in on expiry |
 
@@ -44,7 +44,7 @@ pip install -r mcp/requirements.txt
 Claude Code:
 
 ```bash
-claude mcp add yonder -- env YONDER_URL=https://yonder.home.example \
+claude mcp add yonder -- env YONDER_URL=https://rundere.example.com \
   YONDER_TOKEN=ypat_… python /path/to/yonder/mcp/server.py
 ```
 
@@ -57,7 +57,7 @@ Claude Desktop (`claude_desktop_config.json`):
       "command": "python",
       "args": ["/path/to/yonder/mcp/server.py"],
       "env": {
-        "YONDER_URL": "https://yonder.home.example",
+        "YONDER_URL": "https://rundere.example.com",
         "YONDER_TOKEN": "ypat_…"
       }
     }

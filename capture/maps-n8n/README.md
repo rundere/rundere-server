@@ -53,7 +53,7 @@ they geocode; coordinate stops become lat/lon directly.
    - `apiKey` → the key from step 1
    - `ingestUrl` → leave as `http://yonder:8000/ingest` if n8n shares the
      docker network with the app; otherwise your public
-     `https://yonder.example.net/ingest`.
+     `https://rundere.example.com/ingest`.
 
 4. **Activate** the workflow. The Form Trigger gives you a hosted form URL
    (*Trip form* node → *Production URL*). Open it on desktop or phone.

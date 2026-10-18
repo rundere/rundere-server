@@ -268,7 +268,7 @@ if DEPS:
             _cleanup(["t145b", "t145c"], ["T145 New", "T145 Later"])
 
     # ------------------------------------------------------------------ YONDER-164
-    _PUBLIC, _LAN = "yonder.example.net", "yonder.home.example"
+    _PUBLIC, _LAN = "yonder.example.net", "rundere.home.example"
 
     def _per_host(monkeypatch, hosts="yonder.example.net", force="yonder.example.net"):
         _enable_oidc()

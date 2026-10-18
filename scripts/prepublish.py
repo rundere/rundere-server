@@ -132,7 +132,8 @@ INFRA_RULES: list[tuple[str, re.Pattern]] = [
     ("ddns-host", re.compile(r"\b[a-z0-9][a-z0-9-]*\.(?:ddns\.net|no-ip\.[a-z]+|duckdns\.org|dynu\.net|hopto\.org)\b", re.I)),
     ("private-ipv4", re.compile(
         r"(?<![\d.])(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(?![\d.])")),
-    ("home-path", re.compile(r"(?:/home|/Users|/media)/[a-z][a-z0-9_.-]+")),
+    # A home directory, not an app route like /review/home/delete.
+    ("home-path", re.compile(r"(?<![\w/.-])(?:/home|/Users|/media)/[a-z][a-z0-9_.-]+")),
 ]
 PERSONAL_EMAIL = re.compile(
     r"\b[A-Za-z0-9._%+-]+@(?:gmail|googlemail|proton|protonmail|pm|outlook|hotmail|live|yahoo|icloud|me|aol)"
