@@ -474,6 +474,17 @@ author's local working notes (not part of this repo).
 
 ---
 
+## Decisions and references
+
+Design decisions are numbered **D-###**. The early ones (D-01 – D-109) are in
+[DECISIONS.md](DECISIONS.md), later ones in the `SPEC-*.md` file they belong to, and
+open questions (**OQ-##**) in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Code comments
+cite them to say *why*.
+
+References like **YONDER-123** point to work items in the maintainer's private issue
+tracker (Plane), used to keep the project's work defined. They aren't publicly
+accessible; the pull requests and commits that mention them carry the details.
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE). Run·dere talks to AdventureLog

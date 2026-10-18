@@ -51,6 +51,13 @@ Packing edits are per-user (D-123): an item must be `user_id == caller`.
 **Deferred to a later slice:** full review approve/commit over the API (the
 commit pipeline is intricate — kept on the HTMX surface for now); OpenAPI UI.
 
+## Decisions
+
+- **D-125 — Manual trip edits ("updates on the go").** A person who can edit a trip
+  (owner, traveller or admin) edits its line items directly over `/api/v1`, outside
+  the review and commit pipeline. Every edit goes through `require_trip(edit=True)`:
+  404 when the trip isn't visible, 403 for a view-only share.
+
 ## Reuse map
 | Need | Reuse |
 |---|---|
