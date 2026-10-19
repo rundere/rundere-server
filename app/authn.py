@@ -41,6 +41,10 @@ _PROXY_HEADERS = ("x-authentik-username", "x-forwarded-user",
                   "x-auth-request-user", "remote-user")
 
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2 ** 14, 8, 1
+# Verified against when the username doesn't exist, so an unknown name costs the
+# same scrypt as a wrong password and response times don't reveal which
+# usernames exist (YONDER-293). Made on first use: start-up stays fast.
+_DUMMY_HASH: str | None = None
 
 
 def _secret() -> str:
@@ -196,8 +200,9 @@ def create_refresh_token(session, user: User, user_agent: str | None = None) -> 
 
 def consume_refresh_token(session, opaque: str) -> User | None:
     """Validate AND rotate: the presented token is revoked; the caller issues a
-    fresh one. Returns the owning user, or None if invalid/expired/revoked, the
-    user is gone/inactive, or its token_version has moved on."""
+    fresh one. Returns the owning user, or None if invalid/expired/revoked or
+    the user is gone/inactive. Refresh rows carry no token_version: every bump
+    goes through end_sessions(), which revokes them."""
     row = session.query(RefreshToken).filter_by(token_hash=_hash_opaque(opaque)).one_or_none()
     if row is None or row.revoked_at is not None:
         return None
@@ -211,6 +216,17 @@ def consume_refresh_token(session, opaque: str) -> User | None:
     return user
 
 
+def end_sessions(session, user: User) -> None:
+    """Sign the user out everywhere: bump token_version (every JWT, OAuth grant
+    and personal API token dies with it) AND revoke their refresh tokens, which
+    don't carry the version — without this a stolen app refresh token outlived a
+    password reset (YONDER-293). The caller commits."""
+    user.token_version += 1
+    (session.query(RefreshToken)
+     .filter(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+     .update({RefreshToken.revoked_at: _now()}, synchronize_session=False))
+
+
 def revoke_refresh_token(session, opaque: str) -> bool:
     row = session.query(RefreshToken).filter_by(token_hash=_hash_opaque(opaque)).one_or_none()
     if row is None or row.revoked_at is not None:
@@ -222,8 +238,11 @@ def revoke_refresh_token(session, opaque: str) -> bool:
 
 # --------------------------------------------------------------------------- providers
 def authenticate_local(session, username: str, password: str) -> User | None:
+    global _DUMMY_HASH
     user = session.query(User).filter_by(username=username).one_or_none()
     if user is None or not user.is_active or user.auth_source != "local":
+        _DUMMY_HASH = _DUMMY_HASH or hash_password(secrets.token_hex(8))
+        verify_password(password, _DUMMY_HASH)
         return None
     if not verify_password(password, user.password_hash):
         return None
@@ -301,7 +320,9 @@ def resolve_proxy_user(session, request) -> User | None:
                     is_active=True, is_admin=settings.auth_proxy_auto_admin, sharing_prompt=True)
         session.add(user)
         session.commit()
-    return user
+    # A deactivated account stays out even when the proxy vouches for the name
+    # (YONDER-293): every other sign-in path checks is_active too.
+    return user if user.is_active else None
 
 
 def resolve_user(session, request) -> User | None:
@@ -487,7 +508,7 @@ def consume_reset_token(session, opaque: str, new_password: str) -> User | None:
     if user is None:
         return None
     user.password_hash = hash_password(new_password)
-    user.token_version += 1
+    end_sessions(session, user)
     row.used_at = _now()
     session.commit()
     return user

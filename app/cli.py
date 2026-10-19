@@ -137,7 +137,7 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         if pw is None:
             return 1
         user.password_hash = authn.hash_password(pw)
-        user.token_version += 1        # invalidate existing sessions on a reset
+        authn.end_sessions(session, user)   # invalidate existing sessions on a reset
         from app.models import AccountEvent   # audit: the operator, via the CLI
         session.add(AccountEvent(user_id=user.id, actor_id=None, action="password_set",
                                  detail="cli"))

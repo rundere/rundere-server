@@ -25,7 +25,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app import authn, oauth
-from app.auth import RateLimiter
+from app.auth import RateLimiter, client_ip
 from app.config import settings
 from app.db import get_session
 from app.models import OAuthClient
@@ -45,13 +45,7 @@ token_limiter = RateLimiter(settings.oauth_token_rate_limit,
 
 
 def _client_ip(request: Request) -> str:
-    """The address the nearest proxy saw (the RIGHTMOST X-Forwarded-For hop —
-    the leftmost is client-supplied and spoofable), else the socket peer."""
-    xff = request.headers.get("x-forwarded-for", "")
-    hops = [h.strip() for h in xff.split(",") if h.strip()]
-    if hops:
-        return hops[-1]
-    return request.client.host if request.client else "unknown"
+    return client_ip(request)
 
 
 def _oauth_error(e: oauth.OAuthError) -> JSONResponse:

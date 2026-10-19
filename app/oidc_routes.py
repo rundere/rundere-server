@@ -19,6 +19,7 @@ from fastapi.responses import RedirectResponse
 from starlette.status import HTTP_303_SEE_OTHER
 
 from app import authn, oidc
+from app.authn_routes import _safe_next   # one open-redirect rule (YONDER-293)
 from app.config import settings
 from app.db import SessionLocal
 
@@ -26,10 +27,6 @@ router = APIRouter()
 
 _STATE_COOKIE = "yonder_oidc"
 _STATE_TTL = 600            # 10 minutes to complete the handshake
-
-
-def _safe_next(nxt: str | None) -> str:
-    return nxt if (nxt and nxt.startswith("/") and not nxt.startswith("//")) else "/"
 
 
 def _redirect_uri(request: Request) -> str:

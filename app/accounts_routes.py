@@ -35,6 +35,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import authn
+from app.auth import RateLimiter, client_ip
 from app.config import settings
 from app.db import get_session
 from app.email import deliver, email_configured, send_email, smtp_summary
@@ -229,12 +230,21 @@ def forgot_form(request: Request):
                                       {"smtp": email_configured()})
 
 
+# Reset emails per client address (YONDER-293).
+_forgot_limiter = RateLimiter(settings.forgot_rate_limit, settings.login_rate_window_seconds)
+
+
 @router.post("/forgot", response_class=HTMLResponse)
 def forgot_submit(request: Request, identifier: str = Form(...),
                   session: Session = Depends(get_session)):
     if (blocked := _sso_only(request)) is not None:
         return blocked
     ident = identifier.strip()
+    # Each request can send an email: cap them per client address (YONDER-293).
+    # Over the cap the page answers exactly as usual, and sends nothing.
+    if not _forgot_limiter.allow(client_ip(request)):
+        return templates.TemplateResponse(request, "forgot.html",
+                                          {"smtp": email_configured(), "sent": True})
     user = (session.query(User).filter_by(username=ident).one_or_none()
             or session.query(User).filter(
                 func.lower(User.email) == ident.lower()).first())
@@ -377,7 +387,7 @@ def account_set_password(current_password: str = Form(""), password: str = Form(
         return RedirectResponse("/account?err=New+passwords+did+not+match",
                                 status_code=303)
     user.password_hash = authn.hash_password(password)
-    user.token_version += 1           # sign out every other session…
+    authn.end_sessions(session, user)  # sign out every other session…
     session.commit()
     resp = RedirectResponse("/account?msg=Password+changed", status_code=303)
     return _login_user(resp, user)    # …but keep this one signed in
@@ -441,8 +451,8 @@ def traveller_link(next: str = Form("/account"), traveler_id: str = Form("none")
 
 def _safe_next(nxt: str) -> str:
     """Only same-site paths (no scheme/host) — never an open redirect."""
-    nxt = (nxt or "/").strip()
-    return nxt if nxt.startswith("/") and not nxt.startswith("//") else "/"
+    from app.authn_routes import _safe_next as safe
+    return safe((nxt or "/").strip())
 
 
 # --------------------------------------------------------------------------- admin: Users
@@ -498,7 +508,7 @@ def users_set_password(user_id: str, password: str = Form(...),
                                        "admin can't set their password — send a reset "
                                        "link (it's emailed to them)."), status_code=303)
     user.password_hash = authn.hash_password(password)
-    user.token_version += 1
+    authn.end_sessions(session, user)
     _audit(session, user, admin, "password_set")
     session.commit()
     return RedirectResponse(f"/users?msg=Password+set+for+{user.username}", status_code=303)
@@ -624,7 +634,7 @@ def users_toggle_active(user_id: str, admin: User = Depends(authn.require_admin)
     if user.id == admin.id:
         return RedirectResponse("/users?err=You+can%27t+deactivate+yourself", status_code=303)
     user.is_active = not user.is_active
-    user.token_version += 1                    # kick out any live sessions on deactivate
+    authn.end_sessions(session, user)          # kick out any live sessions on deactivate
     _audit(session, user, admin, "activated" if user.is_active else "deactivated")
     session.commit()
     _notify_private(user, "reactivated your account" if user.is_active
