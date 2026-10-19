@@ -1230,14 +1230,17 @@ def job_status(job_id: str, request: Request, bucket: str = "attention",
     orphaned it) clears the panel; a finished one stops polling and refreshes the
     queue out-of-band."""
     job = jobs.get(job_id)
-    if job is None:
+    # Only the person who started a job sees its panel (item headlines, errors):
+    # someone else's job reads as gone (YONDER-293).
+    if job is None or not jobs.visible_to(job, scope.user_of(request)):
         return HTMLResponse("")
     return _job_panel(request, job, bucket)
 
 
 @router.get("/jobs/{job_id}/dismiss", response_class=HTMLResponse)
-def job_dismiss(job_id: str):
-    jobs.dismiss(job_id)
+def job_dismiss(job_id: str, request: Request):
+    if jobs.visible_to(jobs.get(job_id), scope.user_of(request)):   # own only (YONDER-293)
+        jobs.dismiss(job_id)
     return HTMLResponse("")
 
 

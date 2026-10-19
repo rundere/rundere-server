@@ -2538,7 +2538,10 @@ def add_guest(trip_id: str, request: Request, name: str = Form(""),
 @router.post("/{trip_id}/travelers/{traveler_id}/remove", response_class=HTMLResponse)
 def remove_traveler(trip_id: str, traveler_id: int, request: Request,
                     session: Session = Depends(get_session)):
-    """Drop a traveller from the trip roster. Swaps just the section."""
+    """Drop a traveller from the trip roster. Swaps just the section. Needs edit
+    access to the trip, like adding one (YONDER-293: it had no check at all)."""
+    if scope.trip_or_none(session, request, trip_id) is None:
+        return HTMLResponse("", status_code=404)
     row = session.get(TripTraveler,
                       {"trip_id": trip_id, "traveler_id": traveler_id})
     if row is not None:

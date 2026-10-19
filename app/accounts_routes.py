@@ -70,6 +70,27 @@ def _unclaimed_travelers(session: Session) -> list[TravelerIdentity]:
     return [t for t in _travelers(session) if t.id not in claimed]
 
 
+def _claim_problem(session: Session, traveler_id: str, new_name: str) -> str:
+    """Why this self-service claim isn't allowed, or "" (YONDER-145 rule:
+    an unclaimed traveller, or a new name nobody has)."""
+    new_name = (new_name or "").strip()
+    if new_name:
+        if session.query(TravelerIdentity).filter(
+                func.lower(TravelerIdentity.display_name) == new_name.lower()).first():
+            return (f"There's already a traveller called {new_name} — pick them "
+                    "from the list if that's you, or use a different name.")
+        return ""
+    if traveler_id in ("", "none"):
+        return ""
+    try:
+        tid = int(traveler_id)
+    except ValueError:
+        return "Pick a traveller from the list."
+    if tid not in {t.id for t in _unclaimed_travelers(session)}:
+        return "That traveller is already linked to another account."
+    return ""
+
+
 def _claim_traveler(session: Session, user: User, traveler_id: str,
                     new_name: str) -> str:
     """Link an unlinked user to an unclaimed traveller, or a new one named
@@ -77,19 +98,10 @@ def _claim_traveler(session: Session, user: User, traveler_id: str,
     new_name = (new_name or "").strip()
     if user.traveler_id is not None or (not new_name and traveler_id in ("", "none")):
         return ""
-    if new_name:
-        if session.query(TravelerIdentity).filter(
-                func.lower(TravelerIdentity.display_name) == new_name.lower()).first():
-            return (f"There's already a traveller called {new_name} — pick them "
-                    "from the list if that's you, or use a different name.")
-        tid = authn.resolve_traveler(session, traveler_id=None, new_name=new_name)
-    else:
-        try:
-            tid = int(traveler_id)
-        except ValueError:
-            return "Pick a traveller from the list."
-        if tid not in {t.id for t in _unclaimed_travelers(session)}:
-            return "That traveller is already linked to another account."
+    if (problem := _claim_problem(session, traveler_id, new_name)):
+        return problem
+    tid = (authn.resolve_traveler(session, traveler_id=None, new_name=new_name)
+           if new_name else int(traveler_id))
     user.traveler_id = tid
     session.commit()
     return ""
@@ -192,7 +204,7 @@ def register_form(request: Request, session: Session = Depends(get_session)):
     if not settings.auth_registration_open:
         return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse(request, "register.html",
-                                      {"travelers": _travelers(session)})
+                                      {"travelers": _unclaimed_travelers(session)})
 
 
 @router.post("/register")
@@ -206,17 +218,26 @@ def register_submit(request: Request, username: str = Form(...), password: str =
     if session.query(User).filter_by(username=username.strip()).one_or_none():
         return templates.TemplateResponse(
             request, "register.html",
-            {"travelers": _travelers(session), "error": "That username is taken.",
+            {"travelers": _unclaimed_travelers(session), "error": "That username is taken.",
              "username": username}, status_code=409)
     if email.strip() and authn.email_in_use(session, email):
         return templates.TemplateResponse(
             request, "register.html",
-            {"travelers": _travelers(session),
+            {"travelers": _unclaimed_travelers(session),
              "error": "That email is already used by another account.",
              "username": username}, status_code=409)
-    tid = authn.resolve_traveler(session, traveler_id=traveler_id, new_name=new_traveler)
+    # Self-service claims follow the YONDER-145 rule, like every other claim: an
+    # unclaimed traveller or a new one. /register used to take ANY traveller id,
+    # so a stranger could link to someone's traveller and gain their trips (YONDER-293).
+    error = _claim_problem(session, traveler_id, new_traveler)
+    if error:
+        return templates.TemplateResponse(
+            request, "register.html",
+            {"travelers": _unclaimed_travelers(session), "error": error,
+             "username": username}, status_code=409)
     user = authn.create_user(session, username, password, email=email or None,
-                             is_admin=False, traveler_id=tid, sharing_prompt=True)
+                             is_admin=False, sharing_prompt=True)
+    _claim_traveler(session, user, traveler_id, new_traveler)
     resp = RedirectResponse("/", status_code=303)
     return _login_user(resp, user)
 

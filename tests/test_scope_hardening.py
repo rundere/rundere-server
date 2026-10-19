@@ -95,3 +95,88 @@ if DEPS:
             assert c.get(f"/api/v1/trips/{tid}").status_code == 404
         finally:
             settings.auth_required = False
+
+    # ------------------------------------------------ roster removal (IDOR)
+    def test_stranger_cannot_remove_a_traveller():
+        """POST /trips/{id}/travelers/{tid}/remove had no access check: any
+        signed-in user could empty someone else's roster and read it back."""
+        from app.models import TravelerIdentity, TripTraveler
+        _, tid = _owner_with_trip("scope-roster", "Scope Roster Trip")
+        _owner_with_trip("scope-stranger", "Scope Stranger Trip")
+        with SessionLocal() as s:
+            t = TravelerIdentity(display_name="Scope Roster Guest", kind="guest")
+            s.add(t)
+            s.flush()
+            s.add(TripTraveler(trip_id=tid, traveler_id=t.id))
+            s.commit()
+            trav_id = t.id
+        settings.auth_required = True
+        try:
+            c = TestClient(app)
+            c.post("/login", data={"username": "scope-stranger", "password": "pw-owner-123"})
+            r = c.post(f"/trips/{tid}/travelers/{trav_id}/remove")
+            assert r.status_code == 404 and "Scope Roster Guest" not in r.text
+            with SessionLocal() as s:
+                assert s.get(TripTraveler, {"trip_id": tid, "traveler_id": trav_id})
+            owner = TestClient(app)
+            owner.post("/login", data={"username": "scope-roster", "password": "pw-owner-123"})
+            assert owner.post(f"/trips/{tid}/travelers/{trav_id}/remove").status_code == 200
+            with SessionLocal() as s:
+                assert s.get(TripTraveler, {"trip_id": tid, "traveler_id": trav_id}) is None
+        finally:
+            settings.auth_required = False
+
+    # ------------------------------------------------------ job panels
+    def test_job_panel_is_its_starters_only():
+        from app.review import jobs
+        uid, _ = _owner_with_trip("scope-jobber", "Scope Job Trip")
+        _owner_with_trip("scope-peeker", "Scope Peek Trip")
+        with jobs._LOCK:
+            jobs._JOBS["scope-job-1"] = {"id": "scope-job-1", "kind": "process",
+                                         "owner": uid, "state": "done",
+                                         "message": "Scope Secret Headline", "items": []}
+        settings.auth_required = True
+        try:
+            c = TestClient(app)
+            c.post("/login", data={"username": "scope-peeker", "password": "pw-owner-123"})
+            r = c.get("/review/jobs/scope-job-1")
+            assert r.status_code == 200 and r.text == ""
+            c.get("/review/jobs/scope-job-1/dismiss")
+            assert jobs.get("scope-job-1") is not None          # not someone else's to dismiss
+        finally:
+            settings.auth_required = False
+            jobs.dismiss("scope-job-1")
+
+    # ------------------------------------------------- registration claims
+    def test_register_cannot_claim_a_linked_traveller():
+        """/register took ANY traveller id: a stranger could link themselves to
+        someone's traveller and inherit their trips. Now the YONDER-145 rule."""
+        from app.models import TravelerIdentity
+        with SessionLocal() as s:
+            for name in ("scope-reg-thief", "scope-reg-victim"):
+                old = s.query(User).filter_by(username=name).one_or_none()
+                if old:
+                    s.delete(old)
+            s.query(TravelerIdentity).filter_by(display_name="Scope Reg Victim").delete()
+            s.commit()
+            t = TravelerIdentity(display_name="Scope Reg Victim", kind="guest")
+            s.add(t)
+            s.flush()
+            authn.create_user(s, "scope-reg-victim", "pw-owner-123", traveler_id=t.id)
+            victim_tid = t.id
+        settings.auth_required = True
+        settings.auth_registration_open = True
+        try:
+            c = TestClient(app)
+            page = c.get("/register")
+            assert "Scope Reg Victim" not in page.text          # not offered…
+            r = c.post("/register", data={"username": "scope-reg-thief",
+                                          "password": "pw-thief-123",
+                                          "traveler_id": str(victim_tid)},
+                       follow_redirects=False)
+            assert r.status_code == 409                          # …and not accepted
+            with SessionLocal() as s:
+                assert s.query(User).filter_by(username="scope-reg-thief").count() == 0
+        finally:
+            settings.auth_required = False
+            settings.auth_registration_open = False
