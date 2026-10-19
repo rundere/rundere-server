@@ -38,3 +38,9 @@ def test_any_uid_gets_a_writable_home(tmp_path):
                          capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip().startswith("/tmp/rundere-home-")
+
+
+def test_image_checks_data_paths_before_migrating():
+    """A read-only data path stops start-up with the paths and the fix, before
+    alembic could crash on it with a traceback (the 4.12.9 demo incident)."""
+    assert '"python -m app.storage && alembic upgrade head && uvicorn' in DOCKERFILE
