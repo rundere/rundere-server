@@ -295,8 +295,8 @@ def capture_page(request: Request, session: Session = Depends(get_session)):
     from app import authn
     user = authn.resolve_user(session, request)
     if user is None and settings.auth_required:
-        # /capture skips the sign-in gate for its login-free helpers; the page
-        # itself is someone's own, so a stranger signs in first (YONDER-293).
+        # Behind the sign-in gate since YONDER-292; kept so the page is never a
+        # stranger's even if the gate's public list changes (YONDER-293).
         return RedirectResponse("/login?next=/capture", status_code=303)
     trips = _filing_trips(session, user)
     return templates.TemplateResponse(request, "capture.html", {
@@ -736,9 +736,9 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
     _owner = authn.resolve_user(session, request)
     owner_user_id = _owner.id if _owner else None
     if _owner is None and settings.auth_required:
-        # /capture is a public path in the auth gate (it serves the login-free handoff and
-        # setup pages), so THIS route must authenticate itself: with sign-in on, nothing is
-        # fetched, parsed or stored for a stranger, and no capture is ever ownerless
+        # The auth gate refuses strangers here first (YONDER-292); this route still
+        # authenticates itself so that, whatever the gate does, nothing is fetched,
+        # parsed or stored for a stranger and no capture is ever ownerless
         # (YONDER-186, YONDER-210). htmx does not swap a 4xx, so the form is sent to login.
         if ctype.startswith("text/html"):
             return PlainTextResponse("Run·dere: sign in to capture.", status_code=401)
