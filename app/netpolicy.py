@@ -20,6 +20,13 @@ server-side request forgery risk. The policy:
   set, since the operator configured them (D-150 migration).
 
 Errors are short and safe to show a user; they never include a response body.
+
+**Public fetches** (`public_opener`, YONDER-293) are the other kind: a page a
+person asked Run·dere to read (web capture, a Maps short link). No credential
+rides along, so plain http is allowed and redirects are followed, but every hop
+is vetted at connect time like the guarded opener's, the admin allowlist does
+NOT apply (it's for integrations, never for reading someone's LAN), and a
+redirect may only go to http(s).
 """
 from __future__ import annotations
 
@@ -65,9 +72,17 @@ def is_allowlisted(host: str, port: int | None = None) -> bool:
     return h in allow or hp in allow
 
 
+_NAT64 = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"))
+
+
 def _public(ip: ipaddress._BaseAddress) -> bool:
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        elif any(ip in n for n in _NAT64):
+            # NAT64 carries an IPv4 address in its low 32 bits, and Python calls
+            # the prefix global: judge the address it really reaches.
+            ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
     return ip.is_global and not (ip.is_multicast or ip.is_reserved or ip.is_loopback
                                  or ip.is_link_local or ip.is_private)
 
@@ -79,11 +94,11 @@ def _resolve(host: str, port: int) -> list[tuple]:
         raise BlockedURL(f"{host} doesn't resolve") from None
 
 
-def vetted_addresses(host: str, port: int) -> list[tuple]:
+def vetted_addresses(host: str, port: int, *, public_only: bool = False) -> list[tuple]:
     """getaddrinfo results for host:port, all of them public, or BlockedURL.
-    An allowlisted host skips the address check."""
+    An allowlisted host skips the address check, except for a public fetch."""
     infos = _resolve(host, port)
-    if is_allowlisted(host, port):
+    if not public_only and is_allowlisted(host, port):
         return infos
     for info in infos:
         if not _public(ipaddress.ip_address(info[4][0])):
@@ -116,9 +131,10 @@ def check_url(url: str, *, resolve: bool = True) -> str:
 
 # ------------------------------------------------------------ guarded opener
 
-def _connect(host: str, port: int, timeout) -> socket.socket:
+def _connect(host: str, port: int, timeout, *, public_only: bool = False) -> socket.socket:
     last: OSError | None = None
-    for family, socktype, proto, _, addr in vetted_addresses(host, port):
+    for family, socktype, proto, _, addr in vetted_addresses(host, port,
+                                                             public_only=public_only):
         sock = socket.socket(family, socktype, proto)
         try:
             if timeout is not None and timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
@@ -162,10 +178,64 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
                                     "redirects aren't followed")
 
 
+class _PublicHTTPConnection(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = _connect(self.host, self.port, self.timeout, public_only=True)
+
+
+class _PublicHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self):
+        sock = _connect(self.host, self.port, self.timeout, public_only=True)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+class _PublicHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_PublicHTTPConnection, req)
+
+
+class _PublicHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_PublicHTTPSConnection, req, context=self._context)
+
+
+class _WebRedirect(urllib.request.HTTPRedirectHandler):
+    """Follow a few redirects, to web addresses only. Each hop reconnects through
+    the public handlers, so its address is vetted like the first one."""
+    max_redirections = 5
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlsplit(newurl).scheme not in ("http", "https"):
+            raise urllib.error.URLError("redirected to a non-web address")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class _NoFTP(urllib.request.FTPHandler):
+    def ftp_open(self, req):
+        raise BlockedURL("only web addresses are fetched")
+
+
+class _NoFile(urllib.request.FileHandler):
+    def file_open(self, req):
+        raise BlockedURL("only web addresses are fetched")
+
+
+def public_opener() -> urllib.request.OpenerDirector:
+    """An opener for reading a page someone asked Run·dere to read: http(s) only,
+    redirects followed with every hop vetted, public addresses only (no
+    allowlist), no proxies from the environment. Callers cap what they read."""
+    import ssl
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _PublicHTTPHandler(),
+        _PublicHTTPSHandler(context=ssl.create_default_context()), _WebRedirect(),
+        _NoFTP(), _NoFile())
+
+
 def guarded_opener() -> urllib.request.OpenerDirector:
     """An opener that enforces the policy on every connection: no proxies from
     the environment, vetted addresses only, no redirects."""
     import ssl
     return urllib.request.build_opener(
         urllib.request.ProxyHandler({}), _HTTPHandler(),
-        _HTTPSHandler(context=ssl.create_default_context()), _NoRedirect())
+        _HTTPSHandler(context=ssl.create_default_context()), _NoRedirect(),
+        _NoFTP(), _NoFile())
