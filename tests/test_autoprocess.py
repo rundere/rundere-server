@@ -138,8 +138,10 @@ if DEPS:
                                      for i in items)                # D-31: never approved here
             # another person can't read this capture's result
             assert client.get(f"/capture/batch/{bid}", cookies=ck(tok_b)).status_code == 404
-            # nor can an anonymous caller when sign-in is required
-            assert client.get(f"/capture/batch/{bid}").status_code == 404
+            # nor can an anonymous caller when sign-in is required (the gate sends them
+            # to sign in, YONDER-292)
+            r = client.get(f"/capture/batch/{bid}", follow_redirects=False)
+            assert r.status_code == 303 and r.headers["location"].startswith("/login")
         finally:
             _cleanup("ap-alice", "ap-bob")
 

@@ -276,6 +276,32 @@ if DEPS:
                 s.query(UserIntegration).filter_by(user_id=uid).delete()
                 s.commit()
 
+    def test_monitor_leaves_a_deactivated_accounts_connections_alone(monkeypatch, env):
+        # YONDER-292: their credentials are never decrypted or used to call out.
+        from app import integrations
+        from app.models import UserIntegration
+        _target()
+        with SessionLocal() as s:
+            u = User(username="nt-gone", auth_source="local", is_active=False)
+            s.add(u)
+            s.flush()
+            s.add(UserIntegration(user_id=u.id, kind="airtrail", base_url="https://at.example",
+                                  enabled=True))
+            s.commit()
+            uid = u.id
+        probed = []
+        monkeypatch.setattr(integrations, "check",
+                            lambda s, c: probed.append(c.user_id) or (False, "refused"))
+        try:
+            monitor.check_integrations(SessionLocal)
+            assert uid not in probed
+            with SessionLocal() as s:
+                assert s.get(AlertState, f"integration:{uid}:airtrail") is None
+        finally:
+            with SessionLocal() as s:
+                s.query(UserIntegration).filter_by(user_id=uid).delete()
+                s.commit()
+
     def test_inbox_reader_that_stops_is_noticed(monkeypatch):
         from app import inbox
         monkeypatch.setattr(inbox, "configured", lambda: True)

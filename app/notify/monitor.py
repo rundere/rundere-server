@@ -202,10 +202,14 @@ def check_integrations(sf) -> None:
     from app.models import User, UserIntegration
     with sf() as s:
         for c in s.query(UserIntegration).filter(UserIntegration.enabled.is_(True)).all():
+            user = s.get(User, c.user_id)
+            # YONDER-292: a deactivated (or removed) account's credentials stay
+            # encrypted and unused; nothing decrypts them or calls out with them.
+            if user is None or not user.is_active:
+                continue
             ok, msg = integrations.check(s, c)
             s.commit()
-            user = s.get(User, c.user_id)
-            who = user.username if user else "a removed user"
+            who = user.username
             notify.report(f"integration:{c.user_id}:{c.kind}", ok, category="integrations",
                           label=f"{integrations.LABELS.get(c.kind, c.kind)} for {who}",
                           detail=msg, threshold=2, session_factory=sf)
