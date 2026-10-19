@@ -2434,7 +2434,8 @@ def update_trip(trip_id: str, request: Request, name: str = Form(""),
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    dest = next or f"/trips/{trip.id}"
+    from app.authn_routes import _safe_next
+    dest = _safe_next(next) if next else f"/trips/{trip.id}"      # local paths only
     if not name.strip():
         return templates.TemplateResponse(request, "_trip_modal.html", {
             "request": request, "mode": "edit", "title": "Edit trip",

@@ -1185,7 +1185,7 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
                                      clients_for=ClientCache(session))
         except Exception as ex:
             log.exception("commit preview failed")
-            error = str(ex)
+            error = jobs.public_error(ex)
         _label_plans(session, summary)
         return templates.TemplateResponse(request, "_commit_preview.html", {
             "summary": summary, "error": error, "bucket": b,

@@ -225,3 +225,36 @@ if DEPS:
             assert r.headers["x-content-type-options"] == "nosniff", path
             assert r.headers["referrer-policy"] == "same-origin", path
             assert "frame-ancestors 'none'" in r.headers["content-security-policy"], path
+
+    # ------------------------------------------------- content security policy
+    def test_pages_carry_the_csp_and_htmx_runs_without_eval():
+        r = client.get("/login")
+        csp = r.headers["content-security-policy"]
+        for directive in ("default-src 'self'", "object-src 'none'", "base-uri 'none'",
+                          "connect-src 'self'", "frame-ancestors 'none'"):
+            assert directive in csp
+        assert "unsafe-eval" not in csp
+        assert "form-action" not in csp     # would block the OAuth consent's redirect out
+        r = client.get("/trips")
+        assert '"allowEval":false' in r.text and '"historyCacheSize":0' in r.text
+        assert "rundere.js" in r.text
+
+    def test_no_template_uses_htmx_eval():
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parent.parent / "app"
+        for p in root.rglob("*.html"):
+            text = p.read_text(encoding="utf-8")
+            assert "hx-on" not in text and "js:" not in text, p
+
+    def test_hsts_only_over_https():
+        assert "strict-transport-security" not in client.get("/health").headers
+        https = TestClient(app, base_url="https://testserver")
+        assert https.get("/health").headers["strict-transport-security"] == "max-age=31536000"
+
+    def test_unexpected_job_errors_never_reach_the_page():
+        from app.netpolicy import BlockedURL
+        from app.review.jobs import public_error
+        assert public_error(ValueError("pick a trip first")) == "pick a trip first"
+        assert public_error(BlockedURL("10.0.0.1 is private")) == "10.0.0.1 is private"
+        leak = RuntimeError("(psycopg.errors.UndefinedColumn) SELECT secret FROM users")
+        assert "SELECT" not in public_error(leak) and "log" in public_error(leak)
