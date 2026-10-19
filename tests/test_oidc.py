@@ -205,7 +205,10 @@ if DEPS:
                 TravelerIdentity.display_name.in_(travellers)).delete()
             s.commit()
 
-    def test_first_sso_sign_in_offers_only_unclaimed_travellers():
+    def test_first_sso_sign_in_never_claims_an_existing_traveller():
+        """D-204 (was YONDER-145's unclaimed list): self-service only adds a new
+        traveller. Existing ones, claimed or not, are neither offered nor
+        accepted; an admin links them from the Users page."""
         settings.auth_required = True
         _cleanup(["t145a", "t145owner"], ["T145 Free", "T145 Taken"])
         try:
@@ -214,8 +217,6 @@ if DEPS:
                 taken = TravelerIdentity(display_name="T145 Taken", kind="guest")
                 s.add_all([free, taken]); s.flush()
                 s.add(User(username="t145owner", auth_source="local", traveler_id=taken.id))
-                # SQLite reuses ids: another test's leftover user may still point
-                # at the id "T145 Free" just got — that would make it look claimed.
                 s.query(User).filter(User.traveler_id == free.id).update(
                     {User.traveler_id: None})
                 s.commit()
@@ -223,17 +224,17 @@ if DEPS:
             c = _sso_client("t145a")
             page = c.get("/account/sharing").text
             assert "Which traveller are you?" in page
-            assert "T145 Free" in page and "T145 Taken" not in page
-            # claiming someone else's traveller is refused server-side
+            assert "T145 Free" not in page and "T145 Taken" not in page
+            for tid in (taken_id, free_id):          # refused server-side, either way
+                r = c.post("/account/sharing", follow_redirects=False,
+                           data={"choice": "share", "traveler_id": str(tid)})
+                assert "err=" in r.headers["location"]
+            # the same name, typed in, is refused too (no back door by name)
             r = c.post("/account/sharing", follow_redirects=False,
-                       data={"choice": "share", "traveler_id": str(taken_id)})
+                       data={"choice": "share", "new_traveler": "T145 Free"})
             assert "err=" in r.headers["location"]
-            r = c.post("/account/sharing", follow_redirects=False,
-                       data={"choice": "share", "traveler_id": str(free_id), "next": "/trips"})
-            assert r.headers["location"] == "/trips"
             with SessionLocal() as s:
-                u = s.query(User).filter_by(username="t145a").one()
-                assert u.traveler_id == free_id and u.sharing_prompt is False
+                assert s.query(User).filter_by(username="t145a").one().traveler_id is None
         finally:
             settings.auth_required = False
             _cleanup(["t145a", "t145owner"], ["T145 Free", "T145 Taken"])

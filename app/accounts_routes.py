@@ -13,8 +13,8 @@
 - **/account/sharing** that choice; self-registered / SSO users are asked it
                at first sign-in, together with which traveller they are when
                the account has none (YONDER-145).
-- **/account/traveller** link an unlinked account to an unclaimed traveller
-               (or a new one) without waiting for an admin.
+- **/account/traveller** an unlinked account adds itself as a NEW traveller;
+               linking to an existing one is the admin's (D-204).
 - **/users**   Administer → Users: admin creates accounts, sets/【resets】
                passwords, toggles admin/active, and links a Traveller
                (pick existing OR create new).
@@ -61,48 +61,35 @@ def _travelers(session: Session) -> list[TravelerIdentity]:
             .order_by(TravelerIdentity.display_name).all())
 
 
-def _unclaimed_travelers(session: Session) -> list[TravelerIdentity]:
-    """Roster people no account is linked to yet — the only ones a user may
-    claim for themselves (YONDER-145); claiming someone else's traveller would
-    hand over their profiles."""
-    claimed = {tid for (tid,) in session.query(User.traveler_id)
-               .filter(User.traveler_id.isnot(None))}
-    return [t for t in _travelers(session) if t.id not in claimed]
+_ASK_ADMIN = ("To be linked to a traveller who's already on trips, ask an admin "
+              "(Administer → Users).")
 
 
 def _claim_problem(session: Session, traveler_id: str, new_name: str) -> str:
-    """Why this self-service claim isn't allowed, or "" (YONDER-145 rule:
-    an unclaimed traveller, or a new name nobody has)."""
+    """Why this self-service claim isn't allowed, or "". D-204: self-service only
+    ever ADDS a new traveller. Picking an existing one (YONDER-145 allowed any
+    unclaimed one) handed over every trip that traveller is on, so linking to an
+    existing traveller is an admin action. `traveler_id` is refused outright."""
+    if traveler_id not in ("", "none", None):
+        return _ASK_ADMIN
     new_name = (new_name or "").strip()
-    if new_name:
-        if session.query(TravelerIdentity).filter(
-                func.lower(TravelerIdentity.display_name) == new_name.lower()).first():
-            return (f"There's already a traveller called {new_name} — pick them "
-                    "from the list if that's you, or use a different name.")
-        return ""
-    if traveler_id in ("", "none"):
-        return ""
-    try:
-        tid = int(traveler_id)
-    except ValueError:
-        return "Pick a traveller from the list."
-    if tid not in {t.id for t in _unclaimed_travelers(session)}:
-        return "That traveller is already linked to another account."
+    if new_name and session.query(TravelerIdentity).filter(
+            func.lower(TravelerIdentity.display_name) == new_name.lower()).first():
+        return (f"There's already a traveller called {new_name}. If that's you, "
+                "ask an admin to link your account to them; otherwise use a different name.")
     return ""
 
 
 def _claim_traveler(session: Session, user: User, traveler_id: str,
                     new_name: str) -> str:
-    """Link an unlinked user to an unclaimed traveller, or a new one named
-    `new_name`. Leaving both empty skips it. Returns an error message or ""."""
+    """Link an unlinked user to a NEW traveller named `new_name` (D-204).
+    Leaving it empty skips it. Returns an error message or ""."""
     new_name = (new_name or "").strip()
     if user.traveler_id is not None or (not new_name and traveler_id in ("", "none")):
         return ""
     if (problem := _claim_problem(session, traveler_id, new_name)):
         return problem
-    tid = (authn.resolve_traveler(session, traveler_id=None, new_name=new_name)
-           if new_name else int(traveler_id))
-    user.traveler_id = tid
+    user.traveler_id = authn.resolve_traveler(session, traveler_id=None, new_name=new_name)
     session.commit()
     return ""
 
@@ -203,8 +190,7 @@ def register_form(request: Request, session: Session = Depends(get_session)):
         return blocked
     if not settings.auth_registration_open:
         return RedirectResponse("/login", status_code=303)
-    return templates.TemplateResponse(request, "register.html",
-                                      {"travelers": _unclaimed_travelers(session)})
+    return templates.TemplateResponse(request, "register.html", {"travelers": []})
 
 
 @router.post("/register")
@@ -218,22 +204,21 @@ def register_submit(request: Request, username: str = Form(...), password: str =
     if session.query(User).filter_by(username=username.strip()).one_or_none():
         return templates.TemplateResponse(
             request, "register.html",
-            {"travelers": _unclaimed_travelers(session), "error": "That username is taken.",
+            {"travelers": [], "error": "That username is taken.",
              "username": username}, status_code=409)
     if email.strip() and authn.email_in_use(session, email):
         return templates.TemplateResponse(
             request, "register.html",
-            {"travelers": _unclaimed_travelers(session),
+            {"travelers": [],
              "error": "That email is already used by another account.",
              "username": username}, status_code=409)
-    # Self-service claims follow the YONDER-145 rule, like every other claim: an
-    # unclaimed traveller or a new one. /register used to take ANY traveller id,
-    # so a stranger could link to someone's traveller and gain their trips (YONDER-293).
+    # Self-service only adds a NEW traveller (D-204). /register used to take ANY
+    # traveller id, so a stranger could link to someone's and gain their trips (YONDER-293).
     error = _claim_problem(session, traveler_id, new_traveler)
     if error:
         return templates.TemplateResponse(
             request, "register.html",
-            {"travelers": _unclaimed_travelers(session), "error": error,
+            {"travelers": [], "error": error,
              "username": username}, status_code=409)
     user = authn.create_user(session, username, password, email=email or None,
                              is_admin=False, sharing_prompt=True)
@@ -420,7 +405,7 @@ def sharing_prompt_page(request: Request, next: str = "/",
                         session: Session = Depends(get_session)):
     # A self-registered/SSO account with no traveller also says who it is here
     # (YONDER-145) — otherwise its profile pages dead-end at "ask an admin".
-    travelers = _unclaimed_travelers(session) if user.traveler_id is None else None
+    travelers = [] if user.traveler_id is None else None    # name only (D-204)
     return templates.TemplateResponse(request, "sharing.html", {
         "u": user, "next": _safe_next(next), "blocker": opt_out_blocker(user),
         "travelers": travelers})
@@ -454,7 +439,7 @@ def traveller_page(request: Request, next: str = "/account",
     if user.traveler_id is not None:
         return RedirectResponse(_safe_next(next), status_code=303)
     return templates.TemplateResponse(request, "traveller.html", {
-        "next": _safe_next(next), "travelers": _unclaimed_travelers(session)})
+        "next": _safe_next(next), "travelers": []})            # name only (D-204)
 
 
 @router.post("/account/traveller")

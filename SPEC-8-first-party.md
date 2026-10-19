@@ -610,6 +610,19 @@ request forgery (SSRF) risk.
   - `TX_AUTH_REQUIRED=false` remains for a trusted single-user LAN, and start-up logs a
     warning while it's off (also when `TX_JWT_SECRET` or `TX_PUBLIC_BASE_URL` is unset).
   - The demo (D-198) already required sign-in; nothing changes there.
+- **D-204 — Self-service never claims an existing traveller (YONDER-293; owner,
+  2026-10-19).** Being a traveller on a trip gives full edit access to it (D-122), and
+  travellers are server-wide, so claiming one opens every trip they're on, whoever owns it.
+  - Sign-up (`/register`), the first sign-in question (`/account/sharing`, SSO included) and
+    `/account/traveller` only add a **new** traveller by name. A name that already exists is
+    refused, so there's no back door by name.
+  - Linking an account to an existing traveller is an **admin** action on the Users page,
+    audited and notified to the user.
+  - Amends D-117 ("pick an existing traveller") and YONDER-145 (any unclaimed one) for
+    self-service. `/setup` (the first admin) and admin-created accounts still pick freely.
+  - Considered and set aside: matching on email (Run·dere never verifies an address, so a
+    typed email would be a takeover) and invite links (they don't cover accounts that
+    arrive through an external SSO).
 - **D-172 — Next up is the soonest moment, not the soonest item.** Every timed timeline
   activity is one or two moments: its start (`when`) and, when it has one, its end
   (`endWhen`) — a rental is a pick-up and a drop-off, a hotel a check-in and a check-out.
