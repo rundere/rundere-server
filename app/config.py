@@ -164,6 +164,12 @@ class Settings(BaseSettings):
     # Users regardless.
     auth_registration_open: bool = False
     password_reset_ttl_seconds: int = 3600          # reset-link validity (1 hour)
+    # Password sign-in throttle (YONDER-293): failed attempts allowed per client
+    # address AND per username in the window, web and API alike; then 429 until
+    # the window passes. /forgot is limited per address so it can't spam inboxes.
+    login_rate_limit: int = 10
+    login_rate_window_seconds: int = 900
+    forgot_rate_limit: int = 5
     # Optional SMTP for password-reset emails. Without it, /forgot tells the user
     # to contact an admin, and admins mint a copy-paste reset link from the Users
     # page. We email a reset LINK, never a password.

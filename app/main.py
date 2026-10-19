@@ -135,6 +135,47 @@ async def auth_gate(request, call_next):
     request.state.user = user
     return await call_next(request)
 
+# --- Cross-site request guard (YONDER-293) -------------------------------
+# The session cookie is SameSite=Lax, which stops other SITES from riding on it
+# but not another host on the same site (any app on a sibling subdomain of a
+# self-hoster's domain). A browser names the page a request came from in Origin,
+# so a state-changing request whose Origin isn't this server is refused. A
+# request with no Origin (scripts, the iOS app, add-ons) or with its own
+# Authorization header carries no ambient credential to abuse, and the machine
+# endpoints (/ingest, /mcp, /oauth/token, …) authenticate every call themselves.
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _foreign_origin(request) -> bool:
+    from urllib.parse import urlsplit
+
+    from app.authn import is_machine_path
+    if request.method not in _UNSAFE_METHODS:
+        return False
+    path = request.url.path
+    if path.startswith("/ingest") or is_machine_path(path):
+        return False
+    if request.headers.get("authorization"):
+        return False
+    origin = request.headers.get("origin")
+    if not origin:
+        return False
+    if origin == "null":                  # sandboxed frames, opaque redirects
+        return True
+    own = {request.headers.get("host", "").lower()}
+    if settings.public_base_url:
+        own.add(urlsplit(settings.public_base_url).netloc.lower())
+    return urlsplit(origin).netloc.lower() not in own
+
+
+@app.middleware("http")
+async def same_origin_writes(request, call_next):
+    if _foreign_origin(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
+    return await call_next(request)
+
+
 # Requests currently inside the app (YONDER-178). Only touched on the event
 # loop, so a plain int needs no lock.
 _inflight = 0
@@ -289,12 +330,28 @@ def ownerless_counts(session) -> dict[str, int]:
     ) if n}
 
 
+def _warn_risky_auth_config() -> None:
+    """Say so at start-up when the auth settings leave a server exposed
+    (YONDER-293). Warnings, not refusals: a LAN-only install may mean it."""
+    if not settings.auth_required:
+        log.warning("TX_AUTH_REQUIRED is off: anyone who can reach this server can use it "
+                    "without signing in. Turn it on for any server others can reach.")
+        return
+    if not settings.jwt_secret:
+        log.error("TX_JWT_SECRET is unset: sessions use a key that changes on every restart. "
+                  "Set it (openssl rand -base64 32).")
+    if not settings.public_base_url:
+        log.warning("TX_PUBLIC_BASE_URL is unset: password-reset links are built from the "
+                    "request's Host header. Set it to this server's public address.")
+
+
 def startup() -> None:
     from app import demo
     with SessionLocal() as session:
         if demo.enabled():
             demo.check_startup(session)     # D-198: raises, and the app doesn't start
         seed_rule_settings(session)
+        _warn_risky_auth_config()
         if settings.auth_required:
             try:
                 drift = ownerless_counts(session)

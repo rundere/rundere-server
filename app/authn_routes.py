@@ -21,6 +21,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import authn
+from app.auth import RateLimiter, client_ip
+from app.config import settings
 from app.db import get_session
 from app.models import User
 
@@ -31,10 +33,32 @@ _install_icons(templates)
 
 
 def _safe_next(nxt: str | None) -> str:
-    """Only allow local absolute paths — never an off-site open redirect."""
-    if nxt and nxt.startswith("/") and not nxt.startswith("//"):
+    """Only allow local absolute paths — never an off-site open redirect.
+    Browsers read a backslash as a slash, so "/\\evil.example" is off-site too,
+    and control characters can split the Location header (YONDER-293)."""
+    if (nxt and nxt.startswith("/") and not nxt.startswith("//")
+            and "\\" not in nxt and not any(ord(c) < 32 or ord(c) == 127 for c in nxt)):
         return nxt
     return "/"
+
+
+# Failed password sign-ins, per client address and per username (YONDER-293).
+# In-process like the other limiters: one app process per server.
+_login_by_ip = RateLimiter(settings.login_rate_limit, settings.login_rate_window_seconds)
+_login_by_user = RateLimiter(settings.login_rate_limit, settings.login_rate_window_seconds)
+
+
+def login_throttled(request: Request, username: str) -> bool:
+    return (_login_by_ip.blocked(client_ip(request))
+            or _login_by_user.blocked((username or "").strip().lower()))
+
+
+def login_failed(request: Request, username: str) -> None:
+    _login_by_ip.record(client_ip(request))
+    _login_by_user.record((username or "").strip().lower())
+
+
+_TOO_MANY = "Too many sign-in attempts. Try again in a few minutes."
 
 
 class UserOut(BaseModel):
@@ -127,8 +151,14 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     if oidc.forced_on(request):
         return RedirectResponse(f"/oidc/login?next={quote(_safe_next(next), safe='')}",
                                 status_code=303)
+    if login_throttled(request, username):
+        return templates.TemplateResponse(
+            request, "login.html",
+            {"next": _safe_next(next), "error": _TOO_MANY,
+             "username": username, **_login_options(request)}, status_code=429)
     user = authn.authenticate_local(session, username, password)
     if user is None:
+        login_failed(request, username)
         return templates.TemplateResponse(
             request, "login.html",
             {"next": _safe_next(next), "error": "Incorrect username or password.",
@@ -212,8 +242,11 @@ def api_login(body: LoginBody, request: Request, session: Session = Depends(get_
     if settings.oidc_force_api_login and oidc.forced_on(request):
         return JSONResponse({"detail": "password sign-in is disabled on this address; "
                                        "use single sign-on"}, status_code=403)
+    if login_throttled(request, body.username):
+        return JSONResponse({"detail": _TOO_MANY}, status_code=429)
     user = authn.authenticate_local(session, body.username, body.password)
     if user is None:
+        login_failed(request, body.username)
         return JSONResponse({"detail": "invalid credentials"}, status_code=401)
     from datetime import datetime, timezone
     user.last_login_at = datetime.now(timezone.utc)
