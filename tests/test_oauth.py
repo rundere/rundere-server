@@ -274,8 +274,10 @@ if DEPS:
         c = TestClient(app)
         _login(c, "oa-alice")
         r = c.get(_authz_url(cid, "abc", method="plain"), follow_redirects=False)
-        q = parse_qs(urlparse(r.headers["location"]).query)
-        assert r.status_code == 303 and q["error"] == ["invalid_request"]
+        # A registered (DCR) client gets an error PAGE, not a bounce to its
+        # redirect: no open redirector before consent (YONDER-293).
+        assert r.status_code == 400 and "location" not in r.headers
+        assert "PKCE S256 is required" in r.text
 
     def test_foreign_resource_rejected():
         _user("oa-alice")
@@ -285,7 +287,32 @@ if DEPS:
         _, ch = _pkce()
         r = c.get(_authz_url(cid, ch, resource="https://elsewhere.example.com/mcp"),
                   follow_redirects=False)
-        assert parse_qs(urlparse(r.headers["location"]).query)["error"] == ["invalid_target"]
+        assert r.status_code == 400 and "location" not in r.headers
+        assert "unknown resource" in r.text
+
+    def test_bad_request_never_bounces_to_a_registered_redirect():
+        """Any https redirect can be registered, so a malformed request must not
+        turn /oauth/authorize into a redirector (RFC 9700 §4.11.2)."""
+        _user("oa-alice")
+        cid, _ = _client()
+        c = TestClient(app)
+        _login(c, "oa-alice")
+        _, ch = _pkce()
+        r = c.get(_authz_url(cid, ch).replace("response_type=code", "response_type=token"),
+                  follow_redirects=False)
+        assert r.status_code == 400 and "location" not in r.headers
+
+    def test_consent_page_cannot_be_framed_and_flags_the_name():
+        _user("oa-alice")
+        cid, _ = _client()
+        c = TestClient(app)
+        _login(c, "oa-alice")
+        _, ch = _pkce()
+        r = c.get(_authz_url(cid, ch), follow_redirects=False)
+        assert r.status_code == 200
+        assert r.headers["x-frame-options"] == "DENY"
+        assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+        assert "can't verify it" in r.text
 
     def test_consent_deny():
         _user("oa-alice")
