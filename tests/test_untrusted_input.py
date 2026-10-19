@@ -79,3 +79,37 @@ if DEPS:
         for bad in ("ZZZ", "EURO", "", None, "</SCRIPT>"):
             with pytest.raises(ValueError):
                 currency_code(bad)
+
+    # ------------------------------------------------- admin console (area 7)
+    def test_admin_traveller_details_show_only_the_linking_fields():
+        """D-124: the admin roster links people; a traveller's own attributes
+        (nationality, aliases, notes) stay off every admin page, details too."""
+        from app.models import TravelerIdentity
+        with SessionLocal() as s:
+            s.query(TravelerIdentity).filter_by(display_name="Admin Privacy Guest").delete()
+            t = TravelerIdentity(display_name="Admin Privacy Guest", kind="guest",
+                                 nationality="FR", notes="Private note XYZ123",
+                                 aliases=["PRIVACY/ALIAS"])
+            s.add(t)
+            s.commit()
+            tid = t.id
+        import re
+        with TestClient(app) as c:                    # the lifespan mounts /admin
+            slugs = set(re.findall(r"/admin/([a-z-]+)/list", c.get("/admin/").text))
+            slug = next(x for x in slugs if "travel" in x)
+            r = c.get(f"/admin/{slug}/details/{tid}")
+        assert r.status_code == 200 and "Admin Privacy Guest" in r.text
+        assert "XYZ123" not in r.text and "PRIVACY/ALIAS" not in r.text
+
+    # ------------------------------------------------- secrets from files (area 7)
+    def test_secrets_can_come_from_docker_secret_files(tmp_path, monkeypatch):
+        import pytest
+        from app.config import Settings
+        f = tmp_path / "jwt"
+        f.write_text("from-a-file\n")
+        monkeypatch.setenv("TX_JWT_SECRET", "from-the-env")
+        monkeypatch.setenv("TX_JWT_SECRET_FILE", str(f))
+        assert Settings().jwt_secret == "from-a-file"          # the file wins, trimmed
+        monkeypatch.setenv("TX_JWT_SECRET_FILE", str(tmp_path / "missing"))
+        with pytest.raises(ValueError, match="TX_JWT_SECRET_FILE"):
+            Settings()

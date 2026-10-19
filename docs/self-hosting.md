@@ -24,6 +24,12 @@ Generate each one, store it somewhere safe, and never commit it:
 | `TX_SECRETS_KEY` | `openssl rand -base64 32`. Back it up **apart from the database**: it encrypts each person's integration tokens (D-151). |
 | Database password | Any long random string, used in both `TX_DATABASE_URL` and `POSTGRES_PASSWORD` |
 
+Environment variables show up in Portainer and `docker inspect`. To keep secrets out of
+them, point the `*_FILE` form at a Docker secret instead: `TX_JWT_SECRET_FILE`,
+`TX_SECRETS_KEY_FILE`, `TX_DATABASE_URL_FILE`, `TX_SMTP_PASSWORD_FILE`,
+`TX_INBOX_IMAP_PASSWORD_FILE` and `TX_OIDC_CLIENT_SECRET_FILE`. A file that's set wins over
+the plain setting, and an unreadable one stops the server from starting.
+
 ## 3. Deploy
 
 1. Copy the example. Replace every `CHANGE_ME` and every `example.com` host.

@@ -358,9 +358,11 @@ deployment stack.
 | `TX_SEARXNG_URL` | `http://searxng:8080` | Metasearch backend for Discovery's LLM tier (visa/safety/events/food/regional language). Empty = those topics degrade to absent findings |
 | `TX_FORWARDED_ALLOW_IPS` | `*` | Trust Traefik's `X-Forwarded-Proto` |
 | `TX_AUTH_REQUIRED` | `true` | Sign-in for everything but the public pages (D-203). `false` only for a trusted single-user LAN; start-up warns while it's off |
-| `TX_JWT_SECRET` | `""` | Signs sessions and tokens: `openssl rand -base64 32`. Empty = a key that changes on every restart, which signs everyone out (start-up logs an error) |
+| `TX_JWT_SECRET` (or `_FILE`) | `""` | Signs sessions and tokens: `openssl rand -base64 32`. Empty = a key that changes on every restart, which signs everyone out (start-up logs an error) |
 | `TX_LOGIN_RATE_LIMIT`, `TX_LOGIN_RATE_WINDOW_SECONDS` | `10`, `900` | Failed password sign-ins allowed per address and per username in the window, then refused until it passes |
 | `TX_FORGOT_RATE_LIMIT` | `5` | Password-reset requests per address in the same window |
+| `TX_MAX_REQUEST_MB` | `32` | Largest request body accepted; bigger ones get 413. `0` = no limit |
+| `TX_*_FILE` | — | Read a secret from a file (a Docker secret) instead of the environment: `TX_JWT_SECRET_FILE`, `TX_SECRETS_KEY_FILE`, `TX_DATABASE_URL_FILE`, `TX_SMTP_PASSWORD_FILE`, `TX_INBOX_IMAP_PASSWORD_FILE`, `TX_OIDC_CLIENT_SECRET_FILE` |
 
 | `TX_PUBLIC_BASE_URL` | `""` | Public https base (e.g. `https://yonder.example.net`) for email links and the OAuth/MCP metadata. Set it when using the Claude connector |
 | `TX_INBOX_ADDRESS`, `TX_INBOX_IMAP_*` | off | Email-forward capture: a mailbox you own (e.g. `trips@example.com`) read over IMAP; each person forwards to their own `trips+<token>@…`. See [docs/email-forward.md](docs/email-forward.md) |
