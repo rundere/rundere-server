@@ -44,7 +44,9 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 EXPOSE 8000
-# Migrations run before serve; alembic is a no-op when already at head.
+# First a check that every data path is writable by this user (app/storage.py:
+# it names the paths and the fix), then migrations (a no-op when already at
+# head), then serve.
 #
 # --forwarded-allow-ips: uvicorn only honours X-Forwarded-Proto from trusted
 # peers, defaulting to 127.0.0.1. Behind Traefik the proxy is another container,
@@ -57,4 +59,4 @@ EXPOSE 8000
 # --no-server-header: no "server: uvicorn" on every response (YONDER-293).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --no-server-header --forwarded-allow-ips=\"${TX_FORWARDED_ALLOW_IPS:-*}\""]
+CMD ["sh", "-c", "python -m app.storage && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --no-server-header --forwarded-allow-ips=\"${TX_FORWARDED_ALLOW_IPS:-*}\""]

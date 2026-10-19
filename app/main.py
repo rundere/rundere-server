@@ -422,7 +422,10 @@ def _warn_risky_auth_config() -> None:
 
 
 def startup() -> None:
-    from app import demo
+    from app import demo, storage
+    # Before anything writes: a data path the app can't write fails here, with
+    # the paths and the fix, not as a 500 on the first sign-in (YONDER-293).
+    storage.check_startup()
     with SessionLocal() as session:
         if demo.enabled():
             demo.check_startup(session)     # D-198: raises, and the app doesn't start

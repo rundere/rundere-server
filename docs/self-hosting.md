@@ -39,7 +39,9 @@ the plain setting, and an unreadable one stops the server from starting.
    Folders on a network share it can't change must already be writable by
    uid 10001. To keep the folders owned by your own account instead, run the
    container as you (`user: "1000:1000"` in the stack, with your uid and gid):
-   it then skips the hand-over and still never runs as root.
+   it then skips the hand-over and still never runs as root, so files an older
+   image made as root must be handed over by hand (`sudo chown -R 1000:1000 …`).
+   If any data path isn't writable, the server refuses to start and lists them.
 3. Deploy the stack. Migrations run at start-up.
 4. Open the site and create the admin account at `/setup` straight away (see
    "Create the admin first" below).
