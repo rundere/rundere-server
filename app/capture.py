@@ -306,6 +306,10 @@ def capture_batch(batch_id: str, request: Request, n: int = 0,
 def capture_page(request: Request, session: Session = Depends(get_session)):
     from app import authn
     user = authn.resolve_user(session, request)
+    if user is None and settings.auth_required:
+        # /capture skips the sign-in gate for its login-free helpers; the page
+        # itself is someone's own, so a stranger signs in first (YONDER-293).
+        return RedirectResponse("/login?next=/capture", status_code=303)
     trips = _filing_trips(session, user)
     return templates.TemplateResponse(request, "capture.html", {
         "trips": trips, "recent": _recent_captures(session, user),

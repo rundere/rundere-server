@@ -21,11 +21,13 @@ server operator can always read the database.
 
 Every function is a **no-op with auth disabled** (`user is None`, the pre-4.0
 single-user world), so wiring these in changes nothing until TX_AUTH_REQUIRED
-is on.
+is on. **With auth on, no user sees nothing** (YONDER-293): a route that skips
+the sign-in gate (`/capture`, …) and asks on behalf of nobody gets an empty
+answer, never everyone's data. It used to be read as "unrestricted" there.
 """
 from __future__ import annotations
 
-from sqlalchemy import or_, select, true
+from sqlalchemy import false, or_, select, true
 
 from app.models import JournalEntry, TravelItem, Trip, TripMember, TripTraveler, User
 
@@ -46,9 +48,12 @@ def snapshot(user):
 
 
 def unrestricted(user) -> bool:
-    """True when scoping is a no-op: auth is off (no user). Admins are NOT
-    unrestricted since 4.1 — they see sharing users' data; see is_admin/sharing."""
-    return user is None
+    """True when scoping is a no-op: auth is off and nobody is signed in. With
+    auth on, no user is NOT unrestricted: it sees nothing (fail closed,
+    YONDER-293). Admins are NOT unrestricted since 4.1 — they see sharing
+    users' data; see is_admin/sharing."""
+    from app.config import settings
+    return user is None and not settings.auth_required
 
 
 def is_admin(user) -> bool:
@@ -114,6 +119,8 @@ def trip_filter(session, user):
     users'). `true()` when unrestricted."""
     if unrestricted(user):
         return true()
+    if user is None:
+        return false()
     cond = Trip.owner_id == user.id
     if is_admin(user):
         cond = or_(cond, Trip.owner_id.is_(None),
@@ -126,8 +133,10 @@ def filing_trip_filter(session, user):
     """Trips a user's captures can be FILED into (4.1): their own and ones they
     travel on — never someone else's just because the user is an admin, and not
     view-only shares. Ownerless trips: admins only. `true()` with auth off."""
-    if user is None:
+    if unrestricted(user):
         return true()
+    if user is None:
+        return false()
     cond = Trip.owner_id == user.id
     if is_admin(user):
         cond = or_(cond, Trip.owner_id.is_(None))
@@ -148,6 +157,8 @@ def can_view_trip(session, user, trip) -> bool:
         return False
     if unrestricted(user):
         return True
+    if user is None:
+        return False
     if trip.owner_id is not None and trip.owner_id == user.id:
         return True
     if _admin_sees(session, user, trip.owner_id):
@@ -167,6 +178,8 @@ def can_edit_trip(session, user, trip) -> bool:
         return False
     if unrestricted(user):
         return True
+    if user is None:
+        return False
     if trip.owner_id is not None and trip.owner_id == user.id:
         return True
     if _admin_sees(session, user, trip.owner_id):
@@ -184,6 +197,8 @@ def trip_role(session, user, trip) -> str | None:
         return None
     if unrestricted(user):
         return "owner"
+    if user is None:
+        return None
     if trip.owner_id is not None and trip.owner_id == user.id:
         return "owner"
     if _is_traveller(session, user, trip):
@@ -236,6 +251,8 @@ def capture_filter(user):
     """A predicate for `session.query(TravelItem).filter(...)`."""
     if unrestricted(user):
         return true()
+    if user is None:
+        return false()
     cond = TravelItem.owner_id == user.id
     if is_admin(user):
         cond = or_(cond, TravelItem.owner_id.is_(None),
@@ -248,6 +265,8 @@ def batch_filter(user):
     from app.models import IngestBatch
     if unrestricted(user):
         return true()
+    if user is None:
+        return false()
     cond = IngestBatch.user_id == user.id
     if is_admin(user):
         cond = or_(cond, IngestBatch.user_id.is_(None),
@@ -260,6 +279,8 @@ def can_access_capture(user, item) -> bool:
         return False
     if unrestricted(user):
         return True
+    if user is None:
+        return False
     if item.owner_id is not None and item.owner_id == user.id:
         return True
     if is_admin(user):
@@ -296,6 +317,8 @@ def journal_filter(user):
     """A predicate for `session.query(JournalEntry).filter(...)`."""
     if unrestricted(user):
         return true()
+    if user is None:
+        return false()
     cond = JournalEntry.owner_id == user.id
     if is_admin(user):
         cond = or_(cond, JournalEntry.owner_id.is_(None),
@@ -308,6 +331,8 @@ def can_access_journal(user, entry) -> bool:
         return False
     if unrestricted(user):
         return True
+    if user is None:
+        return False
     if entry.owner_id == user.id:
         return True
     if is_admin(user):

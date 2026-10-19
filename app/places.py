@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 
-from sqlalchemy import true
+from sqlalchemy import false, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -49,6 +49,8 @@ def visible(user):
     """A predicate for `session.query(SavedPlace).filter(...)` — own rows only."""
     if scope.unrestricted(user):
         return true()
+    if user is None:                      # sign-in on, nobody signed in (YONDER-293)
+        return false()
     return SavedPlace.owner_id == user.id
 
 
@@ -65,7 +67,7 @@ def require_place(session: Session, user, place_id: str) -> SavedPlace:
 
 
 def _can_access(user, place: SavedPlace) -> bool:
-    return scope.unrestricted(user) or place.owner_id == user.id
+    return scope.unrestricted(user) or (user is not None and place.owner_id == user.id)
 
 
 def place_key(provider: str, place_id: str | None, name: str | None,
