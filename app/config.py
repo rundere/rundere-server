@@ -219,6 +219,9 @@ class Settings(BaseSettings):
     documents_dir: str = ""
     document_quota_mb: int = 1024            # per user; an admin can raise one user's
     document_max_mb: int = 25                # per file
+    # Largest request body anyone may send (YONDER-293). Above the biggest file
+    # upload plus form overhead; 0 = no limit (rely on the reverse proxy).
+    max_request_mb: int = 32
     # D-196 retention: stored files and raw captures are removed this many months
     # after their trip ends (or after they arrived, with no trip); the inbox's
     # Dropped folder is moved to Trash after inbox_dropped_days. "" trash folder =

@@ -13,6 +13,14 @@
         <input type="hidden" name="source_url" id="hand-url">
         <textarea name="content" id="hand-html" hidden></textarea>
       </form>
+      {# YONDER-293: any site can open this tab and post to it, so nothing is
+         captured until the person confirms the page, named by the browser's own
+         record of who sent it (e.origin), in this tab no other site can frame. #}
+      <div id="hand-confirm" hidden>
+        <p>Capture the page from <b id="hand-from"></b>?</p>
+        <button type="button" class="act primary" id="hand-go">Capture it</button>
+        <a class="act" href="/capture">Cancel</a>
+      </div>
       <div id="cap-result" aria-live="polite"></div>
       <p id="hand-none" class="why" hidden>Nothing arrived. Use the bookmark from the booking page, or
         paste the page into <a href="/capture">Capture</a>. <a href="/capture/setup?tab=bookmarklet">How it works</a>.</p>
@@ -33,7 +41,16 @@
       got = true;
       document.getElementById('hand-html').value = d.html;
       document.getElementById('hand-url').value = typeof d.url === 'string' ? d.url.slice(0, 2000) : '';
-      status.textContent = 'Got the page. Capturing…';
+      var from = '';
+      try { from = new URL(e.origin).host; } catch (err) { from = e.origin; }
+      document.getElementById('hand-from').textContent = from || 'an unknown page';
+      status.textContent = 'Got the page.';
+      document.getElementById('hand-confirm').hidden = false;
+      document.getElementById('hand-go').focus();
+    });
+    document.getElementById('hand-go').addEventListener('click', function () {
+      document.getElementById('hand-confirm').hidden = true;
+      status.textContent = 'Capturing…';
       htmx.trigger(form, 'submit');
     });
     if (window.opener) { window.opener.postMessage({ type: 'rundere-ready' }, '*'); }

@@ -216,3 +216,12 @@ if DEPS:
         (The suite itself runs with it off; see conftest.)"""
         from app.config import Settings
         assert Settings.model_fields["auth_required"].default is True
+
+    # ------------------------------------------------- request size cap
+    def test_oversized_request_is_refused_before_parsing(monkeypatch):
+        monkeypatch.setattr(settings, "max_request_mb", 1)
+        r = client.post("/api/v1/auth/login", content=b"x" * (1024 * 1024 + 10),
+                        headers={"content-type": "application/json"})
+        assert r.status_code == 413
+        r = client.post("/api/v1/auth/login", json={"username": "a", "password": "b"})
+        assert r.status_code != 413
