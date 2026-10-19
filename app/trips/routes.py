@@ -957,12 +957,16 @@ def _render_md(text: str | None) -> Markup:
 
 
 def _finding_view(f: DiscoveryFinding, ended: bool = False) -> dict:
+    from discover import attribution as _attribution
     from discover import policy as _policy
     data = f.data or {}
     return {
         "id": f.id, "topic": f.topic, "place_key": f.place_key,
         "scope": f.scope, "status": f.status, "confidence": f.confidence,
         "body": _render_md(f.body_md), "sources": f.sources or [],
+        # The data licence's required credit (Open-Meteo, CC BY 4.0), shown
+        # once per section by _discovery_section.html — not tucked in Sources.
+        "attribution": _attribution.for_finding(f.resolver),
         "is_currency": f.topic == "currency",
         # 4.5 Food/Events: the city write-up shown above the tables.
         "summary": _render_md(data.get("summary")) if data.get("summary") else None,
