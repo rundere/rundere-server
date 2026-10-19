@@ -602,6 +602,14 @@ request forgery (SSRF) risk.
     TestFlight) and `TX_ANDROID_APP_URL` (Android reads "coming later" until it's set).
     Only https:// values are used. The sign-in page shows the compact form, which lists
     only what someone can act on. (proposed)
+- **D-203 — Sign-in is on by default (YONDER-293; owner, 2026-10-19).** `TX_AUTH_REQUIRED`
+  defaults to `true`. The old default (off, for pre-4.0 single-user installs) meant a
+  server that forgot the setting served everyone's trips to anyone who could reach it.
+  - A fresh server sends its first visitor to `/setup` to create the admin, so finish
+    setup before the host is reachable by others.
+  - `TX_AUTH_REQUIRED=false` remains for a trusted single-user LAN, and start-up logs a
+    warning while it's off (also when `TX_JWT_SECRET` or `TX_PUBLIC_BASE_URL` is unset).
+  - The demo (D-198) already required sign-in; nothing changes there.
 - **D-172 — Next up is the soonest moment, not the soonest item.** Every timed timeline
   activity is one or two moments: its start (`when`) and, when it has one, its end
   (`endWhen`) — a rental is a pick-up and a drop-off, a hotel a check-in and a check-out.

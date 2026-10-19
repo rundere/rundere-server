@@ -118,11 +118,11 @@ class Settings(BaseSettings):
     searxng_url: str = "http://searxng:8080"
 
     # Auth (Yonder 4.0 Phase 1a, SPEC-4 Workstream B). Dependency-free HS256
-    # JWT + scrypt (app/authn.py). auth_required is the master switch: OFF by
-    # default so existing single-user deployments keep working untouched until
-    # the operator creates a user and opts in (TX_AUTH_REQUIRED=true). The 4.0
-    # test stack turns it ON.
-    auth_required: bool = False
+    # JWT + scrypt (app/authn.py). auth_required is the master switch, ON by
+    # default (SPEC-8 D-203): a server that forgets the setting asks for a
+    # sign-in rather than opening everyone's trips. TX_AUTH_REQUIRED=false is
+    # for a trusted single-user LAN only, and start-up warns about it.
+    auth_required: bool = True
     # YONDER-181 / D-198: a read-only public demo server (app/demo.py). One shared
     # login; the password isn't a secret (the app's "Try the demo" fills it in).
     demo_mode: bool = False

@@ -209,3 +209,10 @@ if DEPS:
         rl.record("fresh", now=1000.0)
         rl.record("fresh", now=1000.0)
         assert rl.blocked("fresh", now=1000.0)
+
+    # ------------------------------------------------- sign-in on by default
+    def test_sign_in_is_required_by_default():
+        """D-203: a server that never sets TX_AUTH_REQUIRED asks for a sign-in.
+        (The suite itself runs with it off; see conftest.)"""
+        from app.config import Settings
+        assert Settings.model_fields["auth_required"].default is True

@@ -161,6 +161,9 @@ python -m app.cli create-key my-client  # prints an /ingest API key once
 uvicorn app.main:app --reload           # sqlite by default; set TX_DATABASE_URL to override
 ```
 
+Sign-in is on by default (D-203): the first visit to http://localhost:8000 asks you to
+create the admin account at `/setup`.
+
 Full dev stack (app + Postgres on port 8100):
 
 ```bash
@@ -186,6 +189,8 @@ is a reference Compose/stack definition — use it with `docker compose`, Portai
 or any orchestrator you prefer. [docs/self-hosting.md](docs/self-hosting.md) walks
 through it, and [docs/demo-server.md](docs/demo-server.md) covers a read-only demo server. Set the two `CHANGE_ME_DB_PASSWORD` occurrences,
 set `TX_SECRETS_KEY` and `TX_JWT_SECRET`, and fill in the rest from the section above.
+Sign-in is required by default (D-203): the first visit creates the admin account at
+`/setup`, so do that before the server is reachable by anyone else.
 AirTrail and AdventureLog are connected per person in the app, not here. The reference stack declares env vars
 inline (some orchestrators can't interpolate `.env` files); adapt to your setup.
 
@@ -352,6 +357,10 @@ deployment stack.
 | `TX_OPEN_METEO_ARCHIVE_URL` | `https://archive-api.open-meteo.com/v1` | Historical weather source for Discovery (trips beyond the forecast window) |
 | `TX_SEARXNG_URL` | `http://searxng:8080` | Metasearch backend for Discovery's LLM tier (visa/safety/events/food/regional language). Empty = those topics degrade to absent findings |
 | `TX_FORWARDED_ALLOW_IPS` | `*` | Trust Traefik's `X-Forwarded-Proto` |
+| `TX_AUTH_REQUIRED` | `true` | Sign-in for everything but the public pages (D-203). `false` only for a trusted single-user LAN; start-up warns while it's off |
+| `TX_JWT_SECRET` | `""` | Signs sessions and tokens: `openssl rand -base64 32`. Empty = a key that changes on every restart, which signs everyone out (start-up logs an error) |
+| `TX_LOGIN_RATE_LIMIT`, `TX_LOGIN_RATE_WINDOW_SECONDS` | `10`, `900` | Failed password sign-ins allowed per address and per username in the window, then refused until it passes |
+| `TX_FORGOT_RATE_LIMIT` | `5` | Password-reset requests per address in the same window |
 
 | `TX_PUBLIC_BASE_URL` | `""` | Public https base (e.g. `https://yonder.example.net`) for email links and the OAuth/MCP metadata. Set it when using the Claude connector |
 | `TX_INBOX_ADDRESS`, `TX_INBOX_IMAP_*` | off | Email-forward capture: a mailbox you own (e.g. `trips@example.com`) read over IMAP; each person forwards to their own `trips+<token>@…`. See [docs/email-forward.md](docs/email-forward.md) |
