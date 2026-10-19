@@ -280,7 +280,7 @@ class Settings(BaseSettings):
     # that ships its own app bundle needs to change them. Empty = no app client.
     oauth_app_redirect_uris: str = "https://rundere.app/auth/callback"
 
-    app_version: str = "4.12.8"
+    app_version: str = "4.12.9"
 
     # Docker secrets (YONDER-293): each secret below may be read from a file
     # (TX_JWT_SECRET_FILE=/run/secrets/jwt, …) instead of the environment, where
