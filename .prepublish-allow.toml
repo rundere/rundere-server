@@ -15,3 +15,10 @@ rule = "assigned-secret"
 path = "tests/test_connections.py"
 fingerprint = "22bfa9876dd1"
 reason = "A made-up AirTrail token for the connection tests (owner, 2026-10-17); never a real credential."
+
+[[allow]]
+rule = "credentials-in-url"
+path = "tests/test_prepublish.py"
+fingerprint = "85ee99a2a88b"
+where = "history"
+reason = "An old version of the scanner's own test built a database URL from an f-string whose password part was the literal {RANDOM} template, not a credential (2026-10-19)."
