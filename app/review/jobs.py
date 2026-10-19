@@ -12,6 +12,7 @@ first (its reset is destructive).
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
@@ -21,6 +22,20 @@ _LOCK = threading.Lock()
 _JOBS: dict[str, dict] = {}
 _EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tx-job")
 _KEEP_FINISHED = 12          # cap the registry so finished jobs don't accumulate
+
+
+log = logging.getLogger("yonder.jobs")
+
+
+def public_error(ex: BaseException) -> str:
+    """What a person may read about a failure. Our own refusals (ValueError, a
+    blocked URL) are written for people; anything else can carry SQL, paths or
+    URLs, so it goes to the log and the page says only that it failed
+    (YONDER-293)."""
+    from app.netpolicy import BlockedURL
+    if isinstance(ex, (ValueError, BlockedURL)):
+        return str(ex)
+    return "something went wrong on the server (the log has the details)"
 
 
 def current_running() -> dict | None:
@@ -100,8 +115,10 @@ def start(kind: str, work, owner: str | None = None) -> str:
             _update(job_id, finished=True, toast=toast,
                     toast_error=bool(err), error=err, details=details or [])
         except Exception as ex:                     # pragma: no cover
-            _update(job_id, finished=True, toast=f"Failed — {ex}",
-                    toast_error=True, error=str(ex))
+            log.exception("job %s failed", job_id)
+            msg = public_error(ex)
+            _update(job_id, finished=True, toast=f"Failed — {msg}",
+                    toast_error=True, error=msg)
 
     _EXECUTOR.submit(runner)
     return job_id

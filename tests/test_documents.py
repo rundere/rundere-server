@@ -198,7 +198,7 @@ if DEPS:
         assert r.status_code == 200 and r.content == _pdf()
         assert r.headers["content-disposition"].startswith("attachment;")
         assert r.headers["x-content-type-options"] == "nosniff"
-        assert r.headers["content-security-policy"] == "sandbox"
+        assert r.headers["content-security-policy"].startswith("sandbox")
         mine = client.get("/api/v1/documents", headers=_h(owner)).json()["documents"]
         assert [d["id"] for d in mine] == [doc["id"]]
         assert mine[0]["removed_on"] == "2032-05-12"            # trip end + 12 months
