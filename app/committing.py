@@ -107,7 +107,7 @@ def _al_datetime(dt: dict | None,
 def _coord(v):
     """Round a latitude/longitude to AdventureLog's precision. Its DecimalField
     caps latitude at 6 decimal places and longitude at 9 total digits, so a
-    full-precision geocode (e.g. 35.5849387 / -106.1024807) is rejected 400 on
+    full-precision geocode (e.g. 34.9849387 / -111.9024807) is rejected 400 on
     every location/lodging/transportation write. Six decimals (~0.11 m) keeps
     longitude within 3 integer + 6 fractional = 9 digits and is far finer than
     any address needs. None passes through untouched."""

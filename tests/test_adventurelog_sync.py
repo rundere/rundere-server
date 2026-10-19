@@ -46,7 +46,7 @@ def test_marker_index_parses_all_types():
         "lodging": [{"id": 2, "name": "Hotel",
                      "description": "<!-- yonder:activity:l1 -->"}],
         "notes": [{"id": 3, "name": "Food — MA",
-                   "content": "body\n<!-- yonder:discovery:food:MA:Harar -->"},
+                   "content": "body\n<!-- yonder:discovery:food:ET:Harar -->"},
                   {"id": 4, "name": "unmarked note", "content": "no marker here"}],
     }
 
@@ -57,7 +57,7 @@ def test_marker_index_parses_all_types():
     idx = R._al_collection_index(_C(), "9")
     assert idx["yonder:activity:t1"] == {"kind": "transportation", "id": "1", "name": "Flight"}
     assert idx["yonder:activity:l1"]["kind"] == "lodging"
-    assert idx["yonder:discovery:food:MA:Harar"]["id"] == "3"
+    assert idx["yonder:discovery:food:ET:Harar"]["id"] == "3"
     assert len(idx) == 3                                  # the unmarked note is ignored
 
 
@@ -93,11 +93,11 @@ def test_al_transport_record_to_activity():
 
 
 def test_al_lodging_record_to_activity():
-    rec = {"type": "hotel", "name": "Riad", "check_in": "2026-10-02T00:00:00Z",
-           "location": "Medina", "reservation_number": "R9"}
+    rec = {"type": "hotel", "name": "Guesthouse", "check_in": "2026-10-02T00:00:00Z",
+           "location": "Piassa", "reservation_number": "R9"}
     a = R._al_record_to_activity(rec, "lodging", "trip1")
-    assert a.type == "lodging" and a.values["name"] == "Riad"
-    assert a.values["when"] == "2026-10-02" and a.values["address"] == "Medina"
+    assert a.type == "lodging" and a.values["name"] == "Guesthouse"
+    assert a.values["when"] == "2026-10-02" and a.values["address"] == "Piassa"
 
 
 # ------------------------------------------------------------- routes (fake client)
@@ -140,7 +140,7 @@ def _fresh_trip(collection_id="99"):
         s.add(t)
         s.commit()
         tid = t.id
-        f = DiscoveryFinding(trip_id=tid, topic="food", place_key="MA:Harar",
+        f = DiscoveryFinding(trip_id=tid, topic="food", place_key="ET:Harar",
                              scope="city", status="draft", body_md="Eat tagine.")
         s.add(f)
         s.commit()
@@ -165,7 +165,7 @@ def test_push_new_note_creates(monkeypatch):
     assert r.status_code == 200
     assert len(fake.created) == 1 and fake.created[0][0] == "note"
     body = fake.created[0][1]
-    assert "yonder:discovery:food:MA:Harar" in body["content"]
+    assert "yonder:discovery:food:ET:Harar" in body["content"]
     assert "Eat tagine." in body["content"]
 
 
@@ -175,8 +175,8 @@ def test_push_matching_note_needs_confirm_then_overwrites(monkeypatch):
     tid, fid = _fresh_trip()
     # collection already has the marked note
     fake = _FakeAL({"transportations": [], "lodging": [], "notes": [
-        {"id": 55, "name": "Food & drink — MA:Harar",
-         "content": "old\n<!-- yonder:discovery:food:MA:Harar -->"}]})
+        {"id": 55, "name": "Food & drink — ET:Harar",
+         "content": "old\n<!-- yonder:discovery:food:ET:Harar -->"}]})
     _wire(monkeypatch, fake)
     # first push → warning panel, nothing written
     r1 = _client.post(f"/trips/{tid}/adventurelog/push",

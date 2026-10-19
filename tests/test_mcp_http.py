@@ -676,8 +676,8 @@ if DEPS:
     def test_city_guide_saves_summary_and_rows(client, w):
         tok = _tok(w["alice"])
         f = ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
-               place_key="MA:Harar", summary_md="Eat in the medina.", items=_GUIDE)
-        assert f["external"] and f["data"]["summary"] == "Eat in the medina."
+               place_key="ET:Harar", summary_md="Eat near Piassa.", items=_GUIDE)
+        assert f["external"] and f["data"]["summary"] == "Eat near Piassa."
         assert f["body_md"].startswith("**Harar — food & drink**")
         rows = _items(w["shared"], w["alice"])
         assert rows["Dar Yacout"] == ("agent", "mcp test", False, None, "Pastilla")
@@ -687,29 +687,29 @@ if DEPS:
     def test_city_guide_replace_keeps_touched_rows_and_add_mode(client, w):
         tok = _tok(w["alice"])
         ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
-           place_key="MA:Harar", summary_md="v1", items=_GUIDE)
+           place_key="ET:Harar", summary_md="v1", items=_GUIDE)
         with SessionLocal() as s:
             s.query(DiscoveryItem).filter_by(name="Café Meskel").update({"hidden": True})
             s.commit()
         # replace: Dar Yacout (untouched) drops, hidden Café Meskel stays hidden
         ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
-           place_key="MA:Harar", summary_md="v2",
-           items=[{"kind": "bar", "name": "Kabana"}, {"kind": "cafe", "name": "Cafe Meskel"}])
+           place_key="ET:Harar", summary_md="v2",
+           items=[{"kind": "bar", "name": "Kabana"}, {"kind": "cafe", "name": "cafe meskel"}])
         rows = _items(w["shared"], w["alice"])
-        assert set(rows) == {"Kabana", "Cafe Meskel"} and rows["Cafe Meskel"][2] is True
+        assert set(rows) == {"Kabana", "cafe meskel"} and rows["cafe meskel"][2] is True
         # add mode keeps what's there
         ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
-           place_key="MA:Harar", summary_md="v3", replace_items=False,
+           place_key="ET:Harar", summary_md="v3", replace_items=False,
            items=[{"kind": "pub", "name": "Le Salama"}])
-        assert set(_items(w["shared"], w["alice"])) == {"Kabana", "Cafe Meskel", "Le Salama"}
+        assert set(_items(w["shared"], w["alice"])) == {"Kabana", "cafe meskel", "Le Salama"}
 
     def test_city_guide_validation(client, w):
         tok = _tok(w["alice"])
         good, err = call(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
-                         place_key="MA:Gondar", summary_md="x", items=[{"kind": "event", "name": "X"}])
+                         place_key="ET:Gondar", summary_md="x", items=[{"kind": "event", "name": "X"}])
         assert not good and "kind must be one of" in err
         good, err = call(client, tok, "save_city_guide", trip_id=w["shared"], topic="events",
-                         place_key="MA:Gondar", summary_md="x",
+                         place_key="ET:Gondar", summary_md="x",
                          items=[{"kind": "event", "name": "Fest", "starts_on": "next Friday"}])
         assert not good and "starts_on must be" in err
         r = client.post(f"/api/v1/trips/{w['shared']}/findings",
@@ -721,13 +721,13 @@ if DEPS:
     def test_add_item_to_timeline(client, w):
         tok = _tok(w["alice"])
         ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="events",
-           place_key="MA:Harar", summary_md="What's on",
+           place_key="ET:Harar", summary_md="What's on",
            items=[{"kind": "event", "name": "Film festival", "starts_on": "2026-10-14",
                    "venue": "Jemaa el-Fnaa"},
                   {"kind": "activity", "name": "Hammam", "duration": "2 h",
-                   "address": "Rue Riad Yasmina"}])
+                   "address": "Example Rd"}])
         ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
-           place_key="MA:Harar", summary_md="Eat", items=_GUIDE)
+           place_key="ET:Harar", summary_md="Eat", items=_GUIDE)
         snap = ok(client, tok, "get_trip", trip_id=w["shared"])
         ids = {i["name"]: i["id"] for i in snap["discovery_items"]}
         fest = ok(client, tok, "add_item_to_timeline", trip_id=w["shared"],
@@ -753,7 +753,7 @@ if DEPS:
 
     def test_save_phrases(client, w):
         tok = _tok(w["alice"])
-        f = ok(client, tok, "save_phrases", trip_id=w["shared"], place_key="MA:Harar",
+        f = ok(client, tok, "save_phrases", trip_id=w["shared"], place_key="ET:Harar",
                register_summary="Warm and formal with elders.",
                greetings=[{"phrase": "Salam", "meaning": "Hello", "pronunciation": "sa-LAAM",
                            "note": "everyone"}],
@@ -766,7 +766,7 @@ if DEPS:
             s.get(DiscoveryFinding, f["id"]).status = "approved"      # locks it
             s.commit()
         good, err = call(client, tok, "save_phrases", trip_id=w["shared"],
-                         place_key="MA:Harar", register_summary="changed")
+                         place_key="ET:Harar", register_summary="changed")
         assert not good and "locked" in err
         good, _ = call(client, tok, "save_research", trip_id=w["shared"], topic="language",
                        place_key="MA", title="x", body_md="y")
@@ -808,12 +808,12 @@ if DEPS:
     def test_heads_up_event_flag(client, w):
         tok = _tok(w["alice"])
         ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="events",
-           place_key="MA:Mekele", summary_md="x",
+           place_key="ET:Mekele", summary_md="x",
            items=[{"kind": "event", "name": "Rail strike", "starts_on": "2026-10-15",
                    "heads_up": True},
                   {"kind": "activity", "name": "Kasbah walk", "heads_up": True}])
         snap = ok(client, tok, "get_trip", trip_id=w["shared"])
-        by = {i["name"]: i for i in snap["discovery_items"] if i["place_key"] == "MA:Mekele"}
+        by = {i["name"]: i for i in snap["discovery_items"] if i["place_key"] == "ET:Mekele"}
         assert by["Rail strike"]["extra"] == {"heads_up": True}
         assert not by["Kasbah walk"]["extra"]          # only events can be heads-ups
 
@@ -828,9 +828,9 @@ if DEPS:
         args = {a["name"]: a.get("required") for a in names["research_food_and_drink"]["arguments"]}
         assert args["trip_id"] is True and not args.get("place_key")
         r = _rpc(client, tok, "prompts/get", {"name": "research_food_and_drink",
-                                               "arguments": {"trip_id": "T1", "place_key": "MA:Gondar"}})
+                                               "arguments": {"trip_id": "T1", "place_key": "ET:Gondar"}})
         text = r.json()["result"]["messages"][0]["content"]["text"]
-        assert "`T1`" in text and "`MA:Gondar`" in text and "save_city_guide" in text
+        assert "`T1`" in text and "`ET:Gondar`" in text and "save_city_guide" in text
         assert "name: rundere-" not in text            # skill header stripped
 
     def test_research_kits_api(client, w):
@@ -858,7 +858,7 @@ if DEPS:
         from discover import items as disc_items
         tok = _tok(w["alice"])
         ok(client, tok, "save_city_guide", trip_id=w["shared"], topic="food",
-           place_key="MA:Tangier", summary_md="x",
+           place_key="ET:Aksum", summary_md="x",
            items=[{"kind": "bar", "name": "Sky Bar", "details": "Rooftop"},
                   {"kind": "cafe", "name": "Café Hafa"},
                   {"kind": "cafe", "name": "Gone Café"}])
@@ -868,7 +868,7 @@ if DEPS:
             s.add(DiscoveryProfile(traveler_id=alice.traveler_id,
                                    values={"notes": "Hate rooftop bars. Loved Bar Mut."}))
             rows = {i.name: i for i in s.query(DiscoveryItem).filter_by(
-                trip_id=w["shared"], user_id=w["alice"], place_key="MA:Tangier")}
+                trip_id=w["shared"], user_id=w["alice"], place_key="ET:Aksum")}
             disc_items.hide(rows["Sky Bar"])                  # default: not my thing
             disc_items.hide(rows["Gone Café"], "closed")      # says nothing about taste
             s.commit()
@@ -879,7 +879,7 @@ if DEPS:
             names = [d["name"] for d in p["not_my_thing"]]
             assert "Sky Bar" in names and "Gone Café" not in names and "Café Hafa" not in names
             sky = next(d for d in p["not_my_thing"] if d["name"] == "Sky Bar")
-            assert sky["city"] == "Tangier" and sky["kind"] == "bar"
+            assert sky["city"] == "Aksum" and sky["kind"] == "bar"
             assert "not_my_thing" in p["how_to_use"] and "ask the person" in p["how_to_use"]
             snap = ok(client, tok, "get_trip", trip_id=w["shared"])
             assert snap["discovery_profile"]["notes"].startswith("Hate rooftop")
@@ -896,7 +896,7 @@ if DEPS:
 
     def test_save_safety_structured(client, w):
         tok = _tok(w["alice"])
-        f = ok(client, tok, "save_safety", trip_id=w["shared"], place_key="MA:Gondar",
+        f = ok(client, tok, "save_safety", trip_id=w["shared"], place_key="ET:Gondar",
                safety={"summary": "Generally calm.",
                        "advisories": [{"text": "Use licensed guides in the medina",
                                        "source_url": "https://gov.example/ma"},
@@ -918,11 +918,11 @@ if DEPS:
         parts = _safety_parts(d)
         assert [p["h"] for p in parts["safety"]] == ["Summary", "Advisories", "Scams to know"]
         assert [p["h"] for p in parts["transport"]][:2] == ["Getting around", "From the airport"]
-        good, err = call(client, tok, "save_safety", trip_id=w["shared"], place_key="MA:Gondar",
+        good, err = call(client, tok, "save_safety", trip_id=w["shared"], place_key="ET:Gondar",
                          transport={"summary": ""})
         assert not good and "safety_transport needs" in err
         r = client.post(f"/api/v1/trips/{w['shared']}/findings",
                         headers={"authorization": f"Bearer {tok}"},
-                        json={"topic": "food", "title": "x", "place_key": "MA:Gondar",
+                        json={"topic": "food", "title": "x", "place_key": "ET:Gondar",
                               "safety_transport": {"safety": {"summary": "x"}}})
         assert r.status_code == 400 and "topic safety" in r.text

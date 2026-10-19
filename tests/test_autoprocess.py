@@ -29,9 +29,9 @@ if DEPS:
     _LD = json.dumps({
         "@context": "https://schema.org", "@type": "LodgingReservation",
         "reservationNumber": "AP123", "checkinDate": "2027-03-20", "checkoutDate": "2027-03-23",
-        "reservationFor": {"@type": "LodgingBusiness", "name": "Autoprocess Riad",
-                           "address": {"@type": "PostalAddress", "addressLocality": "Harar",
-                                       "addressCountry": "MA"}}})
+        "reservationFor": {"@type": "LodgingBusiness", "name": "Autoprocess Guesthouse",
+                           "address": {"@type": "PostalAddress", "addressLocality": "Addis Ababa",
+                                       "addressCountry": "ET"}}})
     PAGE = ('<!doctype html><html><head><script type="application/ld+json">'
             f'{_LD}</script></head><body><h1>Your stay</h1></body></html>')
 
@@ -130,7 +130,7 @@ if DEPS:
                 if "cap-cards" in html or "nothing could be read" in html:
                     break
                 time.sleep(0.05)
-            assert "Autoprocess Riad" in html and "waiting for your approval" in html
+            assert "Autoprocess Guesthouse" in html and "waiting for your approval" in html
             assert "Open in Inbox" in html                 # D-200
             with SessionLocal() as s:
                 items = s.query(TravelItem).filter(TravelItem.batch_id == bid).all()

@@ -58,7 +58,7 @@ def _fresh_trip():
         s.query(TripActivity).delete()
         s.query(Trip).delete()
         s.commit()
-        t = Trip(name="Alpine trip", start_date="2026-09-01", end_date="2026-09-10")
+        t = Trip(name="Alpine trip", start_date="2031-06-02", end_date="2031-06-11")
         s.add(t)
         s.commit()
         s.add(TripActivity(trip_id=t.id, type="flight", starts_at="2026-09-01T09:00",

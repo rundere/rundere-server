@@ -163,7 +163,7 @@ def suggested_currencies(session: Session, trip: Trip, user) -> list[str]:
     findings name for THIS trip, so a multi-country trip lists them all — then
     the caller's own base currency, the trip's balance currency, and whatever
     the caller's visible expenses on THIS trip already use. Nothing comes from
-    other trips: Morocco last year never puts MAD on the Brazil trip. One ordering for web, MCP and
+    other trips: Ethiopia last year never puts ETB on the Brazil trip. One ordering for web, MCP and
     the app; a picker lists every other ISO-4217 code after these."""
     out: list[str] = []
 

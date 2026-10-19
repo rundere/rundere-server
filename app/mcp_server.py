@@ -629,7 +629,7 @@ def save_research(trip_id: TripId,
         session, user, trip_id, body, agent=agent))
 
 
-_PLACE_KEY = Field(description="The city key, e.g. \"MA:Harar\" — reuse the place_key "
+_PLACE_KEY = Field(description="The city key, e.g. \"JP:Kyoto\" — reuse the place_key "
                                "of the city's findings in get_trip's `discovery`")
 
 
@@ -792,7 +792,7 @@ def _register_kit_prompts() -> None:
         def make(k):
             def prompt(trip_id: TripId,
                        place_key: Annotated[str | None, Field(
-                           description="One city key (e.g. \"MA:Harar\"); omit for "
+                           description="One city key (e.g. \"JP:Kyoto\"); omit for "
                                        "every city in the trip")] = None) -> str:
                 return research_kits.prompt_text(k, trip_id, place_key)
             return prompt

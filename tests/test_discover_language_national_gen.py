@@ -24,7 +24,7 @@ def _resolver(**kw):
 
 
 def _place():
-    return DerivedPlace(country="MA", city="Harar", lat=31.6, lon=-8.0)
+    return DerivedPlace(country="MA", city="Tangier", lat=35.8, lon=-5.8)
 
 
 def _ctx(phrasebook=None, generated=frozenset()):

@@ -135,7 +135,7 @@ class LanguageLocalResolver:
     def _fallback_queries(self, place: DerivedPlace, langs: list[str]) -> list[str]:
         """Broader queries tried when the register-specific pass grounds nothing —
         lean on the base language name(s) and generic phrasing so a city whose
-        exact-name searches came up dry (Harar's Darija, say) still yields
+        exact-name searches came up dry (Tangier's Darija, say) still yields
         something instead of the register card vanishing."""
         label = place.label
         qs = [f"common local phrases {label}", f"how do people greet in {label}",

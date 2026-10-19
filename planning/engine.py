@@ -57,7 +57,7 @@ class PlanResult:
 
 def _climate_ok(archetype_id: str, bands: set[str]) -> bool:
     """Gate archetypes on climate so a warm trip never pulls in ski gear (the
-    NM-in-October bug: cold_ski was selected for a 28°C trip, dumping a parka +
+    Arizona-in-October bug: cold_ski was selected for a 28°C trip, dumping a parka +
     beanie + winter boots alongside the beach items). cold_ski needs a genuinely
     cold band; beach is dropped when it's cold. Everything else is climate-neutral."""
     if archetype_id == "cold_ski":

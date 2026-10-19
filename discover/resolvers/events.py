@@ -180,7 +180,7 @@ class EventsResolver:
     def _fallback_queries(self, city: str, when: str) -> list[str]:
         """Broader, tourism-shaped queries tried ONLY when the primary pass grounds
         nothing — a smaller town may have no dated 'events' but still real
-        attractions worth surfacing (Glendale Caverns, a plaza, a historic site).
+        attractions worth surfacing (Grand Canyon Skywalk, a plaza, a historic site).
         Cast wider so the city gets a finding instead of silently dropping out."""
         return [f"{city} attractions", f"best things to do in {city}",
                 f"{city} tourism", f"visit {city} points of interest",

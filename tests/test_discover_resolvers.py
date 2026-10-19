@@ -36,7 +36,7 @@ def test_plugs_known_country_warns_on_adapter_and_voltage():
 
 
 def test_plugs_us_no_adapter_no_voltage_warning():
-    f = PlugsResolver().resolve(DerivedPlace("US", "Glendale", 32, -104), _ctx())
+    f = PlugsResolver().resolve(DerivedPlace("US", "Glendale", 33, -112), _ctx())
     assert "adapter" not in f.body_md.lower()
     assert "Voltage" not in f.body_md
 
@@ -80,7 +80,7 @@ def test_currency_parses_frankfurter_v2_list_body(monkeypatch):
 
 def test_currency_v2_empty_list_is_flagged(monkeypatch):
     monkeypatch.setattr(currency_mod, "get_json", lambda url, timeout=12: [])
-    f = CurrencyResolver().resolve(DerivedPlace("MA", "Harar", 31, -8), _ctx())
+    f = CurrencyResolver().resolve(DerivedPlace("MA", "Tangier", 35, -6), _ctx())
     assert f.confidence == "flagged" and not f.data["rates"]
 
 
@@ -88,7 +88,7 @@ def test_currency_unquoted_currency_is_flagged(monkeypatch):
     # Frankfurter returns no rate for this currency → no rates, flagged, still names it.
     monkeypatch.setattr(currency_mod, "get_json",
                         lambda url, timeout=12: {"date": "2026-08-13", "rates": {}})
-    f = CurrencyResolver().resolve(DerivedPlace("MA", "Harar", 31, -8), _ctx())
+    f = CurrencyResolver().resolve(DerivedPlace("MA", "Tangier", 35, -6), _ctx())
     assert f.confidence == "flagged"
     assert "MAD" in f.body_md and not f.data["rates"]
 
@@ -168,8 +168,8 @@ def test_build_deterministic_wires_all_topics():
 
 # ---------------------------------------------------------------- D-189, YONDER-211
 
-def _abq_daily():
-    """A stubbed Open-Meteo answer for a high, dry city (Phoenix-like)."""
+def _prescott_daily():
+    """A stubbed Open-Meteo answer for a high, dry city (Prescott-like)."""
     return {"elevation": 1620.0, "daily": {
         "temperature_2m_max": [18, 18], "temperature_2m_min": [3, 3],
         "precipitation_sum": [0, 0],
@@ -182,9 +182,9 @@ def test_weather_high_dry_city_carries_feels_like_humidity_and_altitude(monkeypa
     captured = {}
     def fake_get_json(url, timeout=12):
         captured["url"] = url
-        return _abq_daily()
+        return _prescott_daily()
     monkeypatch.setattr(weather_mod, "get_json", fake_get_json)
-    f = WeatherResolver().resolve(DerivedPlace("US", "Phoenix", 35.08, -106.65),
+    f = WeatherResolver().resolve(DerivedPlace("US", "Prescott", 34.54, -112.47),
                                   _ctx(start_date="2026-08-20", end_date="2026-08-21",
                                        today="2026-08-14"))
     for var in ("apparent_temperature_max", "relative_humidity_2m_mean"):
@@ -201,8 +201,8 @@ def test_weather_high_dry_city_carries_feels_like_humidity_and_altitude(monkeypa
 
 def test_weather_archive_modes_carry_the_new_fields_too(monkeypatch):
     """Seasonal (prior-year archive) carries them as well as forecast does."""
-    monkeypatch.setattr(weather_mod, "get_json", lambda url, timeout=12: _abq_daily())
-    f = WeatherResolver().resolve(DerivedPlace("US", "Phoenix", 35.08, -106.65), _ctx())
+    monkeypatch.setattr(weather_mod, "get_json", lambda url, timeout=12: _prescott_daily())
+    f = WeatherResolver().resolve(DerivedPlace("US", "Prescott", 34.54, -112.47), _ctx())
     assert f.data["mode"] == "seasonal" and f.data["humidity_band"] == "very dry"
 
 

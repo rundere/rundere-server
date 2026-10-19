@@ -89,7 +89,7 @@ def test_resolve_builds_register_overlay(monkeypatch):
 
 
 def test_fallback_pass_surfaces_register_when_primary_empty(monkeypatch):
-    # The register-specific queries ground nothing (Harar Darija is elusive by
+    # The register-specific queries ground nothing (Tangier Darija is elusive by
     # exact name); the broader language-name-led fallback must still surface a
     # greeting instead of the register card vanishing.
     GREET = "https://darija.example/salam"
@@ -106,7 +106,7 @@ def test_fallback_pass_surfaces_register_when_primary_empty(monkeypatch):
     monkeypatch.setattr(ll_mod, "synthesize_json", lambda *a, **k: {
         "register_summary": "", "expressions": [], "etiquette": [],
         "greetings": [{"phrase": "Salam", "meaning": "hi", "source_url": GREET}]})
-    f = _resolver().resolve(_place("Harar", "MA"), _ctx())
+    f = _resolver().resolve(_place("Tangier", "MA"), _ctx())
     assert f is not None
     assert "Salam" in f.body_md
     assert any(s["url"] == GREET for s in f.sources)

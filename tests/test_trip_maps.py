@@ -22,14 +22,14 @@ if DEPS:
     from app.trips import maps
     Base.metadata.create_all(engine)
 
-PHX, SED, YYZ = (35.0402, -106.609), (35.687, -105.938), (43.6777, -79.6248)
+PHX, SED, YYZ = (33.4342, -112.0116), (34.870, -111.761), (43.6777, -79.6248)
 
 
 def test_world_pixels_match_the_standard_tile_scheme():
     if not DEPS:
         return
     x, y = maps._world(*PHX, 7)
-    assert (int(x // 256), int(y // 256)) == (26, 50)       # tile 7/26/50 covers PHX
+    assert (int(x // 256), int(y // 256)) == (24, 51)       # tile 7/24/51 covers PHX
 
 
 def test_fit_frames_every_point_inside_the_image():
@@ -121,12 +121,12 @@ def test_pdf_has_trip_flight_and_road_trip_maps(monkeypatch):
                          geo={"points": [_pt("from", "YYZ", *YYZ), _pt("to", "PHX", *PHX)]}),
             TripActivity(trip_id=t.id, type="lodging", starts_at="2027-03-01T15:00",
                          values={"when": "2027-03-01T15:00", "name": "Hotel Palo Verde"},
-                         geo={"points": [_pt("place", "Hotel Palo Verde", 35.0985, -106.6645)]}),
+                         geo={"points": [_pt("place", "Hotel Palo Verde", 33.4705, -112.0505)]}),
             TripActivity(trip_id=t.id, type="drive", starts_at="2027-03-02T10:00",
                          values={"when": "2027-03-02T10:00", "route": "PHX → Sedona"},
-                         geo={"points": [_pt("from", "Sunport", *PHX),
+                         geo={"points": [_pt("from", "Sky Harbor", *PHX),
                                          _pt("to", "Sedona Plaza", *SED)],
-                              "route": {"polyline": encode_polyline([PHX, (35.3, -106.4), SED])}}),
+                              "route": {"polyline": encode_polyline([PHX, (34.2, -111.9), SED])}}),
             TripActivity(trip_id=t.id, type="note", starts_at="2027-03-03",
                          values={"title": "No place"}),
         ])

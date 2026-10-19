@@ -52,7 +52,7 @@ def test_denylist_blocks_case_insensitively_and_in_paths(monkeypatch):
 
 def test_placeholder_credentials_in_urls_are_skipped():
     assert not _scan("postgresql://travel:CHANGE_ME_DB_PASSWORD@db:5432/travel")
-    assert not _scan("postgresql://travel:CHANGE_ME_DB_PASSWORD@db:5432/travel")
+    assert not _scan("postgresql://travel:devonly-example@db:5432/travel")
     assert not _scan('TX_JWT_SECRET: "dev-4.0-test-stack-secret-not-for-prod"')
     url = "postgresql://travel:" + RANDOM + "@db/x"          # assembled, so this file stays clean
     assert any(f.rule == "credentials-in-url" for f in _scan(url))

@@ -14,7 +14,7 @@ connector.
 
 Call `get_trip` with the trip id.
 
-- `places` lists the cities; each `key` (e.g. `MA:Harar`) is the
+- `places` lists the cities; each `key` (e.g. `JP:Kyoto`) is the
   `place_key` you save under.
 - `trip.start_date` / `trip.end_date` — look for anything happening then
   (strikes, closures, big events that change how the city moves).
@@ -55,7 +55,7 @@ recent, reputable travel reporting. Check everything is current this year.
 ## 3. Save it
 
 ```
-save_safety(trip_id, place_key="MA:Harar",
+save_safety(trip_id, place_key="JP:Kyoto",
             safety={summary, advisories: [{text, source_url}], scams: [...]},
             transport={summary, public_transit, from_airport,
                        ride_hailing: [...], apps: [...], tips: [...]},

@@ -71,7 +71,7 @@ def test_fallback_pass_surfaces_attractions_when_primary_empty(monkeypatch):
 
     def fake_search(query, *, base_url, timeout=12):
         if any(w in query for w in _FALLBACK):
-            return [SearchResult(ATTR, "Glendale Caverns", "a famous cavern")]
+            return [SearchResult(ATTR, "Grand Canyon Skywalk", "a famous canyon walk")]
         return [SearchResult("https://cal.example/x", "Holiday calendar", "generic")]
 
     monkeypatch.setattr(events_mod, "searxng_search", fake_search)
@@ -79,10 +79,10 @@ def test_fallback_pass_surfaces_attractions_when_primary_empty(monkeypatch):
     # pass, where ATTR is actually in the search results.
     monkeypatch.setattr(events_mod, "synthesize_json", lambda *a, **k: {
         "impacts": [],
-        "notable": [{"name": "Glendale Caverns", "why": "iconic", "source_url": ATTR}]})
+        "notable": [{"name": "Grand Canyon Skywalk", "why": "iconic", "source_url": ATTR}]})
     f = _resolver().resolve(_place("Glendale", "US"), _ctx())
     assert f is not None
-    assert "Glendale Caverns" in f.body_md
+    assert "Grand Canyon Skywalk" in f.body_md
     assert any(s["url"] == ATTR for s in f.sources)
 
 
@@ -96,7 +96,7 @@ def test_search_round_robin_does_not_starve_events(monkeypatch):
             return [SearchResult(f"https://cal.example/{query[:4]}/{i}",
                                  "Holiday calendar", "generic") for i in range(10)]
         if query.startswith("events"):
-            return [SearchResult("https://PHX.example/fiesta",
+            return [SearchResult("https://phx.example/fiesta",
                                  "Balloon Fiesta 2026", "Oct 3–11 balloons")]
         return [SearchResult(f"https://ttd.example/{query[:6]}/{i}",
                              "Things to do", "misc") for i in range(3)]
@@ -104,7 +104,7 @@ def test_search_round_robin_does_not_starve_events(monkeypatch):
     r = _resolver(max_snippets=28)
     results = r._search(r._queries("Phoenix", "US", "October 2026", []))
     urls = [x.url for x in results]
-    assert "https://PHX.example/fiesta" in urls          # survived the budget
+    assert "https://phx.example/fiesta" in urls          # survived the budget
 
 
 def test_interest_queries_added_per_checked_interest():

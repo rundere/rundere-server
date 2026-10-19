@@ -371,7 +371,7 @@ function ynDisc(sec) {
     s.classList.toggle('active', s.dataset.sec === sec);
   });
   var tab = document.querySelector('.yn-tabpanel[data-tab="discovery"]');
-  // Keep a deeper path (#discovery/food/MA:Gondar) when the section is already right.
+  // Keep a deeper path (#discovery/food/JP:Kyoto) when the section is already right.
   if (tab && tab.classList.contains('active')
       && location.hash.split('/').slice(0, 2).join('/') !== '#discovery/' + sec)
     history.replaceState(null, '', '#discovery/' + sec);

@@ -128,7 +128,7 @@ class Locator:
         self._geocoder = geocoder
         self._airport = airport
         # Places already located on the same trip, by normalised name/label:
-        # "Phoenix Camelback Vista Hotel" in a drive's route is the hotel
+        # "Phoenix Saguaro Vista Hotel" in a drive's route is the hotel
         # the trip already has, not a fresh guess (see trip_places()).
         self.known: dict[str, tuple[float, float]] = known or {}
         # None = the configured router chain; a string pins one OSRM ("" = off)

@@ -215,11 +215,11 @@ def test_write_preview_names_the_trip_it_files_into():
         return
     from app.review import summary as sm
     matched = {"collection_action": "matched_exact", "collection_id": "c1",
-               "collection_name": "Phoenix, NM, October 2026",
+               "collection_name": "Phoenix, AZ, October 2026",
                "targets": ["adventurelog.lodging"]}
     prev = sm.write_preview({"item_type": "lodging", "lodging": {}}, matched)
     filed = [p for p in prev if "trip" in p["text"].lower()]
-    assert filed and "Phoenix, NM, October 2026" in filed[0]["text"]
+    assert filed and "Phoenix, AZ, October 2026" in filed[0]["text"]
     assert "New trip" not in filed[0]["text"]                # match, not a mint
 
     minting = {"collection_action": "created", "collection_name": "Portugal — Sep 2027",

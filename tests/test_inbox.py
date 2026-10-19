@@ -38,10 +38,10 @@ if DEPS:
     _LD = json.dumps({
         "@context": "https://schema.org", "@type": "LodgingReservation",
         "reservationNumber": "IN199", "checkinDate": "2031-03-20", "checkoutDate": "2031-03-23",
-        "reservationFor": {"@type": "LodgingBusiness", "name": "Inbox Riad",
+        "reservationFor": {"@type": "LodgingBusiness", "name": "Inbox Guesthouse",
                            "address": {"@type": "PostalAddress",
-                                       "addressLocality": "Harar",
-                                       "addressCountry": "MA"}}})
+                                       "addressLocality": "Addis Ababa",
+                                       "addressCountry": "ET"}}})
     HTML = ('<html><head><script type="application/ld+json">'
             f'{_LD}</script></head><body>Your stay</body></html>')
 

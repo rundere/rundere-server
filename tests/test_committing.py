@@ -313,9 +313,9 @@ def test_transportation_recovers_timezone_from_station_coordinates():
     reference — but the station WAS geocoded, so its coordinates supply the tz.
     Without this hop, a real departure time (15:35) silently degrades to
     date-only at commit (_to_utc_z refuses a naive local — RULE-04/D-06).
-    Harar (31.63, -7.99) -> Africa/Casablanca."""
+    Addis Ababa (8.93, 38.69) -> Africa/Addis_Ababa."""
     _skip()
-    if C.tz_from_coords(31.6258257, -7.9891608) is None:
+    if C.tz_from_coords(8.9312345, 38.6923456) is None:
         import pytest
         pytest.skip("timezonefinder not installed")
     p = {
@@ -323,22 +323,22 @@ def test_transportation_recovers_timezone_from_station_coordinates():
         "booking_reference": "TR123",
         "ground_transport": {
             "mode": "train",
-            "service_number": "82",
+            "service_number": "7",
             "departure": {
-                "place": {"raw": "HARAR", "name": "Harar", "city": "Harar",
-                          "country": "MA", "lat": 31.6258257, "lon": -7.9891608, "iata": None},
+                "place": {"raw": "ADDIS ABABA FURI-LEBU", "name": "Furi-Lebu", "city": "Addis Ababa",
+                          "country": "ET", "lat": 8.9312345, "lon": 38.6923456, "iata": None},
                 "time": {"local": "2026-09-13T15:35", "precision": "datetime", "tz": None},
             },
             "arrival": {
-                "place": {"raw": "Dire Dawa station", "name": "Dire Dawa station", "city": "Casablanca",
-                          "country": "MA", "lat": 33.5882819, "lon": -7.6113592, "iata": None},
+                "place": {"raw": "DIRE DAWA", "name": "Dire Dawa station", "city": "Dire Dawa",
+                          "country": "ET", "lat": 9.6012345, "lon": 41.8601234, "iata": None},
                 "time": {"local": "2026-09-13T18:26", "precision": "datetime", "tz": None},
             },
         },
     }
     body, synth = C.build_transportation(p, collection_id="c1")
-    assert body["start_timezone"] == "Africa/Casablanca"
-    assert body["end_timezone"] == "Africa/Casablanca"
+    assert body["start_timezone"] == "Africa/Addis_Ababa"
+    assert body["end_timezone"] == "Africa/Addis_Ababa"
     # The real time survives as a UTC 'Z' instant, NOT a bare date-only stub.
     assert body["date"].startswith("2026-09-13T") and body["date"].endswith("Z")
     assert body["end_date"].startswith("2026-09-13T") and body["end_date"].endswith("Z")
@@ -347,8 +347,8 @@ def test_transportation_recovers_timezone_from_station_coordinates():
 
 def test_coordinates_rounded_to_adventurelog_precision():
     """AdventureLog's DecimalField rejects (400) any latitude with >6 decimal
-    places or longitude with >9 total digits. A raw geocode (35.5849387 /
-    -106.1024807) blew up every location/lodging/transportation write, so every
+    places or longitude with >9 total digits. A raw geocode (34.9849387 /
+    -111.9024807) blew up every location/lodging/transportation write, so every
     coordinate must be rounded to 6 dp before it is sent."""
     _skip()
     lodging = {
@@ -356,12 +356,12 @@ def test_coordinates_rounded_to_adventurelog_precision():
         "lodging": {"property_name": "Mesquite Springs",
                     "check_in": {"local": "2026-10-04", "precision": "date"},
                     "check_out": {"local": "2026-10-06", "precision": "date"},
-                    "place": {"lat": 35.5849387, "lon": -106.1024807,
+                    "place": {"lat": 34.9849387, "lon": -111.9024807,
                               "address": "77 Mesquite Springs Rd"}},
     }
     body = C.build_lodging(lodging, collection_id="c1")
-    assert body["latitude"] == 35.584939
-    assert body["longitude"] == -106.102481
+    assert body["latitude"] == 34.984939
+    assert body["longitude"] == -111.902481
     # longitude stays within AdventureLog's 9-total-digit ceiling
     assert len(str(body["longitude"]).lstrip("-").replace(".", "")) <= 9
 

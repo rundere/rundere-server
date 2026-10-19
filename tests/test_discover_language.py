@@ -39,7 +39,7 @@ def test_prior_generated_language_is_flagged_not_shown_as_vetted():
     # flagged in the deterministic finding — never shown as if it were vetted.
     ctx = ResolverContext(phrasebook={"ar": {"hello": {"t": "مرحبا", "p": "marhaban"}}},
                           generated_languages=frozenset({"ar"}))
-    f = _R.resolve(DerivedPlace("MA", "Harar", 31.6, -8.0), ctx)
+    f = _R.resolve(DerivedPlace("MA", "Tangier", 35.8, -5.8), ctx)
     assert f.confidence == "flagged"
     assert "generated — verify" in f.body_md
     ar = next(l for l in f.data["languages"] if l["code"] == "ar")
@@ -54,7 +54,7 @@ def test_japanese_includes_script_and_romaji():
 def test_language_without_phrasebook_is_noted_not_guessed():
     # Morocco → Arabic (vetted) + Central Atlas Tamazight (NOT in the dataset).
     # Tamazight must get the honest "not yet" note, never a guessed translation.
-    f = _R.resolve(DerivedPlace("MA", "Harar", 31.6, -8.0), _CTX)
+    f = _R.resolve(DerivedPlace("MA", "Tangier", 35.8, -5.8), _CTX)
     tzm = next(l for l in f.data["languages"] if l["code"] == "tzm")
     assert tzm["has_phrasebook"] is False
     assert "isn't in Yonder's dataset" in f.body_md
@@ -62,7 +62,7 @@ def test_language_without_phrasebook_is_noted_not_guessed():
 
 def test_morocco_surfaces_arabic_phrases_and_widely_spoken_french():
     # The reported gap: MA showed Arabic-as-official but no phrases, and hid French.
-    f = _R.resolve(DerivedPlace("MA", "Harar", 31.6, -8.0), _CTX)
+    f = _R.resolve(DerivedPlace("MA", "Tangier", 35.8, -5.8), _CTX)
     assert f.confidence == "high"                     # Arabic now has a phrasebook
     assert "مرحبا" in f.body_md                        # Arabic hello (vetted)
     ar = next(l for l in f.data["languages"] if l["code"] == "ar")
@@ -84,7 +84,7 @@ def test_defacto_official_language_resolves_not_flagged():
     # The US has no *de jure* official language — get_official_languages('US')
     # returns () — but English is de facto official. It must resolve to English,
     # not flag as "couldn't determine".
-    f = _R.resolve(DerivedPlace("US", "Phoenix", 35.1, -106.6), _CTX)
+    f = _R.resolve(DerivedPlace("US", "Phoenix", 33.4, -112.1), _CTX)
     assert f.confidence != "flagged"
     assert "no phrasebook needed" in f.body_md          # English, spoken here
     assert "Couldn't determine" not in f.body_md
@@ -109,7 +109,7 @@ def test_supported_languages_are_the_phrasebook_set():
 
 def test_build_language_body_from_manual_picks():
     # The Morocco fix: pick French manually and get the French phrasebook.
-    body, data, conf = build_language_body("Harar, MA", ["fr"], official=False)
+    body, data, conf = build_language_body("Tangier, MA", ["fr"], official=False)
     assert "Bonjour" in body and "official" not in body.split("\n")[0]
     assert conf == "high"
     assert [l["code"] for l in data["languages"]] == ["fr"]

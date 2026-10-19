@@ -41,7 +41,7 @@ def _trip():
         for m in (PackingItem, PackingPlan, TripActivity, Trip):
             s.query(m).delete()
         s.commit()
-        t = Trip(name="Alpine trip", start_date="2026-09-01", end_date="2026-09-08")
+        t = Trip(name="Alpine trip", start_date="2031-06-02", end_date="2031-06-09")
         s.add(t); s.commit()
         s.add(TripActivity(trip_id=t.id, type="flight",
                            values={"from": "YYZ", "to": "GVA"}))

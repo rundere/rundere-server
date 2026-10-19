@@ -12,7 +12,7 @@ section, one city at a time. You need the Run·dere MCP connector.
 ## 1. Read the trip and the person
 
 1. Call `get_trip` with the trip id.
-   - `places` lists the trip's cities; each `key` (e.g. `MA:Harar`) is the
+   - `places` lists the trip's cities; each `key` (e.g. `JP:Kyoto`) is the
      `place_key` you save under.
    - `trip.start_date` / `trip.end_date` are the dates.
    - `discovery_profile` is **this person's** preferences, with `how_to_use`.
@@ -80,7 +80,7 @@ For each place fill in what you can verify:
 Call `save_city_guide` once per city:
 
 ```
-save_city_guide(trip_id, topic="food", place_key="MA:Harar",
+save_city_guide(trip_id, topic="food", place_key="JP:Kyoto",
                 summary_md="…", items=[…], sources=[{title, url}, …])
 ```
 

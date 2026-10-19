@@ -325,7 +325,7 @@ def test_pipeline_gcal_channel():
 
 # ---------------------------------------------------------------- maps_url
 
-MAPS = ("https://www.google.com/maps/dir/Toronto,+ON/Port Calloway,+ON/Ottawa,+ON/"
+MAPS = ("https://www.google.com/maps/dir/Toronto,+ON/Port+Calloway,+ON/Ottawa,+ON/"
         "@44.7,-77.0,8z/data=!3m1!4b1")
 
 
@@ -364,7 +364,7 @@ def test_maps_url_parses_city_region_for_geocoding():
 def test_maps_url_api1_query_format():
     """The ?api=1 share format (waypoints pipe-separated) is accepted (D-61)."""
     url = ("https://www.google.com/maps/dir/?api=1&origin=Toronto,ON"
-           "&destination=Ottawa,ON&waypoints=Port Calloway,ON|Ashcombe,ON")
+           "&destination=Ottawa,ON&waypoints=Port+Calloway,ON|Ashcombe,ON")
     g = maps_url.extract_maps_url(url, {"travel_date": "2026-08-08"})[0]["ground_transport"]
     assert g["departure"]["place"]["city"] == "Toronto"
     assert g["arrival"]["place"]["city"] == "Ottawa"
@@ -376,9 +376,9 @@ def test_maps_url_coords_stay_out_of_extraction():
     route.source_url and are applied at resolve, so extraction stays schema-valid
     (D-61). This is the regression guard for the schema-invalid coord bug."""
     url = ("https://www.google.com/maps/dir/"
-           "100+Harbour+Ridge+Pkwy,+Maple+Grove,+ON+Z9Z+9Z9,+Canada/Port Calloway,+Ontario/"
+           "100+Harbour+Ridge+Pkwy,+Maple+Grove,+ON+Z9Z+9Z9,+Canada/Port+Calloway,+Ontario/"
            "@44.07,-78.5,9z/data=!3m1!4b1!1m5!1m1!1s0xabc:0xdef!2m2!1d-79.3832123!2d43.6532456"
-           "!1m5!1m1!1s0x123:0x456!2m2!1d-76.4930295!2d44.2334401!3e0")
+           "!1m5!1m1!1s0x123:0x456!2m2!1d-77.1023456!2d44.5012345!3e0")
     items = maps_url.extract_maps_url(url, {"travel_date": "2026-08-14"})
     _assert_valid(items)                                       # schema-valid
     gt = items[0]["ground_transport"]
@@ -798,8 +798,8 @@ def test_directions_stop_place_city_state_splits_on_the_city():
     check rejects the right hit. 'City, Region, Country' and street addresses
     keep their existing parse."""
     from extract.directions_common import _parse_place
-    p = _parse_place("Heritage Square, Phoenix, NM")
-    assert (p["city"], p["region"]) == ("Phoenix", "NM")
+    p = _parse_place("Heritage Square, Phoenix, AZ")
+    assert (p["city"], p["region"]) == ("Phoenix", "AZ")
     p = _parse_place("Toronto, ON, Canada")
     assert (p["city"], p["region"]) == ("Toronto", "ON")
     assert "city" not in _parse_place("100 Harbour Ridge Pkwy, Maple Grove, ON")

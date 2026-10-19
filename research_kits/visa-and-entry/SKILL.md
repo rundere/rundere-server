@@ -18,7 +18,7 @@ cite official sources, and say clearly what you couldn't confirm.
 Call `get_trip` with the trip id.
 
 - `places` — the countries are the part of each `key` before the colon
-  (`MA:Harar` → `MA`). Save one finding per **country**, with
+  (`JP:Kyoto` → `JP`). Save one finding per **country**, with
   `place_key="MA"`.
 - `trip.start_date` / `trip.end_date` — the length of stay per country
   (use `activities` to split a multi-country trip).
@@ -53,7 +53,7 @@ Cover, for this passport and this length of stay:
 
 ```
 save_research(trip_id, topic="visa", place_key="MA",
-              title="Morocco — entry for <nationality> passport holders",
+              title="Japan — entry for <nationality> passport holders",
               body_md="…", sources=[{title, url}, ...])
 ```
 
