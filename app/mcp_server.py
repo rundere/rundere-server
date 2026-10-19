@@ -122,7 +122,9 @@ def get_trip(trip_id: TripId) -> dict[str, Any]:
     and Events findings (`discovery_items`, each tied to its finding by
     `finding_id`), the packing list, and linked captures. `trip.my_role` says
     what the user may do here (viewer = read-only); each traveller has
-    `has_account` (true = has a Run·dere login, false = a guest on the roster)."""
+    `has_account` (true = has a Run·dere login, false = a guest on the roster).
+    A finding with an `attribution` (Open-Meteo weather) must be credited with
+    that text and link wherever you show its data."""
     return _run(api_v1.api_trip_snapshot, trip_id=trip_id)
 
 

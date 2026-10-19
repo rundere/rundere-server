@@ -51,12 +51,13 @@ if DEPS:
                 s.delete(t)
             s.commit()
 
-    def test_api_token_is_accepted():
-        # A long-lived machine token (MCP, D-126) authenticates like an access token.
+    def test_retired_cli_api_token_is_refused():
+        # D-205: the CLI-minted `api` JWT (D-126) is no longer a credential, even
+        # when it's correctly signed and unexpired. Personal API tokens replace it.
         u = _user("api-machine")
-        tok = authn.issue_api_token(u, ttl=3600)
+        tok = authn._token(u, "api", 3600)
         r = client.get("/api/v1/trips", headers={"Authorization": f"Bearer {tok}"})
-        assert r.status_code == 200
+        assert r.status_code == 401
 
     def test_api_requires_auth():
         # No bearer → 401 everywhere (auth is always on for the API).

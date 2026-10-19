@@ -41,9 +41,9 @@ user (D-120). Nothing is extracted until something runs `process_pending` + `res
 | 6 | **MCP `capture_url`** | Any MCP-capable assistant or client on `/mcp` (Claude is one) | OAuth bearer | a URL or directions link | as above |
 | 7 | **Operator** | `python -m app.cli process`, `create-key` | shell on the server | n/a | n/a |
 
-Two more are not channels: the n8n Maps form (`capture/maps-n8n`) is deprecated and
-superseded by the page's directions input, and `/ingest` accepts any client that can sign
-a request, so a script can use it.
+One more is not a channel: `/ingest` accepts any client that can sign a request, so a
+script can use it. (The n8n Maps form, superseded by the page's directions input, was
+removed, D-205.)
 
 **Answer to "any other surfaces?":** beyond the four you listed, there are the **app/API
 capture** (5) and the **MCP `capture_url` tool** (6), plus the paste form's two extra inputs

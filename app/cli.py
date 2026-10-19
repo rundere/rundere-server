@@ -10,8 +10,6 @@
     python -m app.cli make-admin <username> [--revoke]
     python -m app.cli link-traveler <username> <traveler_id>
     python -m app.cli list-users
-    python -m app.cli mint-api-token <username> [--days N]  # long-lived MCP/API token
-                                                      # (prefer Account → Personal API tokens)
     python -m app.cli oauth-client create <name> --redirect <uri> [--redirect <uri>…] [--confidential]
                                                       # pre-register an OAuth client (e.g. for
                                                       # claude.ai's advanced settings); prints
@@ -179,15 +177,6 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         print(f"linked {username!r} to traveler {tid}")
         return 0
 
-    if cmd == "mint-api-token":
-        # A long-lived bearer token for a machine client (the MCP server, D-126).
-        days = int(_opt(args, "--days", 365))
-        token = authn.issue_api_token(user, ttl=days * 24 * 3600)
-        print(f"API token for {username!r} (valid {days} days; scoped to this user; "
-              f"revoke by resetting their password or `make-admin`/token bump).\n"
-              f"Store it as YONDER_TOKEN for the MCP server:\n{token}\n"
-              f"(Tip: Account → Personal API tokens makes individually revocable tokens.)")
-        return 0
     return 2
 
 
@@ -299,7 +288,7 @@ def main(argv: list[str]) -> int:
                 who = session.get(User, r.user_id).username if r.user_id else "—(open)"
                 print(f"{r.client_name:30} {state:8} user={who:16} last_used={r.last_used_at}")
         elif cmd in ("create-user", "set-password", "set-email", "make-admin", "list-users",
-                     "link-traveler", "mint-api-token"):
+                     "link-traveler"):
             return _user_cmd(session, cmd, args)
         elif cmd == "oauth-client":
             return _oauth_client_cmd(session, args)

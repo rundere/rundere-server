@@ -957,12 +957,16 @@ def _render_md(text: str | None) -> Markup:
 
 
 def _finding_view(f: DiscoveryFinding, ended: bool = False) -> dict:
+    from discover import attribution as _attribution
     from discover import policy as _policy
     data = f.data or {}
     return {
         "id": f.id, "topic": f.topic, "place_key": f.place_key,
         "scope": f.scope, "status": f.status, "confidence": f.confidence,
         "body": _render_md(f.body_md), "sources": f.sources or [],
+        # The data licence's required credit (Open-Meteo, CC BY 4.0), shown
+        # once per section by _discovery_section.html — not tucked in Sources.
+        "attribution": _attribution.for_finding(f.resolver),
         "is_currency": f.topic == "currency",
         # 4.5 Food/Events: the city write-up shown above the tables.
         "summary": _render_md(data.get("summary")) if data.get("summary") else None,
@@ -2722,35 +2726,6 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
         "is_public": True, "collection": collection_id,
     }
     return "note", {k: v for k, v in body.items() if v is not None}
-
-
-def _push_activities(client, collection_id: str, trip_id: str,
-                     activities: list[TripActivity]) -> None:
-    """Best-effort: the collection is already created and linked by the time
-    this runs, so one bad activity logs and moves on rather than losing the
-    ones that would otherwise succeed."""
-    from resolve import airports as airports_mod
-    airports = airports_mod.reference()             # Run·dere's own table (D-147)
-    photon = _photon()
-    coord_cache: dict = {}
-    create = {"transportation": client.create_transportation,
-             "lodging": client.create_lodging, "note": client.create_note}
-    failed = 0
-    for activity in activities:
-        kind, body = _al_body_for_activity(activity, collection_id,
-                                           airports, photon, coord_cache)
-        try:
-            status, parsed, raw = create[kind](body)
-            if status >= 400:
-                failed += 1
-                log.warning("push-adventurelog: %s for trip %s rejected (HTTP %s): %s",
-                           kind, trip_id, status, raw[:300])
-        except Exception:
-            failed += 1
-            log.exception("push-adventurelog: %s failed for trip %s", kind, trip_id)
-    if failed:
-        log.warning("push-adventurelog: %d/%d activities failed for trip %s",
-                    failed, len(activities), trip_id)
 
 
 @router.post("/{trip_id}/push-adventurelog", response_class=HTMLResponse)

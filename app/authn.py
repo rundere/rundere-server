@@ -133,13 +133,6 @@ def issue_web_token(user: User) -> str:
     return _token(user, "web", settings.jwt_web_ttl_seconds)
 
 
-def issue_api_token(user: User, *, ttl: int | None = None) -> str:
-    """A long-lived bearer token for a MACHINE client (the MCP server, D-126).
-    Same per-user scoping as any access token; revocable en masse by bumping the
-    user's token_version ("sign out everywhere"). Minted via the CLI."""
-    return _token(user, "api", ttl if ttl is not None else settings.jwt_api_ttl_seconds)
-
-
 def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "web"),
                     audiences: set[str] | None = None) -> User | None:
     """Resolve a Yonder JWT to its user. An `oauth` token (YONDER-107) must also
@@ -163,12 +156,13 @@ def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "we
 
 def user_from_bearer(session, token: str, request=None) -> User | None:
     """A bearer credential → user: a personal API token (`ypat_…`), or a JWT of
-    kind access / api (CLI-minted) / oauth (YONDER-107)."""
+    kind access / oauth (YONDER-107). The CLI-minted `api` kind is no longer
+    accepted (D-205): it could only be revoked by a password reset."""
     from app import oauth
     if token.startswith(oauth.PAT_PREFIX):
         return oauth.pat_user(session, token)
     auds = oauth.audiences(request) if request is not None else None
-    return user_from_token(session, token, kinds=("access", "api", "oauth"), audiences=auds)
+    return user_from_token(session, token, kinds=("access", "oauth"), audiences=auds)
 
 
 # Machine endpoints (YONDER-107/109): reached from the open internet without the
@@ -376,8 +370,8 @@ def is_first_party(request) -> bool:
     """Was this request made by Yonder itself — the web session cookie, the
     app's own login token (`typ="access"`, from /api/v1/auth/login|refresh), or
     an OAuth token issued to the built-in app client (D-194, YONDER-235)?
-    Connected apps / agents (other OAuth clients), personal API tokens and
-    CLI-minted API tokens are NOT: they may use the user's data, but must not
+    Connected apps / agents (other OAuth clients) and personal API tokens are
+    NOT: they may use the user's data, but must not
     change the account's own settings (sharing with admins, email). YONDER-101.
     This only classifies the credential; validity is current_user's job."""
     authz = request.headers.get("authorization", "")

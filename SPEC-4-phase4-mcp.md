@@ -1,5 +1,9 @@
 # SPEC-4 Phase 4 — Built-in MCP server (Workstream E)
 
+> **Superseded (D-205, 2026-10-19).** The standalone stdio server in `mcp/` and the
+> CLI-minted `typ="api"` token (D-126) described below were removed. Use the
+> built-in `/mcp` (OAuth, SPEC-4.2) or a personal API token.
+
 A first-party MCP server that exposes Yonder to agents (Claude Desktop/Code) over
 the **same `/api/v1`** surface — so it inherits all auth + per-user scoping for
 free, and can never diverge from the app. Supersedes the broken
@@ -21,7 +25,7 @@ NOT wired into the main app:
 The MCP acts **as one Yonder user** — the account in its env. Every `/api/v1`
 call is user-scoped, so it sees exactly and only what that user may see.
 
-**D-126 — long-lived machine token.** For a machine client, storing a password
+**D-126 — long-lived machine token.** *Superseded by SPEC-8 D-205.* For a machine client, storing a password
 or a 30-min access token is poor, so the CLI mints a **long-lived, revocable API
 token**: `python -m app.cli mint-api-token <user> [--days N]` issues a JWT with
 `typ="api"` (default 1 year, `TX_JWT_API_TTL_SECONDS`) that the API's bearer auth

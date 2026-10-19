@@ -1,3 +1,0 @@
-# Yonder MCP server, stdio edition. The client (client.py) is pure stdlib; only
-# the MCP runtime needs a dependency (2.x: MCPServer, the new name for FastMCP).
-mcp>=2.2,<3

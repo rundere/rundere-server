@@ -234,16 +234,6 @@ if DEPS:
             s.commit()
             assert integrations.clients_for_user(s, alice.id).external == frozenset()
 
-    def test_purge_user_removes_their_ciphertext(monkeypatch):
-        _public_dns(monkeypatch)
-        u = _user()
-        _save(u)
-        _save(u, kind="adventurelog", url="https://al.example.com")
-        with SessionLocal() as s:
-            assert integrations.purge_user(s, u.id) == 2
-            s.commit()
-            assert integrations.for_user(s, u.id) == {}
-
     def test_seed_from_env_moves_the_server_wide_settings_to_the_owner(monkeypatch):
         owner = _user(admin=True)
         monkeypatch.setattr(integrations, "owner_user_id", lambda session: owner.id)

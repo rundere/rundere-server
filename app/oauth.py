@@ -14,7 +14,7 @@ The protocol logic, free of HTTP (the routes are app/oauth_routes.py):
   server and upserted at startup. First-party: no consent screen, and its
   tokens may change account settings like the app's password login can.
 - **personal API tokens**: opaque `ypat_…`, stored hashed, per-token revoke and
-  optional expiry, for clients that can't do OAuth (Claude Code, stdio MCP).
+  optional expiry, for clients that can't do OAuth (Claude Code, scripts).
 
 Every token also dies when the user is deactivated or their `token_version`
 moves on (password reset / "sign out everywhere").
@@ -397,8 +397,6 @@ def credential_label(session, token: str) -> str | None:
     claims = jwt_decode(token) or {}
     if claims.get("typ") == "oauth" and claims.get("cid"):
         return client_name(session, claims["cid"])
-    if claims.get("typ") == "api":
-        return "API token"
     return None
 
 

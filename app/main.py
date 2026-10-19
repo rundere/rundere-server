@@ -65,7 +65,7 @@ app.include_router(api_router)
 # pre-4.0 (LAN-only, no login), so existing deployments are untouched until the
 # operator creates a user and opts in. ON => every human-UI and /api route
 # needs an authenticated user; /admin additionally requires is_admin. /ingest,
-# /capture (self-authenticated), static, and the login/token endpoints stay open.
+# static, and the login/token endpoints stay open.
 # Onboarding endpoints (setup/register/reset) are public; /users is admin-only.
 # YONDER-107: the OAuth metadata/token/register/revoke endpoints are public
 # (they authenticate clients themselves); /oauth/authorize resolves the signed-in
@@ -73,9 +73,13 @@ app.include_router(api_router)
 # YONDER-108: /mcp answers its own 401 (with the OAuth resource-metadata pointer).
 # YONDER-278 (D-202): /about is public, so a visitor who lands on a server (the demo
 # included) can find out what it is, how to say it and how to get the app.
+# YONDER-292: of /capture only the setup guide is public (it reads signed out, with
+# "sign in to make your key" links). The rest used to be open as a prefix, which
+# left every capture route one forgotten check from serving a stranger; the routes
+# still check for themselves.
 _PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
-                 "/setup", "/register", "/forgot", "/mcp", "/about"}
-_PUBLIC_PREFIX = ("/ingest", "/capture", "/review/static", "/trips/static", "/brand/",
+                 "/setup", "/register", "/forgot", "/mcp", "/about", "/capture/setup"}
+_PUBLIC_PREFIX = ("/ingest", "/review/static", "/trips/static", "/brand/",
                   "/api/v1/auth/", "/reset/", "/oidc/", "/oauth/", "/.well-known/")
 _ADMIN_PREFIX = ("/admin", "/users")
 
@@ -117,11 +121,20 @@ async def auth_gate(request, call_next):
     user, no_users = await run_in_threadpool(_resolve_for_gate, request)
     is_api = path.startswith("/api/")
     if user is None:
-        # First-run: nobody exists yet → send humans to create the first admin.
-        if no_users and not is_api:
-            return RedirectResponse("/setup", status_code=303)
         if is_api:
             return JSONResponse({"detail": "authentication required"}, status_code=401)
+        # First-run: nobody exists yet → send humans to create the first admin.
+        if request.headers.get("hx-request"):
+            # htmx would follow a 303 and swap the whole login page into the
+            # target, so send the browser there itself, coming back to the page
+            # the person was on (login's _safe_next keeps it local). YONDER-292.
+            from urllib.parse import urlsplit
+            here = urlsplit(request.headers.get("hx-current-url", ""))
+            back = (here.path + (f"?{here.query}" if here.query else "")) or path
+            to = "/setup" if no_users else f"/login?next={quote(back)}"
+            return HTMLResponse("", status_code=401, headers={"HX-Redirect": to})
+        if no_users:
+            return RedirectResponse("/setup", status_code=303)
         return RedirectResponse(f"/login?next={quote(path)}", status_code=303)
     if path.startswith(_ADMIN_PREFIX) and not user.is_admin:
         msg = "admin only"

@@ -58,8 +58,8 @@ Claude Code can use the same endpoint. Either:
 - use a **personal API token** (Account → Personal API tokens):
   `claude mcp add --transport http yonder https://<rundere-host>/mcp --header "Authorization: Bearer ypat_…"`
 
-On a LAN that can't reach `/mcp`, the stdio script in [`mcp/`](../mcp/README.md)
-does the same over `/api/v1`.
+The stdio script that used to live in `mcp/` was removed (D-205): every
+client above reaches the built-in `/mcp` directly.
 
 ## Disconnecting
 

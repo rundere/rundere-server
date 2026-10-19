@@ -353,8 +353,8 @@ class OAuthGrant(Base):
 
 
 class PersonalApiToken(Base):
-    """A personal API token (`ypat_…`) for non-OAuth clients (Claude Code, the
-    stdio MCP script). Created and revoked on the Account page, shown once,
+    """A personal API token (`ypat_…`) for non-OAuth clients (Claude Code,
+    scripts). Created and revoked on the Account page, shown once,
     stored as sha256. Optional expiry; `token_version` snapshot as for grants."""
     __tablename__ = "personal_api_tokens"
 

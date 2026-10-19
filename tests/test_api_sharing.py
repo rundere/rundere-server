@@ -139,14 +139,13 @@ if DEPS:
         with SessionLocal() as s:
             u = s.get(User, uid)
             pat = oauth.create_pat(s, u, "laptop")[1]
-            api = authn.issue_api_token(u)
             cl, _ = oauth.register_client(s, name="Perplexica",
                                           redirect_uris=["https://p.example.com/cb"])
             g = OAuthGrant(client_id=cl.id, user_id=uid, token_version=u.token_version,
                            expires_at=oauth._now() + oauth.timedelta(days=1))
             s.add(g); s.commit()
             agent = oauth.issue_access(u, g, "http://testserver/mcp")
-        for tok in (pat, api, agent):
+        for tok in (pat, agent):
             assert client.get("/api/v1/auth/me", headers=_h(tok)).status_code == 200   # can read
             r = client.put("/api/v1/auth/me/sharing", headers=_h(tok), json={"share": False})
             assert r.status_code == 403 and "connected apps" in r.json()["detail"]

@@ -247,6 +247,26 @@ if DEPS:
         d = ok(client, tok, "dashboard")
         assert "counts" in d and "trip_count" in d
 
+    def test_get_trip_credits_open_meteo_weather(client, w):
+        """Open-Meteo's weather is CC BY 4.0: get_trip hands the agent the
+        credit to show with it; findings that need none carry null."""
+        with SessionLocal() as s:
+            s.add_all([
+                DiscoveryFinding(trip_id=w["shared"], user_id=w["alice"], topic="weather",
+                                 scope="city", place_key="PT:Lisbon", status="draft",
+                                 resolver="weather.openmeteo", body_md="mx weather",
+                                 data={"high_c": 24, "low_c": 15}),
+                DiscoveryFinding(trip_id=w["shared"], user_id=w["alice"], topic="plugs",
+                                 scope="country", place_key="PT", status="draft",
+                                 resolver="plugs.static", body_md="mx plugs")])
+            s.commit()
+        snap = ok(client, _tok(w["alice"]), "get_trip", trip_id=w["shared"])
+        by_topic = {f["topic"]: f for f in snap["discovery"]}
+        assert by_topic["weather"]["attribution"] == {
+            "text": "Weather data by Open-Meteo.com", "url": "https://open-meteo.com/",
+            "license": "CC BY 4.0"}
+        assert by_topic["plugs"]["attribution"] is None
+
     def test_timeline_tools(client, w):
         tok = _tok(w["alice"])
         types = {t["key"]: t for t in ok(client, tok, "list_activity_types")["types"]}

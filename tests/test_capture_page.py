@@ -159,7 +159,8 @@ if DEPS:
                 assert auth.lookup_key(s, key1) is None and auth.lookup_key(s, key2) is not None
             # the guide page itself never contains a key
             assert key2 not in client.get("/capture/setup?tab=gmail", cookies=ck).text
-            assert client.post("/capture/setup/key", data={"channel": "gmail"}).status_code == 401
+            r = client.post("/capture/setup/key", data={"channel": "gmail"}, follow_redirects=False)
+            assert r.status_code == 303 and r.headers["location"].startswith("/login")
         finally:
             _cleanup("cp-key")
 
