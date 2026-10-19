@@ -14,6 +14,8 @@ services:
   rundere-demo:
     image: ghcr.io/jeeves5454/rundere-server:latest    # same image as production
     restart: unless-stopped
+    # Runs as uid 10001 and hands its data folders to it on first start. Or run
+    # as your own account so the folders stay yours: user: "1000:1000"
     expose:
       - "8000"
     environment:
