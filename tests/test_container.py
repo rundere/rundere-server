@@ -25,3 +25,16 @@ def test_app_runs_unprivileged_without_a_server_header():
 
 def test_entrypoint_is_valid_sh():
     assert subprocess.run(["sh", "-n", str(ENTRY)]).returncode == 0
+
+
+def test_any_uid_gets_a_writable_home(tmp_path):
+    """Run as the host's own uid (user: "1000:1000"), the image's home belongs
+    to 10001: the entrypoint points HOME somewhere writable instead."""
+    import os
+    if os.geteuid() == 0:
+        return                                  # the root path is the other branch
+    out = subprocess.run(["sh", str(ENTRY), "sh", "-c", 'echo "$HOME"; test -w "$HOME"'],
+                         env={**os.environ, "HOME": "/nonexistent-home"},
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip().startswith("/tmp/rundere-home-")
