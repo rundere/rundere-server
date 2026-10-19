@@ -23,6 +23,13 @@ own() {
     fi
 }
 
+if [ "$(id -u)" != "0" ] && [ ! -w "${HOME:-/nonexistent}" ]; then
+    # Run as another uid (`user: "1000:1000"`), the image's home isn't theirs:
+    # give caches (fontconfig, for the PDF export) a writable home instead.
+    export HOME="/tmp/rundere-home-$(id -u)"
+    mkdir -p "$HOME"
+fi
+
 if [ "$(id -u)" = "0" ]; then
     own "${TX_ARTIFACTS_DIR:-/data/artifacts}"
     own "${TX_MAP_TILE_CACHE_DIR:-}"
