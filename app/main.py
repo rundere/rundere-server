@@ -168,6 +168,29 @@ def _foreign_origin(request) -> bool:
     return urlsplit(origin).netloc.lower() not in own
 
 
+# --- Baseline security headers (YONDER-293) -------------------------------
+# No page is ever framed (the consent screen above all: a framed "Allow" is
+# clickjacking, and SameSite=Lax still sends the cookie to a frame on a sibling
+# subdomain). Responses keep their declared types, and links out don't carry
+# this server's address or paths (same-origin referrers only).
+_SECURITY_HEADERS = {"X-Frame-Options": "DENY",
+                     "X-Content-Type-Options": "nosniff",
+                     "Referrer-Policy": "same-origin"}
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    for k, v in _SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    csp = response.headers.get("Content-Security-Policy")
+    if csp is None:
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    elif "frame-ancestors" not in csp:
+        response.headers["Content-Security-Policy"] = csp + "; frame-ancestors 'none'"
+    return response
+
+
 @app.middleware("http")
 async def same_origin_writes(request, call_next):
     if _foreign_origin(request):

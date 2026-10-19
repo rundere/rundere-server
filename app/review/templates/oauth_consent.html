@@ -7,7 +7,9 @@
   <p class="hint">Signed in as <b>{{ user.username }}</b>. {{ client.name }} will be able to
     read and change your trips, timeline, packing, journal, captures and Discover
     findings — exactly what you can see and edit in Run·dere, nothing more.</p>
-  <p class="hint">After you allow it, you'll be sent to <b>{{ redirect_host }}</b>.</p>
+  <p class="hint">After you allow it, you'll be sent to <b>{{ redirect_host }}</b>.
+    {% if client.source == "dcr" %}The name above is what the app calls itself; Run·dere
+    can't verify it, so check that address is the app you meant to connect.{% endif %}</p>
   {% if loopback_only %}
   <div class="err">This app only returns to your own computer ({{ redirect_host }}).
     Allow it only if you just started the connection yourself, e.g. from Claude Code.</div>

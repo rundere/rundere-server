@@ -216,3 +216,12 @@ if DEPS:
         (The suite itself runs with it off; see conftest.)"""
         from app.config import Settings
         assert Settings.model_fields["auth_required"].default is True
+
+    # ------------------------------------------------- security headers
+    def test_every_page_has_the_baseline_headers():
+        for path in ("/login", "/health", "/about"):
+            r = client.get(path)
+            assert r.headers["x-frame-options"] == "DENY", path
+            assert r.headers["x-content-type-options"] == "nosniff", path
+            assert r.headers["referrer-policy"] == "same-origin", path
+            assert "frame-ancestors 'none'" in r.headers["content-security-policy"], path

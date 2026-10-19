@@ -114,13 +114,23 @@ def _validate_request(session, request: Request, p: dict):
         return None, _error_page(request, "This application's redirect address isn't "
                                           "registered, so Run·dere won't send you there.")
     ru, st = p["redirect_uri"], p.get("state")
+
+    def fail(error: str, description: str):
+        # Anyone can register a client with any https redirect (DCR), so bouncing
+        # a malformed request straight to it, before the person has seen anything,
+        # would make this server an open redirector for phishing links
+        # (RFC 9700 §4.11.2, YONDER-293). Only the built-in app gets the redirect.
+        if client.first_party:
+            return None, _redirect_with(ru, {"error": error, "state": st,
+                                             "error_description": description})
+        return None, _error_page(request, f"This application sent an invalid sign-in "
+                                          f"request ({description}).")
     if p.get("response_type") != "code":
-        return None, _redirect_with(ru, {"error": "unsupported_response_type", "state": st})
+        return fail("unsupported_response_type", "only response_type=code is supported")
     if not p.get("code_challenge") or p.get("code_challenge_method") != "S256":
-        return None, _redirect_with(ru, {"error": "invalid_request", "state": st,
-                                         "error_description": "PKCE S256 is required"})
+        return fail("invalid_request", "PKCE S256 is required")
     if not oauth.resource_ok(request, p.get("resource")):
-        return None, _redirect_with(ru, {"error": "invalid_target", "state": st})
+        return fail("invalid_target", "unknown resource")
     return client, None
 
 
