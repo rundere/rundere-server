@@ -28,6 +28,10 @@ Generate each one, store it somewhere safe, and never commit it:
 
 1. Copy the example. Replace every `CHANGE_ME` and every `example.com` host.
 2. Point the volumes at **local disk**, never NFS (Postgres corrupts on NFS).
+   The app runs as an unprivileged user (uid and gid 10001). On its first start
+   it hands its data folders (artifacts, documents, tile cache) to that user.
+   Folders on a network share it can't change must already be writable by
+   uid 10001.
 3. Deploy the stack. Migrations run at start-up.
 4. Open the site and create the admin account at `/setup` straight away (see
    "Create the admin first" below).
