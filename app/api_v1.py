@@ -562,10 +562,6 @@ class PackingItemIn(BaseModel):
 
 
 # --------------------------------------------------------------------------- helpers
-def _me(user=Depends(authn.current_user)):
-    return user
-
-
 def _trip_summary(session: Session, t: Trip, user) -> TripSummary:
     from app.trips.routes import trip_route_codes
     n = session.query(TripActivity).filter(TripActivity.trip_id == t.id).count()

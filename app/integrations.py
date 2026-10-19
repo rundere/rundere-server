@@ -246,12 +246,6 @@ def delete(session: Session, c: UserIntegration) -> None:
     session.delete(c)
 
 
-def purge_user(session: Session, user_id: str) -> int:
-    """Every connection of a user (account deletion). Caller commits."""
-    return (session.query(UserIntegration).filter(UserIntegration.user_id == user_id)
-            .delete(synchronize_session=False))
-
-
 def check(session: Session, c: UserIntegration) -> tuple[bool, str]:
     """Test the connection with the user's own token; records the outcome.
     The message is short and safe — a status and a reason, never a body."""

@@ -518,7 +518,7 @@ the pipeline channel, `CaptureContext` with mandatory `travel_date`, the geohash
    `?api=1&origin=…&destination=…&waypoints=A|B` share format, and
    `maps.app.goo.gl`/`goo.gl/maps` short links (expanded by following the redirect
    — Google hosts only, an SSRF allowlist).
-3. **Capture client = an n8n hosted form** (`capture/maps-n8n/`: workflow.json +
+3. *(Retired in v1.2; files removed by SPEC-8 D-205.)* **Capture client = an n8n hosted form** (`capture/maps-n8n/`: workflow.json +
    code-node.js + README). Maps has no Apps Script surface, so n8n's Form Trigger
    collects the URL + travel date + optional context, and a Code node HMAC-signs
    (byte-for-byte the `app/auth.py` contract — verified: Node HMAC == server
