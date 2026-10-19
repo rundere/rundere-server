@@ -81,9 +81,18 @@ def money(value, currency: str) -> Decimal:
     return q
 
 
+@lru_cache(maxsize=1)
+def _iso_codes() -> frozenset[str]:
+    from babel.numbers import list_currencies
+    return frozenset(list_currencies())
+
+
 def currency_code(value: str | None) -> str:
+    """A real ISO 4217 code, or ValueError. Every picker offers codes from
+    Babel's list, so the server holds every write to it too: a hand-made request
+    can't store a code no picker would offer (YONDER-293)."""
     c = (value or "").strip().upper()
-    if len(c) != 3 or not c.isalpha():
+    if c not in _iso_codes():
         raise ValueError(f"not a currency code: {value!r} (use ISO-4217, e.g. EUR)")
     return c
 

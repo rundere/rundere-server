@@ -214,6 +214,44 @@ async def same_origin_writes(request, call_next):
     return await call_next(request)
 
 
+# --- Request size cap (YONDER-293) ---------------------------------------
+# Nothing bounded a request body before: any signed-in client could stream
+# gigabytes into a form parse or a JSON body. A declared Content-Length over
+# the cap is refused at once; a chunked body is cut off once it passes it.
+class _BodyLimit:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        limit = settings.max_request_mb * 1024 * 1024
+        if scope["type"] != "http" or not limit:
+            return await self.app(scope, receive, send)
+        declared = dict(scope.get("headers") or []).get(b"content-length", b"")
+        if declared.isdigit() and int(declared) > limit:
+            body = b'{"detail":"request too large"}'
+            await send({"type": "http.response.start", "status": 413,
+                        "headers": [(b"content-type", b"application/json"),
+                                    (b"content-length", str(len(body)).encode())]})
+            await send({"type": "http.response.body", "body": body})
+            return
+        seen = 0
+
+        async def limited():
+            nonlocal seen
+            if seen > limit:
+                return {"type": "http.disconnect"}
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > limit:                     # the app sees the client go away
+                    return {"type": "http.disconnect"}
+            return message
+        return await self.app(scope, limited, send)
+
+
+app.add_middleware(_BodyLimit)
+
+
 # Requests currently inside the app (YONDER-178). Only touched on the event
 # loop, so a plain int needs no lock.
 _inflight = 0

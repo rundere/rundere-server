@@ -244,7 +244,9 @@ def save(session: Session, user, data: bytes, filename: str = "", *, source: str
         except OSError:
             pass
         raise
-    name = os.path.basename(filename or "").strip()[:200] or f"capture{EXTENSION[ctype]}"
+    # No control characters: the name goes into a Content-Disposition header.
+    name = "".join(ch for ch in os.path.basename(filename or "") if ch.isprintable())
+    name = name.strip()[:200] or f"capture{EXTENSION[ctype]}"
     doc = existing or Document(owner_id=user.id, sha256=sha)
     doc.content_type, doc.size_bytes, doc.filename = ctype, len(data), name
     doc.source, doc.trip_id, doc.scan_notes = source, trip_id, (notes or None)

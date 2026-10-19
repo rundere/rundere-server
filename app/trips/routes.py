@@ -893,6 +893,15 @@ TOPIC_LABELS = {
     # POST /api/v1/trips/{id}/findings) — the caller's own, reviewed like any finding.
     "research": "Research (AI agents)",
 }
+def _iso_or_none(value: str | None) -> str | None:
+    """The ISO 4217 code, or None for anything no currency picker would offer."""
+    from app.expenses import currency_code
+    try:
+        return currency_code(value)
+    except ValueError:
+        return None
+
+
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
 
@@ -1445,8 +1454,8 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
         code = data["currency"]
         per_base: dict[str, float] = {}
         for b, v in zip(cur_base, cur_rate):
-            b, v = (b or "").strip().upper(), (v or "").strip()
-            if not b or not v:
+            b, v = _iso_or_none(b), (v or "").strip()
+            if b is None or not v:            # real ISO 4217 codes only (YONDER-293)
                 continue
             try:
                 fv = float(v)
@@ -1454,7 +1463,7 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
                 continue
             if fv > 0:
                 per_base[b] = fv
-        bases = [(b or "").strip().upper() for b in cur_base if (b or "").strip()]
+        bases = [b for b in (_iso_or_none(x) for x in cur_base) if b is not None]
         as_of = _date.today().isoformat()
         data["date"] = as_of
         data["bases"] = bases
@@ -1577,7 +1586,11 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
     import json as _json
     return templates.TemplateResponse(request, "_calculator.html", {
         "request": request, "trip_id": trip_id, "fid": fid,
-        "currencies": currencies, "per_pivot_json": Markup(_json.dumps(per_pivot)),
+        # Inside a <script>: escape <, > and & so no value can close the tag
+        # (YONDER-293; currency codes were free text from the edit form).
+        "currencies": currencies, "per_pivot_json": Markup(
+            _json.dumps(per_pivot).replace("<", "\\u003c").replace(">", "\\u003e")
+            .replace("&", "\\u0026")),
         "as_of": as_of or "—",
         "trip_dates": sorted(trip_dates.items()), "trip_currency": q,
         "can_update": stale and scope.can_edit_trip(session, scope.user_of(request), trip),

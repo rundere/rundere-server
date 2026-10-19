@@ -313,3 +313,14 @@ if DEPS:
                                     made) == date(2029, 2, 28)
         assert documents.keep_until(None, made) == date(2027, 3, 1)
         assert documents.keep_until(T(end_date="", start_date=""), made) == date(2027, 3, 1)
+
+
+    def test_control_characters_never_reach_the_download_header():
+        """YONDER-293: the stored name goes into Content-Disposition, so CR/LF
+        (or any control character) in an uploaded file's name is dropped."""
+        u = _user("doc-ctl")
+        doc = _up(u, _pdf() + b"\n%ctl", name="trip\r\nSet-Cookie: x=1.pdf").json()["document"]
+        r = client.get(f"/api/v1/documents/{doc['id']}/download", headers=_h(u))
+        assert r.status_code == 200
+        cd = r.headers["content-disposition"]
+        assert "\r" not in cd and "\n" not in cd and "set-cookie" not in r.headers
