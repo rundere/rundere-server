@@ -65,7 +65,8 @@ def fingerprint(atype: str, values: dict) -> str:
         keys.add("name")
     picked = {k: (values or {}).get(k) or "" for k in sorted(keys)}
     raw = json.dumps([atype, picked], sort_keys=True, ensure_ascii=False)
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+    # A change detector, not a security hash (YONDER-293): same digest as before.
+    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
 def _route_ends(route: str) -> tuple[str, str] | None:

@@ -24,7 +24,8 @@ def asset(url: str) -> str:
     for prefix, root in _DIRS:
         if url.startswith(prefix):
             try:
-                digest = hashlib.sha1((root / url[len(prefix):]).read_bytes()).hexdigest()[:10]
+                digest = hashlib.sha1((root / url[len(prefix):]).read_bytes(),
+                                      usedforsecurity=False).hexdigest()[:10]
             except OSError:
                 return url              # missing file: plain URL, never break the page
             return f"{url}?v={digest}"

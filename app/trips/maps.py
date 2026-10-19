@@ -160,7 +160,7 @@ def _tile(template: str, z: int, x: int, y: int) -> bytes | None:
     path = None
     if cache is not None:
         import hashlib
-        path = cache / (hashlib.sha1(url.encode()).hexdigest() + ".tile")
+        path = cache / (hashlib.sha1(url.encode(), usedforsecurity=False).hexdigest() + ".tile")
         try:
             if time.time() - path.stat().st_mtime < _TILE_TTL:
                 data = path.read_bytes()
