@@ -5,499 +5,162 @@
   </picture>
 </p>
 
-# Run·dere (formerly Yonder)
+# Run·dere
 
-**Version 4.12.9** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/rundere-server/releases) · [releasing](RELEASING.md)
+**Version 4.12.9** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/rundere-server/releases) · [demo](https://demo.rundere.app) · [rundere.app](https://rundere.app)
 
-> **Yonder is now Run·dere** (say "run there"; plain-text spelling: Rundere). Same app, same data, same
-> `TX_*` settings — from 4.4.0 the repository is `jeeves5454/rundere-server` and
-> the image is `ghcr.io/jeeves5454/rundere-server`. Releases up to 4.3.x were
-> published as Yonder (`ghcr.io/jeeves5454/yonder`). The Python package (`yonder`), the
-> `TX_*` prefix and some code names keep the old name on purpose and won't change (D-206).
+**A self-hosted travel planner for you and the people you travel with.** Forward a booking
+email, drop in a PDF or click a bookmarklet, and Run·dere reads the flight, hotel, train or
+tour out of it, asks you to check it, and puts it on the right trip. Each trip gets a
+timeline, a map, research for the destination, a packing list, shared costs and a travel
+journal. It runs on your own server, and the reading is done by structured parsers and a
+local LLM, so your bookings stay with you.
 
-Run·dere turns travel documents — booking emails, calendar invites, PDF
-confirmations, and Google Maps directions — into clean records in your
-self-hosted travel apps: **flights → [AirTrail](https://github.com/johanohly/AirTrail)**,
-**trips & places → [AdventureLog](https://github.com/seanmorley15/AdventureLog)** —
-and into **Run·dere's own built-in trips**, a first-party trip system with its own
-timeline, pre-trip research (**Discovery**) and packing plans (**Planning**), that
-Run·dere writes to alongside the others.
+Say it "run there". Plain-text spelling: Rundere.
 
-It is a self-hosted FastAPI service. You *capture* travel items from where you
-already read them (Gmail, Google Calendar, Maps), Run·dere extracts and resolves
-the structured facts, you review them in a web queue, and it commits them to
-your trackers. Nothing is auto-posted without passing through review. The root
-URL (`/`) is a dashboard: what's next, what the review queue looks like right
-now, and quick links into every surface.
+<p align="center">
+  <img src="docs/images/home.png" alt="Run·dere's Home page: the next activity on an upcoming trip, the Inbox and upcoming trips" width="49%">
+  <img src="docs/images/trip-timeline.png" alt="A trip's day-by-day timeline with a flight, a hotel and a museum visit" width="49%">
+</p>
 
----
+## What it does
 
-## What it does (and what's covered)
+- **Capture from anywhere.** Email forwarding, file upload (PDF, `.ics`, `.eml`), a
+  bookmarklet, Gmail and Google Calendar add-ons, the iPhone and iPad app, and AI
+  assistants over MCP.
+- **Read it reliably.** Structured readers go first (schema.org booking markup, calendar
+  invites, PDF text, Google and Apple Maps links). Only free-form text goes to the LLM,
+  which runs on your own hardware.
+- **Review before anything changes.** Everything lands in the **Inbox**, sorted by what
+  needs you. Nothing reaches a trip until you approve it, and your corrections stick.
+- **Plan the trip.** A timeline and map, **Discover** research (weather, currency, plugs,
+  visa, safety, food and drink, local phrases), packing lists, budgets and shared expenses,
+  and a private travel journal.
+- **Travel together.** Several people on one server, each seeing only their own trips and
+  the ones shared with them. Sharing can be view-only.
+- **Use what you already have.** Optionally also log flights to
+  [AirTrail](https://github.com/johanohly/AirTrail) and trips to
+  [AdventureLog](https://github.com/seanmorley15/AdventureLog). Run·dere works fully
+  without them.
 
-Run·dere is a pipeline of five stages:
+## Try the demo
 
-```
-capture  →  /ingest  →  process (extract)  →  resolve  →  review  →  commit
- (Gmail,     (stores      (chain of           (canonical  (web      (writes to
-  GCal,       raw,         extractors →        keys, trip  queue,     AirTrail /
-  Maps)       signed)      TravelItems)        matching)   HTMX)      AdventureLog)
-```
-
-**Capture surfaces:**
-
-| Surface | Channel | Client | How |
-|---|---|---|---|
-| Gmail | `gmail` | Apps Script add-on | Click "Capture" on an open booking email |
-| Google Calendar | `gcal` | Apps Script add-on | Click "Capture" on an open event |
-| Google Maps directions | `maps_url` | Built-in `/capture` | Paste a directions link + travel date |
-| Web page | `web` | Built-in `/capture` + bookmarklet | Click a bookmarklet on any booking page, or paste its source/URL |
-
-**Extractor chain** (`extract/`, tried in order — D-10/D-27):
-`jsonld → ical → pdf → maps_url → llm`. Structured sources (schema.org JSON-LD
-in booking emails, `.ics` invites, Google's Maps URL formats) are parsed
-deterministically; free-form text falls through to a **local LLM** (Ollama,
-D-11) — nothing is sent to a cloud model.
-
-**Item types recognised:** `flight`, `hotel`, `lodging`, `event`,
-`ground_transport`, `car_rental`, `train`, `ferry`.
-
-**Resolution & safety:**
-- **Canonical keys** (`resolve/keys.py`, spec [`docs/A5-canonical-keys.md`](docs/A5-canonical-keys.md)) dedupe re-captures of the same booking.
-- **Collection ladder** (`resolve/collections.py`, spec [`docs/A6-collection-resolution.md`](docs/A6-collection-resolution.md)) attaches items to the right AdventureLog trip.
-- **Home profiles** (effective-dated, D-07) decide which places never count as "visited" and which local drives aren't trips.
-- **57 rules** (`rules.py`) with per-rule `enforce` / `audit` / `off` toggles gate what commits and what goes to review.
-- **Content-addressed originals** (D-15): the raw captured artifact is stored immutably so reprocessing never loses information.
-
----
-
-## Run·dere's own Trips
-
-Since v2.0, Run·dere isn't just a pipe to AirTrail/AdventureLog — trips are also a
-first-party feature at **`/trips`**, with their own day-by-day timeline
-(flights, lodging, drives, notes — added by hand or linked from a capture),
-a traveller roster (self + guests, per-trip), and two capabilities layered on
-top:
-
-- **Discovery** (v3.0–3.2) — a self-contained, local pre-trip research pass over
-  nine topics (weather, currency + a per-trip calculator, plugs & voltage,
-  visa & vaccination, safety & transport, events & activities, food & drink,
-  language, packing). A **deterministic tier** (Frankfurter for currency,
-  Open-Meteo for weather, a plugs/language reference) needs no extra service;
-  an optional **LLM tier** (visa, safety, events, food, and regional/local
-  language) runs entirely locally through **SearXNG** web search + your
-  **Ollama** model — nothing leaves your network. Findings are reviewed,
-  editable, and re-runnable per topic. A **Discovery Profile**
-  (`/trips/settings/discovery-profile`) captures dietary needs, drink/activity
-  interests, budget and mobility constraints so the LLM tier searches for
-  things you'd actually want.
-- **Planning** (v3.1) — turns the trip + its Discovery findings into a
-  **Packing Plan**: a bag-assigned, categorized checklist derived from trip
-  length, climate, and detected trip types (beach, business, hiking, …), tuned
-  by a **Packing Profile** (`/trips/settings/packing-profile` — bag size,
-  laundry comfort, style, must-have items). Pack/unpack/omit items inline; a
-  removed item can always be brought back.
-- **AdventureLog managed sync** (v3.8) — once a Run·dere trip is pushed to
-  AdventureLog as a collection, `/trips/{id}/adventurelog` is a two-way,
-  dedup-aware sync surface: **push** selected timeline activities and approved
-  Discovery findings into that collection (ownership markers keep re-pushing
-  idempotent — updates in place, never duplicates), or **pull** AdventureLog's
-  own transportation/lodging records into the Run·dere timeline.
-
-Trips work with or without AdventureLog/AirTrail configured — captured items
-can link straight to a Run·dere trip (independent of any AdventureLog
-collection), so the in-house trip system is never a second-class citizen.
-
----
-
-## Prerequisites
-
-### Hard prerequisites (Run·dere will not run without these)
-
-| Requirement | Why | Notes |
-|---|---|---|
-| **Docker Engine + Compose** | Runs the app and its Postgres | Any orchestrator works — a reference stack is provided |
-| **Docker network reachability to your tools** | Run·dere talks to the reverse proxy and to each target/geocoder it calls over Docker networking | Put the container on whatever existing Docker network(s) those services use — one or several. The stack *joins* external networks, it doesn't create them (`docker network create` any that are missing). The reference stack's `traefik-net` + `travel-net` split is just this deployment's shape, not a requirement |
-| **PostgreSQL 16** | App database | Bundled in the stack as `yonder-db` — nothing to install separately |
-| **A reverse proxy with public HTTPS** | The Gmail/GCal add-ons POST from Google's servers to `/ingest` | Reference uses **Traefik**. The public route exposes **only** `POST /ingest` |
-| **A Google account** | For the Gmail & Calendar capture add-ons | Personal, unpublished Apps Script — no Google review needed |
-
-### Soft prerequisites (optional — degrade gracefully)
-
-| Requirement | Unlocks | Without it |
-|---|---|---|
-| **AdventureLog and/or AirTrail** (external targets) | Also pushing out — flights → AirTrail, trips/places → AdventureLog | Run·dere still records everything to its **own built-in trips** (the default, first-party target); the external pushes simply don't happen |
-| **[Ollama](https://ollama.com/)** + a model (`qwen3:14b`) | LLM extractor for free-form text | Structured sources (JSON-LD/iCal/PDF/Maps) still work; unstructured items go to review unparsed |
-| **[Photon](https://github.com/komoot/photon)** (self-hosted geocoder) | Address → coordinates without Google quota (D-22) | Geocoding unavailable; places needing lookup stall in review |
-| **AirTrail's own Postgres** (read-only) | Committing flights to airports you've **never flown before** (D-50) — supplies internal airport id/coords/tz | A flight to a never-flown airport is refused at commit |
-| **[SearXNG](https://github.com/searxng/searxng)** (self-hosted metasearch) + Ollama | Discovery's **LLM tier** — visa, safety, events, food & drink, and regional/local language findings | Discovery still runs its deterministic tier (weather/currency/plugs/language basics); the four search-backed topics are simply absent |
-| **CrowdSec bouncer** | Hardens the public `/ingest` route | Route works; less abuse protection |
-
-Discovery's deterministic tier also calls two free, keyless public APIs —
-[Frankfurter](https://frankfurter.dev/) (currency) and
-[Open-Meteo](https://open-meteo.com/) (weather) — over the open internet by
-default; both are overridable (`TX_FRANKFURTER_URL`, `TX_OPEN_METEO_URL`,
-`TX_OPEN_METEO_ARCHIVE_URL`) if you'd rather point at a self-hosted mirror to
-keep Run·dere fully local.
-
-### How to find each prerequisite / credential
-
-- **Docker network reachability** — Run·dere must share a Docker network with your reverse proxy and with each target/tool it calls (AdventureLog, AirTrail, Photon, Ollama). Put it on whatever external network(s) those already use — check with `docker network ls`; the stack joins them, so `docker network create <name>` any that are missing. Whether that's one network or several (the reference stack uses `traefik-net` + `travel-net`) is up to your setup.
-- **Secrets key** (`TX_SECRETS_KEY`) — `openssl rand -base64 32`. Encrypts the per-user AirTrail / AdventureLog tokens at rest (SPEC-8 D-151). Back it up apart from the database. Without it, connections can't be saved; Run·dere itself works fine.
-- **AirTrail / AdventureLog (optional, per person)** — nothing to configure on the server. Each person connects their own under **Settings → Connections**, which walks through creating a token in that app. Run·dere works fully without either (D-146). AirTrail needs 3.13 or newer; Run·dere talks to it only through its API. If they run on your LAN, list their hosts in `TX_INTEGRATION_ALLOWED_HOSTS` (e.g. `airtrail:3000,adventurelog-server`); anything else has to be public https (D-152).
-- **Ollama** — `docker`-run Ollama on `travel-net`/`traefik-net`, then `ollama pull qwen3:14b`. Point `TX_OLLAMA_URL` at it.
-- **Photon** — self-host the Photon container with an OpenStreetMap index; point `TX_PHOTON_URL` at it.
-- **SearXNG** — self-host with its JSON API enabled (`search.formats: [html, json]` in `settings.yml`); point `TX_SEARXNG_URL` at it. Needed only for Discovery's LLM-tier topics (visa/safety/events/food/regional language) — it also requires Ollama.
-- **Run·dere `/ingest` API keys** — you create these yourself with the CLI (see [First-run setup](#3-first-run-setup)); one per capture client.
-
----
+**[demo.rundere.app](https://demo.rundere.app)** is a read-only server with three invented
+trips that move forward with the calendar. The sign-in page shows the shared login.
 
 ## Install
 
-### Development (local)
+Run·dere is one container plus a Postgres database, behind a reverse proxy that handles
+HTTPS.
 
 ```bash
-pip install -e .[dev]
-pytest                                  # all suites; the 35-case corpus in tests/samples.json is the contract
-python -m app.cli create-key my-client  # prints an /ingest API key once
-uvicorn app.main:app --reload           # sqlite by default; set TX_DATABASE_URL to override
+curl -O https://raw.githubusercontent.com/jeeves5454/rundere-server/main/deploy/docker-compose.example.yml
+# replace every CHANGE_ME (database password, TX_JWT_SECRET, TX_SECRETS_KEY:
+# openssl rand -base64 32) and the example hostnames
+docker network create proxy   # unless your reverse proxy already has one
+docker compose -f docker-compose.example.yml up -d
 ```
 
-Sign-in is on by default (D-203): the first visit to http://localhost:8000 asks you to
-create the admin account at `/setup`.
-
-Full dev stack (app + Postgres on port 8100):
-
-```bash
-docker compose -f docker-compose.dev.yml up -d --build
-```
-
-### Production (Docker)
-
-**1. Get the image.** CI builds and publishes it to GHCR on every `vX.Y.Z` tag
-([`.github/workflows/release.yml`](.github/workflows/release.yml)), so you pull a
-versioned artifact rather than building locally:
-
-```bash
-docker pull ghcr.io/jeeves5454/rundere-server:latest   # or a pinned :4.4.0
-```
-
-The package is private; give Portainer a registry credential (Registries → Add →
-Custom: `ghcr.io`, your GitHub username, a PAT with `read:packages`). To build
-locally instead, `docker build -t yonder:latest .` still works.
-
-**2. Deploy the stack.** [`deploy/docker-compose.example.yml`](deploy/docker-compose.example.yml)
-is a reference Compose/stack definition — use it with `docker compose`, Portainer,
-or any orchestrator you prefer. [docs/self-hosting.md](docs/self-hosting.md) walks
-through it, and [docs/demo-server.md](docs/demo-server.md) covers a read-only demo server. Set the two `CHANGE_ME_DB_PASSWORD` occurrences,
-set `TX_SECRETS_KEY` and `TX_JWT_SECRET`, and fill in the rest from the section above.
-Sign-in is required by default (D-203): the first visit creates the admin account at
-`/setup`, so do that before the server is reachable by anyone else.
-AirTrail and AdventureLog are connected per person in the app, not here. The reference stack declares env vars
-inline (some orchestrators can't interpolate `.env` files); adapt to your setup.
-
-**Two routes, split by exposure** (the reference stack wires these with Traefik
-labels — adapt to your proxy):
-- A **LAN/private** route to the **full app** (`/admin`, the review queue, the CLI-backed UI).
-- A **public HTTPS** route exposing **only `POST /ingest`**, for the Apps Script add-ons — they POST from Google's servers, which can't do an interactive proxy login, so this route authenticates purely with Run·dere's own API keys + HMAC. Keep the rest of the app off the public route.
-
-> **Container names in commands below.** The examples use `yonder` as
-> the app container name. Yours will match your deployment — e.g. a Compose
-> project in a `yonder/` folder yields `yonder-yonder-1`.
-> Substitute your actual container name (`docker ps`), or use
-> `docker compose exec yonder …`.
-
-### 3. First-run setup
-
-**Home profiles** decide which places are never logged as "visited" and which
-local drives aren't trips. Manage them in the admin UI (**`/admin → Home
-Profiles`**, full CRUD with per-field help), or bootstrap from a file:
-
-```bash
-# copy docs/home-profiles.example.json, fill it in, then:
-docker exec yonder python -m app.cli import-home /data/home-profiles.json
-```
-
-**Create an API key for each Google add-on** (Gmail, Calendar):
-
-```bash
-docker exec -it yonder python -m app.cli create-key gmail-addon
-docker exec -it yonder python -m app.cli create-key gcal-addon
-```
-
-Each prints its key **once** — paste it into the matching add-on below. (Web
-pages and Maps directions use the built-in `/capture` page and need no key.)
-
----
-
-## Setting up the capture surfaces
-
-Each surface has a detailed README in `capture/`. Condensed steps follow.
-
-### Gmail add-on (Apps Script)
-
-Full guide: [`capture/gmail-addon/README.md`](capture/gmail-addon/README.md).
-
-1. **script.google.com → New project.**
-2. Project Settings (⚙️) → check **"Show appsscript.json"** → paste [`capture/gmail-addon/appsscript.json`](capture/gmail-addon/appsscript.json).
-3. Replace `Code.gs` with [`capture/gmail-addon/Code.gs`](capture/gmail-addon/Code.gs).
-4. **Deploy → Test deployments → Install add-on** (installs for your account only; approve the "unverified app" screen — expected for your own script). Scope: `gmail.addons.current.message.readonly` (it only reads the open email; no labels are touched, D-164).
-5. In Gmail, open the add-on panel → paste the **`gmail-addon`** API key on the homepage card → **Save**.
-
-### Google Calendar add-on (Apps Script)
-
-Full guide: [`capture/gcal-addon/README.md`](capture/gcal-addon/README.md).
-
-Identical flow to Gmail, with Calendar scopes:
-
-1. **script.google.com → New project** (or merge into the Gmail project — see that README).
-2. Show `appsscript.json` → paste [`capture/gcal-addon/appsscript.json`](capture/gcal-addon/appsscript.json). It enables the **Advanced Calendar Service** (needed to read timezone / iCalUID / attendees / recurrence).
-3. Replace `Code.gs` with [`capture/gcal-addon/Code.gs`](capture/gcal-addon/Code.gs).
-4. **Deploy → Test deployments → Install add-on.** Scopes: `calendar.addons.current.event.read`, `calendar.readonly`, `script.external_request`.
-5. In Google Calendar, open the add-on panel → paste the **`gcal-addon`** API key → **Save** (a distinct key from Gmail keeps ingest logs readable; reusing one also works).
-
-### Web pages & Google Maps directions (built-in `/capture`, no external client)
-
-Run·dere serves its own capture page at **`/capture`** on the private app — no add-on, no n8n, no API key or HMAC. Because this page lives on the private router, it is authenticated by whatever you put in front of that router (a reverse-proxy auth layer, SSO, mTLS, or a trusted LAN); if your proxy forwards an identity header (`X-authentik-username`, `X-Forwarded-User`, …) Run·dere records it as the submitter.
-
-Three ways to use it:
-- **Bookmarklet** (primary, for web pages) — the `/capture` page offers a bookmarklet to drag to your bookmarks bar. Click it on any booking page — including one behind a login — and it POSTs the page's rendered HTML to Run·dere. This is the reliable path: your browser has already loaded and authenticated the page. If a strict-CSP page blocks the direct send, it copies the HTML to your clipboard to paste instead.
-- **Paste / URL** — paste a page's HTML source, or a **public** URL Run·dere fetches itself (SSRF-guarded: only public hosts; login-walled pages can't be fetched, so use the bookmarklet for those).
-- **Google Maps directions** — paste a directions link (`maps.app.goo.gl`, `/maps/dir/…`, or `?api=1&origin=…&destination=…`) and set a **Travel date** (a route has no date of its own — RULE-31). Run·dere routes it to the road-trip extractor automatically.
-
-Extraction reuses the JSON-LD reader for web pages (most booking pages embed schema.org), falling back to the LLM for pages without markup. Keep the `/capture` route on the **private** router only — never expose it publicly.
-
-> **The n8n Maps form is retired** (v1.2) and was removed (D-205). The native `/capture` page does the same job.
-
----
-
-## Daily workflow
-
-0. **Open the dashboard** — the app's root URL (`/`, e.g. `https://rundere.home.example/`)
-   is a home page: the trip coming up next, a live snapshot of the review
-   pipeline (needs you / waiting / ready / approved / logged), today's capture
-   activity, and quick links into Capture, Review, Trips, and every settings
-   page. It's the front door — start here.
-1. **Capture** — click the add-on button on an email/event, or use `/capture` for a web page or Maps drive. The item is stored immediately and never processed inline.
-2. **Process** — extract stored batches into `TravelItem`s:
-   ```bash
-   docker exec yonder python -m app.cli process
-   ```
-   (or **Process new captures** in the review queue UI).
-3. **Resolve** — assign canonical keys and trip collections:
-   ```bash
-   docker exec yonder python -m app.cli resolve
-   ```
-4. **Review** — open the review queue (your LAN/private app URL), check the extracted items, correct anything, approve.
-5. **Commit** — write approved items to AirTrail / AdventureLog:
-   ```bash
-   docker exec yonder python -m app.cli commit
-   ```
-6. **Trips (optional)** — open `/trips` to see the timeline take shape, run
-   **Discovery** for a pre-trip briefing, generate a **Packing Plan**, and (if
-   the trip is linked to AdventureLog) sync activities and findings both ways
-   from `/trips/{id}/adventurelog`.
-
-### Alerts when something breaks
-
-Admins can be told when a service stops working: the email inbox, outgoing
-mail, someone's AirTrail or AdventureLog connection, the file store folder,
-the virus scanner, the daily retention sweep, or the LLM. Set it up in
-**Settings → Notifications**: add a Pushover target (an application token
-from pushover.net/apps and your user key, both stored encrypted, which needs
-`TX_SECRETS_KEY`), pick what it should hear about, and press **Send test**.
-Alerts arrive when something starts failing, once a day while it still is,
-and when it recovers; one hiccup that fixes itself pages nobody. More target
-kinds can be added over time (SPEC-8 D-197).
-
----
-
-## `/ingest` authentication
-
-Per-client revocable API keys (created via CLI, stored sha256-hashed) plus a
-signed timestamp:
-
-```
-X-Api-Key:   tx_<hex>
-X-Timestamp: <unix seconds>          # rejected outside a 5-minute window
-X-Signature: HMAC_SHA256(key, "<timestamp>." + body) as hex
-```
-
-Returns `202 {"batch_id": ...}`; the batch is stored and content-addressed
-(D-15) for async processing. Rejections are explicit: `401` (bad key/signature/
-skew), `413` (body over `TX_INGEST_MAX_BODY_BYTES`), `429` (rate-limited).
-
----
-
-## Configuration reference
-
-All config is env vars, prefix **`TX_`** (`app/config.py`). Set them in your
-deployment stack.
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `TX_DATABASE_URL` | `sqlite:///./yonder_dev.sqlite3` | App DB (Postgres in prod) |
-| `TX_DB_POOL_SIZE` / `TX_DB_MAX_OVERFLOW` | `20` / `20` | Postgres connection pool (40 total matches the worker threads) |
-| `TX_DB_POOL_TIMEOUT_SECONDS` | `10` | How long a request waits for a pooled connection before failing |
-| `TX_DB_POOL_RECYCLE_SECONDS` | `1800` | Replace pooled connections older than this |
-| `TX_MAX_INFLIGHT_REQUESTS` | `64` | Past this many requests in flight, answer `503` + `Retry-After` instead of queueing (`/health` and static files exempt). `0` = off |
-| `TX_ARTIFACTS_DIR` | `/data/artifacts` | Immutable captured originals (D-15) |
-| `TX_INGEST_MAX_SKEW_SECONDS` | `300` | Signed-timestamp replay window |
-| `TX_INGEST_RATE_LIMIT` | `30` | Requests per key per window |
-| `TX_INGEST_RATE_WINDOW_SECONDS` | `300` | Rate-limit window |
-| `TX_INGEST_MAX_BODY_BYTES` | `5000000` | Max `/ingest` body (5 MB) |
-| `TX_OLLAMA_URL` | `http://ollama:11434` | Local LLM extractor endpoint |
-| `TX_OLLAMA_MODEL` | `qwen3:14b` | LLM model (OQ-08) |
-| `TX_LLM_TIMEOUT_SECONDS` | `600` | LLM call timeout |
-| `TX_SECRETS_KEY` | `""` | 32 random bytes (base64 or hex) that encrypt per-user connection tokens (D-151). Empty = connections can't be saved. `TX_SECRETS_KEY_FILE` reads it from a Docker secret |
-| `TX_SECRETS_KEYS` | `""` | Keyring for rotation, `v2:<key>,v1:<key>`: the first encrypts, any decrypts. Then `python -m app.cli secrets-rotate` |
-| `TX_INTEGRATION_ALLOWED_HOSTS` | `""` | Hosts (or host:port) a connection may reach on the LAN, over http (D-152). Everything else must be public https |
-| `TX_PHOTON_URL` | `http://photon:2322` | Self-hosted geocoder (D-22) |
-| `TX_DISCOVERY_BASE_CURRENCIES` | `USD` | Always-on base currencies Discovery's resolver/calculator convert FROM (D-65); unioned with each traveller's own travel-profile pick, so these stay visible (e.g. USD for a closed-currency destination) alongside a per-traveller currency. Defaults to USD when unset; set to your home currencies, e.g. `CAD,USD` |
-| `TX_FRANKFURTER_URL` | `https://api.frankfurter.dev/v2` | Currency-rate source for Discovery (public, keyless; overridable for a self-hosted mirror) |
-| `TX_OPEN_METEO_URL` | `https://api.open-meteo.com/v1` | Forecast weather source for Discovery |
-| `TX_OPEN_METEO_ARCHIVE_URL` | `https://archive-api.open-meteo.com/v1` | Historical weather source for Discovery (trips beyond the forecast window) |
-| `TX_SEARXNG_URL` | `http://searxng:8080` | Metasearch backend for Discovery's LLM tier (visa/safety/events/food/regional language). Empty = those topics degrade to absent findings |
-| `TX_FORWARDED_ALLOW_IPS` | `*` | Trust Traefik's `X-Forwarded-Proto` |
-| `TX_AUTH_REQUIRED` | `true` | Sign-in for everything but the public pages (D-203). `false` only for a trusted single-user LAN; start-up warns while it's off |
-| `TX_JWT_SECRET` (or `_FILE`) | `""` | Signs sessions and tokens: `openssl rand -base64 32`. Empty = a key that changes on every restart, which signs everyone out (start-up logs an error) |
-| `TX_LOGIN_RATE_LIMIT`, `TX_LOGIN_RATE_WINDOW_SECONDS` | `10`, `900` | Failed password sign-ins allowed per address and per username in the window, then refused until it passes |
-| `TX_FORGOT_RATE_LIMIT` | `5` | Password-reset requests per address in the same window |
-| `TX_MAX_REQUEST_MB` | `32` | Largest request body accepted; bigger ones get 413. `0` = no limit |
-| `TX_*_FILE` | — | Read a secret from a file (a Docker secret) instead of the environment: `TX_JWT_SECRET_FILE`, `TX_SECRETS_KEY_FILE`, `TX_DATABASE_URL_FILE`, `TX_SMTP_PASSWORD_FILE`, `TX_INBOX_IMAP_PASSWORD_FILE`, `TX_OIDC_CLIENT_SECRET_FILE` |
-
-| `TX_PUBLIC_BASE_URL` | `""` | Public https base (e.g. `https://yonder.example.net`) for email links and the OAuth/MCP metadata. Set it when using the Claude connector |
-| `TX_INBOX_ADDRESS`, `TX_INBOX_IMAP_*` | off | Email-forward capture: a mailbox you own (e.g. `trips@example.com`) read over IMAP; each person forwards to their own `trips+<token>@…`. See [docs/email-forward.md](docs/email-forward.md) |
-| `TX_CLAMAV_URL` | `""` | A [clamav-rest](https://github.com/ajilach/clamav-rest) service (e.g. `http://clamav-rest:9000`) that scans every captured email, attachments included, before anything is extracted. An infected email is quarantined to review; if the scanner is unreachable, attachments are skipped (the body is still read). Empty = no antivirus. Static PDF checks (no scripts, launch actions, embedded files; 25 MB / 200 pages) always run |
-| `TX_DOCUMENTS_DIR` | `""` | File capture (PDF, .ics, .eml): a local folder for the stored files — any disk you like; mount it into the container. Empty = file capture off. Needs `TX_CLAMAV_URL` too. Rundere writes a `.rundere-documents` marker there and stops storing files if it later goes missing (a drive that didn't mount). A local folder backed up to a NAS is safer than an NFS share mounted `hard`, which hangs uploads while the NAS is away |
-| `TX_DOCUMENT_MAX_MB` | `25` | Largest file accepted |
-| `TX_DOCUMENT_QUOTA_MB` | `1024` | Each person's file storage; an admin can raise one person's in Administer → Users. Full = new files refused, nothing deleted |
-| `TX_RETENTION_MONTHS` | `12` | Stored files and raw captures are removed this long after their trip ends (after they arrived, with no trip); what was extracted stays (SPEC-8 D-196) |
-| `TX_INBOX_DROPPED_DAYS`, `TX_INBOX_TRASH_FOLDER` | `30`, auto | Email forward: mail in the dropped folder goes to Trash after this many days; the Trash folder is found automatically unless named |
-| `TX_OAUTH_ACCESS_TTL_SECONDS` | `3600` | OAuth access-token lifetime (Claude connector) |
-| `TX_OAUTH_REFRESH_IDLE_TTL_SECONDS` | `7776000` | A connected app's grant expires after this long unused (90 days) |
-| `TX_OAUTH_APP_REDIRECT_URIS` | `https://rundere.app/auth/callback` | The iOS app's built-in OAuth client `rundere-ios` (D-194). Change only for a fork that ships its own app; empty turns app OAuth sign-in off |
-
-### Single sign-on (OIDC, e.g. Authentik)
-
-| Var | Default | Purpose |
-|---|---|---|
-| `TX_OIDC_ENABLED` | `false` | Turn SSO on (also needs issuer + client id) |
-| `TX_OIDC_ISSUER` | `""` | Issuer URL; `/.well-known/openid-configuration` lives under it. Authentik: `https://auth.example.net/application/o/<slug>/` |
-| `TX_OIDC_CLIENT_ID` / `TX_OIDC_CLIENT_SECRET` | `""` | From the IdP's OAuth2/OpenID provider |
-| `TX_OIDC_DISPLAY_NAME` | `SSO` | Button label: "Sign in with …" |
-| `TX_OIDC_ADMIN_GROUP` | `""` | A `groups` claim value that makes the user an admin (upgrade only) |
-| `TX_OIDC_AUTO_CREATE` | `true` | Create an account on first SSO sign-in. An existing account with the same username is adopted |
-| `TX_OIDC_HOSTS` | `""` | Hosts that offer "Sign in with SSO" (comma-separated). Empty = every host |
-| `TX_OIDC_FORCE_HOSTS` | `""` | SSO-only hosts: `/login` goes straight to the IdP; password sign-in, sign-up and "forgot password" are refused there |
-| `TX_OIDC_FORCE_API_LOGIN` | `false` | Also refuse the app's password sign-in on forced hosts. Leave off while the iOS app signs in with a password |
-| `TX_OIDC_REDIRECT_URL` | `""` | Fixed callback URL. Leave empty when using the host lists — each listed host then uses `https://<host>/oidc/callback` |
-
-**Force SSO on the public name, keep the LAN as the fallback.** One Authentik redirect URI, and a way in when Authentik is down:
-
-```
-TX_OIDC_HOSTS=yonder.example.net
-TX_OIDC_FORCE_HOSTS=yonder.example.net
-```
-
-`yonder.example.net` always signs in through Authentik (redirect URI `https://yonder.example.net/oidc/callback`); `rundere.home.example` shows only the username/password form. To offer SSO on the LAN too, leave `TX_OIDC_HOSTS` empty and add the LAN callback as a second redirect URI in Authentik. Emailed password-reset links (built from `TX_PUBLIC_BASE_URL`) still open on a forced host; the new password is used on the LAN.
-
----
-
-## Use Run·dere from Claude (remote MCP)
-
-Run·dere serves an MCP endpoint at `/mcp` and is its own OAuth server. Add
-`https://<yonder-host>/mcp` as a custom connector in claude.ai to read and edit
-your trips, timeline, packing and journal, capture links, and save Claude's
-research to your Discover tab. Everything runs as you and is scoped like the web
-app. It's opt-in per user: nothing reaches Claude unless you connect it (the
-capture pipeline itself still uses only the local LLM). See
-[`docs/claude-connector.md`](docs/claude-connector.md). Connected apps and
-personal API tokens are managed on the Account page.
-
----
-
-## Run·dere for iPhone and iPad
-
-The native app lives in its own repository, **[rundere/rundere-ios](https://github.com/rundere/rundere-ios)**
-(private, separately licensed), and talks to this server's `/api/v1`. Sign in with a
-Run·dere username and password; the app's API route isn't behind Authentik, so it works on
-the LAN and on the public host. Keep `TX_OIDC_FORCE_API_LOGIN` off until the app supports
-SSO. `contracts/ios/DTOs.swift` is the app's API contract, which this repo's tests check,
-so a server change that would break the app fails CI.
-
-## Rules
-
-Rule logic lives in `rules.py`; whether each rule is in force lives in the
-`rule_settings` table (`enforce` / `audit` / `off`), seeded at startup and
-editable in SQLAdmin. `RULES.md` is **generated**:
-
-```bash
-python3 rules.py --docs > RULES.md
-```
-
----
-
-## Project layout
-
-```
-app/            FastAPI service
-  dashboard.py    the root ("/") dashboard — next trip, pipeline snapshot,
-                  capture activity, quick links (v3.8.1)
-  review/         the review queue (HTMX + Jinja), Home Profiles editor
-  trips/          Run·dere's own trips: timeline, travellers, Discovery,
-                  Planning, AdventureLog managed sync
-  main.py         router wiring: /health, /ingest, /capture, /admin (SQLAdmin)
-  cli.py          operational CLI: create-key, process, resolve, commit, ...
-  processing.py, resolving.py, committing.py   the pipeline stages
-extract/        extractor chain, in try-order (D-10/D-27):
-                jsonld -> ical -> pdf -> maps_url -> web -> llm (Ollama, D-11)
-resolve/        keys.py (A5 canonical keys), collections.py (A6 ladder)
-discover/       Discovery (v3.0-3.2): deterministic + LLM resolvers per topic,
-                location derivation, the durable run/finding pipeline
-planning/       Planning (v3.1): the Packing Plan engine, catalog, profiles
-adapters/       target writers: adventurelog.py, airtrail.py (HTTP APIs only)
-rules.py        rule registry + engine (57 rules, tri-state toggles — D-25)
-validation.py   schema gate (real jsonschema)
-schemas/        travel-item (canonical) + travel-extraction (derived, D-09)
-alembic/        migrations (baseline 0001)
-capture/        gmail-addon/, gcal-addon/ (Apps Script)
-design/         brand + design system: logos, icons, tokens (read design/README.md
-                before UI work); logos/icons are served at /brand/*
-tests/          pytest suite + samples.json regression corpus
-docs/           A5/A6 specs, shared-capabilities guideline (D-96),
-                home-profiles.example.json, the setup/usage guide
-scripts/        extract_eval.py — run the chain over dumped real payloads
-```
-
-The design specs (`docs/A5-canonical-keys.md`, `docs/A6-collection-resolution.md`,
-`SPEC-3-discovery.md`, `SPEC-3.1-planning.md`, `SPEC-3.2-discovery-llm.md`,
-`SPEC-4-directions-capture.md`) and the generated `RULES.md` explain the
-resolution, Discovery/Planning, and rule behaviour in depth.
-
-**Engineering guideline:** `docs/shared-capabilities.md` — build capabilities as
-common project-level functions and treat a channel/provider's needs as a
-subsection of that shared capability, not a rewrite. Review it before adding a new
-capability or channel (D-89/D-96).
-
-Inline `D-NN` / `RULE-NN` / `OQ-NN` codes throughout the code and capture docs
-are provenance markers for decisions, rules, and open questions tracked in the
-author's local working notes (not part of this repo).
-
----
-
-## Decisions and references
-
-Design decisions are numbered **D-###**. The early ones (D-01 – D-109) are in
-[DECISIONS.md](DECISIONS.md), later ones in the `SPEC-*.md` file they belong to, and
-open questions (**OQ-##**) in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Code comments
-cite them to say *why*.
-
-References like **YONDER-123** point to work items in the maintainer's private issue
-tracker (Plane), used to keep the project's work defined. They aren't publicly
-accessible; the pull requests and commits that mention them carry the details.
-
-## License
-
-[GNU Affero General Public License v3.0](LICENSE). Run·dere talks to AdventureLog
-and AirTrail over their APIs — it does not bundle their code — but AGPL keeps
-Run·dere and any network-hosted derivative open.
+Then open the server in a browser. The first visit creates the admin account (D-203), so
+do that before anyone else can reach it.
+
+- **[Self-hosting guide](docs/self-hosting.md)**: secrets, the proxy, sign-in, optional
+  services, backups and upgrades.
+- **[Running a demo server](docs/demo-server.md)** of your own.
+- To work on the code, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Privacy
+
+- **Your data stays on your server.** Run·dere has no cloud service and sends nothing
+  home.
+- **Extraction is local.** Bookings are read by parsers and by the LLM you host (Ollama).
+  No booking is sent to a cloud AI unless you connect an assistant yourself.
+- **A few public lookups, all replaceable.** By default the server fetches map tiles from
+  OpenStreetMap, weather from Open-Meteo and exchange rates from Frankfurter. Each can be
+  pointed at your own mirror ([configuration](docs/configuration.md)).
+- **People are kept apart.** Each person sees their own trips and the ones shared with
+  them, and journals are never shared. Admins can see people's trips to help run the
+  server, and anyone can turn that off for their own account.
+- **Less is kept.** No photos, receipts or audio are stored (journal photos are links).
+  Original captures and uploaded files are deleted 12 months after their trip ends, by
+  default (D-196).
+- Integration tokens are encrypted at rest, and URLs the server fetches for you are
+  checked so they can't reach your private network (D-151, D-152).
+
+## Capture
+
+| Way in | Setup |
+|---|---|
+| Capture page and bookmarklet | Nothing. Paste a page, a URL or a Maps directions link, or click the bookmarklet on a booking page |
+| File upload | A folder for files and a ClamAV scanner |
+| Email forward | A mailbox the server reads; each person forwards to their own address |
+| Gmail and Calendar add-ons | Your own Apps Script copy and a personal key |
+| iPhone and iPad app, AI assistants | Sign in from the app, or connect `/mcp` |
+
+In the app, **Capture → Set up** walks through each one. **[docs/capture.md](docs/capture.md)**
+covers them all, including the signed `/ingest` endpoint for scripts.
+
+## Workflow
+
+1. **Capture** a booking.
+2. Run·dere **reads it on its own** and matches it to a trip.
+3. **Check it in the Inbox**, fix anything, and approve.
+4. It appears on the trip's **timeline**, and in AirTrail or AdventureLog if you've
+   connected them.
+5. **Plan** with Discover, packing, costs and the journal.
+
+**[docs/workflow.md](docs/workflow.md)** has the details and alerts for admins.
+**[docs/howto.md](docs/howto.md)** walks through each screen.
+
+## Configuration
+
+Everything is set with `TX_*` environment variables, and secrets can come from Docker
+secret files. The essentials:
+
+| Setting | What it's for |
+|---|---|
+| `TX_DATABASE_URL` | Postgres in production (SQLite for development) |
+| `TX_JWT_SECRET`, `TX_SECRETS_KEY` | Signing sign-ins, and encrypting each person's integration tokens |
+| `TX_PUBLIC_BASE_URL` | Your public address, for email links, the app and AI assistants |
+| `TX_OLLAMA_URL`, `TX_PHOTON_URL`, `TX_SEARXNG_URL` | Optional local LLM, geocoder and web search |
+| `TX_OIDC_*` | Optional single sign-on (Authentik, Keycloak, …) |
+
+**[docs/configuration.md](docs/configuration.md)** is the full reference.
+
+## Apps and assistants
+
+- **iPhone and iPad.** The native app is in its own repository and talks to this
+  server's API. [rundere.app](https://rundere.app) has the details.
+- **AI assistants.** The server has a built-in MCP endpoint at `/mcp` with OAuth sign-in,
+  so Claude and other MCP clients can read your trips, add to them and save research,
+  acting as you. Nothing is connected unless you connect it
+  ([docs/claude-connector.md](docs/claude-connector.md)).
+
+## Documentation
+
+Guides are in [`docs/`](docs/) until the project has a wiki:
+
+| | |
+|---|---|
+| [Self-hosting](docs/self-hosting.md) · [Configuration](docs/configuration.md) | Running a server |
+| [Capture](docs/capture.md) · [Email forward](docs/email-forward.md) · [Email](docs/email.md) | Getting bookings in |
+| [Workflow](docs/workflow.md) · [How-to](docs/howto.md) | Using it day to day |
+| [AI assistants](docs/claude-connector.md) · [Demo server](docs/demo-server.md) | Extras |
+| [Architecture](docs/architecture.md) · [Decisions](DECISIONS.md) · [Rules](RULES.md) | How it works and why |
+
+## Contributing and security
+
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[code of conduct](CODE_OF_CONDUCT.md). Please report vulnerabilities privately as
+[SECURITY.md](SECURITY.md) describes.
+
+The project was called **Yonder** until 2026. The Python package, the `TX_*` settings and
+some code keep that name on purpose (D-206). Releases up to 4.3.x were published as
+`ghcr.io/jeeves5454/yonder`.
+
+## Licence
+
+[GNU Affero General Public License v3.0](LICENSE). If you run a modified Run·dere for
+others, you must offer them its source; the **About** page links to it (D-202).
+Run·dere talks to AirTrail and AdventureLog over their APIs and doesn't include their code.
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists the work it builds on.
