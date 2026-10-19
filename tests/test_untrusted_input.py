@@ -56,7 +56,7 @@ if DEPS:
             s.commit()
             tid, fid = t.id, f.id
         client.post(f"/trips/{tid}/finding/{fid}/edit",
-                    data={"cur_base": ["cad", _EVIL], "cur_rate": ["110", "2"]})
+                    data={"cur_base": ["cad", _EVIL, "ZZZ"], "cur_rate": ["110", "2", "3"]})
         with SessionLocal() as s:
             data = s.get(DiscoveryFinding, fid).data
         assert data["bases"] == ["CAD"]
@@ -69,3 +69,13 @@ if DEPS:
         assert 'id="hand-go"' in page and "e.origin" in page
         handler = page[page.index("addEventListener('message'"):page.index("hand-go').addEventListener")]
         assert "htmx.trigger" not in handler                 # no auto-submit on message
+
+    def test_currency_codes_must_be_real_iso_codes():
+        """Every picker offers Babel's ISO 4217 list, and the one server-side
+        validator holds expenses, budget, rates and Discover edits to it."""
+        import pytest
+        from app.expenses import currency_code
+        assert currency_code(" eur ") == "EUR"
+        for bad in ("ZZZ", "EURO", "", None, "</SCRIPT>"):
+            with pytest.raises(ValueError):
+                currency_code(bad)

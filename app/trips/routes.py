@@ -893,7 +893,15 @@ TOPIC_LABELS = {
     # POST /api/v1/trips/{id}/findings) — the caller's own, reviewed like any finding.
     "research": "Research (AI agents)",
 }
-_CURRENCY = re.compile(r"[A-Z]{3}")
+def _iso_or_none(value: str | None) -> str | None:
+    """The ISO 4217 code, or None for anything no currency picker would offer."""
+    from app.expenses import currency_code
+    try:
+        return currency_code(value)
+    except ValueError:
+        return None
+
+
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
 
@@ -1446,8 +1454,8 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
         code = data["currency"]
         per_base: dict[str, float] = {}
         for b, v in zip(cur_base, cur_rate):
-            b, v = (b or "").strip().upper(), (v or "").strip()
-            if not _CURRENCY.fullmatch(b) or not v:      # ISO 4217 codes only
+            b, v = _iso_or_none(b), (v or "").strip()
+            if b is None or not v:            # real ISO 4217 codes only (YONDER-293)
                 continue
             try:
                 fv = float(v)
@@ -1455,8 +1463,7 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
                 continue
             if fv > 0:
                 per_base[b] = fv
-        bases = [b for b in ((x or "").strip().upper() for x in cur_base)
-                 if _CURRENCY.fullmatch(b)]
+        bases = [b for b in (_iso_or_none(x) for x in cur_base) if b is not None]
         as_of = _date.today().isoformat()
         data["date"] = as_of
         data["bases"] = bases
