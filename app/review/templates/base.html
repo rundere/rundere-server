@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Inbox{% endblock %} · Run·dere</title>
+{# htmx without eval, and no page snapshots in localStorage, where they would
+   outlive signing out (YONDER-293). #}
+<meta name="htmx-config" content='{"allowEval":false,"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
 <script src="{{ asset('/review/static/htmx.min.js') }}" defer></script>
+<script src="{{ asset('/review/static/rundere.js') }}" defer></script>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/brand/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/brand/icons/apple-touch-icon.png">

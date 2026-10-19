@@ -176,6 +176,17 @@ def _foreign_origin(request) -> bool:
 _SECURITY_HEADERS = {"X-Frame-Options": "DENY",
                      "X-Content-Type-Options": "nosniff",
                      "Referrer-Policy": "same-origin"}
+# Everything the pages use is served from here: no outside scripts, styles,
+# fonts or frames. Scripts and styles may still be inline (17 <script> blocks
+# and the onclick= handlers predate this; moving them out is a follow-up), but
+# never eval (htmx's eval features are off) and never from anywhere else; no
+# plugins, no <base> rewriting, and fetches only back to this server, so an
+# injected script has nowhere to send data.
+_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+        "font-src 'self' data:; media-src 'self'; connect-src 'self'; "
+        "object-src 'none'; base-uri 'none'; frame-src 'none'; "
+        "worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'")
 
 
 @app.middleware("http")
@@ -185,9 +196,13 @@ async def security_headers(request, call_next):
         response.headers.setdefault(k, v)
     csp = response.headers.get("Content-Security-Policy")
     if csp is None:
-        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
-    elif "frame-ancestors" not in csp:
+        response.headers["Content-Security-Policy"] = _CSP
+    elif "frame-ancestors" not in csp:              # e.g. a download's own `sandbox`
         response.headers["Content-Security-Policy"] = csp + "; frame-ancestors 'none'"
+    # Over https (the proxy says so), browsers should never fall back to http
+    # here. No includeSubDomains: a home network's other hosts may be http only.
+    if request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     return response
 
 

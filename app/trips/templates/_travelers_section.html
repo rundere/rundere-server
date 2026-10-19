@@ -62,7 +62,7 @@
 
 <form class="yn-traveler-add" hx-post="/trips/{{ trip_id }}/travelers/new"
       hx-target="#travelers-section" hx-swap="outerHTML"
-      hx-on::after-request="this.reset()">
+      data-reset-on-success>
   <input class="input" name="name" type="text" required
          placeholder="…or add a guest by name" autocomplete="off">
   <button class="btn btn-secondary bp-sm" type="submit">Add guest</button>

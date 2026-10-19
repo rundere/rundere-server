@@ -9,7 +9,7 @@
   {% if not ro %}
   <form class="cap-card" style="padding:0" hx-post="/journal"
         hx-target="#journal-panel" hx-swap="outerHTML"
-        hx-on::after-request="if(event.detail.successful) this.reset()">
+        data-reset-on-success>
     <label class="cap-lbl" for="jnl-body">What happened?</label>
     <textarea id="jnl-body" name="body" class="cap-area" required
               placeholder="Ferry was late, best fish tacos by the harbour, got sunburnt…"></textarea>
@@ -21,7 +21,7 @@
         <input id="jnl-date" type="date" name="entry_date" value="{{ today }}" class="cap-input"
                hx-get="/journal/trip-options" hx-trigger="change" hx-target="#jnl-trip"
                hx-swap="innerHTML" hx-include="#jnl-date"
-               hx-vals='js:{picked: document.getElementById("jnl-trip").dataset.manual ? document.getElementById("jnl-trip").value : ""}'>
+               data-picked-from="#jnl-trip">
       </div>
       <div style="flex:1;min-width:160px">
         <label class="cap-lbl" for="jnl-trip">Trip (optional)</label>

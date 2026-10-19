@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Trips{% endblock %} · Run·dere</title>
+{# htmx without eval, and no page snapshots in localStorage, where they would
+   outlive signing out (YONDER-293). #}
+<meta name="htmx-config" content='{"allowEval":false,"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
 <script src="{{ asset('/review/static/htmx.min.js') }}" defer></script>
+<script src="{{ asset('/review/static/rundere.js') }}" defer></script>
 {# theme.css owns the shared header + the light/dark toggle; trips.css layers the
    blueprint aesthetic over the page body (its --color-* vars never collide with
    theme.css's --accent/--surface/--ink names). #}
