@@ -57,10 +57,18 @@ def build(findings_by_topic: dict[str, list]) -> list[dict]:
                 groups.append({"topic": t, "label": SUBTOPIC_LABELS.get(t, label),
                                "findings": fs})
         allf = [f for g in groups for f in g["findings"]]
+        # Each data licence's credit once per section (e.g. "Weather data by
+        # Open-Meteo.com" under Weather), from the findings that need one.
+        credits: list[dict] = []
+        for f in allf:
+            a = f.get("attribution")
+            if a and a not in credits:
+                credits.append(a)
         out.append({
             "key": key, "label": label, "about": about, "groups": groups,
             "count": len(allf),
             "from_agent": sum(1 for f in allf if f.get("external") and f.get("status") == "draft"),
             "drafts": sum(1 for f in allf if f.get("status") == "draft"),
+            "attributions": credits,
         })
     return out

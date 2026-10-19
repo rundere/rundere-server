@@ -93,6 +93,10 @@
             Run discovery to fill this in.{% endif %}</div>
         </div>
       {% endif %}
+      {# The data licence's required credit (Open-Meteo is CC BY 4.0). #}
+      {% for a in s.attributions %}
+      <p class="yn-attribution"><a href="{{ a.url }}" target="_blank" rel="noopener">{{ a.text }}</a>{% if a.license %} · {{ a.license }}{% endif %}</p>
+      {% endfor %}
     </section>
     {% endfor %}
   </div>

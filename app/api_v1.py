@@ -104,6 +104,14 @@ class TravelerOut(BaseModel):
     has_account: bool = False
 
 
+class AttributionOut(BaseModel):
+    """A data licence's required credit, to show wherever the finding is shown
+    (e.g. "Weather data by Open-Meteo.com", linking `url`)."""
+    text: str
+    url: str
+    license: str | None = None
+
+
 class FindingOut(BaseModel):
     id: str
     topic: str
@@ -116,6 +124,9 @@ class FindingOut(BaseModel):
     locked: bool = False        # approved/edited on a lockable topic: nobody overwrites it
     external: bool = False      # written by an external AI agent over MCP/API
     agent: str | None = None    # which one (its OAuth app / API token name)
+    # Open-Meteo weather is CC BY 4.0: clients show this wherever they show the
+    # finding. None when the data needs no credit.
+    attribution: AttributionOut | None = None
 
 
 class DiscoveryItemOut(BaseModel):
@@ -1627,11 +1638,12 @@ MAX_ITEMS = 200
 
 
 def _finding_out(f: DiscoveryFinding) -> FindingOut:
-    from discover import policy
+    from discover import attribution, policy
     return FindingOut(id=f.id, topic=f.topic, place_key=f.place_key, body_md=f.body_md,
                       data=f.data, confidence=f.confidence, status=f.status,
                       sources=f.sources, locked=policy.is_locked(f),
-                      external=policy.is_external(f), agent=policy.agent_label(f))
+                      external=policy.is_external(f), agent=policy.agent_label(f),
+                      attribution=attribution.for_finding(f.resolver))
 
 
 def save_research_finding(session: Session, user, trip_id: str, body: FindingIn,
