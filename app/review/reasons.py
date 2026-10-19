@@ -91,7 +91,3 @@ def action_hint(codes: list[str] | None) -> str:
     if not codes:
         return ""
     return REASON_TEXT.get(codes[0], _FALLBACK)[1]
-
-
-def all_sentences(codes: list[str] | None) -> list[str]:
-    return [REASON_TEXT.get(c, _FALLBACK)[0] for c in (codes or [])]

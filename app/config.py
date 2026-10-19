@@ -145,7 +145,6 @@ class Settings(BaseSettings):
     jwt_access_ttl_seconds: int = 1800              # mobile/API access token (30 min)
     jwt_refresh_ttl_seconds: int = 60 * 60 * 24 * 90  # mobile refresh token (90 days)
     jwt_web_ttl_seconds: int = 60 * 60 * 24 * 7     # web cookie session (7 days)
-    jwt_api_ttl_seconds: int = 60 * 60 * 24 * 365   # long-lived machine token (MCP), 1yr
     auth_cookie_name: str = "yonder_session"
     # Secure cookie (https only). Prod is behind Traefik TLS => keep True; the
     # test stack talks plain http on :8140 => set TX_AUTH_COOKIE_SECURE=false.

@@ -623,6 +623,22 @@ request forgery (SSRF) risk.
   - Considered and set aside: matching on email (Run·dere never verifies an address, so a
     typed email would be a takeover) and invite links (they don't cover accounts that
     arrive through an external SSO).
+- **D-205 — Legacy machine access is retired (YONDER-292; owner, 2026-10-19).** Every
+  credential and endpoint that remains is one to defend, so what the built-in ones replaced
+  goes.
+  - The CLI-minted `typ="api"` JWT (`app.cli mint-api-token`, D-126) is no longer accepted.
+    It lasted a year and could only be revoked by a password reset. Personal API tokens
+    (`ypat_…`, revocable one at a time) and OAuth replace it.
+  - The standalone stdio MCP server in `mcp/` is removed. The built-in `/mcp` has the same
+    tools and is reachable by every MCP client Run·dere supports.
+  - The n8n Maps form (`capture/maps-n8n/`), retired in v1.2, and the AdventureLog dump
+    tool `scripts/dedup_locations.py` from the migration are removed.
+  - Supersedes D-126. `/ingest` and its signed keys stay: the Gmail and Calendar add-ons
+    use them.
+- **D-206 — Yonder stays as the internal name (YONDER-292; owner, 2026-10-19).** The
+  Python package `yonder`, the `TX_*` settings prefix and code names such as the `yonder.*` loggers
+  keep the old name. Renaming them would break every self-hoster's environment file for no
+  gain to users, who only see Run·dere. The README and AGENTS.md explain the name.
 - **D-172 — Next up is the soonest moment, not the soonest item.** Every timed timeline
   activity is one or two moments: its start (`when`) and, when it has one, its end
   (`endWhen`) — a rental is a pick-up and a drop-off, a hotel a check-in and a check-out.

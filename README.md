@@ -12,7 +12,8 @@
 > **Yonder is now Run·dere** (say "run there"; plain-text spelling: Rundere). Same app, same data, same
 > `TX_*` settings — from 4.4.0 the repository is `jeeves5454/rundere-server` and
 > the image is `ghcr.io/jeeves5454/rundere-server`. Releases up to 4.3.x were
-> published as Yonder (`ghcr.io/jeeves5454/yonder`).
+> published as Yonder (`ghcr.io/jeeves5454/yonder`). The Python package (`yonder`), the
+> `TX_*` prefix and some code names keep the old name on purpose and won't change (D-206).
 
 Run·dere turns travel documents — booking emails, calendar invites, PDF
 confirmations, and Google Maps directions — into clean records in your
@@ -265,7 +266,7 @@ Three ways to use it:
 
 Extraction reuses the JSON-LD reader for web pages (most booking pages embed schema.org), falling back to the LLM for pages without markup. Keep the `/capture` route on the **private** router only — never expose it publicly.
 
-> **The n8n Maps form is retired** (v1.2). It POSTed to `/ingest` with an HMAC key; the native `/capture` page does the same job internally with no key. The old workflow still lives in [`capture/maps-n8n/`](capture/maps-n8n/) for reference.
+> **The n8n Maps form is retired** (v1.2) and was removed (D-205). The native `/capture` page does the same job.
 
 ---
 
@@ -459,8 +460,7 @@ rules.py        rule registry + engine (57 rules, tri-state toggles — D-25)
 validation.py   schema gate (real jsonschema)
 schemas/        travel-item (canonical) + travel-extraction (derived, D-09)
 alembic/        migrations (baseline 0001)
-capture/        gmail-addon/, gcal-addon/ (Apps Script); maps-n8n/ (deprecated,
-                superseded by the built-in /capture page in v1.2)
+capture/        gmail-addon/, gcal-addon/ (Apps Script)
 design/         brand + design system: logos, icons, tokens (read design/README.md
                 before UI work); logos/icons are served at /brand/*
 tests/          pytest suite + samples.json regression corpus

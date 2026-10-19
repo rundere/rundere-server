@@ -628,11 +628,13 @@ if DEPS:
         b.post(f"/account/tokens/{tid}/revoke")
         assert TestClient(app).get("/api/v1/trips", headers=_bearer(tok)).status_code == 200
 
-    def test_cli_mint_api_token_still_works():
+    def test_retired_cli_api_token_is_refused():
+        # D-205: the `api` kind can't be revoked one at a time, so it's no longer accepted.
         uid = _user("oa-alice")
         with SessionLocal() as s:
-            tok = authn.issue_api_token(s.get(User, uid))
-        assert TestClient(app).get("/api/v1/trips", headers=_bearer(tok)).status_code == 200
+            tok = authn._token(s.get(User, uid), "api", 3600)
+        assert TestClient(app).get("/api/v1/trips", headers=_bearer(tok)).status_code == 401
+        assert TestClient(app).get("/mcp", headers=_bearer(tok)).status_code == 401
 
     # ------------------------------------------------------------------ scoping + proxy
     def test_oauth_token_obeys_sharing_rules():

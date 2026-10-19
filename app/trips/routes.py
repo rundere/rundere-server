@@ -2724,35 +2724,6 @@ def _al_body_for_activity(activity: TripActivity, collection_id: str,
     return "note", {k: v for k, v in body.items() if v is not None}
 
 
-def _push_activities(client, collection_id: str, trip_id: str,
-                     activities: list[TripActivity]) -> None:
-    """Best-effort: the collection is already created and linked by the time
-    this runs, so one bad activity logs and moves on rather than losing the
-    ones that would otherwise succeed."""
-    from resolve import airports as airports_mod
-    airports = airports_mod.reference()             # Run·dere's own table (D-147)
-    photon = _photon()
-    coord_cache: dict = {}
-    create = {"transportation": client.create_transportation,
-             "lodging": client.create_lodging, "note": client.create_note}
-    failed = 0
-    for activity in activities:
-        kind, body = _al_body_for_activity(activity, collection_id,
-                                           airports, photon, coord_cache)
-        try:
-            status, parsed, raw = create[kind](body)
-            if status >= 400:
-                failed += 1
-                log.warning("push-adventurelog: %s for trip %s rejected (HTTP %s): %s",
-                           kind, trip_id, status, raw[:300])
-        except Exception:
-            failed += 1
-            log.exception("push-adventurelog: %s failed for trip %s", kind, trip_id)
-    if failed:
-        log.warning("push-adventurelog: %d/%d activities failed for trip %s",
-                    failed, len(activities), trip_id)
-
-
 @router.post("/{trip_id}/push-adventurelog", response_class=HTMLResponse)
 def push_adventurelog(trip_id: str, request: Request, session: Session = Depends(get_session)):
     """Create a PUBLIC AdventureLog collection from this trip and link it — the
