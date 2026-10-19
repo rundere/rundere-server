@@ -34,6 +34,12 @@ the plain setting, and an unreadable one stops the server from starting.
 
 1. Copy the example. Replace every `CHANGE_ME` and every `example.com` host.
 2. Point the volumes at **local disk**, never NFS (Postgres corrupts on NFS).
+   The app runs as an unprivileged user (uid and gid 10001). On its first start
+   it hands its data folders (artifacts, documents, tile cache) to that user.
+   Folders on a network share it can't change must already be writable by
+   uid 10001. To keep the folders owned by your own account instead, run the
+   container as you (`user: "1000:1000"` in the stack, with your uid and gid):
+   it then skips the hand-over and still never runs as root.
 3. Deploy the stack. Migrations run at start-up.
 4. Open the site and create the admin account at `/setup` straight away (see
    "Create the admin first" below).
