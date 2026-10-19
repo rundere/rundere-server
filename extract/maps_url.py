@@ -78,9 +78,12 @@ def _expand_short(url: str) -> str:
     if host not in _SHORT_HOSTS:
         return url
     try:
+        # A short link can point anywhere, so its redirects go through the public
+        # opener: each hop vetted, never into the LAN (YONDER-293). Nothing is read.
+        from app import netpolicy
         req = urllib.request.Request(url, method="GET",
                                      headers={"User-Agent": "yonder"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with netpolicy.public_opener().open(req, timeout=10) as resp:
             return resp.geturl() or url
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         return url
