@@ -15,6 +15,9 @@ os.environ.setdefault("TX_INGEST_RATE_LIMIT", "5")
 # Captures must not start background extraction in unrelated tests; the auto-process
 # tests turn it on themselves (D-158).
 os.environ.setdefault("TX_AUTO_PROCESS", "false")
+# Sign-in is on by default (D-203); the suite starts with it off and the auth
+# tests turn it on themselves, as they always have.
+os.environ.setdefault("TX_AUTH_REQUIRED", "false")
 # No live road routing in tests (resolve/routing.py); tests stub it.
 os.environ.setdefault("TX_OSRM_URL", "")
 # No live exchange rates (app/rates.py, D-195); tests stub rates.fetch.

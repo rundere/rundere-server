@@ -53,7 +53,7 @@ services:
       # TX_MAP_TILE_URL: https://tile.openstreetmap.org/{z}/{x}/{y}.png
       # TX_MAP_TILE_ATTRIBUTION: "© OpenStreetMap contributors"
       # ---- Sign-in ----
-      TX_AUTH_REQUIRED: "true"            # keep on for any server others can reach
+      TX_AUTH_REQUIRED: "true"            # the default (D-203); keep on for any server others can reach
       TX_AUTH_COOKIE_SECURE: "true"
       # Trust the reverse proxy's X-Forwarded-Proto so the app builds https:// URLs.
       # "*" is safe only because the app is reachable through the proxy alone

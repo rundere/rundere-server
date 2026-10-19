@@ -11,6 +11,8 @@ services:
     environment:
       TX_DATABASE_URL: postgresql+psycopg://travel:devonly@yonder-dev-db:5432/travel
       TX_INGEST_RATE_LIMIT: "30"
+      # Sign-in is on by default (D-203); plain http here, so no Secure cookie.
+      TX_AUTH_COOKIE_SECURE: "false"
     depends_on:
       yonder-dev-db:
         condition: service_healthy

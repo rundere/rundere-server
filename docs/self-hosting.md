@@ -29,11 +29,19 @@ Generate each one, store it somewhere safe, and never commit it:
 1. Copy the example. Replace every `CHANGE_ME` and every `example.com` host.
 2. Point the volumes at **local disk**, never NFS (Postgres corrupts on NFS).
 3. Deploy the stack. Migrations run at start-up.
-4. Open the site. The first visit asks you to create the admin account (`/setup`).
+4. Open the site and create the admin account at `/setup` straight away (see
+   "Create the admin first" below).
 
 ## 4. Sign-in
 
-- `TX_AUTH_REQUIRED` stays `true` on any server others can reach.
+- Sign-in is required by default (`TX_AUTH_REQUIRED`, D-203). Keep it on for any
+  server others can reach; turning it off is only for a trusted single-user LAN, and
+  the server logs a warning while it's off.
+- **Create the admin first.** A new server gives the admin account to whoever opens
+  `/setup` first. Finish setup before the hostname is reachable by anyone else, for
+  example by deploying on the LAN host first or before adding the public route.
+- Repeated wrong passwords are refused for 15 minutes, per address and per username
+  (`TX_LOGIN_RATE_LIMIT`).
 - **Single sign-on (optional):** any OIDC provider. Register
   `https://<your host>/oidc/callback` as the redirect URI. SSO can be forced on
   the public host (`TX_OIDC_FORCE_HOSTS`) while the LAN host stays password-only.
