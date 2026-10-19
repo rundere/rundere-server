@@ -282,6 +282,30 @@ class Settings(BaseSettings):
 
     app_version: str = "4.12.6"
 
+    # Docker secrets (YONDER-293): each secret below may be read from a file
+    # (TX_JWT_SECRET_FILE=/run/secrets/jwt, …) instead of the environment, where
+    # Portainer and `docker inspect` show it. A set *_FILE wins over the plain
+    # setting; an unreadable one stops start-up rather than run without it.
+    # TX_SECRETS_KEY_FILE predates these and keeps its own handling (D-151).
+    jwt_secret_file: str = ""
+    database_url_file: str = ""
+    smtp_password_file: str = ""
+    inbox_imap_password_file: str = ""
+    oidc_client_secret_file: str = ""
+
+    def model_post_init(self, __context) -> None:
+        for name in ("jwt_secret", "database_url", "smtp_password",
+                     "inbox_imap_password", "oidc_client_secret"):
+            path = (getattr(self, f"{name}_file") or "").strip()
+            if not path:
+                continue
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    value = fh.read().strip()
+            except OSError:
+                raise ValueError(f"TX_{name.upper()}_FILE can't be read") from None
+            object.__setattr__(self, name, value)
+
     @property
     def watch_url_list(self) -> tuple[str, ...]:
         return tuple(u.strip() for u in self.watch_urls.split(",") if u.strip())

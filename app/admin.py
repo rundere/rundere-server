@@ -87,6 +87,9 @@ def mount_admin(app, engine) -> None:
         column_list = [models.ApiKey.client_name, models.ApiKey.created_at,
                        models.ApiKey.revoked_at, models.ApiKey.last_used_at]
         column_details_exclude_list = [models.ApiKey.key_hash]
+        # Editing is for naming and revoking; the hash and owner are never a form
+        # field (YONDER-293).
+        form_columns = [models.ApiKey.client_name, models.ApiKey.revoked_at]
         can_create = False          # creation happens via CLI so the plaintext
                                     # is shown exactly once
 
@@ -130,6 +133,10 @@ def mount_admin(app, engine) -> None:
         # is kind="self".
         column_list = [models.TravelerIdentity.display_name,
                        models.TravelerIdentity.kind]
+        # SQLAdmin's details page shows EVERY column unless told otherwise, which
+        # put nationality, aliases and notes in front of an admin, opted-out
+        # users' included (YONDER-293). Same two fields as the list.
+        column_details_list = column_list
         column_labels = {"display_name": "Name", "kind": "Kind"}
         form_columns = ["display_name", "kind"]
         # `kind` is a closed vocabulary (self | guest, D-35) — force the choice.
