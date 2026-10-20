@@ -28,7 +28,7 @@ except ImportError:
     DEPS = False
 
 FOOD = {"places": [
-    {"name": "Café Meskel", "type": "cafe", "neighborhood": "Medina", "address": "7 Example St",
+    {"name": "Café Meskel", "type": "cafe", "neighborhood": "Piassa", "address": "7 Example St",
      "price_tier": 2, "why": "Camel burger and live music", "local_specialty": True,
      "source_url": "https://example.com/clock"},
     {"name": "Nomad", "type": "restaurant", "price_tier": 3, "why": "Rooftop views",
@@ -54,7 +54,7 @@ def test_food_rows_map_kinds_tiers_and_dedupe():
     rows = items._dedupe(items.rows_from_finding("food", FOOD))
     by = {r["name"]: r for r in rows}
     assert set(by) == {"Café Meskel", "Nomad", "Weird"}
-    assert by["Café Meskel"]["kind"] == "cafe" and by["Café Meskel"]["neighbourhood"] == "Medina"
+    assert by["Café Meskel"]["kind"] == "cafe" and by["Café Meskel"]["neighbourhood"] == "Piassa"
     assert by["Café Meskel"]["extra"] == {"local_specialty": True}
     assert by["Café Meskel"]["sources"] == [{"url": "https://example.com/clock"}]
     assert by["Weird"]["kind"] == "restaurant" and by["Weird"]["price_tier"] is None
@@ -78,7 +78,7 @@ if DEPS:
         s.add(t)
         s.flush()
         f = DiscoveryFinding(trip_id=t.id, user_id=user_id, topic=topic, scope="city",
-                             place_key="MA:Harar", status="draft", data=data or FOOD)
+                             place_key="ET:Harar", status="draft", data=data or FOOD)
         s.add(f)
         s.flush()
         return f
@@ -98,13 +98,13 @@ if DEPS:
             # A newer result: Café Meskel renamed-in-place, Nomad and Weird gone,
             # a new place added.
             f.data = {"places": [
-                {"name": "Cafe Meskel", "type": "cafe", "price_tier": 1, "why": "cheaper now"},
+                {"name": "cafe meskel", "type": "cafe", "price_tier": 1, "why": "cheaper now"},
                 {"name": "Le Jardin", "type": "restaurant", "price_tier": 2, "why": "garden"}]}
             items.sync_from_finding(s, f)
             s.flush()
             got = {i.name.lower(): i for i in s.query(DiscoveryItem).filter_by(finding_id=f.id)}
-            assert set(got) == {"Cafe Meskel", "nomad", "weird", "le jardin"}
-            clock = got["Cafe Meskel"]   # the same row, matched despite case and accent
+            assert set(got) == {"cafe meskel", "nomad", "weird", "le jardin"}
+            clock = got["cafe meskel"]   # the same row, matched despite case and accent
             assert clock.hidden is True and clock.price_tier == 1
             assert got["nomad"].activity_id == "act-1"          # on the timeline: kept
             assert got["weird"].details == "my note"            # edited: kept as edited
@@ -128,7 +128,7 @@ if DEPS:
                            body_md="food", resolver="fake", data=FOOD)
 
     def _airports(code):
-        hit = {"YYZ": ("CA", "Toronto"), "ADD": ("MA", "Harar")}.get((code or "").upper())
+        hit = {"YYZ": ("CA", "Toronto"), "ADD": ("ET", "Harar")}.get((code or "").upper())
         return hit and SimpleNamespace(country=hit[0], municipality=hit[1], lat=0.0,
                                        lon=0.0, icao=None)
 
@@ -150,7 +150,7 @@ if DEPS:
             run_discovery(s, t, resolve_airport=_airports, geocoder=_NoGeo(),
                           resolvers=[_FakeFood()], today="2026-09-27")
             f = s.query(DiscoveryFinding).filter_by(trip_id=t.id, topic="food",
-                                                    place_key="MA:Harar").one()
+                                                    place_key="ET:Harar").one()
             names = {i.name for i in s.query(DiscoveryItem).filter_by(finding_id=f.id)}
             assert names == {"Café Meskel", "Nomad", "Weird"}
             # a further run is idempotent
@@ -223,7 +223,7 @@ if DEPS:
         with eng.begin() as c:
             c.execute(sa.text(
                 "INSERT INTO discovery_findings (id, trip_id, topic, scope, place_key, status, "
-                "data, generated_at) VALUES ('f1', 't1', 'food', 'city', 'MA:Harar', "
+                "data, generated_at) VALUES ('f1', 't1', 'food', 'city', 'ET:Harar', "
                 "'draft', :d, '2026-09-27')"), {"d": json.dumps(FOOD)})
         alembic("upgrade", "head")
         with eng.begin() as c:
@@ -235,7 +235,7 @@ if DEPS:
 def test_event_kind_from_the_model_wins_for_notable_items():
     rows = {r["name"]: r for r in items.rows_from_finding("events", {
         "impacts": [{"name": "Strike", "kind": "activity", "source_url": "https://e.x/1"}],
-        "notable": [{"name": "Souk tour", "date_range": "2026-10-14", "kind": "activity",
-                     "venue": "Medina", "why": "x", "source_url": "https://e.x/2"}]})}
+        "notable": [{"name": "Merkato tour", "date_range": "2026-10-14", "kind": "activity",
+                     "venue": "Piassa", "why": "x", "source_url": "https://e.x/2"}]})}
     assert rows["Strike"]["kind"] == "event"            # a heads-up is always an event
-    assert rows["Souk tour"]["kind"] == "activity" and rows["Souk tour"]["venue"] == "Medina"
+    assert rows["Merkato tour"]["kind"] == "activity" and rows["Merkato tour"]["venue"] == "Piassa"

@@ -118,13 +118,13 @@ if DEPS:
             s.add(t)
             s.commit()
             s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2026-09-01",
-                               values={"property": "Riad X"}))
+                               values={"property": "Guesthouse X"}))
             s.commit()
             tid = t.id
         snap = client.get(f"/api/v1/trips/{tid}", headers=_bearer(owner)).json()
         assert snap["trip"]["activity_count"] == 1
         assert snap["activities"][0]["type"] == "lodging"
-        assert snap["activities"][0]["values"]["property"] == "Riad X"
+        assert snap["activities"][0]["values"]["property"] == "Guesthouse X"
         _cleanup_trips("api-snaptrip")
 
     def test_api_snapshot_activity_details():
@@ -137,14 +137,14 @@ if DEPS:
             s.commit()
             s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2026-09-01T15:00",
                                values={"when": "2026-09-01T15:00", "endWhen": "2026-09-04T11:00",
-                                       "name": "Riad X", "type": "riad",
-                                       "address": "1 Derb Y, Harar",
+                                       "name": "Guesthouse X", "type": "guesthouse",
+                                       "address": "1 Example Rd, Addis Ababa",
                                        "confirmation": "ABC123"}))
             s.commit()
             tid = t.id
         a = client.get(f"/api/v1/trips/{tid}", headers=_bearer(owner)).json()["activities"][0]
         assert a["type_label"] == "Lodging"
-        assert a["title"] == "Riad X" and a["subtitle"] == "1 Derb Y, Harar"
+        assert a["title"] == "Guesthouse X" and a["subtitle"] == "1 Example Rd, Addis Ababa"
         assert (a["start_label"], a["end_label"]) == ("Check-in", "Check-out")
         assert a["ends_at"] == "2026-09-04T11:00"
         fields = {f["key"]: f for f in a["fields"]}
@@ -153,7 +153,7 @@ if DEPS:
         assert fields["endWhen"]["kind"] == "datetime-local"
         assert "when" not in fields
         assert fields["type"]["label"] == "Type"          # examples are a hint, not the label
-        assert a["map_query"] == "Riad X, 1 Derb Y, Harar"
+        assert a["map_query"] == "Guesthouse X, 1 Example Rd, Addis Ababa"
         assert a["map_url"].startswith("https://www.google.com/maps/search/")
         _cleanup_trips("api-snapdetail")
 
@@ -170,8 +170,8 @@ if DEPS:
             s.commit()
             s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2026-09-01T15:00",
                                values={"when": "2026-09-01T15:00",
-                                       "endWhen": "2026-09-04T11:00", "name": "Riad X",
-                                       "address": "1 Derb Y, Harar",
+                                       "endWhen": "2026-09-04T11:00", "name": "Guesthouse X",
+                                       "address": "1 Example Rd, Addis Ababa",
                                        "confirmation": "ABC123",
                                        "sourceLink": "http://internal/doc"}))
             s.commit()
@@ -183,7 +183,7 @@ if DEPS:
         assert r.headers["content-type"] == "application/pdf"
         assert 'filename="api-pdf-trip-timeline.pdf"' in r.headers["content-disposition"]
         text = "".join(p.extract_text() for p in PdfReader(io.BytesIO(r.content)).pages)
-        for want in ("api-pdf trip", "Riad X", "ABC123", "1 Derb Y, Harar",
+        for want in ("api-pdf trip", "Guesthouse X", "ABC123", "1 Example Rd, Addis Ababa",
                      "Check-in", "Check-out"):
             assert want in text, want
         assert "http://internal/doc" not in text          # internal links stay out

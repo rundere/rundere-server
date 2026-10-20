@@ -55,7 +55,7 @@ def test_cold_nights_mild_days_is_layering_not_a_parka():
 
 
 def test_cold_ski_not_selected_for_a_warm_trip():
-    # The NM bug: cold_ski was chosen at 28°C, dumping a parka into a beach plan.
+    # The Arizona bug: cold_ski was chosen at 28°C, dumping a parka into a beach plan.
     res = build_plan(_ctx(10, climate_bands={"lightweight", "rain_gear"},
                           temp_high_c=28), _ITEMS)
     assert "cold_ski" not in {a["id"] for a in res.archetypes}

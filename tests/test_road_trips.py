@@ -24,10 +24,10 @@ if DEPS:
     from app.models import Base
     Base.metadata.create_all(engine)
 
-GMAPS = ("https://www.google.com/maps/dir/Phoenix+International+Sunport/"
-         "Old+Town+Plaza,+Phoenix,+NM/@35.07,-106.64,13z/data=!4m14!4m13"
-         "!1m5!1m1!1s0x0:0x1!2m2!1d-106.6091!2d35.0433"
-         "!1m5!1m1!1s0x0:0x2!2m2!1d-106.6697!2d35.0961!3e0")
+GMAPS = ("https://www.google.com/maps/dir/Phoenix+Sky+Harbor+International+Airport/"
+         "Heritage+Square,+Phoenix,+AZ/@33.45,-112.07,13z/data=!4m14!4m13"
+         "!1m5!1m1!1s0x0:0x1!2m2!1d-112.0117!2d33.4343"
+         "!1m5!1m1!1s0x0:0x2!2m2!1d-112.0740!2d33.4484!3e0")
 
 
 # ------------------------------------------------------------ resolve/routing
@@ -35,18 +35,18 @@ GMAPS = ("https://www.google.com/maps/dir/Phoenix+International+Sunport/"
 def test_directions_stops_reads_google_names_and_embedded_coords():
     from resolve.routing import directions_stops
     stops = directions_stops(GMAPS)
-    assert [s["name"] for s in stops] == ["Phoenix International Sunport",
-                                         "Heritage Square, Phoenix, NM"]
-    assert (stops[0]["lat"], stops[0]["lon"]) == (35.0433, -106.6091)
-    assert (stops[1]["lat"], stops[1]["lon"]) == (35.0961, -106.6697)
+    assert [s["name"] for s in stops] == ["Phoenix Sky Harbor International Airport",
+                                         "Heritage Square, Phoenix, AZ"]
+    assert (stops[0]["lat"], stops[0]["lon"]) == (33.4343, -112.0117)
+    assert (stops[1]["lat"], stops[1]["lon"]) == (33.4484, -112.0740)
     assert stops[1]["city"] == "Phoenix"
 
 
 def test_directions_stops_apple_and_non_directions():
     from resolve.routing import directions_stops
-    apple = directions_stops("https://maps.apple.com/?saddr=35.04,-106.61"
-                             "&daddr=Sedona,+NM&dirflg=d")
-    assert apple[0]["lat"] == 35.04 and apple[1]["city"] == "Sedona"
+    apple = directions_stops("https://maps.apple.com/?saddr=33.43,-112.01"
+                             "&daddr=Sedona,+AZ&dirflg=d")
+    assert apple[0]["lat"] == 33.43 and apple[1]["city"] == "Sedona"
     assert directions_stops("https://www.google.com/maps/search/?api=1&query=x") == []
 
 
@@ -69,10 +69,10 @@ def test_route_parses_osrm_and_fails_soft(monkeypatch):
         return _Resp(json.dumps({"code": "Ok", "routes": [
             {"distance": 101400.0, "duration": 4260.0}]}).encode())
     monkeypatch.setattr(routing.urllib.request, "urlopen", fake_urlopen)
-    est = routing.route([(35.04, -106.61), (35.68, -105.94)], base_url="http://osrm")
+    est = routing.route([(33.43, -112.01), (34.86, -111.76)], base_url="http://osrm")
     assert (est.distance_km, est.duration_minutes) == (101.4, 71)
     # OSRM wants lon,lat
-    assert "/route/v1/driving/-106.610000,35.040000;-105.940000,35.680000" in seen["url"]
+    assert "/route/v1/driving/-112.010000,33.430000;-111.760000,34.860000" in seen["url"]
     assert routing.format_distance(est) == "101 km (63 mi) · ~1 h 11 min"
     # switched off -> None, never a call
     assert routing.route([(1.0, 2.0), (3.0, 4.0)], base_url="") is None
@@ -85,23 +85,23 @@ def test_route_parses_osrm_and_fails_soft(monkeypatch):
 
 def test_stop_label_and_address():
     from resolve.routing import stop_address, stop_label
-    plaza = {"raw": "Heritage Square, Phoenix, NM", "name": "Heritage Square, Phoenix, NM",
-             "city": "Phoenix", "region": "NM"}
+    plaza = {"raw": "Heritage Square, Phoenix, AZ", "name": "Heritage Square, Phoenix, AZ",
+             "city": "Phoenix", "region": "AZ"}
     assert stop_label(plaza) == "Heritage Square"
-    assert stop_address(plaza) == "Heritage Square, Phoenix, NM"
+    assert stop_address(plaza) == "Heritage Square, Phoenix, AZ"
     # a reviewer-typed street address wins, keeping the name and city
-    plaza["address"] = "210 Heritage Way NW"
-    assert stop_address(plaza) == "Heritage Square, 210 Heritage Way NW, Phoenix"
+    plaza["address"] = "215 Heritage Way"
+    assert stop_address(plaza) == "Heritage Square, 215 Heritage Way, Phoenix"
 
 
 # ---------------------------------------------------- manual Road trip fill-in
 
 def _stub_link(monkeypatch, estimate=(210.0, 130)):
     from resolve import routing
-    stops = [{"raw": "Phoenix International Sunport",
-              "name": "Phoenix International Sunport", "lat": 35.04, "lon": -106.61},
-             {"raw": "Sedona Plaza, Sedona, NM", "name": "Sedona Plaza, Sedona, NM",
-              "city": "Sedona", "region": "NM", "lat": 35.69, "lon": -105.94}]
+    stops = [{"raw": "Phoenix Sky Harbor International Airport",
+              "name": "Phoenix Sky Harbor International Airport", "lat": 33.43, "lon": -112.01},
+             {"raw": "Sedona Plaza, Sedona, AZ", "name": "Sedona Plaza, Sedona, AZ",
+              "city": "Sedona", "region": "AZ", "lat": 34.87, "lon": -111.76}]
     est = routing.RouteEstimate(*estimate) if estimate else None
     monkeypatch.setattr(routing, "estimate_for_link",
                         lambda url, geocoder, base_url: (stops, est))
@@ -113,9 +113,9 @@ def test_drive_fills_blanks_from_its_map_link(monkeypatch):
     from app.trips.enrich import enrich_activity_values
     _stub_link(monkeypatch)
     out = enrich_activity_values("drive", {"mapLink": GMAPS, "when": "2027-10-02T09:00"})
-    assert out["route"] == "Phoenix International Sunport → Sedona Plaza"
-    assert out["from"] == "Phoenix International Sunport"
-    assert out["to"] == "Sedona Plaza, Sedona, NM"
+    assert out["route"] == "Phoenix Sky Harbor International Airport → Sedona Plaza"
+    assert out["from"] == "Phoenix Sky Harbor International Airport"
+    assert out["to"] == "Sedona Plaza, Sedona, AZ"
     assert out["distance"] == "210 km (130 mi) · ~2 h 10 min"
     assert out["endWhen"] == "2027-10-02T11:10"          # departure + drive time
 
@@ -200,14 +200,14 @@ def test_saved_maps_link_wins_the_map_button():
     if not DEPS:
         return
     from app.trips.types import map_url
-    apple = "https://maps.apple.com/?q=Camelback+Peak+Tramway&ll=35.19,-106.48"
+    apple = "https://maps.apple.com/?q=Camelback+Mountain+Trail&ll=33.52,-111.96"
     goo = "https://maps.app.goo.gl/AbCdEf123"
-    assert map_url("tour", {"location": "Camelback Peak", "mapLink": apple}) == apple
+    assert map_url("tour", {"location": "Camelback Mountain", "mapLink": apple}) == apple
     assert map_url("event", {"venue": "Balloon Fiesta Park", "mapLink": goo}) == goo
     # entries made before the Map field: a Maps URL pasted as the Source still wins
     assert map_url("dining", {"name": "Mesa Diner", "sourceLink": goo}) == goo
     # a non-maps Source never becomes the map link
-    u = map_url("tour", {"location": "Camelback Peak", "sourceLink": "https://viator.com/x"})
+    u = map_url("tour", {"location": "Camelback Mountain", "sourceLink": "https://viator.com/x"})
     assert u.startswith("https://www.google.com/maps/search/")
     # a drive with only From/To still searches its route
     assert "Sedona" in map_url("drive", {"from": "PHX", "to": "Sedona"})
@@ -219,15 +219,15 @@ def _drive_payload():
     return {"item_type": "ground_transport", "booking_status": "planned",
             "ground_transport": {
                 "mode": "car",
-                "departure": {"place": {"raw": "Phoenix International Sunport",
-                                        "name": "Phoenix International Sunport",
-                                        "lat": 35.04, "lon": -106.61},
+                "departure": {"place": {"raw": "Phoenix Sky Harbor International Airport",
+                                        "name": "Phoenix Sky Harbor International Airport",
+                                        "lat": 33.43, "lon": -112.01},
                               "time": {"local": "2027-10-02", "precision": "date"}},
-                "arrival": {"place": {"raw": "Heritage Square, Phoenix, NM",
-                                      "name": "Heritage Square, Phoenix, NM",
-                                      "city": "Phoenix", "region": "NM",
-                                      "address": "210 Heritage Way NW",
-                                      "lat": 35.09, "lon": -106.67},
+                "arrival": {"place": {"raw": "Heritage Square, Phoenix, AZ",
+                                      "name": "Heritage Square, Phoenix, AZ",
+                                      "city": "Phoenix", "region": "AZ",
+                                      "address": "215 Heritage Way",
+                                      "lat": 33.45, "lon": -112.07},
                             "time": {"local": "2027-10-02", "precision": "date"}},
                 "waypoints": [],
                 "route": {"provider": "google_maps", "source_url": GMAPS,
@@ -241,9 +241,9 @@ def test_committed_drive_keeps_from_to_distance_and_link():
     from app.committing import build_yonder_activity
     atype, v = build_yonder_activity(_drive_payload())
     assert atype == "drive"
-    assert v["route"] == "Phoenix International Sunport → Heritage Square"
-    assert v["from"] == "Phoenix International Sunport"
-    assert v["to"] == "Heritage Square, 210 Heritage Way NW, Phoenix"   # the edited address
+    assert v["route"] == "Phoenix Sky Harbor International Airport → Heritage Square"
+    assert v["from"] == "Phoenix Sky Harbor International Airport"
+    assert v["to"] == "Heritage Square, 215 Heritage Way, Phoenix"   # the edited address
     assert v["distance"] == "21 km (13 mi) · ~19 min"
     assert v["mapLink"] == GMAPS
     _, lodging = build_yonder_activity(
@@ -281,14 +281,14 @@ def test_reviewer_address_fix_drops_guessed_coords_only():
     assert p["ground_transport"]["route"]["distance_km"] is None     # recomputed next
     # coordinates the link itself stated are never dropped
     assert _apply_edit(p, "/ground_transport/arrival/place/address", "1 Main St", "text")
-    assert p["ground_transport"]["arrival"]["place"]["lat"] == 35.09
+    assert p["ground_transport"]["arrival"]["place"]["lat"] == 33.45
 
 
 def test_street_address_stop_fills_the_address_field():
     from extract.directions_common import _parse_place
     p = _parse_place("100 Harbour Ridge Pkwy, Maple Grove, ON")
     assert p["address"] == "100 Harbour Ridge Pkwy, Maple Grove, ON"
-    assert "address" not in _parse_place("Heritage Square, Phoenix, NM")
+    assert "address" not in _parse_place("Heritage Square, Phoenix, AZ")
 
 
 # ------------------------------------------------ capture form: Yonder trip pick

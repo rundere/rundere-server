@@ -811,8 +811,8 @@ in the detail header):
 
 - **Coordinates rejected by AdventureLog (400 on every location/lodging/
   transportation write).** Its DecimalField caps latitude at 6 decimal places
-  and longitude at 9 total digits; a raw Photon geocode (`35.5849387` /
-  `-106.1024807`) blew the limit. `_coord()` rounds every lat/long to 6 dp
+  and longitude at 9 total digits; a raw Photon geocode (`34.9849387` /
+  `-111.9024807`) blew the limit. `_coord()` rounds every lat/long to 6 dp
   (~0.11 m, far finer than any address) before it is sent. This is why the
   preview was all-green then execute 400'd — precision is not checked on the
   read-only preview pass.

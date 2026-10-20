@@ -17,7 +17,7 @@ are Run·dere's own — you can't change them, and you shouldn't repeat them.
 
 Call `get_trip` with the trip id.
 
-- `places` lists the cities; each `key` (e.g. `MA:Harar`) is the
+- `places` lists the cities; each `key` (e.g. `JP:Kyoto`) is the
   `place_key` you save under.
 - `discovery` includes the `language` finding for each country — read it so
   you know the national language(s) and don't duplicate the phrasebook.
@@ -55,7 +55,7 @@ recognise and not wince at.
 ## 3. Save it
 
 ```
-save_phrases(trip_id, place_key="MA:Harar",
+save_phrases(trip_id, place_key="JP:Kyoto",
              register_summary="…", greetings=[…], expressions=[…],
              etiquette=[…], sources=[{title, url}, …])
 ```

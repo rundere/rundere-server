@@ -45,14 +45,14 @@ def test_rejects_wrong_country():
 
 
 def test_rejects_wrong_city_in_same_country():
-    g = _StubPhoton({"Glendale": [_feature(33.15, -117.35, name="Glendale",
+    g = _StubPhoton({"Glendale": [_feature(34.14, -118.25, name="Glendale",
                                            city="Glendale", cc="US")]})
     place = {"raw": "Hotel", "name": "Hotel", "city": "Mesa", "country": "US"}
     assert g.geocode_place(place) is None
 
 
 def test_accepts_consistent_area_hit():
-    g = _StubPhoton({"Casa Grande": [_feature(32.9, -105.96, name="Casa Grande",
+    g = _StubPhoton({"Casa Grande": [_feature(32.88, -111.76, name="Casa Grande",
                                              city="Casa Grande", cc="US")]})
     place = {"raw": "SureStay", "name": "SureStay", "city": "Casa Grande",
              "region": "Arizona", "country": "US"}
@@ -86,11 +86,11 @@ def test_address_query_is_tried_before_city():
                      "city": "Glendale", "region": "Arizona", "country": "US"})
     assert g.queries, "no query issued"
     assert g.queries[0].startswith("418 Ocotillo Ln"), g.queries[0]
-    assert "Arizona" in g.queries[0]      # region disambiguates Glendale CA/NM
+    assert "Arizona" in g.queries[0]      # region disambiguates Glendale CA/AZ
 
 
 def test_street_level_hit_is_poi_city_hit_is_area():
-    street = _StubPhoton({"Ocotillo": [{"geometry": {"coordinates": [-104.23, 32.41]},
+    street = _StubPhoton({"Ocotillo": [{"geometry": {"coordinates": [-112.19, 33.54]},
                                      "properties": {"housenumber": "311",
                                                     "street": "Ocotillo Ln",
                                                     "city": "Glendale", "countrycode": "US"}}]})
@@ -98,7 +98,7 @@ def test_street_level_hit_is_poi_city_hit_is_area():
                               "city": "Glendale", "country": "US"})
     assert r is not None and r.precision == "poi"
 
-    city = _StubPhoton({"Glendale": [_feature(32.4, -104.2, name="Glendale",
+    city = _StubPhoton({"Glendale": [_feature(33.5, -112.2, name="Glendale",
                                               city="Glendale", cc="US")]})
     r2 = city.geocode_place({"raw": "H", "name": "H", "city": "Glendale",
                              "country": "US"})

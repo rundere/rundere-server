@@ -11,7 +11,7 @@ plus short packing hints ("a warm layer for the evenings").
 
 D-189 (YONDER-211): when the findings carry them, feels-like, humidity and
 altitude shape the line and the hints too ("feels near 3 °C at dawn", "very
-dry", "high altitude in Phoenix") — older findings without them read as
+dry", "high altitude in Prescott") — older findings without them read as
 before.
 """
 from __future__ import annotations

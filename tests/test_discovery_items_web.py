@@ -26,11 +26,11 @@ if DEPS:
             s.add(t)
             s.flush()
             f = DiscoveryFinding(trip_id=t.id, topic="food", scope="city",
-                                 place_key="MA:Harar", status="draft", resolver="agent",
+                                 place_key="ET:Harar", status="draft", resolver="agent",
                                  body_md="**Harar**\n\nEat late.",
                                  data={"summary": "Eat late.", "agent": "Claude"})
             e = DiscoveryFinding(trip_id=t.id, topic="events", scope="city",
-                                 place_key="MA:Harar", status="draft", resolver="agent",
+                                 place_key="ET:Harar", status="draft", resolver="agent",
                                  body_md="x", data={"summary": "Festival season."})
             s.add_all([f, e])
             s.flush()

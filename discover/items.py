@@ -222,7 +222,7 @@ def row_from_input(topic: str, raw: dict) -> dict:
 
 
 def city_of(place_key: str | None) -> str:
-    """"MA:Harar" → "Harar" (a country key stays as is)."""
+    """"JP:Kyoto" → "Kyoto" (a country key stays as is)."""
     return (place_key or "").split(":", 1)[-1]
 
 

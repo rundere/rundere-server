@@ -213,7 +213,7 @@ def test_dispatcher_road_with_intermediate_waypoints():
             "mode": "car",
             "departure": {"place": {"name": "Toronto", "lat": 43.6532, "lon": -79.3832}},
             "arrival": {"place": {"name": "Ottawa", "lat": 45.4215, "lon": -75.6972}},
-            "waypoints": [{"place": {"name": "Port Calloway", "lat": 44.23, "lon": -76.48}}],
+            "waypoints": [{"place": {"name": "Port Calloway", "lat": 44.50, "lon": -77.10}}],
         },
     }
     r = keys_for(payload, capture_context={"travel_date": "2026-08-08"})
@@ -309,9 +309,9 @@ def test_drive_without_coordinates_names_an_actionable_reason():
         "item_type": "ground_transport",
         "ground_transport": {
             "mode": "car",
-            "departure": {"place": {"name": "Phoenix International Sunport"}},
-            "arrival": {"place": {"name": "Heritage Square, Phoenix, NM",
-                                  "city": "Phoenix", "region": "NM"}},
+            "departure": {"place": {"name": "Phoenix Sky Harbor International Airport"}},
+            "arrival": {"place": {"name": "Heritage Square, Phoenix, AZ",
+                                  "city": "Phoenix", "region": "AZ"}},
             "waypoints": [],
         },
     }
@@ -322,8 +322,8 @@ def test_drive_without_coordinates_names_an_actionable_reason():
     assert unkeyable_reason(payload) == "missing_travel_date"
 
     # once both stops are located (the geocoder, or a reviewer's edit), it keys
-    payload["ground_transport"]["departure"]["place"].update(lat=35.04, lon=-106.61)
-    payload["ground_transport"]["arrival"]["place"].update(lat=35.10, lon=-106.67)
+    payload["ground_transport"]["departure"]["place"].update(lat=33.43, lon=-112.01)
+    payload["ground_transport"]["arrival"]["place"].update(lat=33.45, lon=-112.07)
     r = keys_for(payload, ctx)
     assert r is not None and r.primary.startswith("road:2026-10-10:")
 

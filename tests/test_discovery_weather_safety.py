@@ -24,7 +24,7 @@ def _w(hi, lo, rain=0, days=5, mode="forecast"):
 
 
 def test_warm_trip_with_cool_nights():
-    s = summarize([("Harar", _w(31, 18, 1, 6)), ("Gondar", _w(27, 12, 1, 5)),
+    s = summarize([("Addis Ababa", _w(31, 18, 1, 6)), ("Gondar", _w(27, 12, 1, 5)),
                    ("Lalibela", _w(24, 14, 0, 3))])
     assert s["line"] == ("Warm and mostly dry — highs 24–31 °C across 3 cities; cool nights "
                          "down to 12 °C in Gondar; rain on 2 of 14 days.")
@@ -49,9 +49,9 @@ def test_high_dry_city_hints_d189():
     """YONDER-211: feels-like, dryness and altitude reach the line and the hints."""
     d = {**_w(18, 3, 0, 4), "feels_low_c": -1, "humidity_band": "very dry",
          "elevation_m": 1620, "high_altitude": True}
-    s = summarize([("Phoenix", d)])
+    s = summarize([("Prescott", d)])
     assert "feels near -1 °C at dawn" in s["line"]
-    assert "very dry air" in s["line"] and "high altitude in Phoenix (~1,620 m)" in s["line"]
+    assert "very dry air" in s["line"] and "high altitude in Prescott (~1,620 m)" in s["line"]
     assert "warm clothes" in s["hints"]
     assert "lip balm, moisturiser and extra water" in s["hints"]
     assert "sunscreen, and take day 1 easy at altitude" in s["hints"]
@@ -90,13 +90,13 @@ if DEPS:
             s.flush()
             s.add_all([
                 DiscoveryFinding(trip_id=t.id, topic="weather", scope="city",
-                                 place_key="MA:Harar", status="draft", body_md="w",
+                                 place_key="ET:Harar", status="draft", body_md="w",
                                  data=_w(31, 18, 1, 6)),
                 DiscoveryFinding(trip_id=t.id, topic="safety", scope="city",
-                                 place_key="MA:Harar", status="draft",
+                                 place_key="ET:Harar", status="draft",
                                  body_md="RAW SAFETY BODY", data=SAFETY),
                 DiscoveryFinding(trip_id=t.id, topic="safety", scope="city",
-                                 place_key="MA:Gondar", status="draft", resolver="agent",
+                                 place_key="ET:Gondar", status="draft", resolver="agent",
                                  body_md="**Gondar**\n\nAgent safety notes", data={"agent": "Claude"}),
             ])
             s.commit()

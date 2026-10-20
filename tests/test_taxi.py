@@ -16,10 +16,10 @@ TAXI = {"item_type": "ground_transport", "booking_status": "confirmed",
         "booking_reference": "UBR-123", "provider": {"name": "Uber"},
         "ground_transport": {
             "mode": "taxi",
-            "departure": {"place": {"raw": "Residence Inn Phoenix North",
-                                    "address": "4331 Desert Willow Way, Phoenix, NM"},
+            "departure": {"place": {"raw": "Desert Willow Suites Phoenix North",
+                                    "address": "4331 Desert Willow Way, Phoenix, AZ"},
                           "time": {"local": "2026-10-11T03:15", "precision": "datetime"}},
-            "arrival": {"place": {"raw": "Phoenix International Sunport", "iata": "PHX"},
+            "arrival": {"place": {"raw": "Phoenix Sky Harbor International Airport", "iata": "PHX"},
                         "time": {"local": "2026-10-11T03:26", "precision": "datetime"}}}}
 
 
@@ -42,7 +42,7 @@ def test_a_taxi_logs_as_a_taxi_and_so_does_rideshare():
         atype, values = build_yonder_activity(_with_mode(mode))
         assert atype == "taxi", mode
         assert values["company"] == "Uber"
-        assert "4331 Desert Willow Way, Phoenix, NM" in values["from"]
+        assert "4331 Desert Willow Way, Phoenix, AZ" in values["from"]
         assert values["when"] == "2026-10-11T03:15" and values["confirmation"] == "UBR-123"
     assert build_yonder_activity(_with_mode("car"))[0] == "drive"   # a drive is still a drive
 

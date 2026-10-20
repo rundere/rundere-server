@@ -607,8 +607,8 @@ def test_apply_maps_coords_from_url_and_bare_coordinate():
     if not DEPS:
         return
     from app.resolving import _apply_maps_coords
-    src = ("https://www.google.com/maps/dir/100+Harbour+Ridge+Pkwy/Port Calloway/@x/data=!1m1!2m2"
-           "!1d-79.3832123!2d43.6532456!1m1!2m2!1d-76.4930295!2d44.2334401!3e0")
+    src = ("https://www.google.com/maps/dir/100+Harbour+Ridge+Pkwy/Port+Calloway/@x/data=!1m1!2m2"
+           "!1d-79.3832123!2d43.6532456!1m1!2m2!1d-77.1023456!2d44.5012345!3e0")
     pay = {"item_type": "ground_transport", "ground_transport": {
         "departure": {"place": {"raw": "100 Harbour Ridge Pkwy, Maple Grove, ON"}},
         "arrival": {"place": {"raw": "Port Calloway, Ontario", "city": "Port Calloway"}},
@@ -617,7 +617,7 @@ def test_apply_maps_coords_from_url_and_bare_coordinate():
     out = _apply_maps_coords(pay)["ground_transport"]
     assert out["departure"]["place"]["lat"] == 43.6532456
     assert out["departure"]["place"]["lon"] == -79.3832123
-    assert out["arrival"]["place"]["lat"] == 44.2334401
+    assert out["arrival"]["place"]["lat"] == 44.5012345
 
     # a bare-coordinate stop reads its own raw
     pay2 = {"item_type": "ground_transport", "ground_transport": {
@@ -778,13 +778,13 @@ def test_named_maps_drive_is_geocoded_before_keying():
         return {"item_type": "ground_transport", "booking_status": "planned",
                 "ground_transport": {
                     "mode": "car",
-                    "departure": {"place": {"raw": "Phoenix International Sunport",
-                                            "name": "Phoenix International Sunport"},
+                    "departure": {"place": {"raw": "Phoenix Sky Harbor International Airport",
+                                            "name": "Phoenix Sky Harbor International Airport"},
                                   "time": {"local": "2027-10-10", "precision": "date",
                                            "origin": "capture_context"}},
-                    "arrival": {"place": {"raw": "Heritage Square, Phoenix, NM",
-                                          "name": "Heritage Square, Phoenix, NM",
-                                          "city": "Phoenix", "region": "NM"},
+                    "arrival": {"place": {"raw": "Heritage Square, Phoenix, AZ",
+                                          "name": "Heritage Square, Phoenix, AZ",
+                                          "city": "Phoenix", "region": "AZ"},
                                 "time": {"local": "2027-10-10", "precision": "date",
                                          "origin": "capture_context"}},
                     "waypoints": [],
@@ -803,8 +803,8 @@ def test_named_maps_drive_is_geocoded_before_keying():
         found = add_drive(s)
         resolve_pending(s, adventurelog=None,
                         geocoder=_StubPhoton({
-                            "Phoenix International Sunport": (35.04, -106.61),
-                            "Phoenix": (35.10, -106.67)}))
+                            "Phoenix Sky Harbor International Airport": (33.43, -112.01),
+                            "Phoenix": (33.45, -112.07)}))
         done = s.get(TravelItem, found.id)
         assert "unknown_type" not in ((done.review or {}).get("reasons") or [])
         assert s.query(ItemKey).filter(ItemKey.item_id == done.id,
@@ -830,8 +830,8 @@ def test_taxi_to_an_airport_keys_and_files_to_its_trip():
     class _StubPhoton:
         def geocode_place(self, place):
             from resolve.geocode import GeocodeResult
-            if "25 Way" in (place.get("address") or ""):
-                return GeocodeResult(lat=35.1468, lon=-106.5919, country="US",
+            if "Desert Willow Way" in (place.get("address") or ""):
+                return GeocodeResult(lat=33.5310, lon=-112.0610, country="US",
                                      city="Phoenix", name=place.get("raw"),
                                      confidence="verified")
             return None
@@ -842,15 +842,15 @@ def test_taxi_to_an_airport_keys_and_files_to_its_trip():
             "ground_transport": {
                 "mode": "car", "service_number": "4", "round_trip": False,
                 "route": {"distance_km": None, "duration_minutes": None},
-                "departure": {"place": {"raw": "Residence Inn Phoenix North",
-                                        "address": "4331 Desert Willow Way, Phoenix, NM",
-                                        "city": "Phoenix", "region": "NM",
+                "departure": {"place": {"raw": "Desert Willow Suites Phoenix North",
+                                        "address": "4331 Desert Willow Way, Phoenix, AZ",
+                                        "city": "Phoenix", "region": "AZ",
                                         "country": "US", "iata": None},
                               "time": {"tz": "America/Denver", "local": "2091-10-11T03:15",
                                        "precision": "datetime"}},
-                "arrival": {"place": {"raw": "United Main Terminal, Phoenix "
-                                             "International Sunport (PHX)",
-                                      "city": "Phoenix", "region": "NM",
+                "arrival": {"place": {"raw": "Terminal 4, Phoenix Sky "
+                                             "Harbor International Airport (PHX)",
+                                      "city": "Phoenix", "region": "AZ",
                                       "country": "US", "iata": "PHX"},
                             "time": {"tz": "America/Denver", "local": "2091-10-11T03:26",
                                      "precision": "datetime"}}}}

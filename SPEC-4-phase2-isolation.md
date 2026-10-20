@@ -132,7 +132,7 @@ reserved).
 
 - Auth off → every `scope.*` is a no-op; identical to today. Safe to ship to prod
   ahead of enabling auth there.
-- Null-owner trips/captures are universally visible (seeded Morocco trip + all
+- Null-owner trips/captures are universally visible (seeded sample trip + all
   existing prod data stay shared until claimed/assigned).
 - Admin override everywhere. Migration additive and reversible.
 

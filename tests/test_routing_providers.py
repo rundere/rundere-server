@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 
 from resolve import routing  # noqa: E402
 
-PHX, SED = (35.0433, -106.6091), (35.6870, -105.9378)
+PHX, SED = (33.4343, -112.0117), (34.8697, -111.7610)
 
 
 def _settings(monkeypatch, **kw):
@@ -22,7 +22,7 @@ def _settings(monkeypatch, **kw):
 
 
 def test_polyline_roundtrip_both_precisions():
-    pts = [(35.0433, -106.6091), (35.2, -106.3), (35.687, -105.9378)]
+    pts = [(33.4343, -112.0117), (34.2, -111.9), (34.8697, -111.761)]
     for prec in (5, 6):
         back = routing.decode_polyline(routing.encode_polyline(pts, prec), prec)
         assert all(abs(a - b) < 10 ** -prec for p, q in zip(pts, back) for a, b in zip(p, q))
@@ -54,7 +54,7 @@ def test_falls_through_to_the_next_router(monkeypatch):
 def test_valhalla_joins_legs_and_sends_stadia_key(monkeypatch):
     _settings(monkeypatch, valhalla_url="https://api.stadiamaps.com/route/v1",
               valhalla_api_key="s3cret")
-    mid = (35.3, -106.4)
+    mid = (34.2, -111.9)
     seen = {}
 
     def fake(url, *, body=None, headers=None, timeout=8):

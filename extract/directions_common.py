@@ -18,7 +18,7 @@ _COORD = re.compile(r"^\s*(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)\s*$")
 _HAS_DIGIT = re.compile(r"\d")
 # US state and Canadian province codes — how Google writes the region at the end
 # of a "Place, City, ST" stop. Seeing one last marks the part before it as the
-# city, not the first part (YONDER-121: "Heritage Square, Phoenix, NM").
+# city, not the first part (YONDER-121: "Heritage Square, Phoenix, AZ").
 _SUBDIVISION_CODES = frozenset((
     "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS "
     "MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI "

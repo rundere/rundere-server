@@ -63,7 +63,7 @@ if DEPS:
 
     def test_trip_page_has_rail_practical_and_currency_button():
         tid = _trip_with([("plugs", "MA", None), ("currency", "MA", RATES),
-                          ("weather", "MA:Gondar", None)])
+                          ("weather", "MA:Tangier", None)])
         try:
             page = TestClient(app).get(f"/trips/{tid}").text
             assert 'class="yn-disc-rail"' in page and page.count('aria-labelledby="dtab-') == 7

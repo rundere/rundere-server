@@ -20,14 +20,14 @@ _LD = json.dumps({
     "reservationNumber": "ABC123",
     "checkinDate": "2026-09-20", "checkoutDate": "2026-09-23",
     "reservationFor": {
-        "@type": "LodgingBusiness", "name": "Riad Harar",
+        "@type": "LodgingBusiness", "name": "Guesthouse Addis",
         "address": {"@type": "PostalAddress",
-                    "addressLocality": "Harar", "addressCountry": "MA"}},
+                    "addressLocality": "Addis Ababa", "addressCountry": "ET"}},
 })
 _HTML = ('<!doctype html><html><head>'
          f'<script type="application/ld+json">{_LD}</script>'
          '<style>.x{color:red}</style></head>'
-         '<body><h1>Your stay</h1><p>Riad&nbsp;Harar</p></body></html>')
+         '<body><h1>Your stay</h1><p>Guesthouse&nbsp;Addis</p></body></html>')
 _HTML_NO_LD = "<!doctype html><html><body><h1>Just a page</h1><p>Nothing here.</p></body></html>"
 
 
@@ -39,7 +39,7 @@ def test_html_to_text_strips_markup_and_unescapes():
     assert "<" not in txt and ">" not in txt         # tags gone
     assert ".x{color:red}" not in txt                # <style> body dropped
     assert "ABC123" not in txt                        # <script> body dropped
-    assert "Riad Harar" in txt                    # &nbsp; unescaped to space
+    assert "Guesthouse Addis" in txt                    # &nbsp; unescaped to space
     assert "Your stay" in txt
 
 
@@ -48,7 +48,7 @@ def test_extract_web_reads_jsonld_reservation():
     items = extract_web(_HTML)
     assert len(items) == 1
     assert items[0]["item_type"] == "lodging"
-    assert items[0]["lodging"]["property_name"] == "Riad Harar"
+    assert items[0]["lodging"]["property_name"] == "Guesthouse Addis"
 
 
 def test_extract_web_empty_on_plain_page():
@@ -58,7 +58,7 @@ def test_extract_web_empty_on_plain_page():
 
 def test_looks_like_maps_url_detects_directions_shapes():
     from extract.maps_url import looks_like_maps_url
-    assert looks_like_maps_url("https://www.google.com/maps/dir/Harar/Casablanca")
+    assert looks_like_maps_url("https://www.google.com/maps/dir/Gondar/Lalibela")
     assert looks_like_maps_url("https://maps.app.goo.gl/abc123")
     assert looks_like_maps_url("https://www.google.com/maps/dir/?api=1&origin=A&destination=B")
     assert not looks_like_maps_url("https://booking.example.com/reservation/42")
@@ -205,13 +205,13 @@ def test_capture_maps_url_routes_to_maps_channel():
     def run():
         before = len(_maps_batches())
         r = _client.post("/capture/web", data={
-            "content": "https://www.google.com/maps/dir/Harar/Casablanca",
+            "content": "https://www.google.com/maps/dir/Gondar/Lalibela",
             "travel_date": "2026-09-23", "travel_time": "15:35"})
         assert r.status_code == 200
         assert "captured" in r.text.lower()
         after = _maps_batches()
         assert len(after) == before + 1
-        assert after[-1].payload["url"].endswith("Casablanca")
+        assert after[-1].payload["url"].endswith("Lalibela")
         assert after[-1].payload["capture_context"]["travel_date"] == "2026-09-23"
     _route_or_skip(run)
 
