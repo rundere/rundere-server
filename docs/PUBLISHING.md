@@ -107,10 +107,46 @@ An entry without a reason is a config error.
 ## Where it runs
 
 - **Every push and PR:** the `prepublish` job in `.github/workflows/ci.yml`, on the
-  current files. It's report-only (`continue-on-error`) until the public-launch steps
-  clear the baseline, then it becomes required.
+  current files. It's a gate: a blocking finding fails the build. A fork's PR runs
+  without the private denylist (GitHub gives forks no secrets), and the push to
+  `main` runs it again with the denylist.
+- **Releases:** the "cut release" workflow runs it before bumping the version, so
+  no release is cut from files with a blocking finding.
 - **Before publishing:** run with `--history` and review the report in full.
-- **Releases:** once the baseline is clean, "cut release" runs it as a gate.
+
+## Repository settings (YONDER-295)
+
+The workflow files carry what can live in git: read-only tokens by default,
+Actions pinned to commit SHAs, no checked-out credentials where a job doesn't
+push, Dependabot (`.github/dependabot.yml`) and CodeQL (`.github/workflows/codeql.yml`,
+which skips while the repository is private). The rest are settings, applied to
+the public repository in this order:
+
+**When the candidate repository is created (still private)**
+
+- [ ] **Actions → General:** workflow permissions *Read repository contents*;
+      untick *Allow GitHub Actions to create and approve pull requests*; fork PRs
+      from outside collaborators *Require approval for all outside collaborators*.
+- [ ] **Secrets:** `PREPUBLISH_DENYLIST` (the private denylist's contents). No other
+      secret is needed: GHCR uses the built-in token.
+- [ ] **Environments → `release`:** the maintainer as required reviewer (replaces
+      YONDER-117); deployment branches limited to `main`.
+- [ ] **Rules on `main`** (a ruleset): pull request required, the `test` and
+      `prepublish` checks required, no force pushes, no deletion. *Open question to
+      test here first:* "cut release" and the release workflow push the version and
+      README-sync commits straight to `main` with the built-in token, which a
+      PR-required rule blocks. Either give that path a bypass the ruleset allows, or
+      have those workflows open a PR instead.
+- [ ] **Code security:** Dependabot alerts and security updates on.
+- [ ] Run the full CI and a dry-run "cut release" on the candidate.
+
+**When it goes public (launch day, after the checklist passes)**
+
+- [ ] **Code security:** secret scanning and push protection on; CodeQL starts on
+      its own with the next push.
+- [ ] **Private vulnerability reporting** on (SECURITY.md points to it).
+- [ ] **GHCR package:** visibility public, description and source link set; check
+      it lists the new repository.
 
 ## Manual checks, every time the repository is published
 
