@@ -131,17 +131,19 @@ Applied to `rundere/rundere-server` on 2026-10-22, except where noted.
 - [ ] **Secrets:** `PREPUBLISH_DENYLIST` (the private denylist's contents), set by the
       maintainer. No other secret is needed: GHCR uses the built-in token.
 - [x] **Environments → `release`:** deploys from `main` only.
-- [ ] **Rules on `main`** (a ruleset): pull request required, the `test` and
-      `prepublish` checks required, no force pushes, no deletion, no bypass. No
-      workflow pushes to `main`: releases go through a PR (`RELEASING.md`), and the
-      tag is pushed by `tag-release.yml`.
 - [x] **Code security:** Dependabot alerts and security updates on.
-- [ ] Run the full CI and a dry-run "cut release" on the candidate.
+- [x] Run the full CI and a dry-run "cut release" on the candidate (2026-10-22: both green).
 
 **When it goes public (launch day, after the checklist passes)**
 
 These need a public repository (or a paid plan while private):
 
+- [ ] **Rules on `main`:** create the ruleset in `.github/rulesets/main.json`
+      (`gh api -X POST repos/rundere/rundere-server/rulesets --input .github/rulesets/main.json`):
+      pull request required (merge commits), the `test` and `prepublish` checks
+      required, no force pushes, no deletion, no bypass. No workflow pushes to
+      `main`: releases go through a PR (`RELEASING.md`) and `tag-release.yml` pushes
+      only the tag.
 - [ ] **Actions → General:** fork PRs from outside collaborators *Require approval
       for all outside collaborators*.
 - [ ] **Environments → `release`:** the maintainer as required reviewer (replaces
