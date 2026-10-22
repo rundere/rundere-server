@@ -17,8 +17,12 @@ dependencies = [
     "jsonschema>=4.21",
     "pydantic>=2.7",
     "pydantic-settings>=2.2",
-    # >=6.19.0: PYSEC-2026-4153..4160 (YONDER-297). pypdf parses uploaded PDFs.
-    "pypdf>=6.19.0",
+    # >=6.21.1: CVE-2026-113786, after PYSEC-2026-4153..4160 (YONDER-297).
+    # pypdf parses uploaded PDFs.
+    "pypdf>=6.21.1",
+    # Declared directly: app/trips/maps.py draws trip maps with it (WeasyPrint
+    # also needs it). >=13.0.0: the CVE-2026-1123xx/1128xx image-decoder fixes.
+    "pillow>=13.0.0",
     "jinja2>=3.1",
     "timezonefinder>=6.5",
     "babel>=2.12",
