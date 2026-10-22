@@ -43,10 +43,10 @@
         <li>Open <b>Project Settings</b> (the gear) and tick <b>Show "appsscript.json" manifest file in editor</b>.
           Back in the editor, open <code>appsscript.json</code> and replace everything in it with:
           {% if gmail_manifest %}{{ copyblock('gmail-manifest', gmail_manifest) }}{% else %}<br>the file
-          <a href="https://github.com/jeeves5454/rundere-server/blob/main/capture/gmail-addon/appsscript.json">capture/gmail-addon/appsscript.json</a>.{% endif %}</li>
+          <a href="https://github.com/rundere/rundere-server/blob/main/capture/gmail-addon/appsscript.json">capture/gmail-addon/appsscript.json</a>.{% endif %}</li>
         <li>Open <code>Code.gs</code> and replace everything in it with:
           {% if gmail_code %}{{ copyblock('gmail-code', gmail_code) }}{% else %}<br>the file
-          <a href="https://github.com/jeeves5454/rundere-server/blob/main/capture/gmail-addon/Code.gs">capture/gmail-addon/Code.gs</a>.{% endif %}</li>
+          <a href="https://github.com/rundere/rundere-server/blob/main/capture/gmail-addon/Code.gs">capture/gmail-addon/Code.gs</a>.{% endif %}</li>
         <li>Make your own key. It is yours alone, so what the add-on sends lands in your queue.
           {{ keystep('gmail') }}</li>
         <li>Choose <b>Deploy → Test deployments → Install add-on</b>. This installs it for your Google
@@ -76,11 +76,11 @@
         <li>Open <b>Project Settings</b> and tick <b>Show "appsscript.json" manifest file in editor</b>. Replace the
           contents of <code>appsscript.json</code> with:
           {% if gcal_manifest %}{{ copyblock('gcal-manifest', gcal_manifest) }}{% else %}<br>the file
-          <a href="https://github.com/jeeves5454/rundere-server/blob/main/capture/gcal-addon/appsscript.json">capture/gcal-addon/appsscript.json</a>.{% endif %}
+          <a href="https://github.com/rundere/rundere-server/blob/main/capture/gcal-addon/appsscript.json">capture/gcal-addon/appsscript.json</a>.{% endif %}
           It turns on the Calendar service the script needs.</li>
         <li>Replace the contents of <code>Code.gs</code> with:
           {% if gcal_code %}{{ copyblock('gcal-code', gcal_code) }}{% else %}<br>the file
-          <a href="https://github.com/jeeves5454/rundere-server/blob/main/capture/gcal-addon/Code.gs">capture/gcal-addon/Code.gs</a>.{% endif %}</li>
+          <a href="https://github.com/rundere/rundere-server/blob/main/capture/gcal-addon/Code.gs">capture/gcal-addon/Code.gs</a>.{% endif %}</li>
         <li>Make your own key. {{ keystep('calendar') }}</li>
         <li><b>Deploy → Test deployments → Install add-on</b>, and get past the "this app isn't verified" screen
           (<b>Advanced → Go to … (unsafe)</b>).</li>

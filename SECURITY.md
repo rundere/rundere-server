@@ -36,7 +36,7 @@ You'll be credited in the advisory unless you'd rather not be.
 
 Security fixes go into the **latest release line only** (for example, if 4.12.x is
 current, the fix ships as the next 4.12.x). Older lines aren't patched, so keep your
-server on the latest release. The [releases page](https://github.com/jeeves5454/rundere-server/releases)
+server on the latest release. The [releases page](https://github.com/rundere/rundere-server/releases)
 lists them.
 
 ## In scope

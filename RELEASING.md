@@ -37,7 +37,7 @@ Pushing the tag triggers `.github/workflows/release.yml`, which now handles
 the GitHub side end-to-end:
 
 - Runs the test suite.
-- Builds + pushes `ghcr.io/jeeves5454/rundere-server:{X.Y.Z, X.Y, latest}` (up to 4.3.x the image was `ghcr.io/jeeves5454/yonder`).
+- Builds + pushes `ghcr.io/rundere/rundere-server:{X.Y.Z, X.Y, latest}` (before the public launch it was the private `ghcr.io/jeeves5454/rundere-server`, and up to 4.3.x `ghcr.io/jeeves5454/yonder`, D-207).
 - Creates the GitHub Release for the tag with auto-generated notes
   (`gh release create --generate-notes`) — skipped if a release for that tag
   already exists, so re-running via `workflow_dispatch` to rebuild a

@@ -291,7 +291,7 @@ def test_about_page_shows_version_repo_and_credit():
         from app.config import settings
         r = _client.get("/about")
         assert r.status_code == 200
-        assert "github.com/jeeves5454/rundere-server" in r.text
+        assert "github.com/rundere/rundere-server" in r.text
         assert "Claude" in r.text
         assert settings.app_version in r.text
     _route_or_skip(run)

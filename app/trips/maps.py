@@ -171,7 +171,7 @@ def _tile(template: str, z: int, x: int, y: int) -> bytes | None:
     try:
         req = urllib.request.Request(url, headers={
             "User-Agent": "Rundere trip planner (self-hosted; "
-                          "+https://github.com/jeeves5454/rundere-server)"})
+                          "+https://github.com/rundere/rundere-server)"})
         with urllib.request.urlopen(req, timeout=6) as resp:
             data = resp.read()
     except Exception:
