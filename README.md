@@ -7,7 +7,7 @@
 
 # Run·dere
 
-**Version 4.12.9** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/jeeves5454/rundere-server/releases) · [demo](https://demo.rundere.app) · [rundere.app](https://rundere.app)
+**Version 4.12.9** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/rundere/rundere-server/releases) · [demo](https://demo.rundere.app) · [rundere.app](https://rundere.app)
 
 **A self-hosted travel planner for you and the people you travel with.** Forward a booking
 email, drop in a PDF or click a bookmarklet, and Run·dere reads the flight, hotel, train or
@@ -54,7 +54,7 @@ Run·dere is one container plus a Postgres database, behind a reverse proxy that
 HTTPS.
 
 ```bash
-curl -O https://raw.githubusercontent.com/jeeves5454/rundere-server/main/deploy/docker-compose.example.yml
+curl -O https://raw.githubusercontent.com/rundere/rundere-server/main/deploy/docker-compose.example.yml
 # replace every CHANGE_ME (database password, TX_JWT_SECRET, TX_SECRETS_KEY:
 # openssl rand -base64 32) and the example hostnames
 docker network create proxy   # unless your reverse proxy already has one
@@ -155,8 +155,9 @@ Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [SECURITY.md](SECURITY.md) describes.
 
 The project was called **Yonder** until 2026. The Python package, the `TX_*` settings and
-some code keep that name on purpose (D-206). Releases up to 4.3.x were published as
-`ghcr.io/jeeves5454/yonder`.
+some code keep that name on purpose (D-206). Images are published as
+`ghcr.io/rundere/rundere-server` from the first public release on; earlier ones were
+private (D-207).
 
 ## Licence
 

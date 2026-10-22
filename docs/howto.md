@@ -27,7 +27,7 @@
 1. Pull the image (built by CI on each version tag), or build locally:
 
    ```bash
-   docker pull ghcr.io/jeeves5454/rundere-server:latest
+   docker pull ghcr.io/rundere/rundere-server:latest
    ```
 
 2. Deploy the reference Portainer/Compose stack.

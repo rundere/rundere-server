@@ -19,7 +19,7 @@
 
 services:
   rundere:
-    image: ghcr.io/jeeves5454/rundere-server:latest    # pin a version (e.g. 4.12.5) for rollbacks
+    image: ghcr.io/rundere/rundere-server:latest    # pin a version (e.g. 4.12.5) for rollbacks
     restart: unless-stopped
     # Runs as uid 10001 and hands its data folders to it on first start. Or run
     # as your own account so the folders stay yours: user: "1000:1000"

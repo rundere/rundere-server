@@ -10,9 +10,9 @@
 # pushes a new tag — a tag pushed with GITHUB_TOKEN doesn't fire `push`, so the
 # caller runs this directly; that path behaves exactly like a tag push.
 #
-# Push auth uses the built-in GITHUB_TOKEN (packages: write) — no PAT needed to
-# PUSH. Portainer PULLS the (private) package with your PAT as a registry
-# credential (read:packages). See docs/self-hosting.md.
+# Push auth uses the built-in GITHUB_TOKEN (packages: write), so no PAT is
+# needed. The image is ghcr.io/<this repository> and public (D-207), so pulling
+# it needs no credential either. See docs/self-hosting.md.
 name: release
 
 on:

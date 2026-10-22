@@ -635,6 +635,23 @@ request forgery (SSRF) risk.
     tool `scripts/dedup_locations.py` from the migration are removed.
   - Supersedes D-126. `/ingest` and its signed keys stay: the Gmail and Calendar add-ons
     use them.
+- **D-207 — The public repository is `rundere/rundere-server` (YONDER-286/296; owner,
+  2026-10-22).** Amends D-116.
+  - **How:** a new repository in the `rundere` organisation, next to `rundere-ios`,
+    carrying this repository's full history rewritten with `git filter-repo` from the
+    private denylist (every commit and tag, personal data replaced, private files
+    dropped, commits under the GitHub noreply identity). It isn't a one-commit snapshot:
+    the history is the record of the work. Rewriting this repository in place was
+    rejected because GitHub keeps PR diffs, `refs/pull/*`, release notes and Actions
+    logs outside git.
+  - **The old repository** (`jeeves5454/rundere-server`) stays private as the archive,
+    read-only after launch, with a full backup (PRs and releases included) on the
+    owner's Forgejo.
+  - **The image** is `ghcr.io/rundere/rundere-server`, public from the first public
+    release. Earlier images stay private.
+  - **Development** moves to the public repository after launch.
+  - It's created private and goes public only when the launch checklist passes
+    (`docs/PUBLISHING.md`).
 - **D-206 — Yonder stays as the internal name (YONDER-292; owner, 2026-10-19).** The
   Python package `yonder`, the `TX_*` settings prefix and code names such as the `yonder.*` loggers
   keep the old name. Renaming them would break every self-hoster's environment file for no

@@ -885,5 +885,5 @@ def about(request: Request, session: Session = Depends(get_session)):
         "version": settings.app_version,
         "demo": demo.enabled(),
         "contact": app_links.server_contact(),
-        "repo_url": "https://github.com/jeeves5454/rundere-server",
+        "repo_url": "https://github.com/rundere/rundere-server",
     })

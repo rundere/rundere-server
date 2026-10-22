@@ -12,7 +12,7 @@ issues privately, as [SECURITY.md](SECURITY.md) describes, never in a public iss
 You need Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/jeeves5454/rundere-server.git
+git clone https://github.com/rundere/rundere-server.git
 cd rundere-server
 uv run --extra dev pytest -q          # the full suite, about a minute
 uv run uvicorn app.main:app --reload  # http://localhost:8000, SQLite by default
