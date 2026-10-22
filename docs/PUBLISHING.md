@@ -124,24 +124,28 @@ the public repository in this order:
 
 **When the candidate repository is created (still private)**
 
-- [ ] **Actions → General:** workflow permissions *Read repository contents*;
-      untick *Allow GitHub Actions to create and approve pull requests*; fork PRs
-      from outside collaborators *Require approval for all outside collaborators*.
-- [ ] **Secrets:** `PREPUBLISH_DENYLIST` (the private denylist's contents). No other
-      secret is needed: GHCR uses the built-in token.
-- [ ] **Environments → `release`:** the maintainer as required reviewer (replaces
-      YONDER-117); deployment branches limited to `main`.
+Applied to `rundere/rundere-server` on 2026-10-22, except where noted.
+
+- [x] **Actions → General:** workflow permissions *Read repository contents*;
+      *Allow GitHub Actions to create and approve pull requests* off.
+- [ ] **Secrets:** `PREPUBLISH_DENYLIST` (the private denylist's contents), set by the
+      maintainer. No other secret is needed: GHCR uses the built-in token.
+- [x] **Environments → `release`:** deploys from `main` only.
 - [ ] **Rules on `main`** (a ruleset): pull request required, the `test` and
-      `prepublish` checks required, no force pushes, no deletion. *Open question to
-      test here first:* "cut release" and the release workflow push the version and
-      README-sync commits straight to `main` with the built-in token, which a
-      PR-required rule blocks. Either give that path a bypass the ruleset allows, or
-      have those workflows open a PR instead.
-- [ ] **Code security:** Dependabot alerts and security updates on.
+      `prepublish` checks required, no force pushes, no deletion, no bypass. No
+      workflow pushes to `main`: releases go through a PR (`RELEASING.md`), and the
+      tag is pushed by `tag-release.yml`.
+- [x] **Code security:** Dependabot alerts and security updates on.
 - [ ] Run the full CI and a dry-run "cut release" on the candidate.
 
 **When it goes public (launch day, after the checklist passes)**
 
+These need a public repository (or a paid plan while private):
+
+- [ ] **Actions → General:** fork PRs from outside collaborators *Require approval
+      for all outside collaborators*.
+- [ ] **Environments → `release`:** the maintainer as required reviewer (replaces
+      YONDER-117).
 - [ ] **Code security:** secret scanning and push protection on; CodeQL starts on
       its own with the next push.
 - [ ] **Private vulnerability reporting** on (SECURITY.md points to it).

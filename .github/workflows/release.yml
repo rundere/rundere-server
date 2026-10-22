@@ -6,9 +6,10 @@
 # select the tag under "Use workflow from" to (re)publish an existing release,
 # e.g. to backfill v2.2.1 which was tagged before this workflow existed.
 #
-# Also CALLED by cut-release.yml (workflow_call, `tag` input) right after it
-# pushes a new tag — a tag pushed with GITHUB_TOKEN doesn't fire `push`, so the
-# caller runs this directly; that path behaves exactly like a tag push.
+# Also CALLED by tag-release.yml (workflow_call, `tag` input) right after it
+# pushes a new tag: a tag pushed with GITHUB_TOKEN doesn't fire `push`, so the
+# caller runs this directly; that path behaves exactly like a tag push. It never
+# pushes to main: the version line in README/docs rides in the release PR.
 #
 # Push auth uses the built-in GITHUB_TOKEN (packages: write), so no PAT is
 # needed. The image is ghcr.io/<this repository> and public (D-207), so pulling
@@ -94,14 +95,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Only for a real tag push (not workflow_dispatch, which is for rebuilding/
-  # backfilling a historical version and must not touch README or create an
-  # out-of-order GitHub Release). Publishes the GitHub Release with
-  # auto-generated notes, then syncs the version line in README/docs so they
-  # never drift from pyproject.toml again. Issue tracking lives in Plane
-  # (self-hosted, LAN-only) which GitHub-hosted runners can't reach — that
-  # half of the release is done by hand (RELEASING.md, 'Syncing the tracker')
-  # (see RELEASING.md).
+  # Only for a real tag push or a call from tag-release.yml (not
+  # workflow_dispatch, which rebuilds or backfills a historical image and must
+  # not create an out-of-order GitHub Release). Publishes the GitHub Release
+  # with auto-generated notes. The README/docs version line is already right:
+  # it rode in the release PR. Issue tracking lives in the maintainer's private
+  # Plane, which GitHub-hosted runners can't reach, so that half of a release is
+  # done by hand (RELEASING.md, 'Syncing the tracker').
   publish:
     needs: image
     if: github.event_name == 'push' || inputs.tag != ''
@@ -111,10 +111,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
-          # Called path: main as it is NOW (the release commit), so the README
-          # sync below fast-forwards main instead of branching off a stale sha.
-          ref: ${{ inputs.tag != '' && 'main' || '' }}
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
 
       - name: Create GitHub Release
         id: gh_release
@@ -129,23 +127,6 @@ jobs:
           fi
           gh release view "$TAG" --json body -q .body > release-notes.md
           echo "notes-file=release-notes.md" >> "$GITHUB_OUTPUT"
-
-      - name: Sync version line in README and docs
-        env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          VERSION="${TAG#v}"
-          sed -i -E "s/\*\*Version [0-9]+\.[0-9]+\.[0-9]+\*\*/**Version ${VERSION}**/" README.md
-          sed -i -E "s/Current for \*\*v[0-9]+\.[0-9]+\.[0-9]+\*\*/Current for **v${VERSION}**/" docs/howto.md
-          if ! git diff --quiet -- README.md docs/howto.md; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add README.md docs/howto.md
-            git commit -m "chore: sync README/docs version to ${VERSION} [skip ci]"
-            git push origin HEAD:main
-          else
-            echo "README/docs already at ${VERSION}, nothing to commit."
-          fi
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

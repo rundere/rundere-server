@@ -1,22 +1,20 @@
 # Cut a release from the Actions tab: Actions → "Cut release" → Run workflow.
 #
-#  1. plan     — works out the next version from pyproject.toml (patch / minor
-#                / major, or an explicit X.Y.Z), checks the tag is free, and
-#                writes the version + the commits since the last tag to the run
-#                summary. With "publish" unticked (the default) it stops here:
-#                a dry run to look before you leap.
-#  2. release  — only when "publish" is ticked. Runs in the `release`
-#                environment: add yourself as a required reviewer there
-#                (Settings → Environments → release) and GitHub pauses for your
-#                "Approve and deploy" click. (Required reviewers on a private
-#                repo need GitHub Pro/Team; without them the ticked box + write
-#                access to run this is the approval.) Bumps app/config.py and
-#                pyproject.toml, commits "chore: release X.Y.Z" to main, and
-#                pushes the annotated tag vX.Y.Z.
-#  3. publish  — calls release.yml for that tag: tests, GHCR image, GitHub
-#                Release with generated notes, README/docs version sync. (Called
-#                directly because a tag pushed with GITHUB_TOKEN doesn't trigger
-#                other workflows.)
+# Every change to main goes through a PR, releases included (D-207, YONDER-295):
+#
+#  1. plan     — runs the pre-publish gate, works out the next version from
+#                pyproject.toml (patch / minor / major, or an explicit X.Y.Z),
+#                checks the tag is free, and writes the version + the merges
+#                since the last tag to the run summary. With "publish" unticked
+#                (the default) it stops here: a dry run.
+#  2. prepare  — only when "publish" is ticked. Commits the version bump
+#                (pyproject.toml, app/config.py, uv.lock) and the README/docs
+#                version line to a `release/vX.Y.Z` branch and pushes that
+#                branch, never main. The run summary links to open the PR.
+#  3. You open and merge the PR. CI runs on it like any other (a PR opened with
+#     the built-in token wouldn't trigger CI, and the repo doesn't let Actions
+#     open PRs anyway). Merging it starts tag-release.yml, which tags the merge
+#     commit and calls release.yml: tests, GHCR image, GitHub Release.
 #
 # The tracker sync stays manual (the maintainer's private Plane; RELEASING.md).
 name: cut release
@@ -91,82 +89,60 @@ jobs:
           if git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null; then
             echo "::error::tag v$NEXT already exists"; exit 1
           fi
-          # Resume: a run that bumped main to $NEXT but failed before its tag
-          # reached GitHub (v4.12.3: the tag push was rejected) can be finished
-          # by running again with the same version. The release job then only tags.
-          RESUME=false
-          if [ "$NEXT" = "$CURRENT" ]; then
-            RESUME=true
-          elif [ "$(printf '%s\n%s\n' "$CURRENT" "$NEXT" | sort -V | tail -1)" != "$NEXT" ]; then
+          if [ "$(printf '%s\n%s\n' "$CURRENT" "$NEXT" | sort -V | tail -1)" != "$NEXT" ] || [ "$NEXT" = "$CURRENT" ]; then
             echo "::error::$NEXT is not newer than $CURRENT"; exit 1
           fi
           echo "version=$NEXT" >> "$GITHUB_OUTPUT"
           LAST=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
           {
-            if [ "$RESUME" = "true" ]; then
-              echo "## Release plan: finish **$NEXT** (main is already at $NEXT; only the tag is missing)"
-            else
-              echo "## Release plan: $CURRENT → **$NEXT**"
-            fi
+            echo "## Release plan: $CURRENT → **$NEXT**"
             echo
             if [ "${{ inputs.publish }}" = "true" ]; then
-              echo "Publishing: the \`release\` job tags \`v$NEXT\` on main after approval."
+              echo "Publishing: the \`prepare\` job pushes \`release/v$NEXT\`; open its PR from that job's summary."
             else
-              echo "**Dry run** — nothing will be tagged. Re-run with *publish* ticked to release."
+              echo "**Dry run**: no branch is pushed. Re-run with *publish* ticked to prepare the release PR."
             fi
             echo
             echo "### Merged since ${LAST:-the beginning}"
             git log --merges --first-parent --format='- %s' ${LAST:+$LAST..}origin/main | head -50
           } >> "$GITHUB_STEP_SUMMARY"
 
-  release:
+  prepare:
     needs: plan
     if: inputs.publish
     runs-on: ubuntu-latest
-    environment: release            # add required reviewers here for an approval click
+    environment: release            # deploys from main only
     permissions:
-      contents: write
+      contents: write               # push the release/vX.Y.Z branch (not main)
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: main
-          fetch-depth: 0
-      - name: Bump, commit and tag
+      - name: Bump the version on a release branch
         env:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
+          BRANCH="release/v${VERSION}"
+          git switch -c "$BRANCH"
           sed -i -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"${VERSION}\"/" pyproject.toml
           sed -i -E "s/^    app_version: str = \"[0-9]+\.[0-9]+\.[0-9]+\"/    app_version: str = \"${VERSION}\"/" app/config.py
           grep -q "^version = \"${VERSION}\"" pyproject.toml
           grep -q "app_version: str = \"${VERSION}\"" app/config.py
           # uv.lock records the project's own version too; bump it in step or
-          # the lock goes stale on every release and CI's `uv lock --check`
-          # fails (YONDER-194).
+          # CI's `uv lock --check` fails (YONDER-194).
           sed -i -E '/^name = "yonder"$/{n;s/^version = "[0-9]+\.[0-9]+\.[0-9]+"/version = "'"${VERSION}"'"/}' uv.lock
           grep -A1 '^name = "yonder"$' uv.lock | grep -q "^version = \"${VERSION}\""
+          # The version line in the README and the guide ride in the same PR.
+          sed -i -E "s/\*\*Version [0-9]+\.[0-9]+\.[0-9]+\*\*/**Version ${VERSION}**/" README.md
+          sed -i -E "s/Current for \*\*v[0-9]+\.[0-9]+\.[0-9]+\*\*/Current for **v${VERSION}**/" docs/howto.md
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml app/config.py uv.lock
-          # Already at VERSION: resuming a run whose bump landed but whose tag
-          # didn't, so there's nothing to commit; tag main as it is.
-          if git diff --cached --quiet; then
-            echo "main is already at ${VERSION}; tagging it"
-          else
-            git commit -m "chore: release ${VERSION}"
-          fi
-          git tag -a "v${VERSION}" -m "Yonder ${VERSION}"
-          # GitHub occasionally rejects a push with a bare "(failed)"; retry
-          # before giving up so a release isn't left half done.
-          push() { for i in 1 2 3; do git push origin "$1" && return 0; echo "push $1 failed (attempt $i); retrying"; sleep $((i * 10)); done; return 1; }
-          push HEAD:main
-          push "v${VERSION}"
-
-  publish:
-    needs: [plan, release]
-    uses: ./.github/workflows/release.yml
-    with:
-      tag: v${{ needs.plan.outputs.version }}
-    permissions:
-      contents: write
-      packages: write
-    secrets: inherit
+          git add pyproject.toml app/config.py uv.lock README.md docs/howto.md
+          git commit -m "chore: release ${VERSION}"
+          git push origin "$BRANCH"
+          {
+            echo "## Release ${VERSION} is ready for review"
+            echo
+            echo "[Open the release PR](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?expand=1&title=chore:%20release%20${VERSION})."
+            echo "Merging it tags \`v${VERSION}\` and publishes the image and the GitHub Release (tag-release.yml)."
+          } >> "$GITHUB_STEP_SUMMARY"
