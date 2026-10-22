@@ -1,0 +1,63 @@
+# Tag and publish a release once its PR is merged (D-207, YONDER-295).
+#
+# "Cut release" puts the version bump on a release/vX.Y.Z branch; merging that
+# PR changes the version on main. On every push to main this checks whether
+# main's version already has a tag. If not, it tags the merge commit vX.Y.Z and
+# calls release.yml for it (tests, GHCR image, GitHub Release). A tag pushed with
+# the built-in token doesn't start other workflows, hence the direct call.
+# Pushes that don't change the version find the tag already there and stop.
+name: tag release
+
+on:
+  push:
+    branches: [main]
+    paths: [pyproject.toml]
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    environment: release            # deploys from main only
+    permissions:
+      contents: write               # push the tag (main itself is never pushed)
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Tag main's version if it isn't tagged yet
+        id: tag
+        run: |
+          VERSION=$(sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/p' pyproject.toml)
+          APP=$(sed -nE 's/^    app_version: str = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/p' app/config.py)
+          if [ -z "$VERSION" ] || [ "$VERSION" != "$APP" ]; then
+            echo "::error::pyproject.toml ($VERSION) and app/config.py ($APP) disagree"; exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+            echo "v${VERSION} is already tagged; nothing to release."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${VERSION}" -m "Run·dere ${VERSION}"
+          # GitHub occasionally rejects a push with a bare "(failed)"; retry.
+          for i in 1 2 3; do git push origin "v${VERSION}" && break; echo "tag push failed (attempt $i)"; sleep $((i * 10)); [ "$i" = 3 ] && exit 1; done
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    permissions:
+      contents: write
+      packages: write
+    secrets: inherit
