@@ -53,6 +53,7 @@ queue a few minutes later. Nothing is filed until they approve it.
 | `TX_INBOX_ACKNOWLEDGE` | `true` | Send the "Got it" email (needs SMTP and an email on the person's account). |
 | `TX_INBOX_MAX_BYTES` | `10000000` | Larger messages are dropped without being downloaded. |
 | `TX_INBOX_RATE_LIMIT` | `30` | Captures per address per hour. |
+| `TX_INBOX_DEDICATED` | unset | Whether the inbox folder is Run·dere's alone (D-208). Unset: an admin decides on **Settings → Server mail**. `true` / `false`: fixed here, and the page can't change it. See [A Run·dere-only folder](#a-rundere-only-folder). |
 | `TX_INBOX_DROPPED_DAYS` | `30` | Mail in the dropped folder is moved to Trash after this many days (SPEC-8 D-196). |
 | `TX_INBOX_TRASH_FOLDER` | auto | Where cleared mail goes. Empty = the mailbox's own Trash (the `\Trash` folder). |
 | `TX_RETENTION_MONTHS` | `12` | A captured email — Run·dere's copy and the one in the done folder — is removed this long after its trip ends (or after it arrived, with no trip). What was read from it stays. |
@@ -66,6 +67,27 @@ provider empties the Trash. Captures still waiting in review are never removed.
 `python -m app.cli retention --dry-run` shows what the next sweep would do.
 
 Restart after changing them.
+
+## A Run·dere-only folder
+
+Mail in the inbox folder that isn't sent to a forwarding address is normally
+left where it is (D-190), because the folder may be part of someone's own
+mailbox. If only Run·dere reads the folder, that rule strands mail sent to the
+bare address, a mistyped address or spam. Common cases are a mailbox of its
+own, or a folder that only a mail filter fills (like the Proton example
+below). In those cases, mark the folder Run·dere-only (D-208):
+
+- **Settings → Server mail → Run·dere-only folder → Make it Run·dere-only…**
+  The page first shows how many messages in the folder would move to the
+  dropped folder, and warns again if the folder is `INBOX`. Nothing changes
+  until you confirm.
+- Or set `TX_INBOX_DEDICATED=true` to fix it in the server's configuration.
+
+From the next read, mail without a forwarding address moves to the dropped
+folder. Only the outcome is recorded ("unmatched: not sent to a personal
+address"), with no sender, subject or body. The dropped folder is emptied to
+Trash after `TX_INBOX_DROPPED_DAYS`. Leave this off if the folder is part of a
+personal inbox.
 
 ## The mailbox must accept plus addressing
 

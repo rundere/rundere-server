@@ -1283,3 +1283,15 @@ class InboxMessage(Base):
     batch_id: Mapped[str | None] = mapped_column(String(36))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now,
                                                   index=True)
+
+
+class ServerSetting(Base):
+    """A server-wide setting an admin changes in the app rather than in the
+    environment (D-208). Never a secret: credentials stay in the environment
+    (D-190) or encrypted per user (D-151)."""
+    __tablename__ = "server_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    updated_by: Mapped[str | None] = mapped_column(String(36))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=_now)
