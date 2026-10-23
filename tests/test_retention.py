@@ -80,7 +80,7 @@ if DEPS:
         m = EmailMessage()
         m["Subject"], m["From"], m["Message-ID"] = "Hotel booked", "Hotel <h@example.com>", mid
         m["Date"] = "Mon, 3 Aug 2026 12:00:00 -0400"
-        m.set_content("Your stay is confirmed. Card ending 4242.")
+        m.set_content("Your stay at the Larkspur Inn is confirmed.")
         return base64.b64encode(m.as_bytes()).decode()
 
     def _capture(trip_id=None, *, state="logged", channel="email", received=None):
@@ -207,7 +207,9 @@ if DEPS:
         assert "raw_message_base64" not in t and t["purged_at"]
         assert t["subject"] == "Hotel booked" and t["sender"] == "Hotel <h@example.com>"
         assert t["message_id"] == mid and t["mailbox_pending"] is True
-        assert "4242" not in str(t)                      # no content survives
+        # No content survives. The marker is a word, not digits: the tombstone keeps
+        # a random message id and a microsecond timestamp that digits can match.
+        assert "Larkspur" not in str(t)
         assert "html" not in _payload(web)
         assert "raw_message_base64" in _payload(pending)    # still in review: kept
         assert "raw_message_base64" in _payload(recent)     # not due yet
