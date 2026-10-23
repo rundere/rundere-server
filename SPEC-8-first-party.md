@@ -445,6 +445,46 @@ request forgery (SSRF) risk.
     public ingress, firewalled from the LAN, with SQLite on a volume.
     `demo.rundere.app` is a CNAME to the home server's dynamic-DNS name.
 
+## 12. A trip item may have no date yet (D-210)
+
+Run·dere is for planning as well as for what's booked. A plan often has a place,
+a route or an idea before it has a date: "drive the coast road one afternoon",
+"the outlet mall on the way back". Run·dere's own trips already hold such items.
+A manual activity can be saved without a date and shows under **Date not set**
+on the timeline, and a saved place can be filed undated. The capture pipeline
+couldn't. Its item schema required a date on every movement, and RULE-31 refused
+a directions link without one, so a shared route was lost (YONDER-317). That
+rule came from the AdventureLog-first design (SPEC-4, D-90), when a captured
+route was written straight into an AdventureLog collection that needed dates.
+Since D-146 that no longer holds.
+
+- **"No date yet" is valid everywhere:** every activity type, however it arrives
+  (typed in, captured, from Discover or a saved place, the app, the API or MCP).
+- **It is explicit, never synthesised.** The item schema's `DateTimeLocal` gains
+  `precision: "none"` with no `local` value. D-06 still holds: an unknown time is
+  never written as midnight, and now an unknown date is never written as a date
+  either.
+- **RULE-31 is superseded.** An undated directions capture is extracted like any
+  other, into a ground-transport item with its stops and route. It waits in the
+  Inbox with the reason "no travel date yet" (`missing_travel_date`). That
+  reason is a prompt, not a block: the person can add the date there with the
+  usual editor, or approve it onto a trip as it is and date it later. RULE-34
+  still holds: a date comes from the person, never from the URL.
+- **Only a date-bound write needs a date, and only when it happens.** Run·dere's
+  own timeline takes an undated item (the **Date not set** group). An AirTrail
+  flight or an AdventureLog visit is skipped with "no date yet" when the commit
+  runs, and is written by a later commit once a date is set. Nothing is refused
+  at capture.
+- **Trip matching** has no date to go on, so the person's trip choice decides
+  (D-05). Without one, the Inbox asks.
+- **Identity:** an undated item's canonical key can't use a date. It uses what
+  identifies it: the route's stops for a ground trip, the place for a stay or
+  visit, plus the capture it came from. A later dated capture of the same route
+  is a new item, never a silent merge.
+- **Not part of this decision:** how undated items are shown and managed on a
+  trip beyond today's **Date not set** group (YONDER-207, and scheduling hints in
+  YONDER-208). That comes in a later release.
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.
@@ -728,3 +768,12 @@ request forgery (SSRF) risk.
   page offers the browser's detected zone in one click. `app/clock.py` is the
   one implementation. Discovery runs, the PDF and capture stamps keep the
   server clock. (built 4.8)
+- **D-210 — A trip item may have no date yet (YONDER-317; owner, 2026-10-23).**
+  "No date yet" is a valid, explicit state for every activity type and every way
+  an item arrives (`DateTimeLocal.precision: "none"`, never a synthesised date;
+  D-06 still holds). It supersedes RULE-31: an undated directions capture is
+  extracted and waits in the Inbox with a non-blocking "no travel date yet"
+  prompt. Only date-bound writes (AirTrail flights, AdventureLog visits) need a
+  date, and they are skipped at commit until one is set. An undated item's
+  identity uses its stops or place and its capture, not a date. Display and
+  management beyond **Date not set** is later (YONDER-207). See §12.
