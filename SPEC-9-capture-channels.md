@@ -296,10 +296,12 @@ points that share one parser (`extract/place_url.py`) and one category table:
     and the arrival time. Nothing the person typed is replaced. The fill happens as soon as the
     link is pasted, and the same rule runs again on save, for every type.
   - *Undated directions go to the Inbox.* A directions link captured without a date is no longer
-    refused. It is stored, extracted without a date, and waits in the Inbox (D-200) as "needs a
-    travel date" (RULE-31 now holds it for review instead of refusing it). The person adds the
-    date and matches it to a trip there. The date still comes only from the person, never the
-    URL (RULE-34).
+    refused at capture. It is stored (D-15) and waits in the Inbox (D-200) as "needs a travel
+    date" (`missing_travel_date`), the same way any capture the pipeline can't finish waits for
+    review. There the person adds the date (and, if they like, the time, an end date and a
+    trip), and that one capture is extracted again into a road trip to match and approve. The
+    item schema, RULE-31 and RULE-34 are unchanged: no road trip exists without a date, and the
+    date comes only from the person, never the URL.
   - *The app routes links as the page does.* `POST /api/v1/capture` checks a Maps link's kind
     before anything else, expanding a Google short link (allowlisted hosts, D-152), exactly like
     the capture page. A place link becomes a saved place (D-166/D-167), and directions go to the
