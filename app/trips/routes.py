@@ -3081,11 +3081,19 @@ def adventurelog_pull(trip_id: str, request: Request,
 
 # ----------------------------------------------------------------- activities
 
+def _type_or_none(key: str | None) -> "activity_types.ActivityType | None":
+    """The activity type the person chose, or None when they haven't chosen one
+    yet. D-209: a new activity has no default type (it was Flight), so an empty
+    or unknown key is "not chosen", never a silent fallback."""
+    t = activity_types.get_type(key) if key else None
+    return t if t is not None and t.key == key else None
+
+
 def _activity_modal_ctx(request: Request, trip_id: str, *, mode: str,
-                        action: str, atype: str, values: dict,
+                        action: str, atype: str | None, values: dict,
                         session: Session | None = None,
                         tagged: list[int] | None = None) -> dict:
-    t = activity_types.get_type(atype)
+    t = _type_or_none(atype)
     names = _roster_names(session, trip_id) if session is not None else {}
     # "Who is this for" only appears once the trip has more than one traveller;
     # an untagged activity (everyone) shows every box ticked.
@@ -3097,20 +3105,23 @@ def _activity_modal_ctx(request: Request, trip_id: str, *, mode: str,
         "request": request, "mode": mode,
         "title": "New activity" if mode == "create" else "Edit activity",
         "action": action, "trip_id": trip_id,
-        "type": t.key, "type_options": activity_types.type_options(),
-        "fields": _modal_fields(t, values),
+        "type": t.key if t else "", "type_options": activity_types.type_options(),
+        "fields": _modal_fields(t, values) if t else [],
+        # D-209: one Map link field, under the type picker, for every type.
+        "map_link": values.get("mapLink", ""),
     }
 
 
 def _modal_fields(t: activity_types.ActivityType, values: dict) -> list[dict]:
+    """The type's own fields, without the Map link: that one field sits under
+    the type picker (D-209), so the form never shows two."""
     return [{"key": f["key"], "label": f["label"], "type": f["type"],
              "is_textarea": f["type"] == "textarea", "hint": f.get("hint", ""),
-             "value": values.get(f["key"], "")} for f in t.fields]
+             "value": values.get(f["key"], "")} for f in t.fields if f["key"] != "mapLink"]
 
 
 @router.get("/{trip_id}/activity/new", response_class=HTMLResponse)
-def new_activity(trip_id: str, request: Request,
-                 type: str = activity_types.DEFAULT_TYPE,
+def new_activity(trip_id: str, request: Request, type: str = "",
                  session: Session = Depends(get_session)):
     if scope.trip_or_none(session, request, trip_id) is None:
         return HTMLResponse("", status_code=404)
@@ -3121,46 +3132,74 @@ def new_activity(trip_id: str, request: Request,
 
 
 @router.get("/{trip_id}/activity/from-link", response_class=HTMLResponse)
-def activity_from_link(trip_id: str, request: Request, link: str = "",
+def activity_from_link(trip_id: str, request: Request,
                        session: Session = Depends(get_session)):
-    """Add by Maps link (YONDER-200, D-168): a pasted Google/Apple place link
-    re-renders the new-activity form with the type, name, address and Map link
-    filled in. Nothing is saved here, so the person checks the type (a generic
-    Tour when the category is unknown) and sets the time before saving."""
+    """The Map link field, as soon as a link is pasted (D-209, YONDER-315/318).
+    The whole form comes along, so nothing the person entered is lost:
+
+    - no type chosen yet: the link suggests one, a place by its category
+      (D-168) and directions as a road trip, and fills that type's fields;
+    - a type chosen: it stays, and the link fills only fields that are still
+      empty. The same fill runs again on save (app/trips/enrich.py).
+
+    Nothing is saved here."""
+    from app.trips.enrich import enrich_activity_values, fill_from_place
+    from extract import place_url
     if scope.trip_or_none(session, request, trip_id) is None:
         return HTMLResponse("", status_code=404)
-    link = (link or "").strip()
-    try:
-        if not link:
-            raise ValueError("")                  # nothing pasted: a blank form, no error
-        atype, values = places_svc.activity_from_link(link)
-    except ValueError as exc:
+    q = request.query_params
+    link = (q.get("mapLink") or "").strip()
+    chosen = _type_or_none(q.get("activity_kind"))
+    mine = ({f["key"]: v for f in chosen.fields if (v := (q.get(f["key"]) or "").strip())}
+            if chosen else {})
+    tagged = ([int(t) for t in q.getlist("traveler_ids") if t.isdigit()]
+              if q.get("travelers_shown") else None)
+
+    def form(atype, values, **extra):
         ctx = _activity_modal_ctx(request, trip_id, mode="create",
-                                  action=f"/trips/{trip_id}/activity",
-                                  atype=activity_types.DEFAULT_TYPE, values={},
-                                  session=session)
-        ctx.update(link_value=link, link_error=str(exc))
+                                  action=f"/trips/{trip_id}/activity", atype=atype,
+                                  values=values, session=session, tagged=tagged)
+        ctx.update(discovery_item_id=q.get("discovery_item_id") or None, **extra)
         return templates.TemplateResponse(request, "_activity_modal.html", ctx)
-    ctx = _activity_modal_ctx(request, trip_id, mode="create",
-                              action=f"/trips/{trip_id}/activity", atype=atype,
-                              values=values, session=session)
-    ctx.update(link_value=link, from_link=True)
-    return templates.TemplateResponse(request, "_activity_modal.html", ctx)
+
+    atype = chosen.key if chosen else None
+    if not link:                                  # nothing pasted: the form as it was
+        return form(atype, mine)
+    full = place_url.resolved_url(link)           # a Google short link, expanded once
+    try:
+        if place_url.parse_place_url(full) is not None:
+            link_type, link_values = places_svc.activity_from_link(full)
+            link_values["mapLink"] = link         # keep what they pasted
+        elif place_url.classify(full, expand=False) == "directions":
+            link_type, link_values = "drive", {"mapLink": link}
+        else:
+            places_svc.activity_from_link(full)   # raises the explanation
+            raise ValueError("That isn't a Google or Apple Maps link.")
+    except ValueError as exc:
+        return form(atype, {**mine, "mapLink": link}, link_error=str(exc))
+    if chosen is None:                            # D-168: the link suggests the type
+        atype = link_type
+        values = enrich_activity_values(atype, link_values) if atype == "drive" else link_values
+        return form(atype, values, from_link=True)
+    values = fill_from_place(atype, mine, link_values)
+    if atype == "drive" and link_type == "drive":
+        values = enrich_activity_values(atype, values)   # From, To, Route, Distance
+    return form(atype, values, from_link=True, kept_mine=True)
 
 
 @router.get("/{trip_id}/activity/fields", response_class=HTMLResponse)
-def activity_fields(trip_id: str, request: Request,
-                    activity_kind: str = activity_types.DEFAULT_TYPE):
+def activity_fields(trip_id: str, request: Request, activity_kind: str = ""):
     """Re-render just the dynamic field block when the type dropdown changes.
     Switching type starts from empty inputs (as in the design) — the contract
     for what a flight vs a hotel carries is different, so old values would be
-    meaningless under the new type. The selector is `activity_kind`, NOT `type`,
+    meaningless under the new type. The Map link sits outside this block, so it
+    stays (D-209). The selector is `activity_kind`, NOT `type`,
     because a detail field (lodging's sub-type) is itself named `type` and would
     otherwise shadow the selector in the posted form (Starlette .get() returns the
     LAST duplicate) — silently saving every manual lodging as a flight."""
-    t = activity_types.get_type(activity_kind)
+    t = _type_or_none(activity_kind)
     return templates.TemplateResponse(request, "_activity_fields.html", {
-        "request": request, "fields": _modal_fields(t, {})})
+        "request": request, "fields": _modal_fields(t, {}) if t else []})
 
 
 @router.get("/{trip_id}/activity/{activity_id}/edit", response_class=HTMLResponse)
@@ -3194,7 +3233,18 @@ async def create_activity(trip_id: str, request: Request,
     if trip is None:
         return HTMLResponse("", status_code=404)
     form = await request.form()
-    t = activity_types.get_type(form.get("activity_kind") or activity_types.DEFAULT_TYPE)
+    t = _type_or_none(form.get("activity_kind"))
+    if t is None:
+        # D-209: no default type. Hand the form back, link and travellers kept.
+        ctx = _activity_modal_ctx(
+            request, trip_id, mode="create", action=f"/trips/{trip_id}/activity",
+            atype=None, values={"mapLink": (form.get("mapLink") or "").strip()},
+            session=session,
+            tagged=([int(x) for x in form.getlist("traveler_ids") if x.isdigit()]
+                    if "travelers_shown" in form else None))
+        ctx.update(type_error="Choose a type for this activity.",
+                   discovery_item_id=form.get("discovery_item_id") or None)
+        return templates.TemplateResponse(request, "_activity_modal.html", ctx)
     values, geo = prepare_activity(t.key, _collect_values(t, form),
                                    session=session, trip_id=trip_id)
     a = TripActivity(trip_id=trip_id, type=t.key, values=values, geo=geo,

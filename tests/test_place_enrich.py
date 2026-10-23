@@ -91,6 +91,7 @@ except ImportError:
 
 if DEPS:
     from app import places as places_svc
+    from app.trips import types as activity_types
     from app.db import SessionLocal, engine
     from app.main import app
     from app.models import Base, SavedPlace, Trip, TripActivity
@@ -149,7 +150,8 @@ if DEPS:
         tid = _trip()
         try:
             r = client.get(f"/trips/{tid}/activity/new")
-            assert r.status_code == 200 and 'name="link"' in r.text
+            assert r.status_code == 200 and r.text.count('name="mapLink"') == 1   # one field (D-209)
+            assert 'name="link"' not in r.text
         finally:
             _drop(tid)
 
@@ -157,7 +159,7 @@ if DEPS:
         monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: StubPhoton([BERNARDIN]))
         tid = _trip()
         try:
-            r = client.get(f"/trips/{tid}/activity/from-link", params={"link": A_Q})
+            r = client.get(f"/trips/{tid}/activity/from-link", params={"mapLink": A_Q})
             assert r.status_code == 200, r.text
             assert '<option value="dining" selected>' in r.text
             assert "Le Bernardin" in r.text and "155 West 51st" in r.text
@@ -172,10 +174,119 @@ if DEPS:
         monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: None)
         tid = _trip()
         try:
-            r = client.get(f"/trips/{tid}/activity/from-link", params={"link": "nope"})
+            r = client.get(f"/trips/{tid}/activity/from-link", params={"mapLink": "nope"})
             assert r.status_code == 200 and "isn&#39;t a Google or Apple Maps place link" in r.text
         finally:
             _drop(tid)
 
+    LARKSPUR = _feat("Larkspur Inn", 35.0841, -106.6509, street="Ocotillo Lane",
+                     housenumber="12", city="Cottonwood Springs", countrycode="US",
+                     osm_key="amenity", osm_value="restaurant")
+    L_Q = "https://maps.apple.com/?q=Larkspur+Inn&ll=35.0840,-106.6508"
+
+    def test_fill_in_keeps_what_the_person_entered(monkeypatch):
+        """YONDER-315: a lodging half filled in, then a Maps link. The link said
+        "restaurant", but the person's type, name and dates stay; only the empty
+        address and the Map link come from the link (D-209)."""
+        monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: StubPhoton([LARKSPUR]))
+        tid = _trip()
+        try:
+            r = client.get(f"/trips/{tid}/activity/from-link", params={
+                "mapLink": L_Q, "activity_kind": "lodging", "name": "Cottonwood Lodge",
+                "when": "2031-05-14T15:00", "endWhen": "2031-05-17T11:00",
+                "confirmation": "CW-4471"})
+            assert r.status_code == 200, r.text
+            assert '<option value="lodging" selected>' in r.text
+            assert 'value="Cottonwood Lodge"' in r.text and "Larkspur Inn" not in r.text
+            assert "2031-05-14T15:00" in r.text and "2031-05-17T11:00" in r.text
+            assert "CW-4471" in r.text
+            assert "12 Ocotillo Lane" in r.text                          # the empty address
+            assert r.text.count('name="mapLink"') == 1 and "maps.apple.com" in r.text
+            assert "entered is kept" in r.text
+        finally:
+            _drop(tid)
+
+    def test_a_link_suggests_a_type_only_when_none_is_chosen(monkeypatch):
+        """D-209 amends D-168: the link's type applies to an untouched form."""
+        monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: StubPhoton([LARKSPUR]))
+        tid = _trip()
+        try:
+            r = client.get(f"/trips/{tid}/activity/from-link",
+                           params={"mapLink": L_Q, "activity_kind": ""})
+            assert '<option value="dining" selected>' in r.text
+            assert 'value="Larkspur Inn"' in r.text and "12 Ocotillo Lane" in r.text
+            r = client.get(f"/trips/{tid}/activity/from-link",
+                           params={"mapLink": L_Q, "activity_kind": "tour"})
+            assert '<option value="tour" selected>' in r.text               # chosen: kept
+            assert 'value="Larkspur Inn"' in r.text                         # empty name filled
+            assert "12 Ocotillo Lane" in r.text                             # into "location"
+        finally:
+            _drop(tid)
+
+    def test_a_bad_link_keeps_the_form_as_it_was(monkeypatch):
+        monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: None)
+        tid = _trip()
+        try:
+            r = client.get(f"/trips/{tid}/activity/from-link", params={
+                "mapLink": "nope", "activity_kind": "lodging", "name": "Cottonwood Lodge"})
+            assert "isn&#39;t a Google or Apple Maps place link" in r.text
+            assert '<option value="lodging" selected>' in r.text
+            assert 'value="Cottonwood Lodge"' in r.text
+        finally:
+            _drop(tid)
+
+    def test_new_activity_has_no_default_type_and_one_map_link():
+        """D-209: the form starts on "Choose a type…", sends the whole form when a
+        link is pasted, and has a single Map link field."""
+        tid = _trip()
+        try:
+            html = client.get(f"/trips/{tid}/activity/new").text
+            assert '<option value="" selected>Choose a type…</option>' in html
+            assert '<option value="flight" selected>' not in html
+            assert html.count('name="mapLink"') == 1
+            assert 'hx-include="[name=link]"' not in html
+            assert html.count('hx-include="closest form"') >= 2          # paste and Fill in
+        finally:
+            _drop(tid)
+
+    def test_saving_without_a_type_is_refused_not_a_flight():
+        tid = _trip()
+        try:
+            r = client.post(f"/trips/{tid}/activity", data={"activity_kind": "",
+                                                             "mapLink": L_Q})
+            assert "Choose a type for this activity." in r.text and L_Q.split("?")[0] in r.text
+            with SessionLocal() as s:
+                assert s.query(TripActivity).filter_by(trip_id=tid).count() == 0
+        finally:
+            _drop(tid)
+
+    def test_saving_fills_a_place_activitys_blanks_from_its_map_link(monkeypatch):
+        """YONDER-318: on save, a place link fills an empty address for any type,
+        not only a road trip's From/To."""
+        monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: StubPhoton([LARKSPUR]))
+        from app.trips.enrich import enrich_activity_values
+        out = enrich_activity_values("lodging", {"mapLink": L_Q, "name": "Cottonwood Lodge"})
+        assert out["name"] == "Cottonwood Lodge" and "12 Ocotillo Lane" in out["address"]
+        typed = {"mapLink": L_Q, "name": "Mine", "address": "Typed by me"}
+        assert enrich_activity_values("dining", typed) == typed           # nothing replaced
+
+    def test_a_directions_link_suggests_a_road_trip_and_fills_its_stops(monkeypatch):
+        from resolve import routing
+        stops = [{"raw": "Cottonwood Lodge", "name": "Cottonwood Lodge", "lat": 35.08, "lon": -106.65},
+                 {"raw": "Ocotillo Mesa, NM", "name": "Ocotillo Mesa, NM", "city": "Ocotillo Mesa",
+                  "region": "NM", "lat": 35.40, "lon": -106.10}]
+        monkeypatch.setattr(routing, "estimate_for_link",
+                            lambda url, geocoder, base_url: (stops, routing.RouteEstimate(80.0, 60)))
+        tid = _trip()
+        try:
+            r = client.get(f"/trips/{tid}/activity/from-link", params={
+                "mapLink": "https://www.google.com/maps/dir/Cottonwood+Lodge/Ocotillo+Mesa,+NM",
+                "activity_kind": ""})
+            assert '<option value="drive" selected>' in r.text
+            assert 'value="Cottonwood Lodge"' in r.text and "Ocotillo Mesa, NM" in r.text
+            assert "80 km" in r.text
+        finally:
+            _drop(tid)
+
     def test_from_link_404s_for_an_unknown_trip():
-        assert client.get("/trips/nope/activity/from-link", params={"link": A_Q}).status_code == 404
+        assert client.get("/trips/nope/activity/from-link", params={"mapLink": A_Q}).status_code == 404
