@@ -263,7 +263,7 @@ def test_delete_trip_cascades_activities():
         return
     tid = _mk("Cascade trip", "2026-08-14", "2026-08-18")
     client.post(f"/trips/{tid}/activity",
-                data={"type": "note", "title": "n", "when": "2026-08-15T10:00"})
+                data={"activity_kind": "note", "title": "n", "when": "2026-08-15T10:00"})
     with SessionLocal() as s:
         aid = s.query(TripActivity).filter(TripActivity.trip_id == tid).one().id
     client.post(f"/trips/{tid}/delete")

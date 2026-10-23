@@ -277,7 +277,38 @@ points that share one parser (`extract/place_url.py`) and one category table:
   files.
 - **D-168 — Adding by link inside a trip pre-fills the type from the category and never
   guesses silently.** A confident category sets the type; otherwise it falls back to a generic
-  Tour that the person can change before saving.
+  Tour that the person can change before saving. *Amended by D-209:* only when no type has been
+  chosen yet.
+- **D-209 — A Maps link never overrides the person, and is never lost for want of a date
+  (YONDER-315, 317, 318; owner, 2026-10-23).** Three bugs had one cause: Maps links were
+  handled three different ways. A link pasted into a half-filled activity replaced the whole
+  form with a Tour (315). A shared directions link with no date was refused, so it was lost
+  (317). A place link in an activity's Map link field filled nothing unless the activity was a
+  road trip (318).
+  - *No default activity type.* The new-activity form starts with "Choose a type…", and saving
+    without one is refused. Until now it started on Flight, and a Maps link then read as a
+    flight. (Reading stored data keeps the existing fallback for an unknown type.)
+  - *One Map link field per activity*, under the type picker. The separate "Maps link
+    (optional)" field above the form is gone. With no type chosen, a pasted link suggests one:
+    a place by its category (D-168), directions as a road trip. Once a type is chosen, the link
+    never changes it and only fills fields that are still empty. A place link fills name,
+    address or location, and the Map link. A directions link fills From, To, Route, Distance
+    and the arrival time. Nothing the person typed is replaced. The fill happens as soon as the
+    link is pasted, and the same rule runs again on save, for every type.
+  - *Undated directions go to the Inbox.* A directions link captured without a date is no longer
+    refused at capture. It is stored (D-15) and waits in the Inbox (D-200) as "needs a travel
+    date" (`missing_travel_date`), the same way any capture the pipeline can't finish waits for
+    review. There the person adds the date (and, if they like, the time, an end date and a
+    trip), and that one capture is extracted again into a road trip to match and approve. The
+    item schema, RULE-31 and RULE-34 are unchanged: no road trip exists without a date, and the
+    date comes only from the person, never the URL.
+  - *The app routes links as the page does.* `POST /api/v1/capture` checks a Maps link's kind
+    before anything else, expanding a Google short link (allowlisted hosts, D-152), exactly like
+    the capture page. A place link becomes a saved place (D-166/D-167), and directions go to the
+    pipeline. The reply keeps `batch_id` for older apps; for a place it is empty, with
+    `status: "saved_place"` and the place's id.
+  - *Saved places themselves* are being redesigned separately (YONDER-314, 316). This decision
+    only makes sure a shared place reaches them.
 
 ## 7. Decisions (proposed)
 
@@ -301,6 +332,9 @@ points that share one parser (`extract/place_url.py`) and one category table:
 - **D-171** — `/capture/web` authenticates itself. `/capture` is a public path in the auth gate, so with sign-in required the route refuses a stranger (401, and an `HX-Redirect` to login for the form) before it fetches, parses or stores anything, and no capture is written ownerless (YONDER-186, YONDER-210). With sign-in off (the single-user default) it stays open.
 - **D-169** — A saved place is never saved or filed twice; filed and removed ones are tombstones.
 - **D-170** — A list is pushed with a batch call: per-place outcomes, dry run, safe to repeat.
+- **D-209** — A Maps link never overrides the person: no default activity type, one Map link
+  field that fills only empty fields; undated directions wait in the Inbox; the app routes
+  links like the page. Amends D-168.
 - **D-168** — Add-by-link in a trip pre-fills the type from the category, with a generic fallback.
   Address and category come from Photon only when it finds a hit within 250 m of the link's own
   pin whose name matches (the wrong-branch trap, resolve/geocode.py); name-only links are never
@@ -337,6 +371,11 @@ What the Share Extension (and the app) can rely on. All calls use the app's bear
   Filing twice is a `409`. The trip picker's list is `GET /api/v1/places` (each carries its
   `suggested_trip_id`) plus the trips the app already has.
 - **Rename or correct before filing:** `PATCH /api/v1/places/{id}`.
+- **A link the app can't classify** (a Google `maps.app.goo.gl` short link looks the same for a
+  place and for directions) can go to `POST /api/v1/capture` as before. The server expands it
+  and routes it like the page (D-209). For a place, the reply is `status: "saved_place"` with
+  `place_id`, and an empty `batch_id`. Directions without a `travel_date` are accepted and
+  wait in the Inbox for one.
 - **Open question for the app side:** what the Apple Maps and Google Maps share sheets actually
   hand to an extension on current iOS (URL only, a `.vcf` card, or text). The server accepts a
   Maps URL or resolved fields, so it works either way; the app decides how to get them.

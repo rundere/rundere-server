@@ -43,12 +43,56 @@ def prepare_activity(atype: str, values: dict, *, old_geo: dict | None = None,
     return values, locate_activity(atype, values, old_geo=old_geo, locator=loc)
 
 
-def enrich_activity_values(atype: str, values: dict, *, locator=None) -> dict:
-    """Return `values` with a road trip's blanks filled from its map link.
-    Any other type, no map link, or nothing blank → returned unchanged. Never
-    raises: a lookup failure just leaves the blanks for the person."""
-    if atype != "drive":
+# Where a place's address goes in each type that has one (D-168's mapping:
+# lodging and dining say address, a tour says location, an event says venue).
+_WHERE_KEYS = ("address", "location", "venue")
+
+
+def fill_from_place(atype: str, values: dict, place_values: dict) -> dict:
+    """`values` with only its EMPTY fields filled from what a place link knows
+    (D-209): name, the address in this type's own field, the Map link. Fields
+    this type doesn't have are ignored; nothing typed is ever replaced."""
+    keys = {f["key"] for f in activity_types.get_type(atype).fields}
+    where = next((place_values[k] for k in _WHERE_KEYS if place_values.get(k)), "")
+    offer = {k: v for k, v in place_values.items() if k in keys and k not in _WHERE_KEYS}
+    slot = next((k for k in _WHERE_KEYS if k in keys), None)
+    if where and slot:
+        offer[slot] = where
+    out = dict(values)
+    for key, val in offer.items():
+        if val and not out.get(key):
+            out[key] = val
+    return out
+
+
+def _place_fill(atype: str, values: dict) -> dict:
+    """A non-road-trip activity's blanks from a PLACE link in its Map field
+    (YONDER-318: until D-209 only road trips were filled). Never raises."""
+    link = activity_types._maps_link(values or {})
+    wants = [k for k in ("name", *_WHERE_KEYS)
+             if k in {f["key"] for f in activity_types.get_type(atype).fields}]
+    if not link or not wants or all(values.get(k) for k in wants):
         return values
+    from app import places as places_svc
+    from extract import place_url
+    try:
+        full = place_url.resolved_url(link)          # a short link, expanded once
+        if place_url.parse_place_url(full) is None:  # directions, or not a place
+            return values
+        _, place_values = places_svc.activity_from_link(full)
+    except Exception:                         # noqa: BLE001 - the blanks stay the person's
+        log.info("couldn't read a place from an activity's map link", exc_info=True)
+        return values
+    return fill_from_place(atype, values, place_values)
+
+
+def enrich_activity_values(atype: str, values: dict, *, locator=None) -> dict:
+    """Return `values` with blanks filled from the activity's map link: a road
+    trip's from its directions, any other type's from a place link (D-209).
+    No map link, or nothing blank → returned unchanged. Never raises: a lookup
+    failure just leaves the blanks for the person."""
+    if atype != "drive":
+        return _place_fill(atype, values)
     link = activity_types._maps_link(values or {})
     if not link or all(values.get(k) for k in _DRIVE_FILLS):
         return values
