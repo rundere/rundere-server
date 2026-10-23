@@ -8,7 +8,7 @@ dependencies = [
     "uvicorn>=0.54.0",
     "sqlalchemy>=2.1.5",
     "alembic>=1.20.0",
-    "psycopg[binary]>=3.1",
+    "psycopg[binary]>=3.3.6",
     "sqladmin>=0.32.0",
     # sqladmin imports SQLAlchemy's asyncio layer, which needs greenlet; it is
     # not pulled in transitively on every platform, and without it /admin
