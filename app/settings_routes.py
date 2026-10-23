@@ -185,6 +185,10 @@ def _mail_context(session: Session, user) -> dict:
                         "last_error": inbox.status["last_error"],
                         "since_start": inbox.describe(inbox.status.get("since_start") or {}),
                         "week": inbox.recent_counts(session)}
+        on, locked = inbox.dedicated(session)
+        out["inbox"].update(dedicated=on, dedicated_locked=locked,
+                            folder_is_inbox=settings.inbox_folder.upper() == "INBOX",
+                            dropped_days=settings.inbox_dropped_days)
     return out
 
 
@@ -286,6 +290,39 @@ def server_mail_read_inbox(request: Request, session: Session = Depends(get_sess
         return _mail_page(request, session, user, inbox_err=_redact_imap(ex))
     return _mail_page(request, session, user,
                       inbox_msg=f"Read the whole folder: {inbox.describe(counts)}.")
+
+
+@router.post("/settings/mail/dedicated", response_class=HTMLResponse)
+def server_mail_dedicated(request: Request, on: str = Form(""), confirm: str = Form(""),
+                          session: Session = Depends(get_session)):
+    """D-208: mark the inbox folder Run·dere-only, or shared again. Turning it
+    on shows what it would move first and needs a second, confirming post;
+    turning it off is immediate. Refused when TX_INBOX_DEDICATED locks it."""
+    from app import authn, inbox
+    from app.config import settings
+    user = authn.require_admin(request)
+    if not inbox.configured():
+        return _mail_page(request, session, user, inbox_err="The inbox isn't configured.")
+    if inbox.dedicated(session)[1]:
+        return _mail_page(request, session, user, inbox_err=(
+            "This is set by TX_INBOX_DEDICATED in the server's configuration; "
+            "change it there."))
+    if on != "1":
+        inbox.set_dedicated(session, False, user)
+        return _mail_page(request, session, user, inbox_msg=(
+            f"{settings.inbox_folder} is treated as shared again: mail that isn't sent to a "
+            f"forwarding address is left where it is."))
+    if confirm != "1":
+        try:
+            total, would_move = inbox.dedicated_preview()
+        except Exception as ex:
+            return _mail_page(request, session, user, inbox_err=_redact_imap(ex))
+        return _mail_page(request, session, user, dedicated_preview={
+            "total": total, "would_move": would_move})
+    inbox.set_dedicated(session, True, user)
+    return _mail_page(request, session, user, inbox_msg=(
+        f"{settings.inbox_folder} is now Run·dere-only: from the next read, mail that isn't "
+        f"sent to a forwarding address moves to {settings.inbox_dropped_folder}."))
 
 
 # ------------------------------------------------------------------ notifications

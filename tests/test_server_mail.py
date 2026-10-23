@@ -164,3 +164,61 @@ if DEPS:
         monkeypatch.setattr(inbox, "read_now", boom)
         r = client.post("/settings/mail/read-inbox", cookies=_cookie(True))
         assert "login failed for ***" in r.text and "s3cret-imap" not in r.text
+
+    # ------------------------------------------------- D-208: Run·dere-only folder
+    @pytest.fixture
+    def _inbox_on(monkeypatch):
+        from app.models import ServerSetting
+        monkeypatch.setattr(settings, "inbox_address", "trips@example.test")
+        monkeypatch.setattr(settings, "inbox_imap_host", "imap.example.test")
+        monkeypatch.setattr(settings, "inbox_imap_user", "trips@example.test")
+        monkeypatch.setattr(settings, "inbox_folder", "Folders/Rundere")
+        monkeypatch.setattr(settings, "inbox_dedicated", None)
+
+        def clear():
+            with SessionLocal() as s:
+                s.query(ServerSetting).filter_by(key=inbox.DEDICATED_KEY).delete()
+                s.commit()
+        clear()
+        yield
+        clear()
+
+    def _is_dedicated():
+        with SessionLocal() as s:
+            return inbox.dedicated(s)
+
+    def test_dedicated_needs_a_preview_and_a_confirmation(monkeypatch, _inbox_on):
+        monkeypatch.setattr(inbox, "dedicated_preview", lambda: (3, 2))
+        admin = _cookie(True)
+        html = client.get("/settings/mail", cookies=admin).text
+        assert "Run·dere-only folder" in html and "Leave it off" in html
+        assert "emptied" in html and "Make it Run·dere-only" in html
+        r = client.post("/settings/mail/dedicated", cookies=admin, data={"on": "1"})
+        assert "would move <b>2</b> of the\n            3 messages" in r.text
+        assert "Yes, make it Run·dere-only" in r.text and "the account's INBOX" not in r.text
+        assert _is_dedicated() == (False, False)                   # nothing saved yet
+        r = client.post("/settings/mail/dedicated", cookies=admin,
+                        data={"on": "1", "confirm": "1"})
+        assert "is now Run·dere-only" in r.text and _is_dedicated() == (True, False)
+        r = client.post("/settings/mail/dedicated", cookies=admin, data={"on": ""})
+        assert "treated as shared again" in r.text and _is_dedicated() == (False, False)
+
+    def test_dedicated_warns_harder_for_inbox(monkeypatch, _inbox_on):
+        monkeypatch.setattr(settings, "inbox_folder", "INBOX")
+        monkeypatch.setattr(inbox, "dedicated_preview", lambda: (40, 39))
+        r = client.post("/settings/mail/dedicated", cookies=_cookie(True), data={"on": "1"})
+        assert "the account's INBOX" in r.text
+
+    def test_dedicated_is_admin_only(_inbox_on):
+        r = client.post("/settings/mail/dedicated", cookies=_cookie(False),
+                        data={"on": "1", "confirm": "1"})
+        assert r.status_code in (401, 403) and _is_dedicated() == (False, False)
+
+    def test_dedicated_locked_by_the_environment(monkeypatch, _inbox_on):
+        monkeypatch.setattr(settings, "inbox_dedicated", True)
+        admin = _cookie(True)
+        html = client.get("/settings/mail", cookies=admin).text
+        assert "set by <code>TX_INBOX_DEDICATED</code>" in html
+        assert "Treat it as shared again" not in html            # no switch to press
+        r = client.post("/settings/mail/dedicated", cookies=admin, data={"on": ""})
+        assert "change it there" in r.text and _is_dedicated() == (True, True)

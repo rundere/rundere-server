@@ -208,6 +208,9 @@ class Settings(BaseSettings):
     inbox_acknowledge: bool = True
     inbox_max_bytes: int = 10_000_000        # larger mail is dropped, not fetched
     inbox_rate_limit: int = 30               # captures per address per hour
+    # D-208: is the inbox folder Run·dere's alone? Unset: an admin decides on
+    # Settings → Server mail. Set (true/false): fixed here, and the page can't change it.
+    inbox_dedicated: bool | None = None
     # YONDER-243: a clamav-rest service (e.g. http://clamav-rest:9000) that scans
     # every captured email, attachments included, before anything parses it.
     # Empty = no antivirus; the static PDF checks (extract/filescan.py) always run.

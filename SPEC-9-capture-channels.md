@@ -217,8 +217,35 @@ The page's own capture box is not a tab, because it needs no setup.
     addresses; anything else — personal mail, the bare address — is never fetched, moved or
     recorded. It remembers the highest UID it has looked at per folder, so a large mailbox
     isn't rescanned on every new email. A message is removed from the folder only by MOVE or
-    UID EXPUNGE of that one message, never a folder-wide EXPUNGE.
+    UID EXPUNGE of that one message, never a folder-wide EXPUNGE. *Amended by D-208:* an
+    admin can say the folder is Run·dere's alone.
   - *Not in v1:* a webhook front door for mail services that push mail over HTTP.
+
+- **D-208 — An inbox folder can be marked Run·dere-only (YONDER-332; owner, 2026-10-23).**
+  D-190 leaves mail that isn't sent to a forwarding address where it is, because the folder
+  may be part of someone's own mailbox. When the folder holds only mail meant for Run·dere,
+  that rule strands mail sent to the bare address, a mistyped address or spam, and the folder
+  never empties. Common cases are a mailbox of its own, or a folder that only a mail filter
+  fills (for example `Folders/Rundere` behind Proton Bridge).
+  - *An explicit setting, off by default.* It is never inferred from the folder's name. When
+    it is on, mail without a forwarding address moves to the dropped folder and is recorded
+    as `unmatched`, "not sent to a personal address", as an outcome only, with no sender,
+    subject or body (D-162). When it is off, D-190 holds unchanged.
+  - *Set by an admin on Settings → Server mail.* The page has help text on when to use it
+    (a mailbox or folder that only Run·dere reads) and when not to (any part of a personal
+    inbox), and says that the dropped folder is emptied to Trash after
+    `TX_INBOX_DROPPED_DAYS`. It is kept in the database (`server_settings`). It isn't a
+    secret, so D-190's rule that the mailbox password lives only in the environment is
+    untouched.
+  - *Optional lock.* `TX_INBOX_DEDICATED=true|false` fixes the value from the deployment's
+    configuration. The page then shows it as set by the server and can't change it. When the
+    variable isn't set, the page decides.
+  - *A preview before it goes on.* Turning it on first shows how many messages in the folder
+    would move to the dropped folder, counted by the server's own SEARCH (YONDER-331), and
+    asks for confirmation. An extra warning appears when the folder is `INBOX`, the folder
+    most likely to be someone's own. Turning it off takes effect at once.
+  - *Moves, never deletes.* Mail is only moved to the dropped folder. Deleting stays with that
+    folder's existing retention.
 
 ## 6. Proposed: iOS Share Extension feedback (D-163)
 
@@ -293,6 +320,8 @@ points that share one parser (`extract/place_url.py`) and one category table:
   mailbox"), the person's email-forward address when they have one, and a link **straight to
   that channel's guide tab**. The guides themselves stay on `/capture/setup`, as D-160 set out.
 - **D-162** — Email forward uses a server-generated per-user plus address.
+- **D-208** — An admin can mark the inbox folder Run·dere-only (opt-in, with an optional env
+  lock). Mail in it without a forwarding address then moves to the dropped folder.
 - **D-163** — The iOS Share Extension confirms receipt with a notification at minimum.
 - **D-164** — The Gmail add-on no longer moves labels and no longer asks for `gmail.modify`;
   it only reads the open email. Supersedes D-26.

@@ -37,7 +37,7 @@ import ssl
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.utils import getaddresses, parsedate_to_datetime
 
@@ -65,6 +65,7 @@ CAPTURED, DUPLICATE, UNMATCHED, TOO_LARGE, RATE_LIMITED, UNREADABLE = (
 # A read's counts that aren't recorded outcomes: replies the server sent without
 # a UID, and mail not sent to a forwarding address (left where it is, D-190).
 NO_UID, LEFT_ALONE = "no_uid", "left_alone"
+NOT_PERSONAL = "not sent to a personal address"     # an UNMATCHED record's detail
 
 # How the admin panel and the "Read inbox now" result name each count.
 COUNT_LABELS = {
@@ -100,6 +101,35 @@ def _split(address: str) -> tuple[str, str] | None:
     if not local or not domain or "+" in local or " " in local:
         return None
     return local, domain
+
+
+DEDICATED_KEY = "inbox.dedicated"
+
+
+def dedicated(session: Session) -> tuple[bool, bool]:
+    """Is the inbox folder Run·dere's alone (D-208)? Returns (on, locked):
+    TX_INBOX_DEDICATED decides when it is set, and the page can't change it;
+    otherwise the admin's choice, off until they make one."""
+    if settings.inbox_dedicated is not None:
+        return bool(settings.inbox_dedicated), True
+    from app.models import ServerSetting
+    row = session.get(ServerSetting, DEDICATED_KEY)
+    return (row is not None and row.value == "true"), False
+
+
+def set_dedicated(session: Session, on: bool, user) -> None:
+    """Save the admin's choice (D-208). Refuses when the environment locks it."""
+    from app.models import ServerSetting
+    if settings.inbox_dedicated is not None:
+        raise PermissionError("TX_INBOX_DEDICATED is set; change it in the server's configuration")
+    row = session.get(ServerSetting, DEDICATED_KEY) or ServerSetting(key=DEDICATED_KEY)
+    row.value = "true" if on else "false"
+    row.updated_by = getattr(user, "id", None)
+    row.updated_at = datetime.now(timezone.utc)
+    session.add(row)
+    session.commit()
+    log.info("inbox: folder %r marked %s by an admin (D-208)", settings.inbox_folder,
+             "Run·dere-only" if on else "shared")
 
 
 def _new_token() -> str:
@@ -247,7 +277,7 @@ def handle_message(session: Session, raw: bytes) -> list[Handled]:
         # D-162: dropped and counted, never an ownerless capture. No address,
         # sender or subject is kept — only that it happened.
         _record(session, _message_key(msg, raw, None), UNMATCHED,
-                detail="no known address" if tokens else "not sent to a personal address")
+                detail="no known address" if tokens else NOT_PERSONAL)
         return [Handled(UNMATCHED)]
 
     out: list[Handled] = []
@@ -413,7 +443,11 @@ class _Scan:
     ours: list[bytes]            # UIDs addressed to one of our plus addresses
     top: int                     # the highest UID seen
     no_uid: int = 0              # replies that carried no UID at all
-    left_alone: int = 0          # mail not sent to a forwarding address
+    others: list[bytes] = field(default_factory=list)   # not sent to a forwarding address
+
+    @property
+    def left_alone(self) -> int:
+        return len(self.others)
 
 
 def _addressed_to_us(conn, start: int) -> _Scan:
@@ -444,7 +478,7 @@ def _addressed_to_us(conn, start: int) -> _Scan:
         if recipient_tokens(email.message_from_bytes(part[1] or b"")):
             scan.ours.append(str(uid).encode())
         else:
-            scan.left_alone += 1
+            scan.others.append(str(uid).encode())
     return scan
 
 
@@ -475,7 +509,19 @@ def _read_folder(conn, session_factory) -> dict:
     key = (settings.inbox_folder, _uidvalidity(conn))
     scan = _addressed_to_us(conn, _scanned.get(key, 0) + 1)
     ours, top, no_uid = scan.ours, scan.top, scan.no_uid
-    if scan.left_alone:
+    with session_factory() as session:
+        run_dere_only = dedicated(session)[0]
+    if scan.others and run_dere_only:
+        # D-208: the folder is Run·dere's alone, so mail without a forwarding
+        # address is dropped like an unknown one: moved, and recorded as an
+        # outcome only. Its headers were PEEKed, never its body.
+        with session_factory() as session:
+            for uid in scan.others:
+                _record(session, hashlib.sha256(uuid.uuid4().bytes).hexdigest(), UNMATCHED,
+                        detail=NOT_PERSONAL)
+                _move(conn, uid, settings.inbox_dropped_folder)
+        counts[UNMATCHED] = len(scan.others)
+    elif scan.others:
         counts[LEFT_ALONE] = scan.left_alone
     if no_uid:
         # Never skip mail silently: say so, and don't mark the folder as read
@@ -554,6 +600,21 @@ def check_waiting() -> set[bytes]:
         if typ != "OK":
             raise RuntimeError(f"can't open folder {settings.inbox_folder!r}")
         return waiting(conn)
+    finally:
+        _logout(conn)
+
+
+def dedicated_preview() -> tuple[int, int]:
+    """What turning D-208 on would do now: (messages in the folder, how many of
+    them would move to the dropped folder: those not addressed to a forwarding
+    address, by the server's SEARCH). Read-only, like check_waiting()."""
+    conn = _connect()
+    try:
+        typ, data = conn.select(_quote(settings.inbox_folder), readonly=True)
+        if typ != "OK":
+            raise RuntimeError(f"can't open folder {settings.inbox_folder!r}")
+        total = int((data or [b"0"])[0] or 0)
+        return total, max(0, total - len(waiting(conn))) if total else 0
     finally:
         _logout(conn)
 
