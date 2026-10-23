@@ -65,6 +65,9 @@ CAPTURED, DUPLICATE, UNMATCHED, TOO_LARGE, RATE_LIMITED, UNREADABLE = (
 # A read's counts that aren't recorded outcomes: replies the server sent without
 # a UID, and mail not sent to a forwarding address (left where it is, D-190).
 NO_UID, LEFT_ALONE = "no_uid", "left_alone"
+# D-208: mail without a forwarding address, dropped from a Run·dere-only folder.
+# Recorded as UNMATCHED; counted apart so it isn't mistaken for a bad token.
+NOT_FORWARDED = "not_forwarded"
 NOT_PERSONAL = "not sent to a personal address"     # an UNMATCHED record's detail
 
 # How the admin panel and the "Read inbox now" result name each count.
@@ -74,6 +77,7 @@ COUNT_LABELS = {
     RATE_LIMITED: "dropped: over the hourly limit", UNREADABLE: "unreadable",
     NO_UID: "skipped: the server's reply had no UID",
     LEFT_ALONE: "left alone: not sent to a forwarding address",
+    NOT_FORWARDED: "dropped: not sent to a forwarding address",
 }
 
 # What the admin panel shows about the poller; module state, one per process.
@@ -520,7 +524,7 @@ def _read_folder(conn, session_factory) -> dict:
                 _record(session, hashlib.sha256(uuid.uuid4().bytes).hexdigest(), UNMATCHED,
                         detail=NOT_PERSONAL)
                 _move(conn, uid, settings.inbox_dropped_folder)
-        counts[UNMATCHED] = len(scan.others)
+        counts[NOT_FORWARDED] = len(scan.others)
     elif scan.others:
         counts[LEFT_ALONE] = scan.left_alone
     if no_uid:

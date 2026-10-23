@@ -440,7 +440,7 @@ if DEPS:
         fake = FakeIMAP({b"1": _mail("Kenji <me@pm.example>"), b"2": _mail(addr),
                          b"3": _mail(MAILBOX)}, uid_at="last")
         monkeypatch.setattr(inbox, "_connect", lambda: fake)
-        assert inbox.poll_once(SessionLocal) == {inbox.CAPTURED: 1, inbox.UNMATCHED: 2}
+        assert inbox.poll_once(SessionLocal) == {inbox.CAPTURED: 1, inbox.NOT_FORWARDED: 2}
         assert fake.moved == {b"1": settings.inbox_dropped_folder,
                               b"2": settings.inbox_done_folder,
                               b"3": settings.inbox_dropped_folder}

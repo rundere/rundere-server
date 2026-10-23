@@ -99,11 +99,12 @@
           <form method="post" action="/settings/mail/dedicated">
             <input type="hidden" name="on" value="1"><input type="hidden" name="confirm" value="1">
             <button class="act" type="submit">Yes, make it Run·dere-only</button>
+            <a href="/settings/mail">Cancel</a>
           </form>
         </div>
       {% endif %}
       <p>{% if inbox.dedicated %}<span class="pill ok">On</span> mail without a forwarding address moves to <code>{{ inbox.dropped }}</code>{% else %}<span class="pill">Off</span> mail without a forwarding address is left in place{% endif %}{% if inbox.dedicated_locked %} · set by <code>TX_INBOX_DEDICATED</code> in the server's configuration{% endif %}</p>
-      {% if not inbox.dedicated_locked %}
+      {% if not inbox.dedicated_locked and not dedicated_preview %}
         <form method="post" action="/settings/mail/dedicated">
           <input type="hidden" name="on" value="{{ '' if inbox.dedicated else '1' }}">
           <button class="act" type="submit">{{ 'Treat it as shared again' if inbox.dedicated else 'Make it Run·dere-only…' }}</button>

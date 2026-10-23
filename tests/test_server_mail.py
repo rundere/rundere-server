@@ -196,6 +196,7 @@ if DEPS:
         r = client.post("/settings/mail/dedicated", cookies=admin, data={"on": "1"})
         assert "would move <b>2</b> of the\n            3 messages" in r.text
         assert "Yes, make it Run·dere-only" in r.text and "the account's INBOX" not in r.text
+        assert "Make it Run·dere-only…" not in r.text               # only the confirmation
         assert _is_dedicated() == (False, False)                   # nothing saved yet
         r = client.post("/settings/mail/dedicated", cookies=admin,
                         data={"on": "1", "confirm": "1"})
