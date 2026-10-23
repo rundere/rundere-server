@@ -1,5 +1,5 @@
 """The pre-release cosmetic batch: readable time zones (YONDER-321), a country
-picker for nationality (320), AirTrail under Advanced (322), a Home profiles
+picker for nationality (320), no AirTrail id on the Travel profile (322), a Home profiles
 primer (323) and a second Save on the packing profile (327). The carry-on
 weight (325) is tested in test_planning_engine.py and the email-forward
 guide (329) in test_inbox.py. People and places here are invented."""
@@ -93,15 +93,40 @@ def test_a_code_saved_before_the_picker_is_kept(person):
 
 
 # ---------------------------------------------------------- AirTrail id (322)
-def test_airtrail_id_sits_under_advanced(person):
+def test_the_travel_profile_no_longer_asks_for_an_airtrail_id(person):
+    """Whose seat an AirTrail flight is comes from the AirTrail connection
+    (blank: the token's own user). Saving the profile leaves an old value alone:
+    it's only the one-time seed when server-wide settings become a connection."""
     html = client.get("/trips/settings/travel-profile", cookies=_ck(person)).text
-    adv = html.index("<summary>Advanced</summary>")
-    assert html.index('name="airtrail_user_id"') > adv
-    assert '<details class="yn-advanced" >' in html               # folded when empty
+    assert 'name="airtrail_user_id"' not in html and "AirTrail user id" not in html
+    with SessionLocal() as s:
+        s.get(TravelerIdentity, person.traveler_id).airtrail_user_id = "at-4471"
+        s.commit()
     client.post("/trips/settings/travel-profile", cookies=_ck(person),
-                data={"airtrail_user_id": "at-4471"})
-    html = client.get("/trips/settings/travel-profile", cookies=_ck(person)).text
-    assert '<details class="yn-advanced" open>' in html           # shown once it's set
+                data={"nationality": "IN", "airtrail_user_id": "ignored"})
+    assert _trav(person).airtrail_user_id == "at-4471"
+
+
+def test_the_seat_comes_from_the_connection_never_the_travel_profile(person):
+    from app import integrations
+    from app.models import UserIntegration
+    with SessionLocal() as s:
+        s.get(TravelerIdentity, person.traveler_id).airtrail_user_id = "at-old"
+        s.add(UserIntegration(user_id=person.id, kind="airtrail", enabled=True,
+                              base_url="https://airtrail.example.test"))
+        s.commit()
+    try:
+        with SessionLocal() as s:
+            c = integrations.clients_for_user(s, person.id)
+            assert c.airtrail_user_id is None          # token's own user, not "at-old"
+            row = s.query(UserIntegration).filter_by(user_id=person.id).one()
+            row.remote_user_id = "at-conn"
+            s.commit()
+            assert integrations.clients_for_user(s, person.id).airtrail_user_id == "at-conn"
+    finally:
+        with SessionLocal() as s:
+            s.query(UserIntegration).filter_by(user_id=person.id).delete()
+            s.commit()
 
 
 # --------------------------------------------------------- home primer (323)

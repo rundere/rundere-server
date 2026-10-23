@@ -171,13 +171,6 @@ def _done_targets(item: TravelItem) -> set[str]:
 
 # ---------------------------------------------------------------- self id
 
-def self_user_id(identities) -> str | None:
-    for i in (identities or []):
-        if getattr(i, "kind", None) == "self":
-            return getattr(i, "airtrail_user_id", None)
-    return None
-
-
 # ---------------------------------------------------------------- body builders
 
 # Our cabin_class -> AirTrail's SeatClasses enum. AirTrail spells premium
@@ -704,14 +697,14 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
     client is passed, False = none, or a set of "airtrail"/"adventurelog" — the
     capture owner's connections (D-150). A target outside it is skipped, never
     attempted; the first-party Run·dere target always runs. `self_uid` is the
-    AirTrail user a flight's seat belongs to (the owner's connection); None
-    falls back to the `self` traveller's."""
+    AirTrail user a flight's seat belongs to: the owner's connection's AirTrail
+    user id. None means the connection token's own user, which AirTrail fills
+    in (YONDER-322: the Travel profile's id is no longer a fallback)."""
     payload = (item.extraction or {}).get("payload") or {}
     resolution = item.resolution or {}
     targets = [t for t in _ORDER if t in set(resolution.get("targets") or [])]
     airports = airports or {}
     airlines = airlines or {}
-    self_uid = self_uid or self_user_id(identities)
     if external is True:
         systems = frozenset(k for k, c in (("airtrail", airtrail),
                                            ("adventurelog", adventurelog)) if c is not None)

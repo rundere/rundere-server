@@ -165,7 +165,8 @@ reserved).
   database only (the operator's last-resort access). Generic placeholder guests
   are excluded from the traveller selection. The admin traveller view is trimmed
   to **name + kind** (linking only); a user's own personal traveller attributes
-  (nationality, name-on-ticket aliases, AirTrail mapping, notes) move to a
+  (nationality, name-on-ticket aliases, AirTrail mapping — since moved to the
+  AirTrail connection, D-150/YONDER-322 — notes) move to a
   **user-facing self-editor** at `/trips/settings/travel-profile` ("Travel
   profile") — each user edits their own, never the admin. (owner, 2026-08-28)
 

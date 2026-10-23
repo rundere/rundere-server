@@ -85,12 +85,6 @@
     <textarea id="tp-alias" class="input" name="aliases" rows="3"
               placeholder="e.g. NAKAMURA/KENJI MR">{{ (trav.aliases or []) | join('\n') }}</textarea></div>
 
-  {# YONDER-322: an integration detail most people never need, folded away. #}
-  <details class="yn-advanced" {% if trav.airtrail_user_id %}open{% endif %}>
-    <summary>Advanced</summary>
-    <div class="field"><label for="tp-at">AirTrail user id <span class="yn-help">— optional; your AirTrail connection (Settings → Connections) normally covers this</span></label>
-      <input id="tp-at" class="input" name="airtrail_user_id" value="{{ trav.airtrail_user_id or '' }}"></div>
-  </details>
 
   <div class="field"><label for="tp-notes">Notes</label>
     <textarea id="tp-notes" class="input" name="notes" rows="3">{{ trav.notes or '' }}</textarea></div>

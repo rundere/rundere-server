@@ -2175,7 +2175,8 @@ def _currency_options() -> list[tuple[str, str]]:
 def edit_travel_profile(request: Request, session: Session = Depends(get_session)):
     """A user edits THEIR OWN traveller's personal attributes (D-124): nationality
     (for visa research), base currency (for discovery currency conversion),
-    name-on-ticket aliases, AirTrail mapping, notes. Not in the admin tables —
+    name-on-ticket aliases, notes. Whose seat an AirTrail flight is comes from
+    the AirTrail connection, not from here (YONDER-322). Not in the admin tables —
     travel is personal. An admin may edit it FOR a traveller with no account or
     one whose user shares with admins (4.1, app/acting.py)."""
     from app.acting import acting_for
@@ -2191,7 +2192,7 @@ def edit_travel_profile(request: Request, session: Session = Depends(get_session
 @router.post("/settings/travel-profile", response_class=HTMLResponse)
 def save_travel_profile(request: Request, nationality: str = Form(""),
                         base_currency: str = Form(""), timezone: str = Form(""),
-                        aliases: str = Form(""), airtrail_user_id: str = Form(""),
+                        aliases: str = Form(""),
                         notes: str = Form(""), session: Session = Depends(get_session)):
     from sqlalchemy.orm.attributes import flag_modified
     from babel.numbers import list_currencies
@@ -2215,7 +2216,6 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
     trav.timezone = valid_zone(timezone)            # their own "now" (YONDER-219, D-187)
     trav.aliases = [a.strip() for a in (aliases or "").splitlines() if a.strip()]
     flag_modified(trav, "aliases")
-    trav.airtrail_user_id = (airtrail_user_id or "").strip() or None
     trav.notes = (notes or "").strip()[:512] or None
     session.commit()
     session.refresh(trav)
