@@ -62,6 +62,8 @@ _PER_POLL = 50
 # Outcomes recorded per message (InboxMessage.outcome).
 CAPTURED, DUPLICATE, UNMATCHED, TOO_LARGE, RATE_LIMITED, UNREADABLE = (
     "captured", "duplicate", "unmatched", "too_large", "rate_limited", "unreadable")
+# A read's count (not a recorded outcome): replies the server sent without a UID.
+NO_UID = "no_uid"
 
 # What the admin panel shows about the poller; module state, one per process.
 status: dict = {"last_poll_at": None, "last_error": None, "last_counts": {}, "mode": None}
@@ -383,21 +385,32 @@ def _uidvalidity(conn) -> bytes:
         return b""
 
 
-def _addressed_to_us(conn, start: int) -> tuple[list[bytes], int]:
+def _text(part) -> str:
+    return part.decode(errors="replace") if isinstance(part, bytes) else str(part)
+
+
+def _addressed_to_us(conn, start: int) -> tuple[list[bytes], int, int]:
     """UIDs from `start` on whose recipient headers name one of OUR plus
-    addresses (local+token@domain), and the highest UID seen. Only the
-    recipient headers are read, with PEEK, so nothing is marked read — and mail
-    that isn't for Run·dere is never fetched, moved or recorded (D-190: the
-    mailbox may be someone's own, e.g. a Proton account with an alias)."""
+    addresses (local+token@domain), the highest UID seen, and how many replies
+    carried no UID at all. Only the recipient headers are read, with PEEK, so
+    nothing is marked read — and mail that isn't for Run·dere is never fetched,
+    moved or recorded (D-190: the mailbox may be someone's own, e.g. a Proton
+    account with an alias)."""
     typ, data = conn.uid("FETCH", f"{start}:*", _HEADER_FIELDS)
+    parts = list(data or [])
     ours: list[bytes] = []
     top = start - 1
-    for part in data or []:
+    no_uid = 0
+    for i, part in enumerate(parts):
         if not (isinstance(part, tuple) and len(part) >= 2):
             continue
-        meta = part[0].decode(errors="replace") if isinstance(part[0], bytes) else str(part[0])
-        m = re.search(r"UID (\d+)", meta)
+        # RFC 3501 lets the server put UID before or after the header literal.
+        # Proton Bridge sends it after (`... {138}`, the headers, then b' UID 2)'),
+        # which imaplib hands back as the next item (YONDER-330), so read both.
+        after = parts[i + 1] if i + 1 < len(parts) and isinstance(parts[i + 1], bytes) else b""
+        m = re.search(r"\bUID (\d+)", _text(part[0]) + " " + _text(after))
         if not m:
+            no_uid += 1
             continue
         uid = int(m.group(1))
         if uid < start:                  # "n:*" answers the last message even past it
@@ -405,7 +418,7 @@ def _addressed_to_us(conn, start: int) -> tuple[list[bytes], int]:
         top = max(top, uid)
         if recipient_tokens(email.message_from_bytes(part[1] or b"")):
             ours.append(str(uid).encode())
-    return ours, top
+    return ours, top, no_uid
 
 
 def _drain(conn, session_factory) -> dict:
@@ -419,7 +432,13 @@ def _drain(conn, session_factory) -> dict:
     if typ != "OK":
         raise RuntimeError(f"can't open folder {settings.inbox_folder!r}")
     key = (settings.inbox_folder, _uidvalidity(conn))
-    ours, top = _addressed_to_us(conn, _scanned.get(key, 0) + 1)
+    ours, top, no_uid = _addressed_to_us(conn, _scanned.get(key, 0) + 1)
+    if no_uid:
+        # Never skip mail silently: say so, and don't mark the folder as read
+        # past it, so the next read looks again.
+        counts[NO_UID] = no_uid
+        log.warning("inbox: %d message(s) in %r came back without a UID and weren't "
+                    "read; they'll be tried again", no_uid, settings.inbox_folder)
     for uid in ours[:_PER_POLL]:
         with session_factory() as session:
             size = _size_of(conn, uid)
@@ -440,7 +459,8 @@ def _drain(conn, session_factory) -> dict:
         _move(conn, uid, settings.inbox_done_folder if keep
               else settings.inbox_dropped_folder)
     # Only mark as scanned what was fully handled; a capped batch resumes there.
-    _scanned[key] = top if len(ours) <= _PER_POLL else int(ours[_PER_POLL - 1])
+    if not no_uid:
+        _scanned[key] = top if len(ours) <= _PER_POLL else int(ours[_PER_POLL - 1])
     _acknowledge(session_factory, captured)
     _kick(session_factory, {r.user_id for r in captured})
     return counts
