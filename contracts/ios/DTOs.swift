@@ -605,8 +605,10 @@ struct CaptureIn: Codable, Sendable {
 }
 
 struct CaptureOut: Codable, Sendable {
-    let batch_id: String
-    let status: String
+    let batch_id: String        // "" when the shared link was a place (D-209)
+    let status: String          // "received", or "saved_place" for a place link
+    let place_id: String?       // the saved place, when status == "saved_place"
+    let outcome: String?        // created | revived | duplicate | … (as POST /places)
 }
 
 // MARK: - Travel Journal (SPEC-6; own-only, YONDER-79)

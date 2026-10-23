@@ -427,8 +427,10 @@ class CaptureIn(BaseModel):
 
 
 class CaptureOut(BaseModel):
-    batch_id: str
-    status: str = "received"
+    batch_id: str                   # "" when the link was a place (D-209): nothing to process
+    status: str = "received"        # received | saved_place
+    place_id: str | None = None     # a saved place's id (status saved_place)
+    outcome: str | None = None      # created | revived | duplicate | … (as POST /places)
 
 
 class AssignTripIn(BaseModel):
@@ -1246,12 +1248,24 @@ def api_document_delete(doc_id: str, user=Depends(authn.current_user),
 @router.post("/capture", response_model=CaptureOut, status_code=202)
 def api_capture(body: CaptureIn, user=Depends(authn.current_user),
                 session: Session = Depends(get_session)):
-    """Share-to-app: a Google Maps directions URL, a webpage URL, or shared page
-    HTML. Owned by the caller (D-120)."""
+    """Share-to-app: a Maps place or directions link, a webpage URL, or shared
+    page HTML. Owned by the caller (D-120). Links are routed as the capture
+    page routes them (D-209): a PLACE link becomes a saved place (D-166/167),
+    so a Google short link is expanded first, because the short form looks the
+    same for a place and for directions."""
     from app.capture import _fetch_public_html, _looks_like_url, _queue_maps, _queue_web
-    from extract import apple_maps_url, maps_url
+    from extract import apple_maps_url, maps_url, place_url
     url = (body.url or "").strip()
     is_apple = bool(url) and apple_maps_url.looks_like_apple_maps_url(url)
+    full = place_url.resolved_url(url) if url and not body.html else ""   # expanded once
+    if full and place_url.parse_place_url(full) is not None:
+        try:
+            place, outcome = places_svc.save(session, user, url=full, source="share",
+                                             enrich=True)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        return CaptureOut(batch_id="", status="saved_place", place_id=place.id,
+                          outcome=outcome)
     if body.html:
         bid = _queue_web(session, body.html, source_url=url or None,
                          submitted_by=user.username, travel_date=body.travel_date,
