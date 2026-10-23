@@ -126,15 +126,23 @@
       <p class="why">This address is yours. Forward a booking confirmation to it, from any of your email accounts,
         and moments later it is read and waits in your Inbox. Nothing is filed until you approve it.</p>
       <div id="inbox-slot">{% with address = inbox.address, rotated = False %}{% include "_inbox_address.html" %}{% endwith %}</div>
+      {# YONDER-329: forwarding by hand is the whole job; automatic rules are optional,
+         for people who want them, and folded away. #}
       <ol class="cap-steps">
-        <li>Copy your address.</li>
-        <li>Forward a confirmation to it by hand, or add a forwarding rule. In Gmail: Settings → Filters → create a
-          filter for the senders you care about → <i>Forward it to</i> your address (Gmail asks you to confirm the
-          address once; that confirmation email lands in your Inbox — open the link in it). In Outlook:
-          Rules → <i>Forward to</i>.</li>
+        <li>Forward a booking email to the address above.</li>
         <li>Check it works: the booking shows in your Inbox moments later.{% if inbox.ack and inbox.ack.to %}
           A <b>“Got it”</b> email goes to <code>{{ inbox.ack.to }}</code> as soon as it arrives.{% endif %}</li>
       </ol>
+      <details class="cap-trouble"><summary>Automatic forwarding (optional)</summary>
+        <p class="why">Your email can forward bookings for you with a rule:</p>
+        <ul class="cap-steps">
+          <li><b>Gmail:</b> Settings → Filters → create a filter for the senders you care about →
+            <i>Forward it to</i> your address. Gmail asks you to confirm the address once: the confirmation
+            email lands in your Inbox here, so open the link in it.</li>
+          <li><b>Outlook:</b> Rules → <i>Forward to</i> your address.</li>
+        </ul>
+        <p class="why">If you make a new address below, update the rule too: the old address stops working.</p>
+      </details>
       {% if inbox.ack and not inbox.ack.to %}
       <p class="why cap-note">Add your email under <a href="/account">Settings → Account</a> to get a “Got it” email
         each time a forward arrives.</p>

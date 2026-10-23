@@ -374,6 +374,10 @@ if DEPS:
             token = s.get(InboxAddress, uid_).token
         assert f"trips+{token}@example.test" in page
         assert "Server mailbox (admins)" not in page               # not an admin
+        # YONDER-329: one plain step; forwarding rules are optional and folded away.
+        assert "Forward a booking email to the address above." in page
+        assert "<summary>Automatic forwarding (optional)</summary>" in page
+        assert "update the rule too" in page
         r = client.post("/capture/setup/email-address", cookies=cookie)
         assert r.status_code == 200 and "New address made" in r.text
         with SessionLocal() as s:

@@ -165,3 +165,30 @@ def test_must_have_is_force_added():
 def test_no_weather_warns():
     res = build_plan(_ctx(4, has_weather=False, climate_bands=set(), temp_high_c=None), _ITEMS)
     assert any("weather" in w.lower() for w in res.warnings)
+
+
+# ---------------------------------------------------------- carry-on weight (YONDER-325)
+
+def _with_bag(mode, kg):
+    prof = default_profile()
+    prof["bag"] = {"mode": mode, "weight_kg": kg}
+    return prof
+
+
+def test_the_weight_limit_counts_only_carry_on_items():
+    """The limit is the carry-on allowance: items going in a checked bag never
+    push a plan over it, however heavy they are."""
+    ctx = _ctx(5, profile=_with_bag("checked", 7))
+    planned = build_plan(ctx, _ITEMS)
+    checked = next(i.item_id for i in planned.items if i.bag == "checked")
+    heavy = {iid: {**it, "weight_g": 0} for iid, it in _ITEMS.items()}
+    heavy[checked] = {**heavy[checked], "weight_g": 50_000}       # a 50 kg checked item
+    res = build_plan(ctx, heavy)
+    assert checked in {i.item_id for i in res.items}
+    assert not any("exceeds your" in w for w in res.warnings)       # no weight warning at all
+
+
+def test_carry_on_items_over_the_limit_warn():
+    heavy = {iid: {**it, "weight_g": 2_000} for iid, it in _ITEMS.items()}
+    res = build_plan(_ctx(5, profile=_with_bag("one_bag", 7)), heavy)
+    assert any("carry-on weight" in w and "7 kg carry-on limit" in w for w in res.warnings)

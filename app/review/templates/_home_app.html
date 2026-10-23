@@ -12,9 +12,16 @@
   <div class="home-wrap">
     <section class="home-list">
       <h3>{% if acting and acting.is_other %}{{ acting.traveler.display_name }}'s homes over time{% else %}Your homes over time{% endif %}</h3>
-      <p class="why">Home decides which places are never logged as “visited,”
-        and which local trips don’t count. Each move is a new row with dates,
-        so old trips stay judged against the home you had then.</p>
+      {# YONDER-323: say what each kind of home is FOR, before asking for one. #}
+      <p class="why">Why Run·dere asks where home is:</p>
+      <ul class="why">
+        <li><b>Home airport:</b> a flight leaving it starts a trip, and a flight back to it
+          ends one. That's how flights are grouped into trips.</li>
+        <li><b>Residence:</b> anything within its radius is “home”. A drive or outing that
+          never leaves it isn't a trip, and home is never logged as a place you visited.</li>
+      </ul>
+      <p class="why">Each move is a new row with dates, so old trips stay judged against the
+        home you had then.</p>
       {% if not profiles %}
         <p class="empty">No home profiles yet. Add your current home on the right.</p>
       {% else %}

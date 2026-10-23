@@ -2137,9 +2137,24 @@ def save_packing_profile(request: Request,
                                       _profile_form_ctx(request, session, saved=True))
 
 
-def _zones() -> list[str]:
-    from app.clock import zone_names
-    return zone_names()
+def _zones() -> list[tuple[str, str]]:
+    """(zone, readable label) for the time-zone picker (YONDER-321)."""
+    from app.clock import zone_options
+    return zone_options()
+
+
+# CLDR "territories" that aren't countries someone holds a passport of.
+_NOT_COUNTRIES = {"EU", "EZ", "UN", "ZZ", "QO"}
+
+
+def _country_options() -> list[tuple[str, str]]:
+    """(ISO-2 code, "India") for the nationality picker (YONDER-320), sorted by
+    name. The value saved stays the two-letter code visa research uses."""
+    from babel import Locale
+    names = Locale("en").territories
+    return sorted(((code, name) for code, name in names.items()
+                   if len(code) == 2 and code.isalpha() and code not in _NOT_COUNTRIES),
+                  key=lambda c: c[1])
 
 
 def _currency_options() -> list[tuple[str, str]]:
@@ -2169,6 +2184,7 @@ def edit_travel_profile(request: Request, session: Session = Depends(get_session
     return templates.TemplateResponse(request, "travel_profile.html",
         {"request": request, "trav": trav, "no_traveller": trav is None,
          "acting": acting, "currencies": _currency_options(), "zones": _zones(),
+         "countries": _country_options(),
          "saved": False})
 
 
@@ -2185,9 +2201,14 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
     if trav is None:
         return templates.TemplateResponse(request, "travel_profile.html",
             {"request": request, "trav": None, "no_traveller": True, "acting": acting,
-             "currencies": _currency_options(), "zones": _zones(), "saved": False})
+             "currencies": _currency_options(), "zones": _zones(),
+         "countries": _country_options(), "saved": False})
     audit_if_other(session, request, acting, "travel profile")
-    trav.nationality = (nationality or "").strip().upper()[:2] or None
+    nat = (nationality or "").strip().upper()
+    # A real ISO-2 country only (YONDER-320); a code saved before the picker
+    # existed is kept rather than silently cleared.
+    trav.nationality = (nat if nat in {c for c, _ in _country_options()}
+                        or nat == (trav.nationality or "") else None) or None
     bc = (base_currency or "").strip().upper()
     trav.base_currency = bc if bc in set(list_currencies()) else None
     from app.clock import valid_zone
@@ -2200,7 +2221,8 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
     session.refresh(trav)
     return templates.TemplateResponse(request, "travel_profile.html",
         {"request": request, "trav": trav, "no_traveller": False, "acting": acting,
-         "currencies": _currency_options(), "zones": _zones(), "saved": True})
+         "currencies": _currency_options(), "zones": _zones(),
+         "countries": _country_options(), "saved": True})
 
 
 # ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------
