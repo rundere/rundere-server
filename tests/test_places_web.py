@@ -227,3 +227,70 @@ def test_places_page_preselects_the_suggested_trip_but_does_not_file():
 def test_nav_has_a_places_entry():
     t = client.get("/places").text
     assert 'href="/places"' in t and ">Places<" in t.replace("</span>Places<", ">Places<")
+
+
+# ------------------------------------------- the app's share route (D-209, YONDER-317)
+# A Google place share expands to this shape (checked against a real share on
+# 2026-10-23: /maps/place/<name>/@lat,lon,zoom + entry/g_ep/skid). The place and
+# pin here are invented.
+G_SHARED_PLACE = ("https://www.google.com/maps/place/Larkspur+Inn/@35.0841,-106.6509,17z/"
+                  "data=!3m1!4b1!4m6!3m5!1s0x87220b0a1b2c3d4e:0x5f6a7b8c9d0e1f2a!8m2!3d35.0841!"
+                  "4d-106.6509?entry=ttu&g_ep=EgoyMDI2MTAyMC4wIKXMDSoASAFQAw%3D%3D&skid=0f1e2d3c")
+
+
+def _api_user():
+    with SessionLocal() as s:
+        u = s.query(User).filter_by(username="share-api").one_or_none()
+        if u is None:
+            u = User(username="share-api", auth_source="local")
+            s.add(u)
+            s.commit()
+        return u
+
+
+def _bearer(u):
+    return {"Authorization": f"Bearer {authn.issue_access_token(u)}"}
+
+
+def test_app_share_of_a_google_place_short_link_is_saved_not_refused(monkeypatch):
+    """The bug: /api/v1/capture read every maps.app.goo.gl link as directions and
+    refused a place with "needs travel_date". Now it routes like the page."""
+    monkeypatch.setattr(maps_url, "_expand_short", lambda u: G_SHARED_PLACE)
+    u = _api_user()
+    before = _batches()
+    r = client.post("/api/v1/capture", headers=_bearer(u), json={"url": SHORT})
+    assert r.status_code == 202, r.text
+    body = r.json()
+    assert body["status"] == "saved_place" and body["batch_id"] == ""
+    assert body["outcome"] == "created" and body["place_id"]
+    [p] = _places()
+    assert p.id == body["place_id"] and p.owner_id == u.id          # the caller's own
+    assert p.name == "Larkspur Inn" and round(p.lat, 4) == 35.0841
+    assert _batches() == before                                     # not a booking capture
+    r = client.post("/api/v1/capture", headers=_bearer(u), json={"url": SHORT})
+    assert r.json()["outcome"] == "duplicate" and len(_places()) == 1   # safe to resend
+
+
+def test_app_share_of_an_apple_place_link_is_saved():
+    """Apple place links were fetched as web pages by the app's route."""
+    u = _api_user()
+    r = client.post("/api/v1/capture", headers=_bearer(u), json={"url": A_Q})
+    assert r.status_code == 202 and r.json()["status"] == "saved_place"
+    assert [p.provider for p in _places()] == ["apple"]
+
+
+def test_app_share_of_directions_is_still_a_directions_capture(monkeypatch):
+    monkeypatch.setattr(maps_url, "_expand_short", lambda u: G_DIR)
+    u = _api_user()
+    r = client.post("/api/v1/capture", headers=_bearer(u),
+                    json={"url": SHORT, "travel_date": "2031-05-14"})
+    assert r.status_code == 202 and r.json()["status"] == "received" and r.json()["batch_id"]
+    assert _places() == []
+    # Undated directions are still refused until the Inbox can take a date (B2).
+    r = client.post("/api/v1/capture", headers=_bearer(u), json={"url": SHORT})
+    assert r.status_code == 400 and _places() == []
+
+
+def test_app_share_needs_a_signed_in_caller():
+    assert client.post("/api/v1/capture", json={"url": A_Q}).status_code == 401
+    assert _places() == []
