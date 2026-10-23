@@ -18,6 +18,10 @@
 {% elif saved %}
 <div class="saved-note">Saved. {{ i.note or 'This is ready to approve.' }}</div>
 {% endif %}
+{% if 'missing_travel_date' in i.reason_codes and not saved and not approve_refused %}
+{# D-210: no date yet is a prompt, not a block. #}
+<p class="why">{{ i.note }} {{ i.action_hint }}</p>
+{% endif %}
 
 {# The trip pickers. The Run·dere trip comes first: it is where the item is filed
    (D-148). AdventureLog is optional — shown only when the capture's owner has a

@@ -33,9 +33,9 @@ from dataclasses import dataclass
 MODES = ("enforce", "audit", "off")
 
 # Extractors that produce a directions-URL capture (a route with no date of its
-# own). The capture-context checks (RULE-31/32/34) are the same failure mode
-# regardless of provider, so they gate on membership here rather than a literal
-# extractor name (SPEC-4 D-90).
+# own). The capture-context checks (RULE-32/34; RULE-31 is superseded by D-210)
+# are the same failure mode regardless of provider, so they gate on membership
+# here rather than a literal extractor name (SPEC-4 D-90).
 DIRECTIONS_EXTRACTORS = {"maps_url", "apple_maps_url"}
 
 
@@ -122,8 +122,10 @@ _R = [
     Rule("RULE-28b", _G_ROAD, "within_home_radius=true but write targets are set"),
     Rule("RULE-29", _G_ROAD, "Collection minted by an item marked anchor_eligible=false"),
     Rule("RULE-29b", _G_ROAD, "anchor_eligible and within_home_radius are mutually exclusive"),
-    Rule("RULE-31", _G_CAPTURE, "directions-URL capture without capture_context.travel_date — a directions URL carries no date"),
-    Rule("RULE-32", _G_CAPTURE, "directions-URL capture resolved without a user-selected collection (D-05)"),
+    # Superseded by D-210 (SPEC-8 §12): no date yet is valid. Kept registered so a
+    # server's saved rule setting for it still loads; it never fires.
+    Rule("RULE-31", _G_CAPTURE, "Superseded by D-210 — a directions capture with no travel date is a valid plan with no date yet; never fires"),
+    Rule("RULE-32", _G_CAPTURE, "directions-URL capture going to AdventureLog resolved without a user-selected collection (D-05; AdventureLog optional per D-192)"),
     Rule("RULE-33", _G_CAPTURE, "capture_required_fields entry unsupplied and review.required not set"),
     Rule("RULE-34", _G_CAPTURE, "directions-URL date with origin other than capture_context — nothing in the URL supplies it"),
     Rule("RULE-34b", _G_CAPTURE, "Date origin=inferred is never committable (D-06)"),
@@ -365,10 +367,14 @@ def _item_violations(item: dict) -> list[tuple[str, str]]:
     req = p.get("capture_required_fields") or []
 
     if ext in DIRECTIONS_EXTRACTORS:
-        if not cc.get("travel_date"):
-            e(("RULE-31", "directions-URL capture with no capture_context.travel_date — a "
-                          "maps directions URL carries no date; it is unusable without one"))
-        if not cc.get("collection_id") and res.get("outcome") == "resolved":
+        # RULE-31 (no capture date → unusable) is superseded by D-210: an undated
+        # route is a valid plan with no date yet. RULE-34 still keeps any date
+        # it does carry honest (it must come from the person).
+        # D-05's "attach to the collection the human made" is about AdventureLog,
+        # which is optional and second since D-146/D-192: only a route actually
+        # going to AdventureLog needs one. On a Run·dere trip it doesn't.
+        to_al = any(str(t).startswith("adventurelog.") for t in (res.get("targets") or []))
+        if not cc.get("collection_id") and res.get("outcome") == "resolved" and to_al:
             e(("RULE-32", "directions-URL capture resolved with no user-selected collection; "
                           "the trip plan attaches to a collection the human made in advance"))
 

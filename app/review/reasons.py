@@ -16,8 +16,8 @@ REASON_TEXT: dict[str, tuple[str, str]] = {
         "The timezone on this can’t be used as written.",
         "Set a standard timezone."),
     "missing_travel_date": (
-        "This capture has no travel date, and the source doesn’t carry one.",
-        "Add the date you travelled."),
+        "No travel date yet: the link doesn’t carry one.",  # D-210: a prompt
+        "Add the date when you know it, or approve it as it is and date it later."),
     "missing_capture_context": (
         "Some details had to come from you, and weren’t supplied.",
         "Fill in the missing details."),

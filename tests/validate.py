@@ -260,10 +260,9 @@ def check_rules(item):
     req = p.get("capture_required_fields") or []
 
     if ext == "maps_url":
-        if not cc.get("travel_date"):
-            e.append("RULE-31 maps_url capture with no capture_context.travel_date — a Google "
-                     "Maps directions URL carries no date; it is unusable without one")
-        if not cc.get("collection_id") and res.get("outcome") == "resolved":
+        # RULE-31 superseded by D-210: no travel date is a valid "no date yet".
+        to_al = any(str(t).startswith("adventurelog.") for t in (res.get("targets") or []))
+        if not cc.get("collection_id") and res.get("outcome") == "resolved" and to_al:
             e.append("RULE-32 maps_url resolved with no user-selected collection; the drive "
                      "plan attaches to a collection the human made in advance")
 

@@ -318,8 +318,9 @@ def test_drive_without_coordinates_names_an_actionable_reason():
     ctx = {"travel_date": "2026-10-10"}
     assert keys_for(payload, ctx) is None
     assert unkeyable_reason(payload, ctx) == "geocode_failed"
-    # no date at all is the other missing piece of a road key
-    assert unkeyable_reason(payload) == "missing_travel_date"
+    # An unplaced stop is the real blocker with or without a date (D-210: no
+    # date alone doesn't stop a drive any more).
+    assert unkeyable_reason(payload) == "geocode_failed"
 
     # once both stops are located (the geocoder, or a reviewer's edit), it keys
     payload["ground_transport"]["departure"]["place"].update(lat=33.43, lon=-112.01)
@@ -337,3 +338,28 @@ def test_scheduled_ground_transport_keeps_the_generic_reason():
                                     "departure": {}, "arrival": {}}}
     assert keys_for(payload) is None
     assert unkeyable_reason(payload) == "unknown_type"
+
+
+def test_an_undated_drive_keys_on_its_capture_and_stops():
+    """D-210: no date yet → keyed on the capture it came from plus its stops. The
+    same capture finds itself again; another capture of the same route is new."""
+    from resolve.keys import has_undated
+    payload = {"item_type": "ground_transport", "ground_transport": {
+        "mode": "car",
+        "departure": {"place": {"lat": 35.08, "lon": -106.65}, "time": {"precision": "none"}},
+        "arrival": {"place": {"lat": 35.40, "lon": -106.10}, "time": {"precision": "none"}},
+        "waypoints": []}}
+    assert has_undated(payload)
+    assert keys_for(payload, {}) is None                       # no capture: can't key it
+    a = keys_for(payload, {}, capture_id="batch-1:0")
+    assert a.primary.startswith("road:undated:batch-1:0:")
+    assert keys_for(payload, {}, capture_id="batch-1:0").primary == a.primary
+    assert keys_for(payload, {}, capture_id="batch-2:0").primary != a.primary
+    dated = keys_for(payload, {"travel_date": "2031-05-14"}, capture_id="batch-1:0")
+    assert dated.primary.startswith("road:2031-05-14:")        # a date wins once given
+
+
+def test_any_undated_item_keys_on_its_capture():
+    payload = {"item_type": "lodging", "lodging": {"property_name": "Cottonwood Lodge",
+                                                   "check_in": {"precision": "none"}}}
+    assert keys_for(payload, {}, capture_id="batch-9:0").primary == "lodging:undated:batch-9:0"

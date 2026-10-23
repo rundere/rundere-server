@@ -251,6 +251,26 @@ def road_key(travel_date: str, origin_lat: float, origin_lon: float,
     return _result(f"road:{d}:{g5[0]}:{g5[1]}", f"road4:{d}:{g4[0]}:{g4[1]}")
 
 
+def has_undated(node) -> bool:
+    """Does this payload (or any part of it) carry a date that is "no date yet"
+    (precision none, D-210)?"""
+    if isinstance(node, dict):
+        if node.get("precision") == "none" and "local" not in node:
+            return True
+        return any(has_undated(v) for v in node.values())
+    if isinstance(node, list):
+        return any(has_undated(v) for v in node)
+    return False
+
+
+def undated_key(item_type: str, capture_id: str, *parts: str) -> KeyResult:
+    """D-210: an item with no date yet can't be keyed on a date, so it is keyed
+    on the capture it came from (plus its stops, for a drive). Re-resolving the
+    same capture finds itself again; a later capture of the same route or place,
+    dated or not, is a new item, never a silent merge."""
+    return _result(":".join([f"{item_type}", "undated", capture_id, *[p for p in parts if p]]))
+
+
 def scheduled_ground_key(mode: str, operator: str, service_number: str | int,
                          departure_date: str, origin_code: str,
                          pnr: str | None = None) -> KeyResult:
@@ -270,12 +290,21 @@ def scheduled_ground_key(mode: str, operator: str, service_number: str | int,
 
 # ---------------------------------------------------------------- dispatcher
 
-def keys_for(payload: dict, capture_context: dict | None = None) -> KeyResult | None:
+def keys_for(payload: dict, capture_context: dict | None = None, *,
+             capture_id: str | None = None) -> KeyResult | None:
     """Key a schema-shaped Payload (travel-item.schema.json). Returns None when
     the item cannot be keyed (item_type=unknown, or required fields absent) —
-    that is a needs_review signal, not an error.
+    that is a needs_review signal, not an error. `capture_id` (the batch and
+    segment) keys an item with no date yet (D-210).
     """
-    ctx = capture_context or {}
+    result = _dated_keys(payload, capture_context or {}, capture_id)
+    if result is None and capture_id and has_undated(payload) \
+            and payload.get("item_type") not in (None, "unknown"):
+        return undated_key(payload["item_type"], capture_id)
+    return result
+
+
+def _dated_keys(payload: dict, ctx: dict, capture_id: str | None) -> KeyResult | None:
     t = payload.get("item_type")
     try:
         if t == "flight":
@@ -331,7 +360,8 @@ def keys_for(payload: dict, capture_context: dict | None = None) -> KeyResult | 
                     or place.get("name", ""),
                     pnr=payload.get("booking_reference"),
                 )
-            # road: date comes from the human (capture_context), per RULE-31/34.
+            # road: date comes from the human (capture_context), per RULE-34; with
+            # none yet it is keyed on its capture and stops (D-210).
             # The endpoints are departure/arrival — the SAME structure the booked
             # and scheduled paths above use, and what maps_url.py + the committer
             # produce; waypoints are the intermediate stops, not the endpoints.
@@ -341,6 +371,10 @@ def keys_for(payload: dict, capture_context: dict | None = None) -> KeyResult | 
             dst = (g.get("arrival") or {}).get("place") or {}
             if date and o.get("lat") is not None and dst.get("lat") is not None:
                 return road_key(date, o["lat"], o["lon"], dst["lat"], dst["lon"])
+            if not date and capture_id and o.get("lat") is not None \
+                    and dst.get("lat") is not None:
+                return undated_key("road", capture_id, geohash(o["lat"], o["lon"], 5),
+                                   geohash(dst["lat"], dst["lon"], 5))
             return None
         if t == "note":
             title = payload.get("title") or ctx.get("title")
@@ -395,9 +429,11 @@ def unkeyable_reason(payload: dict, capture_context: dict | None = None) -> str:
             ctx = capture_context or {}
             date = ctx.get("travel_date") or (
                 (g.get("departure") or {}).get("time") or {}).get("local", "")[:10]
-            if not date:
-                return "missing_travel_date"
+            # A stop that couldn't be placed is the blocker either way; no date
+            # alone isn't one any more (D-210), but say so when it's all that's left.
             for side in ("departure", "arrival"):
                 if ((g.get(side) or {}).get("place") or {}).get("lat") is None:
                     return "geocode_failed"
+            if not date:
+                return "missing_travel_date"
     return "unknown_type"

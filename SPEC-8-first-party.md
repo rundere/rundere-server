@@ -481,6 +481,11 @@ Since D-146 that no longer holds.
   identifies it: the route's stops for a ground trip, the place for a stay or
   visit, plus the capture it came from. A later dated capture of the same route
   is a new item, never a silent merge.
+- *Found while building it (2026-10-23):* RULE-32 (D-05) asked every directions
+  capture for an AdventureLog collection, so a route filed to a Run·dere trip,
+  dated or not, could never be approved without AdventureLog. In line with
+  D-146/D-192 (AdventureLog optional and second), it now applies only to a route
+  that is actually going to AdventureLog.
 - **Not part of this decision:** how undated items are shown and managed on a
   trip beyond today's **Date not set** group (YONDER-207, and scheduling hints in
   YONDER-208). That comes in a later release.

@@ -1,7 +1,7 @@
 """Extractor chain tests — synthetic fixtures only (D-21: no real emails here).
 
 Covers: JSON-LD mapping, iCal parsing (timed + all-day), maps_url (happy path
-+ RULE-31 date refusal), PDF text extraction, LLM retry logic (mocked), and
++ D-210 no-date-yet routes), PDF text extraction, LLM retry logic (mocked), and
 pipeline dispatch order. Every emitted batch is validated against the derived
 extraction schema — emitters that drift from the contract fail here first.
 
@@ -343,13 +343,14 @@ def test_maps_url_with_capture_date():
     assert g["route"]["is_estimate"] is True                      # RULE-27b
 
 
-def test_maps_url_without_date_refuses():
-    try:
-        maps_url.extract_maps_url(MAPS, {})
-    except maps_url.ExtractionError as ex:
-        assert "RULE-31" in str(ex)
-    else:
-        raise AssertionError("should refuse to guess a date")
+def test_maps_url_without_date_is_kept_with_no_date_yet():
+    """D-210 (superseding RULE-31's refusal): no capture date means an explicit
+    "no date yet", never a guessed one (D-06), and the route is kept."""
+    [item] = maps_url.extract_maps_url(MAPS, {})
+    g = item["ground_transport"]
+    assert g["departure"]["time"] == {"precision": "none"}
+    assert g["arrival"]["time"] == {"precision": "none"}
+    assert g["departure"]["place"]["raw"] and g["arrival"]["place"]["raw"]
 
 
 def test_maps_url_parses_city_region_for_geocoding():
@@ -591,9 +592,11 @@ def test_pipeline_maps_channel():
         {"capture_channel": "maps_url", "url": MAPS,
          "capture_context": {"travel_date": "2026-08-08"}})
     assert r.ok and r.extractor == "maps_url"
-    r2 = pipeline.extract_ingest_payload(
+    r2 = pipeline.extract_ingest_payload(                # D-210: schema-valid, undated
         {"capture_channel": "maps_url", "url": MAPS, "capture_context": {}})
-    assert r2.needs_review
+    assert r2.ok and not r2.needs_review
+    dep = r2.batch["items"][0]["ground_transport"]["departure"]["time"]
+    assert dep == {"precision": "none"}
 
 
 # ---------------------------------------------------------- google mode select
@@ -726,13 +729,9 @@ def test_apple_maps_url_current_location_origin_refuses():
         raise AssertionError("a current-location origin is not stable — refuse")
 
 
-def test_apple_maps_url_without_date_refuses():
-    try:
-        apple_maps_url.extract_apple_maps_url(APPLE, {})
-    except apple_maps_url.ExtractionError as ex:
-        assert "RULE-31" in str(ex)
-    else:
-        raise AssertionError("should refuse to guess a date")
+def test_apple_maps_url_without_date_is_kept_with_no_date_yet():
+    [item] = apple_maps_url.extract_apple_maps_url(APPLE, {})       # D-210, as Google
+    assert item["ground_transport"]["departure"]["time"] == {"precision": "none"}
 
 
 def test_apple_maps_url_coordinate_saddr_parses():

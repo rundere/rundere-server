@@ -95,11 +95,12 @@ def test_short_google_link_that_expands_to_a_place_is_saved(monkeypatch):
     assert "Saved" in r.text and [p.provider for p in _places()] == ["google"]
 
 
-def test_short_google_link_that_expands_to_directions_still_needs_a_date(monkeypatch):
+def test_short_google_link_that_expands_to_directions_is_a_route_not_a_place(monkeypatch):
+    """Directions are never a saved place; with no date they're kept (D-210)."""
     monkeypatch.setattr(maps_url, "_expand_short", lambda u: G_DIR)
     before = _batches()
-    r = client.post("/capture/web", data={"content": SHORT})
-    assert "Travel date" in r.text and _places() == [] and _batches() == before
+    client.post("/capture/web", data={"content": SHORT})
+    assert _places() == [] and _batches() == before + 1
 
 
 def test_directions_links_are_unaffected():
@@ -286,9 +287,9 @@ def test_app_share_of_directions_is_still_a_directions_capture(monkeypatch):
                     json={"url": SHORT, "travel_date": "2031-05-14"})
     assert r.status_code == 202 and r.json()["status"] == "received" and r.json()["batch_id"]
     assert _places() == []
-    # Undated directions are still refused until the Inbox can take a date (B2).
+    # D-210: undated directions are captured too, and wait in the Inbox for a date.
     r = client.post("/api/v1/capture", headers=_bearer(u), json={"url": SHORT})
-    assert r.status_code == 400 and _places() == []
+    assert r.status_code == 202 and r.json()["status"] == "received" and _places() == []
 
 
 def test_app_share_needs_a_signed_in_caller():

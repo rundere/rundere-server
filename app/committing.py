@@ -34,6 +34,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.models import CommitAttempt, TravelItem
 from resolve.geocode import tz_from_coords
+from resolve.keys import has_undated
 from resolve.targets import places_in_payload
 
 log = logging.getLogger("yonder.commit")
@@ -152,7 +153,10 @@ def committable(item: TravelItem) -> bool:
 # but is NOT a real write, so `_done_targets` ignores it and a later commit,
 # once the owner connects, can still write it.
 EXTERNAL_SKIP = "no AirTrail/AdventureLog connection"
-_EXTERNAL_SKIPS = {EXTERNAL_SKIP,
+# D-210: an item with no date yet goes on Run·dere's own timeline (Date not
+# set), but a date-bound record elsewhere waits; a later commit writes it.
+NO_DATE_SKIP = "no date yet"
+_EXTERNAL_SKIPS = {EXTERNAL_SKIP, NO_DATE_SKIP,
                    "no external connection (admins only until per-user connections)"}
 
 
@@ -817,6 +821,10 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
         if target != "yonder.activity" and target.split(".", 1)[0] not in systems:
             results.append({"target": target, "operation": "skip",
                             "ok": True, "skipped": EXTERNAL_SKIP})
+            continue
+        if target != "yonder.activity" and has_undated(payload):
+            results.append({"target": target, "operation": "skip",
+                            "ok": True, "skipped": NO_DATE_SKIP})
             continue
 
         # ---- Yonder (first-party, 2.2.0): file the capture onto its linked

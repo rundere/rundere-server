@@ -115,7 +115,32 @@ def build_format_schema(schema: dict) -> dict:
 
     inlined["properties"]["items"]["items"] = {"anyOf": variants}
     _require_place_fields(inlined, place_always)
+    _dated_only(inlined)
     return inlined
+
+
+def _dated_only(node) -> None:
+    """A document states its dates, so the model always writes one: in the
+    grammar every DateTimeLocal requires `local`, and "none" (no date yet,
+    D-210) isn't offered. "none" is the person's choice for a tentative plan,
+    never the model's, and an optional `local` is one a grammar-constrained
+    model would simply stop emitting (D-29). The grammar can't express the
+    schema's if/else either, so that is dropped here; the real schema still
+    enforces it at the validation gate."""
+    if isinstance(node, dict):
+        props = node.get("properties")
+        if isinstance(props, dict) and "local" in props and "precision" in props:
+            node["required"] = sorted(set(node.get("required", [])) | {"local", "precision"})
+            node.pop("if", None)
+            node.pop("else", None)
+            enum = props["precision"].get("enum")
+            if isinstance(enum, list):
+                props["precision"]["enum"] = [e for e in enum if e != "none"]
+        for value in node.values():
+            _dated_only(value)
+    elif isinstance(node, list):
+        for value in node:
+            _dated_only(value)
 
 
 def _require_place_fields(node, fields: set[str]) -> None:

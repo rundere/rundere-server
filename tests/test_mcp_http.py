@@ -325,9 +325,11 @@ if DEPS:
 
     def test_capture_and_review_tools(client, w):
         tok = _tok(w["alice"])
-        good, err = call(client, tok, "capture_url",
-                         url="https://www.google.com/maps/dir/Banff/Lake+Louise")
-        assert not good and "travel_date" in err
+        undated = ok(client, tok, "capture_url",                 # D-210: kept, no date yet
+                     url="https://www.google.com/maps/dir/Banff/Lake+Louise")
+        with SessionLocal() as s:
+            b = s.get(IngestBatch, undated["batch_id"])
+            assert b.user_id == w["alice"] and b.payload["capture_context"]["travel_date"] is None
         out = ok(client, tok, "capture_url",
                  url="https://www.google.com/maps/dir/Banff/Lake+Louise",
                  travel_date="2027-06-04", mode="car")

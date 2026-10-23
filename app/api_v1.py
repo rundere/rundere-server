@@ -1276,8 +1276,8 @@ def api_capture(body: CaptureIn, user=Depends(authn.current_user),
             422, "Apple Maps short link (maps.apple/p/…) carries no coordinates; "
                  "share the full maps.apple.com directions link")
     elif is_apple or (url and maps_url.looks_like_maps_url(url)):
-        if not body.travel_date:
-            raise HTTPException(400, "a maps directions link needs travel_date")
+        # D-210: travel_date is optional; without it the route waits in the
+        # Inbox with no date yet instead of being refused (YONDER-317).
         bid = _queue_maps(session, url, submitted_by=user.username,
                           travel_date=body.travel_date, travel_time=body.travel_time,
                           end_date=body.end_date, timezone=body.timezone, mode=body.mode,

@@ -216,7 +216,9 @@ def test_capture_maps_url_routes_to_maps_channel():
     _route_or_skip(run)
 
 
-def test_capture_maps_url_requires_travel_date(monkeypatch):
+def test_capture_maps_url_without_a_date_is_kept(monkeypatch):
+    """D-210 (YONDER-317): a directions link with no travel date is captured with
+    no date yet and waits in the Inbox; it is no longer refused and lost."""
     # The short link is expanded to tell place from directions (YONDER-200); keep it offline.
     from extract import maps_url
     monkeypatch.setattr(maps_url, "_expand_short", lambda u: u)
@@ -225,8 +227,10 @@ def test_capture_maps_url_requires_travel_date(monkeypatch):
         before = len(_maps_batches())
         r = _client.post("/capture/web", data={"content": "https://maps.app.goo.gl/xyz123"})
         assert r.status_code == 200
-        assert "Travel date" in r.text
-        assert len(_maps_batches()) == before        # nothing stored without a date
+        assert "add a Travel date" not in r.text
+        after = _maps_batches()
+        assert len(after) == before + 1
+        assert after[-1].payload["capture_context"]["travel_date"] is None
     _route_or_skip(run)
 
 

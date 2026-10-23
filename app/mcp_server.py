@@ -453,7 +453,9 @@ def capture_url(url: Annotated[str, Field(description="A booking/web page URL, a
                                                       "Maps directions link, or a Google/Apple "
                                                       "Maps PLACE link")],
                 travel_date: Annotated[str | None, Field(
-                    description="YYYY-MM-DD — required for a maps directions link")] = None,
+                    description="YYYY-MM-DD for a maps directions link, if known. Without "
+                                "one the route waits in the review queue with no date "
+                                "yet (D-210)")] = None,
                 travel_time: Annotated[str | None, Field(description="HH:MM (directions)")] = None,
                 mode: Annotated[Literal["car", "transit", "walk"] | None, Field(
                     description="Directions travel mode")] = None,

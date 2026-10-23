@@ -547,10 +547,21 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "local",
         "precision"
       ],
-      "description": "Never a bare ISO string. AirTrail rejects the whole batch when a midnight default collides; forcing precision to be explicit makes that failure impossible to produce accidentally.",
+      "if": {
+        "properties": {
+          "precision": {
+            "const": "none"
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "local"
+        ]
+      },
+      "description": "Never a bare ISO string. AirTrail rejects the whole batch when a midnight default collides; forcing precision to be explicit makes that failure impossible to produce accidentally. precision=none (D-210) is an item with no date yet: it carries no local, and is never given a synthesised one.",
       "properties": {
         "local": {
           "type": "string",
@@ -562,9 +573,10 @@
           "enum": [
             "datetime",
             "date",
-            "unknown"
+            "unknown",
+            "none"
           ],
-          "description": "date => time was genuinely absent from the source. NEVER synthesise 00:00 to satisfy a target."
+          "description": "date => time was genuinely absent from the source. NEVER synthesise 00:00 to satisfy a target. none => no date yet (D-210): a tentative plan whose date the person hasn't set; local is absent."
         },
         "tz": {
           "type": [
