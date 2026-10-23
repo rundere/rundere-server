@@ -8,6 +8,7 @@ isn't watched (and its old state is left alone).
 | key                           | category      | how                                   | every  |
 |-------------------------------|---------------|---------------------------------------|--------|
 | inbox                         | mail          | the reader's own results + staleness  | 15 min |
+| inbox-waiting                 | mail          | forwarded mail still there an hour on | 60 min |
 | smtp                          | mail          | sign in and hang up (sends nothing)   | 60 min |
 | integration:<user>:<kind>     | integrations  | each enabled connection's check()     | 60 min |
 | documents                     | storage       | the store folder (marker, writable)   | 15 min |
@@ -156,6 +157,33 @@ def check_inbox() -> tuple[bool, str] | None:
     return None                                     # healthy or erroring: the reader says
 
 
+# Forwarded mail found waiting at the previous hourly check (UIDs).
+_waiting_before: set[bytes] = set()
+
+
+def check_inbox_waiting() -> tuple[bool, str] | None:
+    """Mail addressed to a forwarding address that is still in the folder an
+    hour later has been missed: the reader reads at least every 20 minutes and
+    files everything it takes. Found by the server's SEARCH, not the reader's
+    own parsing, so a reader that silently skips mail is caught (YONDER-330).
+    Connection trouble is the reader's to report, so it's not judged here."""
+    global _waiting_before
+    from app import inbox
+    if not inbox.configured():
+        return None
+    try:
+        now = inbox.check_waiting()
+    except Exception:                         # noqa: BLE001 - the reader reports it
+        return None
+    stuck = now & _waiting_before
+    _waiting_before = now
+    if stuck:
+        n = len(stuck)
+        return False, (f"{n} forwarded message{'' if n == 1 else 's'} waited over an hour "
+                       f"in {settings.inbox_folder} without being captured")
+    return True, None
+
+
 def run_once(*, force: bool = False, session_factory=None) -> dict:
     """One sweep. `force` runs the hourly checks too (the "Check now" button)."""
     from app.db import SessionLocal
@@ -181,6 +209,9 @@ def run_once(*, force: bool = False, session_factory=None) -> dict:
         host = urlparse(url).hostname or url
         rep(f"watch:{host}", check_watched(url), category="servers",
             label=f"Run·dere at {host}", threshold=2)
+    if _due("inbox-waiting", HOURLY, force):
+        rep("inbox-waiting", check_inbox_waiting(), category="mail",
+            label="Email inbox: forwarded mail waiting", threshold=1)
     if _due("smtp", HOURLY, force):
         from app import email as mail
         if mail.email_configured():

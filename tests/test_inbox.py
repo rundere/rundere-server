@@ -212,7 +212,7 @@ if DEPS:
         def capability(self):
             return "OK", [" ".join(self.capabilities).encode()]
 
-        def select(self, folder):
+        def select(self, folder, readonly=False):
             return "OK", [str(len(self.messages)).encode()]
 
         def response(self, code):
@@ -248,6 +248,13 @@ if DEPS:
                     return "OK", [f"1 (UID {uid.decode()} RFC822.SIZE {len(raw)})".encode()]
                 self.fetched_bodies.append(uid)
                 return "OK", self._reply(uid, "BODY[]", raw)
+            if cmd == "SEARCH":                     # the server's own substring search
+                needle = args[4].strip('"').lower()
+                hits = [u for u, raw in sorted(self.messages.items(), key=lambda x: int(x[0]))
+                        if any(needle in str(v).lower()
+                               for k, v in _email.message_from_bytes(raw).items()
+                               if k.lower() in ("to", "cc", "delivered-to", "x-original-to"))]
+                return "OK", [b" ".join(hits)]
             if cmd in ("MOVE", "COPY"):
                 uid, folder = args
                 self.moved[uid] = folder.strip('"')
@@ -312,7 +319,7 @@ if DEPS:
         monkeypatch.setattr(autoprocess, "kick", lambda user: None)
         fake = FakeIMAP({b"2": _mail(addr), b"3": _mail("me@pm.example")}, uid_at=uid_at)
         monkeypatch.setattr(inbox, "_connect", lambda: fake)
-        assert inbox.poll_once(SessionLocal) == {inbox.CAPTURED: 1}
+        assert inbox.poll_once(SessionLocal) == {inbox.CAPTURED: 1, inbox.LEFT_ALONE: 1}
         assert fake.moved == {b"2": settings.inbox_done_folder} and fake.fetched_bodies == [b"2"]
         inbox.poll_once(SessionLocal)
         assert fake.header_scans == ["1:*", "4:*"]           # read past both, once
@@ -364,7 +371,7 @@ if DEPS:
         with SessionLocal() as s:
             before = s.query(InboxMessage).count()
         counts = inbox.poll_once(SessionLocal)
-        assert counts == {inbox.CAPTURED: 1}
+        assert counts == {inbox.CAPTURED: 1, inbox.LEFT_ALONE: 2}       # counted, not read
         assert set(fake.moved) == {b"2"} and fake.fetched_bodies == [b"2"]
         assert {b"1", b"3"} <= set(fake.messages)                      # untouched, in place
         with SessionLocal() as s:
@@ -378,6 +385,37 @@ if DEPS:
         inbox.poll_once(SessionLocal)
         inbox.poll_once(SessionLocal)
         assert fake.header_scans == ["1:*", "10:*"] and fake.moved == {}
+
+    def test_read_now_reads_the_whole_folder_and_keeps_the_counts(monkeypatch):
+        """YONDER-331: "Read inbox now" starts from the first message, even after
+        the reader has marked the folder as read, and its counts stay in the
+        panel's running totals."""
+        with SessionLocal() as s:
+            addr = inbox.user_address(s, _user(s))
+        from app.review import autoprocess
+        monkeypatch.setattr(autoprocess, "kick", lambda user: None)
+        monkeypatch.setitem(inbox.status, "since_start", {})
+        fake = FakeIMAP({b"4": _mail("me@pm.example")})
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        inbox.poll_once(SessionLocal)
+        fake.messages[b"2"] = _mail(addr)          # a message the reader passed over
+        assert inbox.poll_once(SessionLocal) == {}  # past the mark: not seen
+        assert inbox.read_now(SessionLocal) == {inbox.CAPTURED: 1, inbox.LEFT_ALONE: 1}
+        assert fake.header_scans == ["1:*", "5:*", "1:*"]
+        assert fake.moved == {b"2": settings.inbox_done_folder}
+        assert inbox.status["since_start"] == {inbox.CAPTURED: 1, inbox.LEFT_ALONE: 1}
+        assert inbox.describe(inbox.status["since_start"]) == (
+            "1 captured · 1 left alone: not sent to a forwarding address")
+
+    def test_waiting_uses_the_servers_search_and_moves_nothing(monkeypatch):
+        """The cross-check doesn't parse FETCH replies, so it still sees mail a
+        reader with a parsing fault would skip (YONDER-330)."""
+        with SessionLocal() as s:
+            addr = inbox.user_address(s, _user(s))
+        fake = FakeIMAP({b"2": _mail(addr), b"3": _mail("me@pm.example")}, uid_at="none")
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        assert inbox.check_waiting() == {b"2"}
+        assert fake.moved == {} and fake.fetched_bodies == []
 
     def test_capabilities_are_reread_after_login(monkeypatch):
         """Bridge lists MOVE/UIDPLUS/IDLE only once signed in."""
