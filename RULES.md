@@ -123,8 +123,8 @@ Human-supplied metadata for dateless sources (D-05).
 
 | Rule | Critical | Check |
 |---|---|---|
-| `RULE-31` |  | directions-URL capture without capture_context.travel_date — a directions URL carries no date |
-| `RULE-32` |  | directions-URL capture resolved without a user-selected collection (D-05) |
+| `RULE-31` |  | Superseded by D-210 — a directions capture with no travel date is a valid plan with no date yet; never fires |
+| `RULE-32` |  | directions-URL capture going to AdventureLog resolved without a user-selected collection (D-05; AdventureLog optional per D-192) |
 | `RULE-33` |  | capture_required_fields entry unsupplied and review.required not set |
 | `RULE-34` |  | directions-URL date with origin other than capture_context — nothing in the URL supplies it |
 | `RULE-34b` |  | Date origin=inferred is never committable (D-06) |

@@ -80,7 +80,7 @@ Fields common to both directions paths (car/transit/walking):
 |---|---|---|
 | URL | yes | validated against the path's provider host at entry |
 | Travel mode | yes | car / public transit / walking (§3) |
-| Travel date | yes | a route carries no date (RULE-31) |
+| Travel date | no (D-210) | a route carries no date; without one it waits in the Inbox as "no travel date yet" (RULE-31 superseded by D-210) |
 | Start time | optional | departure; extractor stamps it as departure datetime |
 | End date | optional | multi-day drive → arrival on end_date (§5) |
 | Timezone | optional | stamped onto the datetime when present (§5) |

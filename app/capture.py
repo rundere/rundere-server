@@ -132,7 +132,7 @@ def _queue_web(session: Session, html: str, *, source_url: str | None,
 
 
 def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
-                travel_date: str, travel_time: str | None = None,
+                travel_date: str | None, travel_time: str | None = None,
                 end_date: str | None = None, timezone: str | None = None,
                 mode: str | None = None,
                 title: str | None = None, notes: str | None = None,
@@ -140,8 +140,9 @@ def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
                 owner_user_id: str | None = None,
                 provider: str = "google", trip_id: str | None = None) -> str:
     """Store a maps directions link (Google or Apple) as a directions-channel
-    batch — the native replacement for the old n8n form. The extractor needs a
-    travel date (a route carries none, RULE-31); the caller validates it.
+    batch — the native replacement for the old n8n form. A route carries no
+    date; the person's travel date, when given, is the only source of one
+    (RULE-34). Without it the route is kept with no date yet (D-210).
     `provider` selects the channel/extractor; `mode` is the car/transit/walk
     selection cross-checked against the URL (SPEC-4 §2/§3)."""
     channel = "apple_maps_url" if provider == "apple" else "maps_url"
@@ -150,7 +151,7 @@ def _queue_maps(session: Session, url: str, *, submitted_by: str | None,
         "url": url,
         "capture_context": {
             "submitted_by": submitted_by or _WEB_CLIENT,
-            "travel_date": travel_date,
+            "travel_date": travel_date or None,
             "travel_time": travel_time or None,
             "end_date": end_date or None,
             "timezone": timezone or None,
@@ -781,9 +782,8 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
         return _msg(False, "Paste a page's source or a URL first.")
 
     def _queue_directions(provider):
-        if not travel_date:
-            return _msg(False, "That’s a directions capture — add a Travel date "
-                               "(a route has no date of its own).")
+        # D-210: no travel date is fine. The route is kept with no date yet and
+        # the Inbox asks for one; it isn't refused and lost (YONDER-317).
         batch_id = _queue_maps(session, content, submitted_by=submitted_by,
                                travel_date=travel_date, travel_time=travel_time,
                                end_date=end_date, timezone=timezone, mode=mode,

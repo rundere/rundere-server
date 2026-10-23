@@ -58,6 +58,9 @@ def normalize_datetime(dt: dict) -> dict:
     we do not invent a time to justify a 'datetime' label (D-06).
     """
     out = dict(dt)
+    if out.get("precision") == "none":           # no date yet (D-210): never a value
+        out.pop("local", None)
+        return out
     local = str(out.get("local") or "")
     if not local:
         return out

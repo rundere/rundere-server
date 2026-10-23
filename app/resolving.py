@@ -506,9 +506,11 @@ def resolve_item(session: Session, item: TravelItem,
     payload = _apply_maps_coords(payload)
 
     cc = (item.source or {}).get("capture_context") or {}
+    # Keys an item with no date yet to its own capture (D-210).
+    capture_id = f"{item.batch_id or item.id}:{item.segment_index or 0}"
 
     # ---- 1. keys
-    key_result = keys_mod.keys_for(payload, cc)
+    key_result = keys_mod.keys_for(payload, cc, capture_id=capture_id)
     if key_result is None and payload.get("item_type") == "ground_transport" \
             and (airports or geocoder is not None):
         # A drive keys on its endpoint coordinates, but a Maps link that only
@@ -522,7 +524,7 @@ def resolve_item(session: Session, item: TravelItem,
             payload = enrich_places_from_airports(payload, airports)
         if geocoder is not None:
             payload = _geocode_places(payload, geocoder)
-        key_result = keys_mod.keys_for(payload, cc)
+        key_result = keys_mod.keys_for(payload, cc, capture_id=capture_id)
     if key_result is None:
         item.review = {**(item.review or {}), "required": True,
                        "reasons": [keys_mod.unkeyable_reason(payload, cc)]}
@@ -812,7 +814,8 @@ def resolve_item(session: Session, item: TravelItem,
             # optional AdventureLog collection — not a reason to stop. Ready to
             # approve; the AdventureLog picker still offers a collection, and
             # `collection_pending` keeps the AdventureLog records withheld.
-            item.review = {**(item.review or {}), "required": False, "reasons": []}
+            item.review = {**(item.review or {}), "required": False,
+                           "reasons": _no_date_prompt(payload)}
         else:
             item.review = {**(item.review or {}),
                            "required": writable or outcome == "needs_review",
@@ -836,9 +839,9 @@ def resolve_item(session: Session, item: TravelItem,
     # A human's own decision (action_taken) and edits are preserved — only the
     # auto-generated `required`/`reasons` are cleared.
     review = dict(item.review or {})
-    if review.get("required") or review.get("reasons"):
+    if review.get("required") or review.get("reasons") != _no_date_prompt(payload):
         review["required"] = False
-        review["reasons"] = []
+        review["reasons"] = _no_date_prompt(payload)
         item.review = review
 
     state = {"resolved": "ok", "deferred": "deferred",
@@ -848,6 +851,12 @@ def resolve_item(session: Session, item: TravelItem,
         flag_modified(item, attr)
     _sync_keys(session, item, key_result)
     return state
+
+
+def _no_date_prompt(payload: dict) -> list[str]:
+    """D-210: an item with no date yet is approvable; the Inbox only asks for
+    the date ("no travel date yet"), it doesn't block on it."""
+    return ["missing_travel_date"] if keys_mod.has_undated(payload) else []
 
 
 def _as_rule_shape(item: TravelItem) -> dict:

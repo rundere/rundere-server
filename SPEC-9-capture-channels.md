@@ -298,10 +298,10 @@ points that share one parser (`extract/place_url.py`) and one category table:
   - *Undated directions go to the Inbox.* A directions link captured without a date is no longer
     refused at capture. It is stored (D-15) and waits in the Inbox (D-200) as "needs a travel
     date" (`missing_travel_date`), the same way any capture the pipeline can't finish waits for
-    review. There the person adds the date (and, if they like, the time, an end date and a
-    trip), and that one capture is extracted again into a road trip to match and approve. The
-    item schema, RULE-31 and RULE-34 are unchanged: no road trip exists without a date, and the
-    date comes only from the person, never the URL.
+    review. *Revised by D-210 (SPEC-8 §12):* it is extracted into a normal ground-transport
+    item with no date yet, so the person checks it in the usual Inbox editor, adds the date
+    there or approves it onto a trip undated and dates it later. RULE-31 no longer refuses
+    it. RULE-34 holds: the date comes only from the person, never the URL.
   - *The app routes links as the page does.* `POST /api/v1/capture` checks a Maps link's kind
     before anything else, expanding a Google short link (allowlisted hosts, D-152), exactly like
     the capture page. A place link becomes a saved place (D-166/D-167), and directions go to the

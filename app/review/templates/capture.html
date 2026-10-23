@@ -179,8 +179,8 @@
     if (location.hash === '#recent') show('recent');
   })();
 
-  // A directions link needs a travel date (a route carries none): show those fields and require
-  // the date while the box holds one. Progressive enhancement only — the backend validates.
+  // A directions link can take a travel date (a route carries none): show those fields while the
+  // box holds one. The date is optional (D-210): without it the route waits in the Inbox.
   (function () {
     var box = document.getElementById('content'), dir = document.getElementById('dir-fields'),
         date = document.getElementById('travel_date');
@@ -197,10 +197,10 @@
     };
     function sync() {
       var on = isDirections(box.value), maybe = isShort(box.value);
-      dir.hidden = !(on || maybe); date.required = on;
+      dir.hidden = !(on || maybe);
       document.getElementById('dir-hint').textContent = maybe
-        ? 'If this is a directions link, add a travel date (a route has none of its own). A place link needs nothing here: it is saved to your places.'
-        : 'This looks like a directions link. A route has no date of its own, so add one.';
+        ? 'If this is a directions link, add a travel date if you know it. Without one it waits in your Inbox for a date. A place link needs nothing here: it is saved to your places.'
+        : 'This looks like a directions link. Add a travel date if you know it; without one it waits in your Inbox for a date.';
     }
     box.addEventListener('input', sync); sync();
 

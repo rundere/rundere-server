@@ -1,7 +1,7 @@
 """Shared building blocks for directions-URL extractors (Google + Apple).
 
 `_parse_place` (City/Region split, D-59) and `_capture_dt` (capture-context date
-stamping, RULE-31/34) are generic over *any* directions URL — nothing in either
+stamping, RULE-34; no date yet is D-210) are generic over *any* directions URL — nothing in either
 is provider-specific — so both live here and are imported by `extract/maps_url.py`
 (Google) and `extract/apple_maps_url.py` (Apple) rather than copied (D-89).
 
@@ -127,10 +127,6 @@ def build_directions_payload(segments: list[str], capture_context: dict | None,
     """
     cc = capture_context or {}
     date = cc.get("travel_date")
-    if not date:
-        raise ExtractionError(
-            "directions URL requires capture_context.travel_date (RULE-31): "
-            "a route carries no date")
     if is_unstable_origin(segments[0]):
         raise ExtractionError(
             f"origin {segments[0]!r} is a current-location placeholder, not a "
@@ -138,10 +134,16 @@ def build_directions_payload(segments: list[str], capture_context: dict | None,
 
     mode = resolve_mode(cc.get("mode"), url_mode_signal)
 
-    dep_dt = _capture_dt(date, cc.get("travel_time"), cc.get("timezone"))
-    # A multi-day trip arrives on end_date (date-only); otherwise same day.
-    arr_dt = (_capture_dt(cc["end_date"], None, cc.get("timezone"))
-              if cc.get("end_date") else dep_dt)
+    if date:
+        dep_dt = _capture_dt(date, cc.get("travel_time"), cc.get("timezone"))
+        # A multi-day trip arrives on end_date (date-only); otherwise same day.
+        arr_dt = (_capture_dt(cc["end_date"], None, cc.get("timezone"))
+                  if cc.get("end_date") else dict(dep_dt))      # its own copy
+    else:
+        # D-210 (superseding RULE-31): a route carries no date, and the person
+        # hasn't given one yet. The plan is kept, explicitly undated, and the
+        # Inbox asks for a date without blocking it. Never a guessed one (D-06).
+        dep_dt, arr_dt = {"precision": "none"}, {"precision": "none"}
 
     # Coordinates are NOT set here: the extraction Place schema has no coord
     # fields (coords belong at resolve). Where a provider embeds them (Google's

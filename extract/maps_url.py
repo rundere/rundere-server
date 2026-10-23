@@ -3,10 +3,10 @@
 The cheapest extractor in the system: a directions URL carries origin, waypoints
 and destination in its path or query. Zero tokens.
 
-A directions URL carries NO date (RULE-31/34): every DateTimeLocal here comes from
+A directions URL carries NO date (RULE-34): every DateTimeLocal here comes from
 capture_context with origin=capture_context, never from the URL. With no capture
-date the item is unbuildable (Movement.time is required) — that is an
-ExtractionError for the pipeline to turn into needs_review, not a guess.
+date the item is built with no date yet (precision "none", D-210, which
+superseded RULE-31's refusal) and waits in the Inbox for one. Never a guess.
 
 Three URL shapes are accepted (D-61): the `/maps/dir/A/B/C` path, the
 `?api=1&origin=…&destination=…&waypoints=A|B` share format, and a

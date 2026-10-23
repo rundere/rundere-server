@@ -107,6 +107,9 @@ def apply_edits(session: Session, item: TravelItem, *, fields: dict[str, str] | 
             _mark(item, "review")
             session.commit()
 
+    if changed and extraction.get("extractor") in _DIRECTIONS:
+        _own_route_dates(item, payload, changed)
+
     if changed:
         extraction["payload"] = payload
         item.extraction = extraction
@@ -124,6 +127,45 @@ def apply_edits(session: Session, item: TravelItem, *, fields: dict[str, str] | 
         session.commit()
         _reresolve(session, item)
     return changed
+
+
+_DIRECTIONS = {"maps_url", "apple_maps_url"}            # rules.DIRECTIONS_EXTRACTORS
+_ROUTE_TIMES = {"/ground_transport/departure/time": "depart",
+                "/ground_transport/arrival/time": "arrive"}
+
+
+def _own_route_dates(item: TravelItem, payload: dict, changed: list[str]) -> None:
+    """A date the person adds to a directions route (often one captured with no
+    date yet, D-210) is THEIR date, which is exactly what RULE-34 asks of a
+    route: stamp it origin=capture_context and record it on the capture, as if
+    they had typed it when they captured the link."""
+    edited = [p for p in changed if p in _ROUTE_TIMES]
+    if not edited:
+        return
+    source = dict(item.source or {})
+    cc = dict(source.get("capture_context") or {})
+    g = payload.get("ground_transport") or {}
+    for path in edited:
+        dt = ((g.get("departure" if _ROUTE_TIMES[path] == "depart" else "arrival")
+               or {}).get("time")) or {}
+        local = str(dt.get("local") or "")
+        if not local:
+            continue
+        dt["origin"] = "capture_context"
+        if _ROUTE_TIMES[path] == "depart":
+            cc["travel_date"] = local[:10]
+            cc["travel_time"] = local[11:16] if "T" in local else None
+        elif local[:10] != (cc.get("travel_date") or local[:10]):
+            cc["end_date"] = local[:10]
+    # A same-day route arrives on its departure day (as the extractor builds
+    # one): an arrival with no date yet takes that day, date only (D-06).
+    arr = (g.get("arrival") or {})
+    if cc.get("travel_date") and (arr.get("time") or {}).get("precision") == "none":
+        arr["time"] = {"local": cc.get("end_date") or cc["travel_date"],
+                       "precision": "date", "origin": "capture_context"}
+    source["capture_context"] = cc
+    item.source = source
+    _mark(item, "source")
 
 
 def approve(session: Session, item: TravelItem, *, resolved_by: str = "review-ui") -> bool:
