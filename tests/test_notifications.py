@@ -311,6 +311,26 @@ if DEPS:
         monkeypatch.setitem(inbox.status, "last_poll_at", datetime.now(timezone.utc))
         assert monitor.check_inbox() is None
 
+    def test_forwarded_mail_still_waiting_an_hour_later_is_noticed(monkeypatch):
+        """YONDER-330: the reader read regularly and stayed green while it skipped
+        every message. Mail for Run·dere still in the folder at two hourly checks
+        is an alert, whatever the reader thinks."""
+        from app import inbox
+        monkeypatch.setattr(inbox, "configured", lambda: True)
+        monkeypatch.setattr(monitor, "_waiting_before", set())
+        found = iter([{b"2", b"3"}, {b"3", b"4"}, {b"5"}])
+        monkeypatch.setattr(inbox, "check_waiting", lambda: next(found))
+        assert monitor.check_inbox_waiting() == (True, None)        # first sight: fine
+        ok, why = monitor.check_inbox_waiting()
+        assert ok is False and why.startswith("1 forwarded message waited over an hour")
+        assert monitor.check_inbox_waiting() == (True, None)        # filed since
+        def down():
+            raise OSError("refused")
+        monkeypatch.setattr(inbox, "check_waiting", down)
+        assert monitor.check_inbox_waiting() is None                # the reader reports that
+        monkeypatch.setattr(inbox, "configured", lambda: False)
+        assert monitor.check_inbox_waiting() is None
+
     # ---------------------------------------------------------------- hooks
     def test_mail_and_inbox_report_themselves(monkeypatch, env):
         from app import email as mail, inbox

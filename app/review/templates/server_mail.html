@@ -57,13 +57,21 @@
         {% if inbox.last_error %}<dt>Last error</dt><dd><code>{{ inbox.last_error }}</code></dd>{% endif %}
         <dt>TLS certificate</dt><dd>{% if inbox.tls == 'verified' %}verified{% elif inbox.tls == 'pinned' %}pinned (<code>TX_INBOX_IMAP_CA_FILE</code>){% else %}<b>not verified</b>{% endif %}</dd>
         <dt>Last 7 days</dt><dd>{% for k, v in inbox.week|dictsort %}{{ v }} {{ k.replace('_', ' ') }}{% if not loop.last %} · {% endif %}{% else %}nothing yet{% endfor %}</dd>
+        <dt>Since start</dt><dd>{{ inbox.since_start }}</dd>
       </dl>
       <div class="mail-actions">
         <form method="post" action="/settings/mail/check-inbox">
           <button class="act" type="submit">Check connection</button>
         </form>
+        <form method="post" action="/settings/mail/read-inbox">
+          <button class="act" type="submit">Read inbox now</button>
+        </form>
       </div>
-      <p class="hint quiet">Signs in and opens the folder read-only; nothing is read or moved.</p>
+      <p class="hint quiet"><b>Check connection</b> signs in and opens the folder read-only:
+        nothing is read or moved; it counts the messages, and how many are addressed to a
+        forwarding address. <b>Read inbox now</b> does what the reader does, from the
+        first message in the folder: it captures and files mail sent to a forwarding
+        address and leaves everything else where it is.</p>
     {% endif %}
   </section>
   </div>

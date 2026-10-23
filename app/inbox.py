@@ -62,11 +62,30 @@ _PER_POLL = 50
 # Outcomes recorded per message (InboxMessage.outcome).
 CAPTURED, DUPLICATE, UNMATCHED, TOO_LARGE, RATE_LIMITED, UNREADABLE = (
     "captured", "duplicate", "unmatched", "too_large", "rate_limited", "unreadable")
-# A read's count (not a recorded outcome): replies the server sent without a UID.
-NO_UID = "no_uid"
+# A read's counts that aren't recorded outcomes: replies the server sent without
+# a UID, and mail not sent to a forwarding address (left where it is, D-190).
+NO_UID, LEFT_ALONE = "no_uid", "left_alone"
+
+# How the admin panel and the "Read inbox now" result name each count.
+COUNT_LABELS = {
+    CAPTURED: "captured", DUPLICATE: "already captured",
+    UNMATCHED: "dropped: unknown forwarding address", TOO_LARGE: "dropped: too large",
+    RATE_LIMITED: "dropped: over the hourly limit", UNREADABLE: "unreadable",
+    NO_UID: "skipped: the server's reply had no UID",
+    LEFT_ALONE: "left alone: not sent to a forwarding address",
+}
 
 # What the admin panel shows about the poller; module state, one per process.
-status: dict = {"last_poll_at": None, "last_error": None, "last_counts": {}, "mode": None}
+# `since_start` adds up every read's counts, so mail that is skipped or left
+# alone stays visible after the next (empty) read (YONDER-331).
+status: dict = {"last_poll_at": None, "last_error": None, "last_counts": {}, "mode": None,
+                "since_start": {}}
+
+
+def describe(counts: dict) -> str:
+    """`{"captured": 1, "left_alone": 2}` -> "1 captured · 2 left alone: …"."""
+    return " · ".join(f"{n} {COUNT_LABELS.get(k, k.replace('_', ' '))}"
+                      for k, n in sorted(counts.items()) if n) or "nothing new"
 
 
 # --------------------------------------------------------------------- config + addresses
@@ -389,18 +408,24 @@ def _text(part) -> str:
     return part.decode(errors="replace") if isinstance(part, bytes) else str(part)
 
 
-def _addressed_to_us(conn, start: int) -> tuple[list[bytes], int, int]:
-    """UIDs from `start` on whose recipient headers name one of OUR plus
-    addresses (local+token@domain), the highest UID seen, and how many replies
-    carried no UID at all. Only the recipient headers are read, with PEEK, so
-    nothing is marked read — and mail that isn't for Run·dere is never fetched,
-    moved or recorded (D-190: the mailbox may be someone's own, e.g. a Proton
-    account with an alias)."""
+@dataclass
+class _Scan:
+    ours: list[bytes]            # UIDs addressed to one of our plus addresses
+    top: int                     # the highest UID seen
+    no_uid: int = 0              # replies that carried no UID at all
+    left_alone: int = 0          # mail not sent to a forwarding address
+
+
+def _addressed_to_us(conn, start: int) -> _Scan:
+    """What's in the folder from UID `start` on: which messages' recipient
+    headers name one of OUR plus addresses (local+token@domain), and what was
+    passed over. Only the recipient headers are read, with PEEK, so nothing is
+    marked read — and mail that isn't for Run·dere is never fetched, moved or
+    recorded, only counted (D-190: the mailbox may be someone's own, e.g. a
+    Proton account with an alias)."""
     typ, data = conn.uid("FETCH", f"{start}:*", _HEADER_FIELDS)
     parts = list(data or [])
-    ours: list[bytes] = []
-    top = start - 1
-    no_uid = 0
+    scan = _Scan(ours=[], top=start - 1)
     for i, part in enumerate(parts):
         if not (isinstance(part, tuple) and len(part) >= 2):
             continue
@@ -410,29 +435,48 @@ def _addressed_to_us(conn, start: int) -> tuple[list[bytes], int, int]:
         after = parts[i + 1] if i + 1 < len(parts) and isinstance(parts[i + 1], bytes) else b""
         m = re.search(r"\bUID (\d+)", _text(part[0]) + " " + _text(after))
         if not m:
-            no_uid += 1
+            scan.no_uid += 1
             continue
         uid = int(m.group(1))
         if uid < start:                  # "n:*" answers the last message even past it
             continue
-        top = max(top, uid)
+        scan.top = max(scan.top, uid)
         if recipient_tokens(email.message_from_bytes(part[1] or b"")):
-            ours.append(str(uid).encode())
-    return ours, top, no_uid
+            scan.ours.append(str(uid).encode())
+        else:
+            scan.left_alone += 1
+    return scan
 
 
-def _drain(conn, session_factory) -> dict:
+# One read of the folder at a time: the background reader and an admin's
+# "Read inbox now" use separate connections but share the scan marks.
+_drain_lock = threading.Lock()
+
+
+def _drain(conn, session_factory, *, rescan: bool = False) -> dict:
     """Capture, file and count every message for Run·dere waiting in the folder
     on an open, logged-in connection; acknowledge each capture and start
     processing for the people who got one. Mail not addressed to one of our plus
-    addresses is left exactly where it is. Returns the counts."""
+    addresses is left exactly where it is, and counted. `rescan` forgets how far
+    the folder was read and reads all of it. Returns the counts."""
+    with _drain_lock:
+        if rescan:
+            for k in [k for k in _scanned if k[0] == settings.inbox_folder]:
+                del _scanned[k]
+        return _read_folder(conn, session_factory)
+
+
+def _read_folder(conn, session_factory) -> dict:
     counts: dict[str, int] = {}
     captured: list[Handled] = []
     typ, _ = conn.select(_quote(settings.inbox_folder))
     if typ != "OK":
         raise RuntimeError(f"can't open folder {settings.inbox_folder!r}")
     key = (settings.inbox_folder, _uidvalidity(conn))
-    ours, top, no_uid = _addressed_to_us(conn, _scanned.get(key, 0) + 1)
+    scan = _addressed_to_us(conn, _scanned.get(key, 0) + 1)
+    ours, top, no_uid = scan.ours, scan.top, scan.no_uid
+    if scan.left_alone:
+        counts[LEFT_ALONE] = scan.left_alone
     if no_uid:
         # Never skip mail silently: say so, and don't mark the folder as read
         # past it, so the next read looks again.
@@ -466,11 +510,50 @@ def _drain(conn, session_factory) -> dict:
     return counts
 
 
-def poll_once(session_factory) -> dict:
+def poll_once(session_factory, *, rescan: bool = False) -> dict:
     """Connect, read the inbox once (_drain), disconnect. Returns the counts."""
     conn = _connect()
     try:
-        return _drain(conn, session_factory)
+        return _drain(conn, session_factory, rescan=rescan)
+    finally:
+        _logout(conn)
+
+
+def read_now(session_factory) -> dict:
+    """The admin's "Read inbox now" (YONDER-331): read the WHOLE folder once,
+    not just what arrived since the last read, on its own connection, and keep
+    the counts in the panel like any read. Raises on a connection failure, for
+    the page to show; it doesn't count toward the reader's own alerts."""
+    counts = poll_once(session_factory, rescan=True)
+    _ok(counts, status.get("mode") or "polling")
+    return counts
+
+
+def waiting(conn) -> set[bytes]:
+    """UIDs in the selected folder addressed to a forwarding address, found by
+    the SERVER's own SEARCH. A separate path from the reader's FETCH parsing,
+    so a reader that misreads the server's replies can't hide its own misses
+    (YONDER-330). Substring match, as IMAP SEARCH does: `local+` in To, Cc,
+    Delivered-To or X-Original-To."""
+    local, _ = _split(settings.inbox_address)
+    needle = f'"{local}+"'
+    typ, data = conn.uid("SEARCH", None, "OR", "OR", "TO", needle, "CC", needle,
+                         "OR", "HEADER", "Delivered-To", needle,
+                         "HEADER", "X-Original-To", needle)
+    if typ != "OK":
+        raise RuntimeError(f"the server refused SEARCH in {settings.inbox_folder!r}")
+    return set((data[0] or b"").split()) if data else set()
+
+
+def check_waiting() -> set[bytes]:
+    """Connect, open the folder read-only and return `waiting()`. Reads,
+    moves and marks nothing."""
+    conn = _connect()
+    try:
+        typ, _ = conn.select(_quote(settings.inbox_folder), readonly=True)
+        if typ != "OK":
+            raise RuntimeError(f"can't open folder {settings.inbox_folder!r}")
+        return waiting(conn)
     finally:
         _logout(conn)
 
@@ -584,12 +667,15 @@ _thread: threading.Thread | None = None
 
 
 def _ok(counts: dict, mode: str) -> None:
+    total = status.setdefault("since_start", {})
+    for k, n in counts.items():
+        total[k] = total.get(k, 0) + n
     status.update(last_poll_at=datetime.now(timezone.utc), last_error=None,
                   last_counts=counts, mode=mode)
     from app import notify
     notify.report("inbox", True, category="mail", label="Email inbox (IMAP)")
     if counts:
-        log.info("inbox: %s", ", ".join(f"{v} {k}" for k, v in sorted(counts.items())))
+        log.info("inbox: %s", describe(counts))
 
 
 def _failed(ex: Exception) -> None:

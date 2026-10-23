@@ -183,6 +183,7 @@ def _mail_context(session: Session, user) -> dict:
                         "every": max(30, settings.inbox_poll_seconds),
                         "last_read": _ago(inbox.status["last_poll_at"]),
                         "last_error": inbox.status["last_error"],
+                        "since_start": inbox.describe(inbox.status.get("since_start") or {}),
                         "week": inbox.recent_counts(session)}
     return out
 
@@ -244,17 +245,47 @@ def server_mail_check_inbox(request: Request, session: Session = Depends(get_ses
                 raise RuntimeError(f"can't open folder {settings.inbox_folder!r}")
             n = int((data or [b"0"])[0] or 0)
             idle = "IDLE" in (conn.capabilities or ())
+            # How many are for Run·dere, by the server's own SEARCH (YONDER-331):
+            # a folder that "holds 3" but takes none is the tell of a reader fault.
+            ours = len(inbox.waiting(conn)) if n else 0
         finally:
             inbox._logout(conn)
     except Exception as ex:
-        text = f"{type(ex).__name__}: {ex}"
-        if settings.inbox_imap_password:
-            text = text.replace(settings.inbox_imap_password, "***")
-        return _mail_page(request, session, user, inbox_err=text[:300])
+        return _mail_page(request, session, user, inbox_err=_redact_imap(ex))
+    waiting = (f" {ours} of them {'is' if ours == 1 else 'are'} addressed to a forwarding "
+               f"address; the reader files those as it reads, so any still here after a "
+               f"read have been missed (Read inbox now picks them up)." if ours else "")
     return _mail_page(request, session, user, inbox_msg=(
         f"Connected and signed in; {settings.inbox_folder} holds {n} message"
-        f"{'' if n == 1 else 's'}. The server {'offers' if idle else 'does not offer'} "
+        f"{'' if n == 1 else 's'}.{waiting} The server "
+        f"{'offers' if idle else 'does not offer'} "
         f"IMAP IDLE ({'instant' if idle else 'polled'} reading)."))
+
+
+def _redact_imap(ex: Exception) -> str:
+    """The server's reply for the page, never the mailbox password (D-151)."""
+    from app.config import settings
+    text = f"{type(ex).__name__}: {ex}"
+    if settings.inbox_imap_password:
+        text = text.replace(settings.inbox_imap_password, "***")
+    return text[:300]
+
+
+@router.post("/settings/mail/read-inbox", response_class=HTMLResponse)
+def server_mail_read_inbox(request: Request, session: Session = Depends(get_session)):
+    """Read the whole inbox folder now (YONDER-331): what the background reader
+    does, from the first message, so mail it passed over is picked up."""
+    from app import authn, inbox
+    from app.db import SessionLocal
+    user = authn.require_admin(request)
+    if not inbox.configured():
+        return _mail_page(request, session, user, inbox_err="The inbox isn't configured.")
+    try:
+        counts = inbox.read_now(SessionLocal)
+    except Exception as ex:
+        return _mail_page(request, session, user, inbox_err=_redact_imap(ex))
+    return _mail_page(request, session, user,
+                      inbox_msg=f"Read the whole folder: {inbox.describe(counts)}.")
 
 
 # ------------------------------------------------------------------ notifications

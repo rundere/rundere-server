@@ -129,9 +129,38 @@ if DEPS:
             def select(self, folder, readonly=False):
                 seen["readonly"] = readonly
                 return "OK", [b"3"]
+            def uid(self, cmd, *args):
+                seen.setdefault("cmds", []).append(cmd)
+                assert cmd == "SEARCH"                    # never FETCH, MOVE or STORE
+                return "OK", [b"7 9"]
             def logout(self):
                 return "BYE", []
         monkeypatch.setattr(inbox, "_connect", lambda: Conn())
         r = client.post("/settings/mail/check-inbox", cookies=_cookie(True))
-        assert seen["readonly"] is True
+        assert seen["readonly"] is True and seen["cmds"] == ["SEARCH"]
         assert "holds 3 messages" in r.text and "offers IMAP IDLE" in r.text
+        assert "2 of them are addressed to a forwarding address" in r.text
+
+    def test_read_inbox_now_is_admin_only_and_reports_what_it_did(monkeypatch):
+        monkeypatch.setattr(settings, "inbox_address", "trips@example.test")
+        monkeypatch.setattr(settings, "inbox_imap_host", "imap.example.test")
+        monkeypatch.setattr(settings, "inbox_imap_user", "trips@example.test")
+        calls = []
+        monkeypatch.setattr(inbox, "read_now",
+                            lambda sf: calls.append(sf) or {inbox.CAPTURED: 2, inbox.LEFT_ALONE: 1})
+        r = client.post("/settings/mail/read-inbox", cookies=_cookie(False))
+        assert r.status_code in (401, 403) and calls == []           # not for non-admins
+        r = client.post("/settings/mail/read-inbox", cookies=_cookie(True))
+        assert "Read the whole folder: 2 captured · 1 left alone" in r.text
+        assert "Read inbox now" in r.text
+
+    def test_read_inbox_now_hides_the_mailbox_password(monkeypatch):
+        monkeypatch.setattr(settings, "inbox_address", "trips@example.test")
+        monkeypatch.setattr(settings, "inbox_imap_host", "imap.example.test")
+        monkeypatch.setattr(settings, "inbox_imap_user", "trips@example.test")
+        monkeypatch.setattr(settings, "inbox_imap_password", "s3cret-imap")
+        def boom(sf):
+            raise OSError("login failed for s3cret-imap")
+        monkeypatch.setattr(inbox, "read_now", boom)
+        r = client.post("/settings/mail/read-inbox", cookies=_cookie(True))
+        assert "login failed for ***" in r.text and "s3cret-imap" not in r.text

@@ -158,6 +158,31 @@ it off the connection once and pin that copy.
 3. Forward something to `trips+wrong@…`. It ends up in the dropped folder, and
    the admin panel counts it as "unmatched".
 
+## When forwarded mail isn't picked up
+
+Admins have three tools on **Settings → Server mail**:
+
+- **Check connection** signs in and opens the folder read-only. It reports how
+  many messages the folder holds, and how many of those are addressed to a
+  forwarding address. The reader files those as it reads, so any that are
+  still there after a read have been missed.
+- **Read inbox now** does what the reader does, but from the first message in
+  the folder, so it also takes mail the reader passed over. It reports what it
+  did: captured, dropped, or left alone because it wasn't sent to a forwarding
+  address.
+- **Since start** adds up every read since the server started, including mail
+  left alone and replies that had no UID. A server's reply with no UID is also
+  logged as a warning, and that message is tried again on the next read.
+
+If forwarded mail is still in the folder an hour later, the health monitor
+raises an admin alert, "Email inbox: forwarded mail waiting", on
+**Settings → Notifications** and to any alert target set up there. It finds
+that mail with the server's own search, not the reader's, so it still works
+if the reader misreads the server's replies.
+
+Mail in the folder that isn't addressed to a forwarding address is left where
+it is, by design: the folder may be part of someone's own mailbox.
+
 ## Gmail forwarding rules
 
 To forward automatically, Gmail first emails a confirmation code to the target
