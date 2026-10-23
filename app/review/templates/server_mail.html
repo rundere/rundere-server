@@ -67,16 +67,22 @@
           <button class="act" type="submit">Read inbox now</button>
         </form>
       </div>
-      <p class="hint quiet"><b>Check connection</b> signs in and opens the folder read-only:
-        nothing is read or moved; it counts the messages, and how many are addressed to a
-        forwarding address. <b>Read inbox now</b> does what the reader does, from the
-        first message in the folder: it captures and files mail sent to a forwarding
-        address{% if inbox.dedicated %} and moves everything else to <code>{{ inbox.dropped }}</code>{% else %} and leaves everything else where it is{% endif %}.</p>
+      <ul class="hint quiet">
+        <li><b>Check connection</b> signs in and opens the folder read-only. Nothing is read
+          or moved. It counts the messages, and how many are addressed to a forwarding
+          address.</li>
+        <li><b>Read inbox now</b> does what the reader does, from the first message in the
+          folder. It captures and files mail sent to a forwarding address{% if inbox.dedicated %}
+          and moves everything else to <code>{{ inbox.dropped }}</code>{% else %} and leaves
+          everything else where it is{% endif %}.</li>
+      </ul>
 
       <h3 class="cap-h">Run·dere-only folder</h3>
-      <p class="why">Is <code>{{ inbox.folder }}</code> Run·dere's alone? Normally, mail in it that
-        isn't sent to a forwarding address (<code>{{ inbox.mailbox.split('@')[0] }}+…@</code>) is
-        left exactly where it is, because the folder may be part of someone's own mailbox.</p>
+      <p class="why" style="margin-bottom:6px"><b>Is <code>{{ inbox.folder }}</code> a multi-purpose inbox, or a standalone
+        folder for Run·dere?</b></p>
+      <p class="why">Normally, mail in it that isn't sent to a forwarding address
+        (<code>{{ inbox.mailbox.split('@')[0] }}+…@</code>) is left exactly where it is, because
+        the folder may be part of someone's own mailbox.</p>
       <ul class="why">
         <li><b>Turn this on</b> when only mail meant for Run·dere reaches this folder: a mailbox
           of its own, or a folder that only a mail filter fills. Mail sent to the bare
