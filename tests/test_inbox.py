@@ -188,9 +188,12 @@ if DEPS:
     # ------------------------------------------------------------- the IMAP poll
     class FakeIMAP:
         """Just enough of imaplib.IMAP4 for the reader: header-only FETCH over a
-        UID range, MOVE / COPY, UID EXPUNGE, and a record of every command."""
-        def __init__(self, messages, move=True, uidplus=True, fail_login=None):
+        UID range, MOVE / COPY, UID EXPUNGE, and a record of every command.
+        `uid_at` is where a FETCH reply puts the UID: "first" (Dovecot, Gmail),
+        "last" (Proton Bridge: after the literal, YONDER-330) or "none"."""
+        def __init__(self, messages, move=True, uidplus=True, fail_login=None, uid_at="first"):
             self.messages = dict(messages)            # uid(bytes) -> raw bytes
+            self.uid_at = uid_at
             caps = ["IMAP4REV1"] + (["MOVE"] if move else []) + (["UIDPLUS"] if uidplus else [])
             self.capabilities = tuple(caps)
             self.moved: dict[bytes, str] = {}
@@ -235,16 +238,16 @@ if DEPS:
                         hdr = "".join(f"{k}: {v}\r\n" for k, v in m.items()
                                       if k.lower() in ("to", "cc", "delivered-to",
                                                        "x-original-to")).encode()
-                        out += [(f"1 (UID {u.decode()} BODY[HEADER] {{{len(hdr)}}}".encode(), hdr),
-                                b")"]
+                        out += self._reply(u, "BODY[HEADER.FIELDS (TO CC)]", hdr)
                     return "OK", out
                 uid = uidset
                 raw = self.messages[uid]
                 if "RFC822.SIZE" in what:
+                    if self.uid_at == "last":
+                        return "OK", [f"1 (RFC822.SIZE {len(raw)} UID {uid.decode()})".encode()]
                     return "OK", [f"1 (UID {uid.decode()} RFC822.SIZE {len(raw)})".encode()]
                 self.fetched_bodies.append(uid)
-                return "OK", [(f"1 (UID {uid.decode()} BODY[] {{{len(raw)}}}".encode(), raw),
-                              b")"]
+                return "OK", self._reply(uid, "BODY[]", raw)
             if cmd in ("MOVE", "COPY"):
                 uid, folder = args
                 self.moved[uid] = folder.strip('"')
@@ -258,6 +261,16 @@ if DEPS:
                 self.messages.pop(args[0], None)
                 return "OK", [b""]
             raise AssertionError(cmd)
+
+        def _reply(self, uid, item, literal):
+            """One message's FETCH reply as imaplib returns it: (text before the
+            literal, the literal), then the text after it."""
+            u, n = uid.decode(), len(literal)
+            if self.uid_at == "last":            # Bridge, recorded on 2026-10-23
+                return [(f"1 ({item} {{{n}}}".encode(), literal), f" UID {u})".encode()]
+            if self.uid_at == "none":
+                return [(f"1 ({item} {{{n}}}".encode(), literal), b")"]
+            return [(f"1 (UID {u} {item} {{{n}}}".encode(), literal), b")"]
 
         def expunge(self):
             self.plain_expunges += 1
@@ -287,6 +300,36 @@ if DEPS:
         assert fake.moved == {b"1": settings.inbox_done_folder,
                               b"2": settings.inbox_dropped_folder}
         assert kicked == [uid_]                                    # D-158, unattended
+
+    @pytest.mark.parametrize("uid_at", ["first", "last"])
+    def test_uid_is_read_wherever_the_server_puts_it(monkeypatch, uid_at):
+        """RFC 3501 doesn't fix the order of FETCH items. Proton Bridge puts UID
+        after the header literal; reading only the text before it skipped every
+        message without a trace (YONDER-330)."""
+        with SessionLocal() as s:
+            addr = inbox.user_address(s, _user(s))
+        from app.review import autoprocess
+        monkeypatch.setattr(autoprocess, "kick", lambda user: None)
+        fake = FakeIMAP({b"2": _mail(addr), b"3": _mail("me@pm.example")}, uid_at=uid_at)
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        assert inbox.poll_once(SessionLocal) == {inbox.CAPTURED: 1}
+        assert fake.moved == {b"2": settings.inbox_done_folder} and fake.fetched_bodies == [b"2"]
+        inbox.poll_once(SessionLocal)
+        assert fake.header_scans == ["1:*", "4:*"]           # read past both, once
+
+    def test_replies_without_a_uid_are_reported_and_read_again(monkeypatch, caplog):
+        """A reply the reader can't place is never skipped silently: it's counted,
+        logged, and the folder isn't marked as read past it."""
+        with SessionLocal() as s:
+            addr = inbox.user_address(s, _user(s))
+        fake = FakeIMAP({b"2": _mail(addr)}, uid_at="none")
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        with caplog.at_level("WARNING", logger="yonder.inbox"):
+            assert inbox.poll_once(SessionLocal) == {inbox.NO_UID: 1}
+        assert "without a UID" in caplog.text
+        assert fake.moved == {} and b"2" in fake.messages
+        inbox.poll_once(SessionLocal)
+        assert fake.header_scans == ["1:*", "1:*"]
 
     def test_without_move_only_our_message_is_expunged(monkeypatch):
         """COPY + flag + UID EXPUNGE of that one message — never a plain EXPUNGE,
