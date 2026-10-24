@@ -287,10 +287,20 @@ if DEPS:
             return "BYE", [b""]
 
     @pytest.fixture(autouse=True)
-    def _fresh_scan_marks():
+    def _fresh_scan_marks(monkeypatch):
         inbox._scanned.clear()
+        monkeypatch.setattr(settings, "inbox_dedicated", None)
+        _shared_folder()
         yield
         inbox._scanned.clear()
+        _shared_folder()
+
+    def _shared_folder():
+        """D-208 is off unless a test turns it on: no admin choice saved."""
+        from app.models import ServerSetting
+        with SessionLocal() as s:
+            s.query(ServerSetting).filter_by(key=inbox.DEDICATED_KEY).delete()
+            s.commit()
 
     def test_poll_files_captured_and_dropped_mail_and_starts_processing(monkeypatch):
         with SessionLocal() as s:
@@ -415,6 +425,50 @@ if DEPS:
         fake = FakeIMAP({b"2": _mail(addr), b"3": _mail("me@pm.example")}, uid_at="none")
         monkeypatch.setattr(inbox, "_connect", lambda: fake)
         assert inbox.check_waiting() == {b"2"}
+        assert fake.moved == {} and fake.fetched_bodies == []
+
+    def test_a_run_dere_only_folder_drops_mail_without_a_forwarding_address(monkeypatch):
+        """D-208: when the admin says the folder is Run·dere's alone, mail that
+        isn't sent to a forwarding address moves to the dropped folder and is
+        recorded as an outcome only. Its body is never fetched."""
+        with SessionLocal() as s:
+            addr = inbox.user_address(s, _user(s))
+            inbox.set_dedicated(s, True, None)
+            before = s.query(InboxMessage).filter_by(detail=inbox.NOT_PERSONAL).count()
+        from app.review import autoprocess
+        monkeypatch.setattr(autoprocess, "kick", lambda user: None)
+        fake = FakeIMAP({b"1": _mail("Kenji <me@pm.example>"), b"2": _mail(addr),
+                         b"3": _mail(MAILBOX)}, uid_at="last")
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        assert inbox.poll_once(SessionLocal) == {inbox.CAPTURED: 1, inbox.NOT_FORWARDED: 2}
+        assert fake.moved == {b"1": settings.inbox_dropped_folder,
+                              b"2": settings.inbox_done_folder,
+                              b"3": settings.inbox_dropped_folder}
+        assert fake.fetched_bodies == [b"2"]
+        with SessionLocal() as s:
+            after = s.query(InboxMessage).filter_by(detail=inbox.NOT_PERSONAL).all()
+            assert len(after) == before + 2
+            assert all(m.user_id is None and m.batch_id is None for m in after)
+
+    def test_the_environment_locks_the_run_dere_only_setting(monkeypatch):
+        """TX_INBOX_DEDICATED, when set, wins over the admin's saved choice, and
+        the choice can't be changed from the app."""
+        with SessionLocal() as s:
+            assert inbox.dedicated(s) == (False, False)             # off until chosen
+            inbox.set_dedicated(s, True, None)
+            assert inbox.dedicated(s) == (True, False)
+            monkeypatch.setattr(settings, "inbox_dedicated", False)
+            assert inbox.dedicated(s) == (False, True)
+            with pytest.raises(PermissionError):
+                inbox.set_dedicated(s, True, None)
+
+    def test_dedicated_preview_counts_what_would_move_and_moves_nothing(monkeypatch):
+        with SessionLocal() as s:
+            addr = inbox.user_address(s, _user(s))
+        fake = FakeIMAP({b"1": _mail("me@pm.example"), b"2": _mail(addr),
+                         b"3": _mail(MAILBOX)})
+        monkeypatch.setattr(inbox, "_connect", lambda: fake)
+        assert inbox.dedicated_preview() == (3, 2)
         assert fake.moved == {} and fake.fetched_bodies == []
 
     def test_capabilities_are_reread_after_login(monkeypatch):

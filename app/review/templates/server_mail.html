@@ -67,11 +67,55 @@
           <button class="act" type="submit">Read inbox now</button>
         </form>
       </div>
-      <p class="hint quiet"><b>Check connection</b> signs in and opens the folder read-only:
-        nothing is read or moved; it counts the messages, and how many are addressed to a
-        forwarding address. <b>Read inbox now</b> does what the reader does, from the
-        first message in the folder: it captures and files mail sent to a forwarding
-        address and leaves everything else where it is.</p>
+      <ul class="hint quiet">
+        <li><b>Check connection</b> signs in and opens the folder read-only. Nothing is read
+          or moved. It counts the messages, and how many are addressed to a forwarding
+          address.</li>
+        <li><b>Read inbox now</b> does what the reader does, from the first message in the
+          folder. It captures and files mail sent to a forwarding address{% if inbox.dedicated %}
+          and moves everything else to <code>{{ inbox.dropped }}</code>{% else %} and leaves
+          everything else where it is{% endif %}.</li>
+      </ul>
+
+      <h3 class="cap-h">Run·dere-only folder</h3>
+      <p class="why" style="margin-bottom:6px"><b>Is <code>{{ inbox.folder }}</code> a multi-purpose inbox, or a standalone
+        folder for Run·dere?</b></p>
+      <p class="why">Normally, mail in it that isn't sent to a forwarding address
+        (<code>{{ inbox.mailbox.split('@')[0] }}+…@</code>) is left exactly where it is, because
+        the folder may be part of someone's own mailbox.</p>
+      <ul class="why">
+        <li><b>Turn this on</b> when only mail meant for Run·dere reaches this folder: a mailbox
+          of its own, or a folder that only a mail filter fills. Mail sent to the bare
+          address, a mistyped address or spam then moves to <code>{{ inbox.dropped }}</code>,
+          so the folder doesn't fill up with mail nobody will ever read.</li>
+        <li><b>Leave it off</b> if this folder is part of a personal inbox, or anyone else's
+          mail can arrive in it. Mail that moves to <code>{{ inbox.dropped }}</code> is emptied
+          to Trash after {{ inbox.dropped_days }} days.</li>
+        <li>Run·dere only moves mail; it never reads the body or keeps the sender or
+          subject of mail it drops (D-208).</li>
+      </ul>
+      {% if dedicated_preview %}
+        <div class="violations">
+          <p>Turning this on would move <b>{{ dedicated_preview.would_move }}</b> of the
+            {{ dedicated_preview.total }} message{{ '' if dedicated_preview.total == 1 else 's' }}
+            now in <code>{{ inbox.folder }}</code> to <code>{{ inbox.dropped }}</code> at the next read.</p>
+          {% if inbox.folder_is_inbox %}<p><b>This is the account's INBOX</b>, the folder most
+            likely to hold someone's own mail. Turn this on only if this account is used for
+            nothing but Run·dere.</p>{% endif %}
+          <form method="post" action="/settings/mail/dedicated">
+            <input type="hidden" name="on" value="1"><input type="hidden" name="confirm" value="1">
+            <button class="act" type="submit">Yes, make it Run·dere-only</button>
+            <a href="/settings/mail">Cancel</a>
+          </form>
+        </div>
+      {% endif %}
+      <p>{% if inbox.dedicated %}<span class="pill ok">On</span> mail without a forwarding address moves to <code>{{ inbox.dropped }}</code>{% else %}<span class="pill">Off</span> mail without a forwarding address is left in place{% endif %}{% if inbox.dedicated_locked %} · set by <code>TX_INBOX_DEDICATED</code> in the server's configuration{% endif %}</p>
+      {% if not inbox.dedicated_locked and not dedicated_preview %}
+        <form method="post" action="/settings/mail/dedicated">
+          <input type="hidden" name="on" value="{{ '' if inbox.dedicated else '1' }}">
+          <button class="act" type="submit">{{ 'Treat it as shared again' if inbox.dedicated else 'Make it Run·dere-only…' }}</button>
+        </form>
+      {% endif %}
     {% endif %}
   </section>
   </div>
