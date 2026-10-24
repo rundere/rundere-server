@@ -7,7 +7,7 @@
 
 # Run·dere
 
-**Version 4.12.9** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/rundere/rundere-server/releases) · [demo](https://demo.rundere.app) · [rundere.app](https://rundere.app)
+**Version 4.12.10** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/rundere/rundere-server/releases) · [demo](https://demo.rundere.app) · [rundere.app](https://rundere.app)
 
 **A self-hosted travel planner for you and the people you travel with.** Forward a booking
 email, drop in a PDF or click a bookmarklet, and Run·dere reads the flight, hotel, train or
