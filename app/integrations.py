@@ -162,8 +162,10 @@ def clients_for_user(session: Session, user_id: str | None) -> Clients:
     at_conn, al_conn = conns.get(AIRTRAIL), conns.get(ADVENTURELOG)
     return Clients(
         uid, adventurelog=client(al_conn), airtrail=client(at_conn),
-        airtrail_user_id=((at_conn.remote_user_id if at_conn else None)
-                          or _traveller_airtrail_id(session, user)),
+        # Whose seat: the connection's AirTrail user, or (blank) the token's own
+        # user, which AirTrail fills in. The Travel profile's old id is only a
+        # one-time seed when server-wide settings become a connection (YONDER-322).
+        airtrail_user_id=at_conn.remote_user_id if at_conn else None,
         public_url=(al_conn.public_url if al_conn and al_conn.public_url
                     else (al_conn.base_url if al_conn else None)))
 

@@ -32,7 +32,7 @@
       <select class="input" name="bag_mode">
         {% for o in bag_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
       </select></div>
-    <div class="field"><label>Weight limit (kg)</label>
+    <div class="field"><label>Carry-on weight limit (kg) <span class="yn-help">— carry-on only; checked bags aren't counted</span></label>
       <input class="input" type="number" name="bag_weight_kg" value="{{ bag_weight_kg }}" min="0" step="1"></div>
     <div class="field"><label>Laundry on the trip</label>
       <select class="input" name="laundry_comfort">
@@ -62,6 +62,11 @@
       <label class="yn-check"><input type="checkbox" name="style_constraints" value="{{ c.value }}" {% if c.checked %}checked{% endif %}> {{ c.label }}</label>
       {% endfor %}
     </div>
+  </div>
+
+  {# YONDER-327: the must-haves list is long; save the settings above without scrolling past it. #}
+  <div class="dialog-actions" style="justify-content:flex-start;margin:-4px 0 16px">
+    <button type="submit" class="btn btn-primary">Save profile</button>
   </div>
 
   <div class="field"><label>Always pack these <span class="yn-help">— your must-haves, added to every plan</span></label>

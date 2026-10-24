@@ -436,7 +436,8 @@ def test_execute_writes_in_order_records_attempts_and_status():
     al, at = FakeAL(), FakeAT()
     env = C.commit_item(s, it, al, at, identities=[Ident("self", "vu75")],
                         airports=at.airport_reference(),
-                        airlines=at.airline_reference(), dry_run=False)
+                        airlines=at.airline_reference(), dry_run=False,
+                        self_uid="vu75")     # the connection's AirTrail user
     s.commit()                       # commit_pending commits per item; mirror it
     # collection first (mints coll-1), then location + transportation carry it
     by_type = {}

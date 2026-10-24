@@ -27,6 +27,43 @@ def zone_names() -> list[str]:
                                                     "right/")))
 
 
+def zone_options() -> list[tuple[str, str]]:
+    """(zone, label) for the Travel profile's picker, ordered by UTC offset,
+    e.g. ("Asia/Kolkata", "(UTC+05:30) Kolkata — India Time (IST)"). The raw
+    IANA name meant nothing to people (YONDER-321); the saved value stays the
+    IANA zone. Offsets are today's (daylight saving), so it's worked out daily."""
+    return _zone_options(datetime.now(ZoneInfo("UTC")).date().isoformat())
+
+
+@lru_cache(maxsize=2)
+def _zone_options(_day: str) -> list[tuple[str, str]]:
+    from babel.dates import get_timezone, get_timezone_name
+    rows = []
+    for zone in zone_names():
+        try:
+            now = datetime.now(ZoneInfo(zone))
+            off = now.utcoffset()
+        except (ZoneInfoNotFoundError, ValueError, OSError):   # a broken zone is skipped
+            continue
+        mins = int(off.total_seconds() // 60) if off is not None else 0
+        sign = "+" if mins >= 0 else "−"
+        offset = f"UTC{sign}{abs(mins) // 60:02d}:{abs(mins) % 60:02d}"
+        city = zone.rsplit("/", 1)[-1].replace("_", " ")
+        try:
+            btz = get_timezone(zone)
+            name = get_timezone_name(datetime.now(btz), width="long", locale="en")
+            if name.startswith("GMT"):        # no specific name: use the region's
+                name = get_timezone_name(btz, width="long", locale="en")
+                name = name.split(" (", 1)[0] + (" Time" if " (" in name else "")
+        except Exception:                     # noqa: BLE001 - the city alone still helps
+            name = ""
+        abbr = now.tzname() or ""
+        tail = f" ({abbr})" if abbr.isalpha() and abbr not in name else ""
+        label = f"({offset}) {city}" + (f" — {name}{tail}" if name else tail)
+        rows.append((mins, label, zone))
+    return [(zone, label) for _, label, zone in sorted(rows)]
+
+
 def valid_zone(name: str | None) -> str | None:
     """`name` if it's a real IANA zone, else None."""
     name = (name or "").strip()

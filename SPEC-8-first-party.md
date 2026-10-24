@@ -119,7 +119,9 @@ linked to the `self` identity). Everyone else gets `yonder.activity` only.
 - **"Self" is per user.** RULE-10 (a guest-only flight never goes to AirTrail)
   uses the capturing user's own `User.traveler_id` identity, not the single
   `kind="self"` row. `airtrail_user_id` is read from that user's AirTrail
-  connection.
+  connection (blank: the token's own user). The Travel profile's old field is
+  gone and is no longer a fallback; the stored value only seeds the connection
+  once, on upgrade (YONDER-322, 2026-10-23).
 - **Migration:** seed the owner's connections from the existing `TX_*` env vars
   on first boot, and log a deprecation warning plus a notice on the admin page.
   Then remove the variables from `portainer-stack*.yml` and the docs.

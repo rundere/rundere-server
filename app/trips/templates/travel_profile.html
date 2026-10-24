@@ -34,9 +34,17 @@
 
   <div class="yn-form-grid">
     <div class="field"><label for="tp-nat">Nationality <span class="yn-help">— drives visa research</span></label>
-      <input id="tp-nat" class="input" name="nationality" maxlength="2"
-             placeholder="ISO-2, e.g. CA, US, GB" value="{{ trav.nationality or '' }}"
-             style="text-transform:uppercase"></div>
+      {# YONDER-320: a country picker; it saves the ISO-2 code visa research uses. #}
+      <select id="tp-nat" class="input" name="nationality">
+        <option value="">— not set —</option>
+        {% set known = countries | map(attribute=0) | list %}
+        {% if trav.nationality and trav.nationality not in known %}
+        <option value="{{ trav.nationality }}" selected>{{ trav.nationality }}</option>
+        {% endif %}
+        {% for code, name in countries %}
+        <option value="{{ code }}" {% if trav.nationality == code %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select></div>
     <div class="field"><label for="tp-cur">Base currency <span class="yn-help">— for rates and the calculator</span></label>
       <select id="tp-cur" class="input" name="base_currency">
         <option value="">— deployment default —</option>
@@ -50,8 +58,8 @@
     <div class="yn-tz-row">
       <select id="tp-tz" class="input" name="timezone">
         <option value="">— the server's clock —</option>
-        {% for z in zones %}
-        <option value="{{ z }}" {% if trav.timezone == z %}selected{% endif %}>{{ z | replace('_', ' ') }}</option>
+        {% for z, label in zones %}
+        <option value="{{ z }}" {% if trav.timezone == z %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
       <button type="button" class="btn btn-ghost bp-sm" id="tp-tz-detect" hidden>Use this device's</button>
@@ -66,7 +74,8 @@
       var sel = document.getElementById('tp-tz'), btn = document.getElementById('tp-tz-detect');
       if (!z || !sel || sel.value === z) return;
       if (![].some.call(sel.options, function (o) { return o.value === z; })) return;
-      btn.textContent = "Use this device's (" + z.replace(/_/g, ' ') + ")";
+      var opt = [].find.call(sel.options, function (o) { return o.value === z; });
+      btn.textContent = "Use this device's: " + (opt ? opt.textContent : z.replace(/_/g, ' '));
       btn.hidden = false;
       btn.onclick = function () { sel.value = z; btn.hidden = true; };
     })();
@@ -76,8 +85,6 @@
     <textarea id="tp-alias" class="input" name="aliases" rows="3"
               placeholder="e.g. NAKAMURA/KENJI MR">{{ (trav.aliases or []) | join('\n') }}</textarea></div>
 
-  <div class="field"><label for="tp-at">AirTrail user id <span class="yn-help">— optional; your AirTrail connection (Settings → Connections) normally covers this</span></label>
-    <input id="tp-at" class="input" name="airtrail_user_id" value="{{ trav.airtrail_user_id or '' }}"></div>
 
   <div class="field"><label for="tp-notes">Notes</label>
     <textarea id="tp-notes" class="input" name="notes" rows="3">{{ trav.notes or '' }}</textarea></div>

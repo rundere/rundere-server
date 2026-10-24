@@ -242,14 +242,17 @@ def build_plan(ctx: PlanningContext, items: dict, *,
         res.omitted.append(_mk(iid, acc.pop(iid)["qty"], items, variant,
                                "omitted", reason=reason, swap=swap, source="omitted"))
 
-    # pass 7 — bag assignment + weight
+    # pass 7 — bag assignment + weight. The weight limit is the carry-on
+    # allowance (YONDER-325), so only what goes in the carry-on counts toward it;
+    # a checked bag has its own, separate airline limit.
     one_bag = (prof.get("bag") or {}).get("mode") == "one_bag"
-    total_g = 0
+    carry_g = 0
     for iid, info in acc.items():
         it = items.get(iid) or {}
         bag = "carry_on" if one_bag else it.get("bag", "checked")
         weight = (it.get("weight_g") or 0) * info["qty"]
-        total_g += weight
+        if bag == "carry_on":
+            carry_g += weight
         res.items.append(_mk(iid, info["qty"], items, variant, "draft",
                              bag=bag, source=info["source"],
                              reason=_reason(iid, info, ctx, q)))
@@ -261,9 +264,9 @@ def build_plan(ctx: PlanningContext, items: dict, *,
                             "packing (layers, rain gear).")
     res.warnings += qnotes
     tol = (prof.get("bag") or {}).get("weight_kg")
-    if tol and total_g / 1000 > tol:
-        res.warnings.append(f"Estimated {total_g/1000:.1f} kg exceeds your "
-                            f"{tol} kg limit — wear the bulkiest items on travel day.")
+    if tol and carry_g / 1000 > tol:
+        res.warnings.append(f"Estimated carry-on weight {carry_g/1000:.1f} kg exceeds your "
+                            f"{tol} kg carry-on limit — wear the bulkiest items on travel day.")
     if one_bag and len(res.items) > 28:
         res.warnings.append(f"{len(res.items)} items for one-bag travel — consider "
                             f"trimming 'just in case' extras.")
