@@ -84,9 +84,23 @@ def _expand_short(url: str) -> str:
         req = urllib.request.Request(url, method="GET",
                                      headers={"User-Agent": "yonder"})
         with netpolicy.public_opener().open(req, timeout=10) as resp:
-            return resp.geturl() or url
+            return _past_consent(resp.geturl() or url)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         return url
+
+
+def _past_consent(url: str) -> str:
+    """In some regions Google answers a short link with its cookie-consent page,
+    which carries the real Maps URL in `continue`. Read it from there rather than
+    lose the place (YONDER-314); nothing on the consent page is fetched."""
+    parts = urlsplit(url)
+    if not (parts.hostname or "").lower().startswith("consent.google."):
+        return url
+    target = (parse_qs(parts.query).get("continue") or [""])[0]
+    host = (urlsplit(target).hostname or "").lower()
+    if target.lower().startswith("https://") and re.match(r"^(www\.|maps\.)?google\.[a-z.]{2,6}$", host):
+        return target
+    return url
 
 
 def _segments(url: str) -> list[str]:

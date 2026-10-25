@@ -295,3 +295,47 @@ def test_app_share_of_directions_is_still_a_directions_capture(monkeypatch):
 def test_app_share_needs_a_signed_in_caller():
     assert client.post("/api/v1/capture", json={"url": A_Q}).status_code == 401
     assert _places() == []
+
+
+# ------------------------------------- a place shared as text (YONDER-314, 316)
+# What a Maps app's share sheet hands over: the name, the address, then the link.
+# The place, address and link are invented.
+SHARED_TEXT = f"Larkspur Inn\n12 Example Row, Exampleton\n{SHORT}"
+
+
+def test_place_shared_as_text_on_the_page_is_saved(monkeypatch):
+    monkeypatch.setattr(maps_url, "_expand_short", lambda u: G_SHARED_PLACE)
+    before = _batches()
+    r = client.post("/capture/web", data={"content": SHARED_TEXT})
+    assert r.status_code == 200 and "Larkspur Inn" in r.text
+    assert [p.name for p in _places()] == ["Larkspur Inn"] and _batches() == before
+
+
+def test_app_share_of_place_text_is_saved(monkeypatch):
+    monkeypatch.setattr(maps_url, "_expand_short", lambda u: G_SHARED_PLACE)
+    u = _api_user()
+    r = client.post("/api/v1/capture", headers=_bearer(u), json={"url": SHARED_TEXT})
+    assert r.status_code == 202 and r.json()["status"] == "saved_place", r.text
+    r = client.post("/api/v1/places", headers=_bearer(u), json={"url": SHARED_TEXT})
+    assert r.status_code == 200 and r.json()["outcome"] == "duplicate"
+
+
+def test_app_share_of_a_place_page_with_its_html_is_still_a_place():
+    """Safari shares a Maps web page as its URL plus the page's HTML."""
+    u = _api_user()
+    before = _batches()
+    r = client.post("/api/v1/capture", headers=_bearer(u),
+                    json={"url": G_PLACE, "html": "<html><body>Maps</body></html>"})
+    assert r.status_code == 202 and r.json()["status"] == "saved_place"
+    assert _batches() == before
+
+
+def test_a_pasted_email_that_mentions_a_map_link_is_not_a_place():
+    """Booking text that merely links a map is still a booking capture."""
+    body = "\n".join(["Your stay is confirmed.", "Guest: Example Traveller",
+                      "Check-in: 2031-05-14", "Check-out: 2031-05-16",
+                      "Booking ref: EXAMPLE1", "Hotel: Larkspur Inn",
+                      f"Map: {G_PLACE}"])
+    from extract import place_url
+    assert place_url.find_maps_link(body) is None
+    assert place_url.find_maps_link(f"<p>{G_PLACE}</p>") is None

@@ -176,6 +176,25 @@ def is_maps_link(url: str) -> bool:
     return _is_google(u) and (host.startswith("maps.") or (parts.path or "").startswith("/maps"))
 
 
+_ANY_URL = re.compile(r"https?://[^\s<>\"']+", re.I)
+
+
+def find_maps_link(text: str) -> str | None:
+    """The Maps link in what a share sheet hands over. A Maps app shares a place
+    as text: its name, maybe its address, then the link on its own line
+    (YONDER-314). A bare link comes back as it is. Only short, plain text is
+    searched, a few lines at most: a pasted page source or email that merely
+    contains a map link (a hotel confirmation, say) is a booking, not a place."""
+    t = (text or "").strip()
+    if not t or "<" in t or len(t) > 600 or len([ln for ln in t.splitlines() if ln.strip()]) > 5:
+        return None
+    for m in _ANY_URL.finditer(t):
+        link = m.group(0).rstrip(".,;:!?)]}")
+        if is_maps_link(link):
+            return link
+    return None
+
+
 def is_short_link(url: str) -> bool:
     """True for a Google share short link (not yet expanded)."""
     return _is_google_short((url or "").strip())

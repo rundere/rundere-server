@@ -1256,8 +1256,13 @@ def api_capture(body: CaptureIn, user=Depends(authn.current_user),
     from app.capture import _fetch_public_html, _looks_like_url, _queue_maps, _queue_web
     from extract import apple_maps_url, maps_url, place_url
     url = (body.url or "").strip()
+    if url and not _looks_like_url(url):
+        # A Maps app shares a place as text with the link inside it (YONDER-314).
+        url = place_url.find_maps_link(url) or url
     is_apple = bool(url) and apple_maps_url.looks_like_apple_maps_url(url)
-    full = place_url.resolved_url(url) if url and not body.html else ""   # expanded once
+    # A place link wins even when the share also carried the page's HTML: Safari
+    # hands over both for a Maps web page, and a place is not a booking.
+    full = place_url.resolved_url(url) if url else ""   # expanded once
     if full and place_url.parse_place_url(full) is not None:
         try:
             place, outcome = places_svc.save(session, user, url=full, source="share",

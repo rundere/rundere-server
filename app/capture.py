@@ -833,6 +833,11 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
             return _msg(False, "That doesn’t look like a Google Maps directions link.")
         return _queue_directions("google")
 
+    # A place shared from a Maps app arrives as text (name, address, link), not a
+    # bare link: route its link like a pasted one (YONDER-314). "page" means page.
+    if path != "page" and not _looks_like_url(content):
+        content = place_url.find_maps_link(content) or content
+
     source_url = None
     html = content
     handed_url = (form.get("source_url") or "").strip()      # the bookmarklet hand-off (D-159)
