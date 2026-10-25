@@ -1572,6 +1572,7 @@ def api_delete_activity(trip_id: str, activity_id: str,
         discovery_items.unlink_activity(session, a.id)
         from app import expenses as expenses_svc
         expenses_svc.unlink_activity(session, a.id)   # SPEC-10: keep the expense, unlinked
+        places_svc.unlink_activity(session, a.id)     # D-212: the place is off that trip
         session.delete(a)
         session.commit()
     return None
@@ -2035,19 +2036,40 @@ class SavedPlaceOut(BaseModel):
     notes: str | None = None
     source: str = "api"
     created_at: datetime | None = None
-    status: str = "saved"                  # saved | filed | dismissed (the last two are tombstones)
+    updated_at: datetime | None = None
+    # The Places Library (SPEC-11): what to do there, how much it matters, the visit,
+    # and where it is in words (D-214, D-215).
+    todo: str | None = None
+    priority: str = "someday"              # someday | must
+    visited_on: str | None = None          # YYYY-MM-DD
+    locality: str | None = None
+    region: str | None = None
+    country_code: str | None = None        # ISO 3166-1 alpha-2
+    continent: str | None = None           # AF AN AS EU NA OC SA
+    trip_ids: list[str] = []               # trips it is on (D-212: a place can be on many)
+    list_ids: list[str] = []               # the person's lists it is in (D-213)
+    # saved | dismissed (a tombstone). `filed` is gone (D-212); older servers sent it.
+    status: str = "saved"
     suggested_trip_id: str | None = None   # a hint only: the person confirms before filing
     # What a save just did (POST only): created | revived | duplicate | near_duplicate |
-    # already_filed | removed_earlier. Lets a retrying client tell "added" from "already there".
+    # removed_earlier (already_filed is no longer sent, D-212). Lets a retrying client
+    # tell "added" from "already there".
     outcome: str | None = None
 
 
 class SavedPlacePatch(BaseModel):
-    """Edit a saved place before filing it. Only the fields sent change."""
+    """Edit a saved place. Only the fields sent change; "" clears a to-do, a visit
+    or a locality. A locality sent here wins over any lookup (D-215)."""
     name: str | None = None
     address: str | None = None
     notes: str | None = None
     activity_type: str | None = None
+    todo: str | None = None
+    priority: str | None = None            # someday | must
+    visited_on: str | None = None          # YYYY-MM-DD
+    locality: str | None = None
+    region: str | None = None
+    country_code: str | None = None
 
 
 class SavedPlaceIn(BaseModel):
@@ -2064,7 +2086,14 @@ class SavedPlaceIn(BaseModel):
     source_url: str | None = None
     notes: str | None = None
     source: str = "api"
-    # Re-add a place the person removed earlier. Never re-adds one that was filed.
+    todo: str | None = None                # what to do there (D-214)
+    priority: str | None = None            # someday (default) | must
+    # Where it is in words, as the phone resolved it (MapKit); else Photon or the
+    # offline guess fills it (D-215).
+    locality: str | None = None
+    region: str | None = None
+    country_code: str | None = None
+    # Re-add a place the person removed earlier.
     revive: bool = False
 
 
@@ -2104,13 +2133,25 @@ class SavedPlaceFileIn(BaseModel):
     traveler_ids: list[int] | None = None  # None/[] = everyone on the trip
 
 
-def _place_out(p, suggested_trip_id: str | None = None,
-               outcome: str | None = None) -> SavedPlaceOut:
+def _place_out(p, suggested_trip_id: str | None = None, outcome: str | None = None, *,
+               trip_ids: list[str] | None = None, list_ids: list[str] | None = None,
+               session: Session | None = None) -> SavedPlaceOut:
+    """One place for the API. Pass `trip_ids`/`list_ids` from a bulk lookup when
+    listing many; with only a `session`, they are looked up for this one."""
+    if session is not None and trip_ids is None:
+        trip_ids = places_svc.filings_for(session, [p.id]).get(p.id, [])
+        list_ids = places_svc.lists_for(session, [p.id]).get(p.id, [])
+    from app import places_geo
     return SavedPlaceOut(
         id=p.id, name=p.name, lat=p.lat, lon=p.lon, address=p.address,
         category=p.category, activity_type=p.activity_type, provider=p.provider,
         source_url=p.source_url, notes=p.notes, source=p.source, created_at=p.created_at,
-        status=p.status, suggested_trip_id=suggested_trip_id, outcome=outcome)
+        updated_at=p.updated_at, todo=p.todo, priority=p.priority or "someday",
+        visited_on=p.visited_on, locality=p.locality, region=p.region,
+        country_code=p.country_code, continent=places_geo.continent_of(p.country_code),
+        trip_ids=trip_ids or [], list_ids=list_ids or [],
+        status=places_svc.SAVED if p.status == places_svc.FILED else p.status,
+        suggested_trip_id=suggested_trip_id, outcome=outcome)
 
 
 @router.post("/places", response_model=SavedPlaceOut, status_code=201)
@@ -2124,14 +2165,15 @@ def api_place_save(body: SavedPlaceIn, response: Response, user=Depends(authn.cu
             session, user, url=body.url, name=body.name, lat=body.lat, lon=body.lon,
             address=body.address, category=body.category, provider=body.provider,
             source_url=body.source_url, notes=body.notes, source=body.source,
-            enrich=True, revive=body.revive)
+            enrich=True, revive=body.revive, todo=body.todo, priority=body.priority,
+            locality=body.locality, region=body.region, country_code=body.country_code)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     if outcome not in (places_svc.CREATED, places_svc.REVIVED):
         response.status_code = 200
     suggested = (places_svc.suggest_trip(session, fileable_trips(session, user), place)
-                 if place.status == places_svc.SAVED else None)
-    return _place_out(place, suggested, outcome)
+                 if place.status != places_svc.DISMISSED else None)
+    return _place_out(place, suggested, outcome, session=session)
 
 
 @router.post("/places/batch", response_model=SavedPlaceBatchOut)
@@ -2159,23 +2201,29 @@ def fileable_trips(session: Session, user) -> list:
 @router.get("/places", response_model=list[SavedPlaceOut])
 def api_place_list(user=Depends(authn.current_user),
                    session: Session = Depends(get_session)):
-    """The caller's saved places, newest first, each with a suggested trip."""
+    """The caller's library, newest first, each with a suggested trip, the trips
+    it is on and the lists it is in."""
     trips = fileable_trips(session, user)
-    return [_place_out(p, places_svc.suggest_trip(session, trips, p))
-            for p in places_svc.list_places(session, user)]
+    rows = places_svc.list_places(session, user)
+    ids = [p.id for p in rows]
+    on, inl = places_svc.filings_for(session, ids), places_svc.lists_for(session, ids)
+    return [_place_out(p, places_svc.suggest_trip(session, trips, p),
+                       trip_ids=on.get(p.id, []), list_ids=inl.get(p.id, []))
+            for p in rows]
 
 
 @router.patch("/places/{place_id}", response_model=SavedPlaceOut)
 def api_place_update(place_id: str, body: SavedPlacePatch,
                      user=Depends(authn.current_user),
                      session: Session = Depends(get_session)):
-    """Rename or otherwise edit a saved place before filing it."""
+    """Rename or otherwise edit a saved place."""
     try:
         p = places_svc.update_place(session, user, place_id,
                                     **body.model_dump(exclude_unset=True))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    return _place_out(p, places_svc.suggest_trip(session, fileable_trips(session, user), p))
+    return _place_out(p, places_svc.suggest_trip(session, fileable_trips(session, user), p),
+                      session=session)
 
 
 @router.delete("/places/{place_id}", status_code=204)
@@ -2187,10 +2235,11 @@ def api_place_delete(place_id: str, user=Depends(authn.current_user),
 
 def file_place(session: Session, user, place_id: str, trip_id: str,
                body: SavedPlaceFileIn) -> ActivityOut:
-    """File a saved place to a trip: creates the timeline activity and marks the
-    place filed (D-166, D-169). Needs edit access to the trip; the activity is
-    undated unless `starts_at` is given. Filing twice is a 409. Shared by the API
-    and the web page."""
+    """File a saved place to a trip: creates the timeline activity and records the
+    filing. The place stays in the library and can go onto other trips (SPEC-11
+    D-212). Needs edit access to the trip; the activity is undated unless
+    `starts_at` is given. Filing it onto the same trip twice is a 409. Shared by
+    the API, MCP and the web page."""
     place = places_svc.require_place(session, user, place_id)
     trip = scope.require_trip(session, user, trip_id, edit=True)
     atype, values = places_svc.activity_for(place, body.activity_type, body.notes)
@@ -2204,16 +2253,13 @@ def file_place(session: Session, user, place_id: str, trip_id: str,
     values, geo = prepare_activity(t.key, values, session=session, trip_id=trip.id)
     a = TripActivity(trip_id=trip.id, type=t.key, values=values, geo=geo,
                      starts_at=values.get("when") or "")
-    # Claim the place first, atomically: of two requests filing it at once (a
-    # double tap, a retry) exactly one wins, so it never lands on a trip twice.
-    claimed = (session.query(SavedPlace)
-               .filter(SavedPlace.id == place.id, SavedPlace.status == places_svc.SAVED)
-               .update({"status": places_svc.FILED}, synchronize_session=False))
-    if claimed != 1:
-        session.rollback()
-        raise HTTPException(409, "this place was already filed to a trip")
     session.add(a)
     session.flush()
+    # One filing per place per trip, backed by a unique index: of two requests
+    # filing it at once (a double tap, a retry) exactly one wins (D-212).
+    if not places_svc.record_filing(session, place, trip.id, a.id):
+        session.rollback()
+        raise HTTPException(409, "this place is already on that trip")
     tagged = _set_activity_travelers(session, a, body.traveler_ids or [])
     session.commit()
     session.refresh(a)

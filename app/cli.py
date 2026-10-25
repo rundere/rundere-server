@@ -31,6 +31,9 @@
                                                       # trip route lines) for timeline
                                                       # activities saved before 4.2.x;
                                                       # --redo re-locates every one
+    python -m app.cli places-backfill [--keep-guesses]  # SPEC-11 D-215: locality,
+                                                       # geohash and search text for every
+                                                       # saved place; safe to re-run
     python -m app.cli purge-orphans [--execute]         # remove data left behind by
                                                       # trips deleted before 4.5 (Discover,
                                                       # packing, timeline); unlink captures
@@ -416,6 +419,11 @@ def main(argv: list[str]) -> int:
             session.commit()
             print(f"secrets-rotate: re-encrypted {n} credential(s) with key "
                   f"{secretbox.keyring()[0][0]}")
+        elif cmd == "places-backfill":
+            from app import places as places_svc
+            counts = places_svc.backfill(session, upgrade="--keep-guesses" not in args)
+            print("places-backfill: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
+                  if counts else "places-backfill: no saved places")
         elif cmd == "purge-orphans":
             from app.trips.purge import purge_orphans
             execute = "--execute" in args

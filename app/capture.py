@@ -806,7 +806,7 @@ async def capture_web(request: Request, session: Session = Depends(get_session))
                 "duplicate": f"“{place.name}” was already in your saved places.",
                 "near_duplicate": f"“{place.name}” looks like a place you already have, so it was "
                                   "not added again.",
-                "already_filed": f"“{place.name}” was already filed to a trip.",
+                "already_filed": f"“{place.name}” was already in your saved places.",
                 "removed_earlier": f"You removed “{place.name}” earlier."}[outcome]
         return templates.TemplateResponse(request, "_capture_result.html", {
             "ok": True, "message": said,

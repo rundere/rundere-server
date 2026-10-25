@@ -131,11 +131,11 @@ def test_places_page_lists_saved_places_and_empty_state():
     assert "Sagrada Família" in t and "File to a trip" in t
 
 
-def test_file_without_a_date_lands_undated_and_consumes_the_place():
+def test_file_without_a_date_lands_undated_and_keeps_the_place():
     pid, tid = _save(), _trip()
     r = client.post(f"/places/{pid}/file", data={"trip_id": tid})
     assert r.status_code == 200 and "no date yet" in r.text and f"/trips/{tid}" in r.text
-    assert _places() == []
+    assert [p.id for p in _places()] == [pid]                  # D-212: still in the library
     with SessionLocal() as s:
         a = s.query(TripActivity).filter_by(trip_id=tid).one()
         assert a.values["name"] == "Le Bernardin" and not a.starts_at

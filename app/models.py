@@ -1007,9 +1007,9 @@ class SavedPlace(Base):
 
     Deliberately NOT a TravelItem: a place link is a deterministic parse, not an
     extraction, so it never enters the capture→extract→resolve→review queue the
-    bookings use (D-167). It waits here until the person files it to a trip,
-    which turns it into a (possibly undated) timeline activity and consumes the
-    row — so there is no trip link to dangle (house rule 3).
+    bookings use (D-167). Filing it to a trip makes a (possibly undated) timeline
+    activity and records a SavedPlaceFiling; the place stays in the library and
+    can go onto other trips too (SPEC-11 D-212).
 
     Own-only, like the journal: `owner_id` is set by every authenticated write
     and only its owner sees the row. `place_key` (provider:id, or provider:name:
@@ -1027,9 +1027,9 @@ class SavedPlace(Base):
     owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
     place_key: Mapped[str] = mapped_column(String(200))
     name_key: Mapped[str] = mapped_column(String(200), default="", index=True)  # near-duplicate check
-    # saved = waiting to be filed; filed = became a timeline activity; dismissed =
-    # the person removed it. The last two are kept as tombstones (D-169) so
-    # re-importing a list never re-adds what was already handled.
+    # saved = in the library; dismissed = the person removed it, kept as a
+    # tombstone (D-169) so re-importing a list never re-adds it. `filed` was the
+    # old consumed state; filing no longer changes the status (D-212).
     status: Mapped[str] = mapped_column(String(10), default="saved", server_default="saved",
                                         index=True)
     name: Mapped[str] = mapped_column(String(300))
@@ -1042,9 +1042,69 @@ class SavedPlace(Base):
     source_url: Mapped[str | None] = mapped_column(String(2000))
     notes: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(16), default="api")      # ios | web | mcp | api
+    # The Places Library (SPEC-11, D-214): what to do there, how much it matters,
+    # whether they went, and where it is in words (D-215) for the Atlas.
+    todo: Mapped[str | None] = mapped_column(Text)
+    priority: Mapped[str] = mapped_column(String(8), default="someday",
+                                          server_default="someday")   # someday | must
+    visited_on: Mapped[str | None] = mapped_column(String(10))         # YYYY-MM-DD
+    locality: Mapped[str | None] = mapped_column(String(120))
+    region: Mapped[str | None] = mapped_column(String(120))
+    country_code: Mapped[str | None] = mapped_column(String(2), index=True)
+    locality_source: Mapped[str | None] = mapped_column(String(8))     # client | photon | airport
+    geohash: Mapped[str | None] = mapped_column(String(9), index=True)  # clusters, D-216
+    search_text: Mapped[str] = mapped_column(Text, default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class SavedPlaceFiling(Base):
+    """A saved place put on a trip (SPEC-11 D-212): filing no longer consumes the
+    place, so each trip it went onto is one row here. All soft links (house rule
+    3); deleting the activity or the trip clears the row, and the unique index
+    keeps a place off the same trip twice."""
+    __tablename__ = "saved_place_filings"
+    __table_args__ = (Index("uq_saved_place_filings_place_trip", "place_id", "trip_id",
+                            unique=True),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    place_id: Mapped[str] = mapped_column(String(36), index=True)
+    trip_id: Mapped[str] = mapped_column(String(36), index=True)
+    activity_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PlaceList(Base):
+    """A person's own list of saved places (SPEC-11 D-213): "Want to go", "Ramen
+    to try", or a Google list brought over (`source` google:<name>). Own-only."""
+    __tablename__ = "place_lists"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    emoji: Mapped[str | None] = mapped_column(String(16))
+    description: Mapped[str | None] = mapped_column(Text)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str | None] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PlaceListMember(Base):
+    """A saved place in a list; many-to-many, soft links (D-213)."""
+    __tablename__ = "place_list_members"
+    __table_args__ = (Index("uq_place_list_members_list_place", "list_id", "place_id",
+                            unique=True),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    list_id: Mapped[str] = mapped_column(String(36), index=True)
+    place_id: Mapped[str] = mapped_column(String(36), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class TripExpense(Base):

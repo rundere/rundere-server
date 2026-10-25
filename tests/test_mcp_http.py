@@ -398,10 +398,12 @@ if DEPS:
         assert not act["starts_at"]                                      # undated is fine
         good, err = call(client, alice, "file_saved_place", place_id=cafe["id"], trip_id=w["shared"])
         assert not good and "409" in err                                 # a retry never files twice
-        # re-sending the list after filing: the filed one stays filed, the other stays saved
+        # re-sending the list after filing: both are still in the library (D-212)
         later = ok(client, alice, "save_places", places=lst[:2])
-        assert later["counts"] == {"already_filed": 1, "duplicate": 1}
-        sag = next(p for p in ok(client, alice, "list_saved_places")["places"])
+        assert later["counts"] == {"duplicate": 2}
+        listed = ok(client, alice, "list_saved_places")["places"]
+        assert next(p for p in listed if p["id"] == cafe["id"])["trip_ids"] == [w["shared"]]
+        sag = next(p for p in listed if p["id"] != cafe["id"])
         assert ok(client, alice, "remove_saved_place", place_id=sag["id"])["ok"] is True
         gone = ok(client, alice, "save_places", places=lst[1:2])
         assert gone["counts"] == {"removed_earlier": 1}                  # removal sticks
