@@ -124,3 +124,23 @@ def test_is_maps_link_accepts_only_google_and_apple_maps_hosts():
                 "https://evil.example/https://www.google.com/maps/place/Foo",
                 "javascript:alert(1)", "ftp://maps.apple.com/?q=x", "not a url", "", None):
         assert not place_url.is_maps_link(bad), bad
+
+
+def test_find_maps_link_in_shared_text():
+    from extract.place_url import find_maps_link
+    link = "https://maps.app.goo.gl/AbCdEf"
+    assert find_maps_link(link) == link
+    assert find_maps_link(f"Larkspur Inn\n12 Example Row\n{link}") == link
+    assert find_maps_link(f"Try this ({link}).") == link
+    assert find_maps_link("see https://example.com/page") is None
+    assert find_maps_link("") is None
+
+
+def test_short_link_expansion_reads_past_googles_consent_page():
+    from urllib.parse import quote
+    from extract.maps_url import _past_consent
+    real = "https://www.google.com/maps/place/Larkspur+Inn/@35.08,-106.65,17z"
+    assert _past_consent(f"https://consent.google.com/ml?continue={quote(real, safe='')}&gl=GB") == real
+    evil = "https://consent.google.com/ml?continue=https%3A%2F%2Fexample.com%2F"
+    assert _past_consent(evil) == evil                  # only a Google page is followed
+    assert _past_consent(real) == real

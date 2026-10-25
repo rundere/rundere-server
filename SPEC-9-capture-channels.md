@@ -408,6 +408,10 @@ What the Share Extension (and the app) can rely on. All calls use the app's bear
 - **Open question for the app side:** what the Apple Maps and Google Maps share sheets actually
   hand to an extension on current iOS (URL only, a `.vcf` card, or text). The server accepts a
   Maps URL or resolved fields, so it works either way; the app decides how to get them.
+  *YONDER-314:* `url` (here, on `POST /api/v1/capture` and on the capture page) may also be the
+  shared text as it came (a few plain lines: name, address, link), and the Maps link in it is
+  used. A place link wins even when the share also carries the page's `html`. A short link that
+  lands on Google's consent page is read from its `continue` target.
 
 ## 10. Navigation: Capture everywhere, Review becomes the Inbox (D-200)
 

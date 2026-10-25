@@ -111,6 +111,8 @@ def resolve_fields(*, url: str | None = None, name: str | None = None, lat=None,
     link didn't carry (D-146: optional, never overrides, never required)."""
     parsed: dict = {}
     if url:
+        # A share sheet's text (name, address, link) carries the link inside it.
+        url = place_url.find_maps_link(url) or url
         # `expand=False` (batches) never fetches a short link: one network call per
         # item, for a list of hundreds, is a different thing from one paste.
         link = place_url.resolved_url(url) if expand else url.strip()
