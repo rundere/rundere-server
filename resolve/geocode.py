@@ -78,6 +78,28 @@ class PhotonGeocoder:
             return []
         return data.get("features") or []
 
+    def reverse(self, lat: float, lon: float) -> dict | None:
+        """The city, region and country a pin is in (SPEC-11 D-215), as
+        `{locality, region, country_code}`, or None when Photon is down or has
+        nothing there. Never raises: the caller falls back to the offline guess."""
+        params = urllib.parse.urlencode({"lat": lat, "lon": lon, "limit": 1})
+        try:
+            with urllib.request.urlopen(f"{self.base}/reverse?{params}",
+                                        timeout=self.timeout) as resp:
+                data = json.loads(resp.read())
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            return None
+        for feature in data.get("features") or []:
+            props = feature.get("properties") or {}
+            code = (props.get("countrycode") or "").upper()[:2]
+            if not code:
+                continue
+            city = (props.get("city") or props.get("town") or props.get("village")
+                    or (props.get("name") if props.get("type") == "city" else None)
+                    or props.get("county"))
+            return {"locality": city, "region": props.get("state"), "country_code": code}
+        return None
+
     def geocode_place(self, place: dict) -> GeocodeResult | None:
         """Locate a Place, or return None rather than guess.
 

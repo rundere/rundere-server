@@ -145,7 +145,7 @@ if DEPS:
         assert client.get("/api/v1/places").status_code in (401, 403)
         assert client.post("/api/v1/places", json={"url": G_PLACE}).status_code in (401, 403)
 
-    def test_file_to_trip_makes_an_undated_activity_and_consumes_the_place():
+    def test_file_to_trip_makes_an_undated_activity_and_keeps_the_place():
         u = _user("sp_a")
         try:
             h = _bearer(u)
@@ -159,7 +159,8 @@ if DEPS:
             assert a["values"]["address"] == "155 W 51st St"
             assert a["values"]["mapLink"] == A_Q          # the person's own link (YONDER-135)
             assert not a["starts_at"]                      # undated: scheduled later
-            assert client.get("/api/v1/places", headers=h).json() == []   # consumed
+            [kept] = client.get("/api/v1/places", headers=h).json()   # D-212: still in the library
+            assert kept["id"] == pid and kept["trip_ids"] == [t.id]
             with SessionLocal() as s:
                 assert s.query(TripActivity).filter_by(trip_id=t.id).count() == 1
         finally:

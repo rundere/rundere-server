@@ -22,7 +22,8 @@ def purge_trip(session: Session, trip) -> None:
     entries. The caller commits."""
     from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryItem,
                             DiscoveryRun, JournalEntry, PackingItem, PackingPlan,
-                            TravelItem, TripActivity, TripMember, TripTraveler)
+                            SavedPlaceFiling, TravelItem, TripActivity, TripMember,
+                            TripTraveler)
     from app.trips import who
 
     tid = trip.id
@@ -33,7 +34,7 @@ def purge_trip(session: Session, trip) -> None:
                                    .filter(TripActivity.trip_id == tid).all()])
     for model in (TripActivity, TripTraveler, TripMember,
                   DiscoveryItem, DiscoveryFinding, DiscoveryRun, DiscoveryExclusion,
-                  PackingItem, PackingPlan):
+                  PackingItem, PackingPlan, SavedPlaceFiling):   # the places stay (D-212)
         session.query(model).filter(model.trip_id == tid).delete(synchronize_session=False)
     for model in (TravelItem, JournalEntry):
         session.query(model).filter(model.trip_id == tid).update(
@@ -48,8 +49,8 @@ def purge_orphans(session: Session, *, execute: bool = False) -> dict[str, int]:
     changes nothing unless `execute` (the caller commits)."""
     from app.models import (DiscoveryExclusion, DiscoveryFinding, DiscoveryItem,
                             DiscoveryRun, JournalEntry, PackingItem, PackingPlan,
-                            TravelItem, Trip, TripActivity, TripActivityTraveler,
-                            TripMember, TripTraveler)
+                            SavedPlaceFiling, TravelItem, Trip, TripActivity,
+                            TripActivityTraveler, TripMember, TripTraveler)
 
     live = session.query(Trip.id)
     counts: dict[str, int] = {}
@@ -63,7 +64,7 @@ def purge_orphans(session: Session, *, execute: bool = False) -> dict[str, int]:
             TripActivityTraveler.activity_id.in_(gone_acts)).delete(synchronize_session=False)
     for model in (TripActivity, TripTraveler, TripMember,
                   DiscoveryItem, DiscoveryFinding, DiscoveryRun, DiscoveryExclusion,
-                  PackingItem, PackingPlan):
+                  PackingItem, PackingPlan, SavedPlaceFiling):
         q = session.query(model).filter(~model.trip_id.in_(live))
         counts[model.__tablename__] = q.count()
         if execute and counts[model.__tablename__]:

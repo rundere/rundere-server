@@ -3319,6 +3319,8 @@ def delete_activity(trip_id: str, activity_id: str, request: Request,
         discovery_items.unlink_activity(session, a.id)
         from app import expenses as expenses_svc
         expenses_svc.unlink_activity(session, a.id)   # SPEC-10: keep the expense, unlinked
+        from app import places as places_svc
+        places_svc.unlink_activity(session, a.id)     # D-212: the place is off that trip
         session.delete(a)
         session.commit()
     return _redirect(f"/trips/{trip_id}")

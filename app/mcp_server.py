@@ -62,10 +62,12 @@ save_safety. Items in get_trip's
 `discovery_items` can go on the timeline with add_item_to_timeline. The
 research_* prompts are step-by-step research kits for these. Dates are
 ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items).
-Saved places are Maps places the user kept before choosing a trip: capture_url
-saves one from a link, save_places pushes a whole list (try dry_run first; it is
-safe to repeat), list_saved_places shows them and file_saved_place puts one on a
-trip, undated if the user hasn't decided when.
+Saved places are the user's Places Library: Maps places they kept, with what to
+do there. capture_url saves one from a link, save_places pushes a whole list (try
+dry_run first; it is safe to repeat), list_saved_places searches them (by words,
+country, city or priority) and file_saved_place puts one on a trip, undated if
+the user hasn't decided when. A place stays in the library after filing and can
+go on other trips too.
 Costs come in two parts. Planned: the budget — research_trip_budget is the kit,
 save_budget stores its estimates as drafts the user keeps. Actual: add_expense
 records what was really spent (by hand, split between the trip's travellers by
@@ -485,14 +487,29 @@ def capture_url(url: Annotated[str, Field(description="A booking/web page URL, a
 
 # --------------------------------------------------------------------------- saved places
 @mcp.tool()
-def list_saved_places() -> dict[str, Any]:
-    """The user's saved places: Google/Apple Maps places they kept before choosing a
-    trip, newest first, each with a `suggested_trip_id` (a hint, never a decision).
-    Filed and removed places are not listed."""
+def list_saved_places(
+        q: Annotated[str | None, Field(
+            description="Words to find in the name, address, city, country, notes or "
+                        "to-do, e.g. 'ramen kyoto'")] = None,
+        country: Annotated[str | None, Field(
+            description="ISO country code, e.g. JP")] = None,
+        city: str | None = None,
+        priority: Literal["someday", "must"] | None = None,
+        limit: Annotated[int, Field(ge=1, le=500)] = 100) -> dict[str, Any]:
+    """The user's Places Library: Google/Apple Maps places they kept, with what to do
+    there (`todo`), `priority`, where it is (`locality`, `country_code`), the trips
+    it is already on (`trip_ids`) and a `suggested_trip_id` (a hint, never a
+    decision). Every filter is optional; with none, newest first. Removed places
+    are not listed."""
     def _list(session, user):
         trips = api_v1.fileable_trips(session, user)
-        rows = [api_v1._place_out(p, places_svc.suggest_trip(session, trips, p))
-                for p in places_svc.list_places(session, user)]
+        found = places_svc.search(session, user, q=q, country=country, city=city,
+                                  priority=priority, limit=limit)
+        ids = [p.id for p in found]
+        on, inl = places_svc.filings_for(session, ids), places_svc.lists_for(session, ids)
+        rows = [api_v1._place_out(p, places_svc.suggest_trip(session, trips, p),
+                                  trip_ids=on.get(p.id, []), list_ids=inl.get(p.id, []))
+                for p in found]
         return {"count": len(rows), "places": [r.model_dump() for r in rows]}
     return _run(_list)
 
@@ -512,18 +529,18 @@ def save_places(places: Annotated[list[api_v1.SavedPlaceIn], Field(
                     description="Look up address and category via the server's geocoder for "
                                 "places missing them. At most 25 places per call.")] = False,
                 revive: Annotated[bool, Field(
-                    description="Re-add places the user removed earlier. Never re-adds a "
-                                "place that was already filed to a trip.")] = False,
+                    description="Re-add places the user removed earlier.")] = False,
                 allow_near_duplicates: Annotated[bool, Field(
                     description="Also add a place with the same name within 150 m of one "
                                 "already saved.")] = False) -> dict[str, Any]:
     """Save a list of places for the user, for example a Google Maps list you have
     read from a Takeout export, after choosing the ones worth keeping. Safe to run
-    twice: each place is saved at most once, a place already saved, filed to a trip
-    or removed is skipped and reported, and one bad entry never stops the rest.
-    Returns `counts` and one `results` row per place, in order, with an `outcome`:
-    created, revived, duplicate, near_duplicate, already_filed, removed_earlier or
-    error (with a reason)."""
+    twice: each place is saved at most once, a place already saved or removed is
+    skipped and reported, and one bad entry never stops the rest. Each place may
+    carry `todo` (what to do there) and `priority` (someday or must). Returns
+    `counts` and one `results` row per place, in order, with an `outcome`:
+    created, revived, duplicate, near_duplicate, removed_earlier or error (with a
+    reason)."""
     return _run(lambda session, user: places_svc.save_many(
         session, user, [p.model_dump() for p in places], dry_run=dry_run, enrich=enrich,
         revive=revive, allow_near_duplicates=allow_near_duplicates, source="mcp"))
@@ -535,11 +552,20 @@ def update_saved_place(place_id: Annotated[str, Field(description="Saved place i
                        notes: str | None = None,
                        activity_type: Annotated[str | None, Field(
                            description="A type from list_activity_types, e.g. dining, tour, "
-                                       "lodging, event")] = None) -> dict[str, Any]:
-    """Rename or edit a saved place before it is filed. Only the fields you pass change."""
-    return _run(lambda session, user: api_v1._place_out(places_svc.update_place(
-        session, user, place_id, name=name, address=address, notes=notes,
-        activity_type=activity_type)).model_dump())
+                                       "lodging, event")] = None,
+                       todo: Annotated[str | None, Field(
+                           description="What to do there; '' clears it")] = None,
+                       priority: Literal["someday", "must"] | None = None,
+                       visited_on: Annotated[str | None, Field(
+                           description="YYYY-MM-DD the user went; '' clears it")] = None,
+                       ) -> dict[str, Any]:
+    """Edit a saved place. Only the fields you pass change."""
+    def _edit(session, user):
+        p = places_svc.update_place(session, user, place_id, name=name, address=address,
+                                    notes=notes, activity_type=activity_type, todo=todo,
+                                    priority=priority, visited_on=visited_on)
+        return api_v1._place_out(p, session=session).model_dump()
+    return _run(_edit)
 
 
 @mcp.tool()
@@ -551,8 +577,9 @@ def file_saved_place(place_id: Annotated[str, Field(description="Saved place id"
                      activity_type: str | None = None, notes: str | None = None,
                      traveler_ids: TravelerIds = None) -> dict[str, Any]:
     """File a saved place onto a trip's timeline as an activity (the user's own trips or
-    ones they can edit). Filing a place that was already filed is refused (409), so a
-    retry never adds it twice."""
+    ones they can edit). The place stays in the library and can go onto other trips;
+    filing it onto a trip it is already on is refused (409), so a retry never adds it
+    twice."""
     return _run(lambda session, user: api_v1.file_place(
         session, user, place_id, trip_id, api_v1.SavedPlaceFileIn(
             starts_at=starts_at, activity_type=activity_type, notes=notes,

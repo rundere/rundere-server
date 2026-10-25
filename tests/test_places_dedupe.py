@@ -196,7 +196,7 @@ def test_dry_run_reports_the_same_plan_and_writes_nothing(me):
     assert _batch(me, lst, dry_run=True)["counts"] == {"duplicate": 3, "error": 1}
 
 
-def test_filed_and_removed_places_are_not_added_back(me):
+def test_filed_places_stay_and_removed_places_are_not_added_back(me):
     tid = _trip(me)
     lst = [{"name": "Filed", "lat": 10, "lon": 10}, {"name": "Removed", "lat": 20, "lon": 20},
            {"name": "Kept", "lat": 30, "lon": 30}]
@@ -206,11 +206,12 @@ def test_filed_and_removed_places_are_not_added_back(me):
                        headers=_h(me)).status_code == 201
     assert client.delete(f"/api/v1/places/{ids['Removed']}", headers=_h(me)).status_code == 204
     out = _batch(me, lst)
-    assert out["counts"] == {"already_filed": 1, "removed_earlier": 1, "duplicate": 1}
-    assert [p["name"] for p in client.get("/api/v1/places", headers=_h(me)).json()] == ["Kept"]
-    assert len(_rows(me)) == 3                                  # tombstones kept
-    assert _batch(me, lst, revive=True)["counts"] == {
-        "already_filed": 1, "revived": 1, "duplicate": 1}       # a removed one comes back, never a filed one
+    # D-212: a filed place is still in the library, so re-sending it is a duplicate.
+    assert out["counts"] == {"removed_earlier": 1, "duplicate": 2}
+    assert sorted(p["name"] for p in client.get("/api/v1/places", headers=_h(me)).json()) == [
+        "Filed", "Kept"]
+    assert len(_rows(me)) == 3                                  # the tombstone is kept
+    assert _batch(me, lst, revive=True)["counts"] == {"revived": 1, "duplicate": 2}
 
 
 # ----------------------------------------------------------------------- error conditions
@@ -277,9 +278,9 @@ def test_single_save_retries_report_what_happened(me):
     assert r.status_code == 200 and r.json()["outcome"] == "duplicate" and r.json()["id"] == pid
     client.post(f"/api/v1/places/{pid}/file/{tid}", json={}, headers=h)
     r = client.post("/api/v1/places", json=body, headers=h)                 # retry after filing
-    assert r.status_code == 200 and r.json()["outcome"] == "already_filed"
-    assert r.json()["status"] == "filed" and r.json()["suggested_trip_id"] is None
-    assert client.get("/api/v1/places", headers=h).json() == []             # not resurrected
+    assert r.status_code == 200 and r.json()["outcome"] == "duplicate"      # D-212
+    assert r.json()["status"] == "saved" and r.json()["trip_ids"] == [tid]
+    assert [p["id"] for p in client.get("/api/v1/places", headers=h).json()] == [pid]
 
 
 def test_a_removed_place_stays_removed_unless_asked(me):
@@ -306,13 +307,14 @@ def test_save_response_carries_a_suggested_trip(me):
     assert r.json()["suggested_trip_id"] == tid        # what the Share Extension's sheet shows
 
 
-def test_filing_twice_or_editing_a_filed_place_is_a_409(me):
+def test_filing_onto_the_same_trip_twice_is_a_409_but_a_filed_place_stays_editable(me):
     h, tid = _h(me), _trip(me)
     pid = client.post("/api/v1/places", json={"url": G_FTID_A}, headers=h).json()["id"]
     assert client.post(f"/api/v1/places/{pid}/file/{tid}", json={}, headers=h).status_code == 201
     assert client.post(f"/api/v1/places/{pid}/file/{tid}", json={}, headers=h).status_code == 409
-    assert client.patch(f"/api/v1/places/{pid}", json={"name": "x"}, headers=h).status_code == 409
-    assert client.delete(f"/api/v1/places/{pid}", headers=h).status_code == 409
+    # D-212: it is still a library entry, so it can be edited and removed.
+    assert client.patch(f"/api/v1/places/{pid}", json={"name": "x"}, headers=h).status_code == 200
+    assert client.delete(f"/api/v1/places/{pid}", headers=h).status_code == 204
     with SessionLocal() as s:
         assert s.query(TripActivity).filter_by(trip_id=tid).count() == 1
 

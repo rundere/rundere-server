@@ -258,6 +258,8 @@ The page's own capture box is not a tab, because it needs no setup.
 
 ## 6b. Proposed: saved places from Maps links (D-166, D-167, D-168; YONDER-200)
 
+*Saved places became the Places Library in SPEC-11 (YONDER-314, D-212 to D-219).*
+
 A Google or Apple Maps **place** link (a restaurant, museum, hotel, viewpoint) has two entry
 points that share one parser (`extract/place_url.py`) and one category table:
 
@@ -292,6 +294,8 @@ points that share one parser (`extract/place_url.py`) and one category table:
   is read from the link), else by name plus pin to about 11 m; a same-name place within 150 m
   is reported as a near-duplicate (a Google entry and an Apple share of the same café). This
   revises D-166, which consumed the row on filing.
+  *Amended by D-212 (SPEC-11):* filing no longer uses a place up. It stays in the library, can
+  go onto other trips, and only filing it onto the same trip twice is a 409.
 - **D-170 — A list can be pushed in one call, safely and reviewably.** `POST /api/v1/places/batch`
   and the MCP `save_places` take up to 200 places. Each is judged and committed on its own, so a
   bad entry or a lost race never costs the rest and re-sending the same list changes nothing.
@@ -302,6 +306,7 @@ points that share one parser (`extract/place_url.py`) and one category table:
   network call per place is not one paste. The agent maps each Takeout entry's fields (title,
   note, address, coordinates, Maps URL) to the place fields; the server does not parse Takeout
   files.
+  *Amended by D-217 (SPEC-11, proposed):* the server will import a Takeout export itself.
 - **D-168 — Adding by link inside a trip pre-fills the type from the category and never
   guesses silently.** A confident category sets the type; otherwise it falls back to a generic
   Tour that the person can change before saving. *Amended by D-209:* only when no type has been
