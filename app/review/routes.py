@@ -976,12 +976,13 @@ def _run_extract_resolve(session: Session, progress=None, user=None
     CLI runs, so the button and the batch path cannot diverge. `progress` is
     threaded through both stages so the job panel shows a live count.
 
-    `user` scopes the run to the captures that person may see — their own and
-    open ones (an admin: + users who share), the same rule as the queue and
-    commit (YONDER-105/113). Nobody's button processes someone else's email."""
+    `user` scopes the run to the captures that person may change — their own, and
+    for an admin ownerless ones — the same rule as commit (YONDER-105/113, D-211).
+    Nobody's button processes someone else's email."""
     batch_filter = item_filter = None
     if not scope.unrestricted(user):
-        batch_filter, item_filter = scope.batch_filter(user), scope.capture_filter(user)
+        batch_filter = scope.batch_edit_filter(user)
+        item_filter = scope.capture_edit_filter(user)
     from app.config import settings
     summary: dict = {"extracted": 0, "needs_review": 0}
     resolved: dict = {}
@@ -1089,8 +1090,10 @@ def reprocess(request: Request, bucket: str = "attention",
             progress("resetting", 0, 0, "clearing processed items")
             item_q, batch_q = s.query(TravelItem), s.query(IngestBatch)
             if not scope.unrestricted(user):
-                item_q = item_q.filter(scope.capture_filter(user))
-                batch_q = batch_q.filter(scope.batch_filter(user))
+                # Only what this person may change (D-211): never a supported
+                # user's captures, which an admin may only view.
+                item_q = item_q.filter(scope.capture_edit_filter(user))
+                batch_q = batch_q.filter(scope.batch_edit_filter(user))
             items = item_q.all()
             protected = {i.batch_id for i in items if _is_logged(i)}
             # Also protect batches whose items already exist in AirTrail/
@@ -1168,9 +1171,10 @@ def commit(request: Request, confirm: str = Form(""), bucket: str = Form("staged
     user = scope.user_of(request)
     # Each capture logs to its OWNER's connections (D-150); an owner with none
     # gets Run·dere only, the AirTrail/AdventureLog targets skipped.
-    # Only the captures this person may log — their own (an admin also
-    # ownerless ones and those of users who share). Never someone else's approvals (YONDER-105).
-    mine = scope.capture_filter(scope.user_of(request))
+    # Only the captures this person may log — their own (an admin also ownerless
+    # ones). Never someone else's approvals (YONDER-105), not even under support
+    # access, which is view-only (D-211).
+    mine = scope.capture_edit_filter(scope.user_of(request))
 
     if not execute:
         # PREVIEW stays synchronous — it only reads (target refs + dedup) and is

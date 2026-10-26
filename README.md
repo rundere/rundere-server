@@ -116,8 +116,10 @@ if you want to choose when to upgrade and be able to roll back.
   OpenStreetMap, weather from Open-Meteo and exchange rates from Frankfurter. Each can be
   pointed at your own mirror ([configuration](docs/configuration.md)).
 - **People are kept apart.** Each person sees their own trips and the ones shared with
-  them, and journals are never shared. New accounts are private: an admin sees only the
-  trips you put them on, unless you choose to share more with admins (D-220).
+  them, and journals are never shared. Admins run the server; they don't see anyone's
+  trips or Inbox for being admins. If an admin is helping you, you can let them view
+  yours, read-only, for 24 hours, 7 days or until you turn it off. Each day one looks
+  is listed on your account page, and your journal is never included (D-211).
 - **Less is kept.** No photos, receipts or audio are stored (journal photos are links).
   Original captures and uploaded files are deleted 12 months after their trip ends, by
   default (D-196).

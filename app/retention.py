@@ -246,6 +246,16 @@ def run(session_factory, *, today: date | None = None, dry_run: bool = False,
     with session_factory() as session:
         purge_files(session, today, report, dry_run=dry_run)
         purge_captures(session, today, report, dry_run=dry_run)
+    if not dry_run:
+        # D-211: record support access that has ended, and tell existing sharers
+        # once that it became read-only. Neither may stop the sweep.
+        try:
+            from app import support
+            with session_factory() as session:
+                support.expire_due(session)
+                support.send_notices(session)
+        except Exception:
+            log.exception("retention: the support-access step failed; retried tomorrow")
     if mailbox:
         try:
             handled = trash_mail(report, today, dry_run=dry_run, connect=connect)

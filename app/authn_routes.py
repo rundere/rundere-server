@@ -11,6 +11,7 @@ OIDC endpoints arrive in Phase 1b behind the same router.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -74,6 +75,7 @@ class UserOut(BaseModel):
     opt_out_blocker: str = ""              # always "" since D-220; kept for the app
     reset_note: str = ""                   # what a forgotten password means here (D-220)
     email_required: bool = False           # a local account must add an email first (D-220)
+    support_until: datetime | None = None  # when support access ends; null = until turned off (D-211)
     # From the person's own travel profile — theirs alone, so only on their own
     # payload: the currency an expense defaults to (YONDER-213) and the zone
     # their "now" runs on (D-187).
@@ -87,6 +89,12 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: UserOut
+
+
+def _support_until(u: User):
+    """A live grant's end time, or None (off, or until turned off)."""
+    from app import scope, support
+    return support.until(u) if scope.support_live(u) else None
 
 
 def _user_public(u: User) -> dict:
@@ -114,7 +122,8 @@ def _user_public(u: User) -> dict:
             # reachable email: only the server's operator could reset its password.
             "reset_note": reset_note(u),
             # The web asks for it at every visit; the app should too (SPEC-4.2 §3.3).
-            "email_required": authn.needs_email(u)}
+            "email_required": authn.needs_email(u),
+            "support_until": _support_until(u)}
 
 
 # --------------------------------------------------------------------------- web
@@ -286,6 +295,7 @@ def api_me(user: User = Depends(authn.current_user)):
 
 class SharingBody(BaseModel):
     share: bool
+    duration: str = "standing"             # 24h | 7d | standing (D-211)
 
 
 class EmailBody(BaseModel):
@@ -296,13 +306,12 @@ class EmailBody(BaseModel):
 @router.put("/api/v1/auth/me/sharing", response_model=UserOut)
 def api_set_sharing(body: SharingBody, user: User = Depends(authn.first_party_user),
                     session: Session = Depends(get_session)):
-    """Share your data with admins, or opt out — the same rules as the web
-    (/account/sharing): a local account needs server email + its own address to
-    opt out; the change is audited and clears the first-sign-in question.
-    First-party only (the app or the web), never a connected app."""
+    """Turn support access on (for `duration`: 24h, 7d or standing) or off, as on
+    the web (D-211). Audited, and clears the first-sign-in question. First-party
+    only (the app or the web), never a connected app."""
     from app.accounts_routes import _set_sharing
     user = session.get(User, user.id)
-    error = _set_sharing(session, user, body.share)
+    error = _set_sharing(session, user, body.share, body.duration)
     if error:
         return JSONResponse({"detail": error}, status_code=400)
     session.refresh(user)

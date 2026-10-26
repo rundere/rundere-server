@@ -91,8 +91,9 @@ if DEPS:
         with SessionLocal() as s:
             trip = s.get(Trip, tid)
             roles = {k: scope.trip_role(s, v, trip) for k, v in u.items()}
+            # D-211: support access (the owner shares) is view-only for an admin.
             assert roles == {"owner": "owner", "mate": "traveller", "viewer": "viewer",
-                             "stranger": None, "admin": "admin"}
+                             "stranger": None, "admin": "viewer"}
             assert scope.trip_role(s, None, trip) == "owner"          # auth off
             assert scope.trip_role(s, u["owner"], None) is None
             # The invariant the API leans on: an editor is exactly a non-viewer.

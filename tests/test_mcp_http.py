@@ -574,6 +574,41 @@ if DEPS:
         good, err = call(client, tok, "get_journal_entry", entry_id=w["bob_note"])
         assert not good
 
+    def test_support_access_is_read_only_over_mcp(client, w):
+        """D-211: carol lets admins look. Over MCP the admin can read her trip and
+        capture, but every write is refused, and her journal never shows."""
+        with SessionLocal() as s:
+            cap = TravelItem(owner_id=w["carol"], canonical_key="mx:carolcap", source={},
+                             status={})
+            note = JournalEntry(owner_id=w["carol"], entry_date="2027-06-01",
+                                body="mx carol diary", source="web")
+            s.add_all([cap, note]); s.commit()
+            cap_id, note_id = cap.id, note.id
+        try:
+            tok = _tok(w["admin"])
+            trip = ok(client, tok, "get_trip", trip_id=w["carols"])
+            assert trip["trip"]["my_role"] == "viewer"
+            good, err = call(client, tok, "update_trip", trip_id=w["carols"], name="hijacked")
+            assert not good and "403" in err
+            good, err = call(client, tok, "add_activity", trip_id=w["carols"], type="note",
+                             values={"title": "x"})
+            assert not good and "403" in err
+            assert ok(client, tok, "get_review_item", item_id=cap_id)
+            good, err = call(client, tok, "assign_review_item_to_trip", item_id=cap_id,
+                             trip_id=w["carols"])
+            assert not good and "403" in err
+            good, err = call(client, tok, "get_journal_entry", entry_id=note_id)
+            assert not good
+            assert "mx carol diary" not in json.dumps(ok(client, tok, "list_journal_entries"))
+            with SessionLocal() as s:
+                assert s.get(Trip, w["carols"]).name == "MX Carol"
+                assert s.get(TravelItem, cap_id).trip_id is None
+        finally:
+            with SessionLocal() as s:
+                s.query(TravelItem).filter_by(id=cap_id).delete()
+                s.query(JournalEntry).filter_by(id=note_id).delete()
+                s.commit()
+
     def test_assign_uses_filing_rule_tool_and_api(client, w):
         """An admin can SEE carol's trip (she shares) but must not file their own
         capture into it — the web picker's filing rule, now on the API + MCP."""

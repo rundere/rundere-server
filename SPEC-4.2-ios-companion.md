@@ -103,7 +103,12 @@ The user payload then carries `sharing_prompt` (§3.3).
 > `tests/test_api_sharing.py`.
 Extend the user payload (`/api/v1/auth/me`, login/exchange responses) with
 `email`, `share_with_admins`, `sharing_prompt`, `opt_out_blocker`,
-`reset_note` and `email_required`. Add `PUT /api/v1/auth/me/sharing {share: bool}` (audited).
+`reset_note`, `email_required` and `support_until`. Add
+`PUT /api/v1/auth/me/sharing {share: bool, duration: "24h"|"7d"|"standing"}` (audited).
+*Since D-211* `share_with_admins` means support access: admins may view the person's
+trips and Inbox, read-only, until `support_until` (null = until turned off). Label the
+toggle "Let admins see my trips and Inbox", offer the three durations, and show
+`support_until` when it's set. A trip seen this way has `my_role: "viewer"`.
 *Since D-220:* accounts start private and `opt_out_blocker` is always empty.
 `reset_note` is the web's text for a private local account that a reset can't
 reach; show it under the sharing toggle. When `email_required` is true (a local

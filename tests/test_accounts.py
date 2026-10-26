@@ -140,21 +140,27 @@ if DEPS:
         r = client.post(f"/users/{uid}/password", headers=hdr, data={"password": "np"},
                         follow_redirects=False)
         assert "err=" in r.headers["location"]
-        with SessionLocal() as s:                  # the rest manages an account that opted in
+        with SessionLocal() as s:     # …not even when it lets admins look (D-211: view-only)
             s.query(User).filter_by(username="created1").update({User.share_with_admins: True})
             s.commit()
+        r = client.post(f"/users/{uid}/password", headers=hdr, data={"password": "np"},
+                        follow_redirects=False)
+        assert "err=" in r.headers["location"]
+        with SessionLocal() as s:
+            assert authn.verify_password(
+                "pw", s.query(User).filter_by(username="created1").one().password_hash)
         # duplicate username rejected (neutral redirect with err)
         assert "err=" in client.post("/users/create", headers=hdr,
                                      data={"username": "created1", "password": "pw"},
                                      follow_redirects=False).headers["location"]
-        # set password
-        assert client.post(f"/users/{uid}/password", headers=hdr, data={"password": "np"},
-                           follow_redirects=False).status_code == 303
+        # a reset link for someone else is emailed to them, never shown to the admin
+        loc = client.post(f"/users/{uid}/reset-link", headers=hdr,
+                          follow_redirects=False).headers["location"]
+        assert "link=" not in loc
+        # …while an admin's own link is shown
         with SessionLocal() as s:
-            assert authn.verify_password(
-                "np", s.query(User).filter_by(username="created1").one().password_hash)
-        # reset-link surfaces a link
-        assert "link=" in client.post(f"/users/{uid}/reset-link", headers=hdr,
+            me = s.query(User).filter_by(username="acct-admin").one().id
+        assert "link=" in client.post(f"/users/{me}/reset-link", headers=hdr,
                                       follow_redirects=False).headers["location"]
         # toggle admin
         client.post(f"/users/{uid}/admin", headers=hdr, follow_redirects=False)

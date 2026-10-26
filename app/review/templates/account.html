@@ -33,23 +33,36 @@
       <button class="act" type="submit" style="margin-top:12px">Save email</button>
     </form>
 
-    <h3 style="margin-top:28px">Sharing with admins</h3>
-    {% if u.share_with_admins %}
-      <p class="why"><b>On.</b> Admins can view and edit your trips, captures and journal.</p>
+    <h3 style="margin-top:28px" id="sharing">Support access</h3>
+    {% if support_on %}
+      <p class="why"><b>On</b>{% if support_until %} until {{ support_until.strftime("%Y-%m-%d %H:%M") }} UTC{% else %}, until you turn it off{% endif %}.
+        Admins can view your trips and Inbox, read-only. They can't change anything, and they
+        never see your journal.</p>
       <form method="post" action="/account/sharing">
         <input type="hidden" name="choice" value="private">
-        <input type="hidden" name="next" value="/account?msg=You+no+longer+share+with+admins">
-        <button class="act" type="submit">Stop sharing</button>
+        <input type="hidden" name="next" value="/account?msg=Support+access+is+off">
+        <button class="act" type="submit">Turn it off</button>
       </form>
     {% else %}
       <p class="why"><b>Off</b> (the default). Admins only see trips you invite them into,
         and your password-reset links are emailed to you, never shown to an admin.</p>
       {% if reset_note %}<p class="why">{{ reset_note }}</p>{% endif %}
-      <form method="post" action="/account/sharing">
+      <p class="why">If an admin is helping you, you can let them view your trips and Inbox,
+        read-only, for a while. They can't change anything or see your journal.</p>
+      <form method="post" action="/account/sharing" class="lookup-row">
         <input type="hidden" name="choice" value="share">
-        <input type="hidden" name="next" value="/account?msg=You+now+share+with+admins">
-        <button class="act" type="submit">Share with admins</button>
+        <input type="hidden" name="next" value="/account?msg=Support+access+is+on">
+        <select name="duration" aria-label="For how long">
+          <option value="24h">for 24 hours</option>
+          <option value="7d">for 7 days</option>
+          <option value="standing">until I turn it off</option>
+        </select>
+        <button class="act" type="submit">Let admins look</button>
       </form>
+    {% endif %}
+    {% if support_views %}
+      <p class="why" style="margin-top:8px"><b>Who looked</b> (last 30 days):
+        {% for v in support_views %}{{ v.admin }} on {{ v.at.strftime("%Y-%m-%d") }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
     {% endif %}
     <p class="why" style="margin-top:8px">This controls what admins see in Run·dere; it isn't
       encryption — whoever runs the server can reach the database directly.</p>

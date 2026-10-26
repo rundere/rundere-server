@@ -312,8 +312,9 @@ def _sharing_context(session: Session, trip: Trip, user=None) -> dict:
     owner = session.get(User, trip.owner_id) if trip.owner_id else None
     from app import demo
     # Not on a demo server (D-198, YONDER-261): the share would be refused.
-    can_share = bool(user.is_admin or (trip.owner_id and trip.owner_id == user.id)) \
-        and not demo.read_only()
+    # The owner shares; an admin only for an ownerless trip (D-211).
+    can_share = bool((trip.owner_id and trip.owner_id == user.id)
+                     or (user.is_admin and trip.owner_id is None)) and not demo.read_only()
     # An explicit share only makes sense for a user who isn't already the owner,
     # a traveller (full access already), or shared.
     add_choices = [u for u in session.query(User).order_by(User.username).all()
@@ -724,7 +725,7 @@ def share_trip(trip_id: str, request: Request, user_id: str = Form(""),
     me = scope.user_of(request)
     if trip is None or me is None:
         return HTMLResponse("", status_code=404)
-    if not (me.is_admin or trip.owner_id == me.id):
+    if not (trip.owner_id == me.id or (me.is_admin and trip.owner_id is None)):   # D-211
         return HTMLResponse("<p>Only the trip owner can share it.</p>", status_code=403)
     from app.models import TripMember, User
     target = session.get(User, user_id) if user_id else None
@@ -765,7 +766,7 @@ def unshare_trip(trip_id: str, request: Request, user_id: str = Form(""),
     me = scope.user_of(request)
     if trip is None or me is None:
         return HTMLResponse("", status_code=404)
-    if not (me.is_admin or trip.owner_id == me.id):
+    if not (trip.owner_id == me.id or (me.is_admin and trip.owner_id is None)):   # D-211
         return HTMLResponse("<p>Only the trip owner can change sharing.</p>", status_code=403)
     from app.models import TripMember
     session.query(TripMember).filter_by(trip_id=trip.id, user_id=user_id).delete()

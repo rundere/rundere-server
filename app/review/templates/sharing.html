@@ -3,14 +3,14 @@
 {% block content %}
 <div class="app">
   <div class="ops"><div class="ops-row">
-    <h1 class="pagetitle">Share your data with admins?</h1>
+    <h1 class="pagetitle">Let admins see your trips?</h1>
   </div></div>
 
   {% if request.query_params.get('err') %}<div class="violations">{{ request.query_params.get('err') }}</div>{% endif %}
 
   <div style="padding:16px;max-width:680px">
-    <p class="why">This Run·dere server has administrators. Choose whether they can see
-      and manage your trips, captures and journal.</p>
+    <p class="why">This Run·dere server has administrators. They run the server; they don't
+      see your trips, Inbox or journal unless you let them look.</p>
 
     <form method="post" action="/account/sharing">
       <input type="hidden" name="next" value="{{ next }}">
@@ -34,9 +34,15 @@
       </label>
       <label class="pax-opt" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0">
         <input type="radio" name="choice" value="share">
-        <span><b>Share with admins</b><br>
-          <span class="why">Admins can view and edit your trips, captures and journal —
-            handy if someone sets trips up for you.</span></span>
+        <span><b>Let admins look</b>
+          <select name="duration" aria-label="For how long" style="margin-left:6px">
+            <option value="24h">for 24 hours</option>
+            <option value="7d">for 7 days</option>
+            <option value="standing">until I turn it off</option>
+          </select><br>
+          <span class="why">Admins can view your trips and Inbox, read-only, which helps if
+            someone is setting things up with you. They can't change anything or see your
+            journal, and each day one looks is listed on your account page.</span></span>
       </label>
       <p class="why" style="margin-top:14px">Either way, whoever runs this server can reach the
         database directly — this setting controls what admins see in Run·dere, it isn't

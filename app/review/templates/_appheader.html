@@ -14,6 +14,15 @@
   <strong>Demo server:</strong> read-only, view the sample trips. Changes aren't saved.
   <span id="demo-msg" aria-live="polite"></span></div>
 {% endif %}
+{% if cu and cu.support_notice %}
+{# D-211: told once that admin sharing became read-only support access. #}
+<div class="yn-demo-banner" role="note">{{ icon('lock', 14) }}
+  <span><strong>Admins can now only look.</strong> You shared your data with admins, so they
+  can still view your trips and Inbox, but they can no longer change them or see your
+  journal. <a href="/account#sharing">Review support access</a>.</span>
+  <form method="post" action="/account/support-notice" style="margin:0 0 0 auto">
+    <button class="act tiny" type="submit">Got it</button></form></div>
+{% endif %}
 <header class="appbar">
   <a class="wordmark" href="/" style="text-decoration:none" aria-label="Run·dere home" title="Run·dere — say “run there”">
     <span class="rd-mark" aria-hidden="true"></span><span class="rd-wordmark" role="img" aria-label="Run·dere"></span>

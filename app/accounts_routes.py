@@ -140,23 +140,29 @@ def _audit(session: Session, user: User, actor: User | None, action: str,
 
 
 def _notify_private(user: User, what: str) -> None:
-    """Tell a user who opted out of sharing that an admin acted on their account."""
-    if user.share_with_admins or not user.email:
+    """Tell a person that an admin acted on their account. Everyone is told since
+    D-211: support access lets admins look, not act."""
+    if not user.email:
         return
     send_email(user.email, "An admin changed your Run·dere account",
                f"An administrator {what} on your Run·dere account "
                f"({user.username}).\n\nIf you didn't expect this, contact them.")
 
 
-def _set_sharing(session: Session, user: User, share: bool) -> str:
-    """Apply a sharing choice; returns an error message or "" (none since D-220:
-    going private is always allowed, kept for the callers' contract)."""
-    changed = bool(user.share_with_admins) != share
-    user.share_with_admins = share
+def _set_sharing(session: Session, user: User, share: bool,
+                 duration: str = "standing") -> str:
+    """Apply a support-access choice (D-211): `share` turns it on for `duration`
+    (24h, 7d or standing), off otherwise. Returns an error message or ""."""
+    from app import support
     user.sharing_prompt = False
-    if changed:
-        _audit(session, user, user, "sharing_on" if share else "sharing_off")
-    session.commit()
+    if share:
+        try:
+            support.grant(session, user, duration)
+        except ValueError as exc:
+            session.rollback()
+            return str(exc)
+    else:
+        support.revoke(session, user)
     return ""
 
 
@@ -305,8 +311,10 @@ def reset_submit(request: Request, token: str, password: str = Form(...),
 
 # --------------------------------------------------------------------------- your account
 def _account_ctx(session: Session, user: User, **extra) -> dict:
-    from app import oauth
+    from app import oauth, scope, support
     return {"u": user, "smtp": email_configured(), "reset_note": reset_note(user),
+            "support_on": scope.support_live(user), "support_until": support.until(user),
+            "support_views": support.recent_views(session, user),
             "apps": oauth.connected_apps(session, user),
             "pats": oauth.list_pats(session, user), "msg": "", "err": "", **extra}
 
@@ -437,6 +445,16 @@ def email_required_submit(email: str = Form(""), current_password: str = Form(""
     return RedirectResponse(dest, status_code=303)
 
 
+@router.post("/account/support-notice")
+def support_notice_dismiss(user: User = Depends(authn.current_user),
+                           session: Session = Depends(get_session)):
+    """Dismiss the one-time D-211 notice."""
+    user = session.get(User, user.id)
+    user.support_notice = False
+    session.commit()
+    return RedirectResponse("/account#sharing", status_code=303)
+
+
 @router.get("/account/sharing", response_class=HTMLResponse)
 def sharing_prompt_page(request: Request, next: str = "/",
                         user: User = Depends(authn.current_user),
@@ -451,6 +469,7 @@ def sharing_prompt_page(request: Request, next: str = "/",
 
 @router.post("/account/sharing")
 def sharing_choose(choice: str = Form(""), next: str = Form("/account"),
+                   duration: str = Form("standing"),
                    traveler_id: str = Form("none"), new_traveler: str = Form(""),
                    user: User = Depends(authn.current_user),
                    session: Session = Depends(get_session)):
@@ -460,7 +479,7 @@ def sharing_choose(choice: str = Form(""), next: str = Form("/account"),
         dest = f"/account/sharing?next={quote_plus(_safe_next(next))}&err={quote_plus(error)}"
         return RedirectResponse(dest, status_code=303)
     # Only an explicit "share" opts in: a blank or unknown choice stays private (D-220).
-    error = _set_sharing(session, user, choice == "share")
+    error = _set_sharing(session, user, choice == "share", duration)
     dest = _safe_next(next)
     if error:
         sep = "&" if "?" in dest else "?"
@@ -507,8 +526,10 @@ def users_page(request: Request, msg: str = "", err: str = "", link: str = "",
                session: Session = Depends(get_session)):
     users = session.query(User).order_by(User.username).all()
     tmap = {t.id: t for t in _travelers(session)}
+    from app import scope
     return templates.TemplateResponse(request, "users.html", {
         "users": users, "travelers": _travelers(session), "tmap": tmap,
+        "support": {u.id: scope.support_live(u) for u in users},
         "me": admin, "registration_open": settings.auth_registration_open,
         "smtp": email_configured(), "smtp_summary": smtp_summary(),
         "msg": msg, "err": err, "link": link, "link_for": link_for,
@@ -516,8 +537,10 @@ def users_page(request: Request, msg: str = "", err: str = "", link: str = "",
 
 
 def _private(user: User, admin: User) -> bool:
-    """Opted out of sharing, and it's someone else's account."""
-    return not user.share_with_admins and user.id != admin.id
+    """Someone else's account. An admin never sets another person's password or
+    email, nor sees their reset link: support access is view-only (D-211), and
+    signing in as someone would make it anything but."""
+    return user.id != admin.id
 
 
 def _u(session, user_id: str) -> User | None:
@@ -549,9 +572,9 @@ def users_set_password(user_id: str, password: str = Form(...),
         return RedirectResponse("/users?err=No+such+user", status_code=303)
     if _private(user, admin):
         return RedirectResponse(
-            "/users?err=" + quote_plus(f"{user.username} doesn't share with admins, so an "
-                                       "admin can't set their password — send a reset "
-                                       "link (it's emailed to them)."), status_code=303)
+            "/users?err=" + quote_plus(f"An admin can't set {user.username}'s password: send a "
+                                       "reset link instead (it's emailed to them)."),
+            status_code=303)
     user.password_hash = authn.hash_password(password)
     authn.end_sessions(session, user)
     _audit(session, user, admin, "password_set")
@@ -592,8 +615,8 @@ def users_set_email(user_id: str, email: str = Form(""),
         return RedirectResponse("/users?err=No+such+user", status_code=303)
     if _private(user, admin):
         return RedirectResponse(
-            "/users?err=" + quote_plus(f"{user.username} doesn't share with admins, so only "
-                                       "they can change their email."), status_code=303)
+            "/users?err=" + quote_plus(f"Only {user.username} can change their email."),
+            status_code=303)
     error = authn.set_user_email(session, user, email)
     if error:
         return RedirectResponse(f"/users?err={quote_plus(error)}", status_code=303)
@@ -631,8 +654,8 @@ def users_reset_link(request: Request, user_id: str,
     if user is None:
         return RedirectResponse("/users?err=No+such+user", status_code=303)
     if _private(user, admin):
-        # Opted out of sharing: the link goes to the user's own inbox, never to
-        # the admin (otherwise an admin could reset and sign in as them).
+        # Someone else's account: the link goes to their own inbox, never to the
+        # admin (otherwise an admin could reset and sign in as them, D-211).
         if not (email_configured() and user.email):
             return RedirectResponse(
                 "/users?err=" + quote_plus(f"Can't reach {user.username} by email — "
