@@ -130,13 +130,13 @@ if you want to choose when to upgrade and be able to roll back.
 
 | Way in | Setup |
 |---|---|
-| Capture page and bookmarklet | Nothing. Paste a page, a URL or a Maps directions link, or click the bookmarklet on a booking page |
+| Capture Hub and bookmarklet | Nothing. Paste a page, a URL or a Maps directions link, or click the bookmarklet on a booking page |
 | File upload | A folder for files and a ClamAV scanner |
 | Email forward | A mailbox the server reads; each person forwards to their own address |
 | Gmail and Calendar add-ons | Your own Apps Script copy and a personal key |
 | iPhone and iPad app, AI assistants | Sign in from the app, or connect `/mcp` |
 
-In the app, **Capture → Set up** walks through each one. **[docs/capture.md](docs/capture.md)**
+In the app, **Capture Hub → Set up** walks through each one. **[docs/capture.md](docs/capture.md)**
 covers them all, including the signed `/ingest` endpoint for scripts.
 
 ## Workflow

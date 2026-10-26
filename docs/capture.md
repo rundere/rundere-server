@@ -5,14 +5,14 @@ capture is stored as it arrived (content-addressed, D-15), owned by the person w
 (D-120), then read into items that wait in the **Inbox** for review. Nothing is written to a
 trip until you approve it (D-31).
 
-In the app, **Capture → Set up** has a step-by-step guide for each channel, with your own
+In the app, **Capture Hub → Set up** has a step-by-step guide for each channel, with your own
 keys and addresses filled in. This page is the overview.
 
 ## Ways in
 
 | Channel | Use it for | Needs |
 |---|---|---|
-| **Capture page** (`/capture`) | Pasting a booking page's source, a public URL, or a Google or Apple Maps directions link with a travel date | Nothing extra |
+| **Capture Hub** (`/capture`) | Pasting a booking page's source, a public URL, or a Google or Apple Maps directions link with a travel date | Nothing extra |
 | **Bookmarklet** | One click on any booking page in your browser, including pages behind a login | Nothing extra |
 | **File upload** | PDF confirmations, `.ics` invites, saved `.eml` emails | `TX_DOCUMENTS_DIR` and a virus scanner (`TX_CLAMAV_URL`), see [configuration.md](configuration.md) |
 | **Email forward** | Forwarding confirmations from any email account to your own `trips+<token>@…` address | A mailbox Run·dere reads over IMAP, see [email-forward.md](email-forward.md) |
@@ -24,12 +24,12 @@ keys and addresses filled in. This page is the overview.
 Extraction tries structured readers first (schema.org JSON-LD, iCal, PDF text, Maps URL
 formats) and falls back to the local LLM only for free-form text (D-10, D-11).
 
-## The capture page and bookmarklet
+## The Capture Hub and bookmarklet
 
 `/capture` needs you to be signed in, like the rest of the app (D-203), and every capture
 is yours. There's no key to set up.
 
-- **Bookmarklet.** Drag it from **Capture → Set up → Bookmarklet** to your bookmarks bar.
+- **Bookmarklet.** Drag it from **Capture Hub → Set up → Bookmarklet** to your bookmarks bar.
   On a booking page it opens a Run·dere tab and hands the page over (D-159). Your browser
   has already loaded the page, so this works for pages behind a login. If pop-ups are
   blocked it copies the page to your clipboard to paste instead.
@@ -46,7 +46,7 @@ The add-ons post from Google's servers, which can't sign in interactively, so th
 `/ingest` with a per-person key and a signature (below). Keep `/ingest` as the only path
 on your public route if the rest of the app should stay on your LAN.
 
-**Make your key** in **Capture → Set up → Gmail** (or **Calendar**). It's shown once and
+**Make your key** in **Capture Hub → Set up → Gmail** (or **Calendar**). It's shown once and
 belongs to you, so what the add-on sends is yours. Making another replaces the old one.
 An admin can also make keys from the shell:
 

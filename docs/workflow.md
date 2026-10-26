@@ -9,7 +9,7 @@ The day-to-day loop once Run·dere is running. [howto.md](howto.md) walks throug
 2. **Capture** a booking any way that suits you ([capture.md](capture.md)). The raw capture
    is stored straight away; reading it never happens inside the request.
 3. **Processing runs on its own** (D-158, `TX_AUTO_PROCESS`, on by default): Run·dere
-   extracts the items and matches them to a trip. The capture page shows the result as soon
+   extracts the items and matches them to a trip. The Capture Hub shows the result as soon
    as it's ready. **Process new captures** in the Inbox, or
    `docker compose exec rundere python -m app.cli process`, runs it by hand.
 4. **Review in the Inbox.** Items are sorted into *Needs you → Waiting for a trip → Ready

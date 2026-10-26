@@ -307,7 +307,7 @@ def capture_page(request: Request, session: Session = Depends(get_session)):
 
 # ----------------------------------------------------------------- files (YONDER-179, D-196)
 def _files_summary(session: Session, user) -> dict | None:
-    """The Capture page's file box: None when file capture is off or there's
+    """The Capture Hub's file box: None when file capture is off or there's
     nobody signed in (files are always someone's own)."""
     from app import documents
     if user is None:
@@ -322,7 +322,7 @@ def _files_summary(session: Session, user) -> dict | None:
 
 @router.post("/capture/file", response_class=HTMLResponse)
 async def capture_file(request: Request, session: Session = Depends(get_session)):
-    """The Capture page's file box: store, scan and capture one file, then show
+    """The Capture Hub's file box: store, scan and capture one file, then show
     the same self-polling result as any capture."""
     from fastapi.concurrency import run_in_threadpool
 
@@ -462,7 +462,7 @@ _CHANNELS = [  # (tab key, label, capture_channel values it produces)
     ("ios", "iPhone and iPad", ()),
     ("mcp", "AI assistants (MCP)", ()),
 ]
-# One line per channel for the capture page's "Other ways to capture" cards, so
+# One line per channel for the Capture Hub's "Other ways to capture" cards, so
 # each guide is one click from /capture (owner, 2026-10-12).
 _CHANNEL_BLURBS = {
     "gmail": "Capture the email you're reading, from Gmail's side panel.",

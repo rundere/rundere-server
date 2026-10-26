@@ -659,7 +659,7 @@ def _acknowledge(session_factory, captured: list[Handled]) -> None:
 
 def _kick(session_factory, user_ids: set[str]) -> None:
     """Nobody is at the page when mail arrives, so start processing for each
-    person who got a capture, as the capture page does (D-158)."""
+    person who got a capture, as the Capture Hub does (D-158)."""
     if not user_ids:
         return
     from app.review import autoprocess
