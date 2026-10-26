@@ -56,8 +56,8 @@ if DEPS:
         html = client.get("/").text
         nav = html[html.index('aria-label="Sections"'):]
         nav = nav[:nav.index("</nav>")]
-        labels = re.findall(r'</span>(Home|Trips|Journal|Capture|Places|Inbox)', nav)
-        assert labels == ["Home", "Trips", "Journal", "Capture", "Places", "Inbox"]
+        labels = re.findall(r'</span>(Home|Trips|Journal|Capture Hub|Capture|Places|Inbox)<', nav)
+        assert labels == ["Home", "Trips", "Journal", "Capture Hub", "Places", "Inbox"]   # D-221
         assert nav.index('class="navsep"') < nav.index(">Capture")      # the divider
         assert 'class="navcap"' in html and 'hx-get="/capture/sheet"' in html
         assert ">Review<" not in nav

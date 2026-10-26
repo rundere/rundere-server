@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     ingest_rate_limit: int = 30             # requests per key per window
     ingest_rate_window_seconds: int = 300
     ingest_max_body_bytes: int = 5_000_000
-    # SPEC-9 D-158: a capture on the capture page starts extract + resolve by itself.
+    # SPEC-9 D-158: a capture on the Capture Hub starts extract + resolve by itself.
     auto_process: bool = True
 
     # Extraction (D-11: local Ollama only; model choice = OQ-08)

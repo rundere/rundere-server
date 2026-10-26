@@ -13,7 +13,7 @@ queue a few minutes later. Nothing is filed until they approve it.
   delivered to `trips@example.com` (plus addressing), and the token says whose
   capture it is. The sender doesn't matter, so people can forward from any of
   their accounts. The token is random, and each person can regenerate theirs
-  under **Capture → Other ways to capture → Email forward**. The old address
+  under **Capture Hub → Other ways to capture → Email forward**. The old address
   then stops working.
 - **Mail to an unknown plus address is dropped.** A token that matches no one
   (a regenerated one, a typo), mail that's too large, and mail over the rate
@@ -24,7 +24,7 @@ queue a few minutes later. Nothing is filed until they approve it.
   mailbox, is never read past its recipient headers, moved, marked read or
   recorded.
 - **Captured mail** is kept raw in full (D-15), filed into the done folder in
-  your mailbox, and processed at once, like a capture from the capture page.
+  your mailbox, and processed at once, like a capture from the Capture Hub.
   The same message is never captured twice for the same person.
 - **Read in real time.** Run·dere holds an IMAP IDLE connection, so the mail
   server tells it the moment mail arrives. If the server doesn't support IDLE
@@ -172,7 +172,7 @@ it off the connection once and pin that copy.
 
 ## Check it
 
-1. **Capture → Other ways to capture → Email forward.** Your address appears.
+1. **Capture Hub → Other ways to capture → Email forward.** Your address appears.
    Admins also see the mailbox status, when it was last read, any last error,
    and the last 7 days' counts.
 2. Forward a confirmation to your address. Within seconds it's in your review

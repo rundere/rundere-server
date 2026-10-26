@@ -68,7 +68,7 @@ items to `/ingest`.
 
 ### Web pages & Maps directions (built in)
 
-The built-in Capture page requires no external client.
+The built-in Capture Hub requires no external client.
 
 ## 7 The dashboard — your starting point
 
@@ -92,14 +92,14 @@ Open Run·dere's root URL (e.g. `https://rundere.example.com/`) and you land on 
 
 ### Bookmarklet (primary, for web pages)
 
-Use the bookmarklet on the Capture page to capture the current page.
+Use the bookmarklet on the Capture Hub to capture the current page.
 
 ### Paste source, a public URL, or a Maps link
 
 You can paste raw HTML source, provide a public URL, or paste a Google Maps
 directions link into the Capture form.
 
-> _[screenshot: the built-in Capture page — bookmarklet and paste/URL/Maps form]_
+> _[screenshot: the built-in Capture Hub — bookmarklet and paste/URL/Maps form]_
 
 ## 9 Process & review
 

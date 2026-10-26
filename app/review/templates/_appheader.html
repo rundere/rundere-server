@@ -39,7 +39,7 @@
     <a href="/trips" class="{{ 'on' if p.startswith('/trips') and not in_settings else '' }}"><span class="ni">{{ icon('trips', 20) }}</span>Trips</a>
     <a href="/journal" class="{{ 'on' if p.startswith('/journal') else '' }}"><span class="ni">{{ icon('journal', 20) }}</span>Journal</a>
     <span class="navsep" role="separator" aria-hidden="true"></span>
-    <a href="/capture" class="{{ 'on' if p.startswith('/capture') else '' }}"><span class="ni">{{ icon('capture', 20) }}</span>Capture</a>
+    <a href="/capture" class="{{ 'on' if p.startswith('/capture') else '' }}"><span class="ni">{{ icon('capture', 20) }}</span>Capture Hub</a>
     <a href="/places" class="{{ 'on' if p.startswith('/places') else '' }}"><span class="ni">{{ icon('pin', 20) }}</span>Places</a>
     <a href="/inbox" class="{{ 'on' if p.startswith('/inbox') or p.startswith('/review/item') else '' }}"><span class="ni">{{ icon('review', 20) }}</span>Inbox{% set rb = review_badge(request) if request else 0 %}{% if rb %}<span class="navbadge" title="{{ rb }} need you">{{ rb }}</span>{% endif %}</a>
   </nav>

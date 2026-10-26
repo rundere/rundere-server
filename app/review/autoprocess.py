@@ -1,4 +1,4 @@
-"""Auto-process (SPEC-9 D-158): a capture on the capture page starts extract + resolve by
+"""Auto-process (SPEC-9 D-158): a capture on the Capture Hub starts extract + resolve by
 itself, so the item is in the person's approval queue straight away. Approval stays a human
 act (D-31): this only runs the same extract + resolve the Process button runs.
 

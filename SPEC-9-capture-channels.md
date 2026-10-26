@@ -450,3 +450,12 @@ What the Share Extension (and the app) can rely on. All calls use the app's bear
     badge), five being the iOS limit. Places stays where it is in the app. The share
     sheet stays the main way to capture on iPhone.
   - **Android (no app yet):** a Capture FAB, with tabs Today · Trips · Journal · Inbox.
+- **D-221: The Capture page is the Capture Hub (owner, 2026-10-26).** Amends D-200's
+  names. People mixed up the global **Capture** button (capture one thing, here) with the
+  **Capture** page (every way in, with its guides and files). The page is now the
+  **Capture Hub**: the sidebar link, its title and every reference say so, and its
+  heading says what it holds. The button and its sheet keep the name **Capture**, as do
+  Home's primary Capture button and the form's submit, because they are actions. The URL
+  stays `/capture`, so bookmarks, the bookmarklet and setup links keep working. The same
+  reasoning names the Places view for new places **Unsorted**, not Inbox (SPEC-11): the
+  Inbox is the captures queue alone.

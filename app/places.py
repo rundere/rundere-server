@@ -1,7 +1,7 @@
 """Run·dere 4.7 — saved places service (YONDER-200, D-166/D-167).
 
 The one place saving, listing and filing logic lives, so the JSON API (and later
-the web capture page and MCP) never diverge. A saved place is a Maps link the
+the Capture Hub and MCP) never diverge. A saved place is a Maps link the
 person kept before choosing a trip: deterministic parse (extract/place_url.py),
 no extraction pipeline, no approval queue (D-167). It is a library entry (SPEC-11):
 filing it to a trip builds a timeline activity and records a filing, and the place
