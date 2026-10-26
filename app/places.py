@@ -148,7 +148,9 @@ def resolve_fields(*, url: str | None = None, name: str | None = None, lat=None,
             "provider": prov if prov in _PROVIDERS else "other",
             "place_id": parsed.get("place_id"), "name_key": name_key(nm),
             "source_url": _maps_url(source_url) or _maps_url(parsed.get("source_url")),
-            "activity_type": place_url.category_for(cat)["activity"]}
+            # The category's type, else a first guess from the name (YONDER-314).
+            "activity_type": (place_url.category_for(cat)["activity"] if cat
+                              else guess_type(nm) or "tour")}
 
 
 def _owner_id(user):
@@ -875,3 +877,96 @@ def lists_for(session: Session, place_ids: list[str]) -> dict[str, list[str]]:
                   .order_by(PlaceListMember.position)):
             out.setdefault(m.place_id, []).append(m.list_id)
     return out
+
+
+# --------------------------------------------------------------------------- the library's views (SPEC-11 phase 2)
+
+# The activity types a place can be: the ones that are somewhere you go. Flights,
+# trains, drives, car hire and cruises are journeys, not places.
+PLACE_TYPES = ("tour", "dining", "lodging", "event", "note")
+
+
+def place_type_options() -> list[dict]:
+    """`[{value, label}]` for a place's type picker, in the trip form's order."""
+    from app.trips import types as activity_types
+    return [o for o in activity_types.type_options() if o["value"] in PLACE_TYPES]
+
+
+def type_label(key: str | None) -> str:
+    from app.trips import types as activity_types
+    return activity_types.get_type(key or "tour").label if key else "Tour / activity"
+
+
+# Words in a place's name that say what it is, when the link carried no category
+# (a Google link never does). Only a first guess at save time: the person changes
+# it in one click, and a guess never replaces a type they chose (YONDER-314).
+_NAME_HINTS = (
+    ("dining", ("cafe", "coffee", "restaurant", "bistro", "brasserie", "trattoria",
+                "osteria", "pizzeria", "taqueria", "ramen", "sushi", "izakaya",
+                "bakery", "patisserie", "diner", "grill", "steakhouse", "tavern",
+                "bar", "pub", "brewery", "winery", "kitchen", "noodle", "dumpling")),
+    ("lodging", ("hotel", "hostel", "motel", "inn", "resort", "lodge", "guesthouse",
+                 "b&b", "bnb", "ryokan")),
+)
+
+
+def guess_type(name: str | None) -> str | None:
+    """`dining` or `lodging` when the name says so, else None (stay a tour)."""
+    words = set(places_geo.fold(name).split())
+    for kind, hints in _NAME_HINTS:
+        if words & set(hints):
+            return kind
+    return None
+
+
+def parse_query(q: str | None) -> dict:
+    """Split a library search into words and chips (D-216):
+    `must`, `someday`, `visited`, `unvisited`, `kind:<type>`, `list:<name>`,
+    `country:<code>`, `city:<name>`. Anything else is a search word. Returns the
+    `search()` keyword arguments, with `list_name` for the caller to resolve."""
+    out: dict = {"q": None}
+    words = []
+    for tok in (q or "").split():
+        low = tok.lower()
+        key, _, val = low.partition(":")
+        if low in ("must", "someday"):
+            out["priority"] = low
+        elif low in ("visited", "unvisited"):
+            out["visited"] = low == "visited"
+        elif val and key == "kind":
+            match = next((o["value"] for o in place_type_options()
+                          if val in (o["value"].lower(), places_geo.fold(o["label"]))
+                          or places_geo.fold(o["label"]).startswith(val)), None)
+            out["kind"] = match or val
+        elif val and key == "country":
+            out["country"] = val.upper()
+        elif val and key == "city":
+            out["city"] = tok.split(":", 1)[1]
+        elif val and key == "list":
+            out["list_name"] = tok.split(":", 1)[1]
+        else:
+            words.append(tok)
+    out["q"] = " ".join(words) or None
+    return out
+
+
+def unsorted(session: Session, user) -> list[SavedPlace]:
+    """What wants sorting (SPEC-11 Unsorted lens): library places that are in no
+    list and on no trip, newest first. A place leaves Unsorted once it goes in a list
+    or onto a trip."""
+    _heal(session, user)
+    listed = session.query(PlaceListMember.place_id)
+    filed = session.query(SavedPlaceFiling.place_id)
+    return (session.query(SavedPlace)
+            .filter(visible(user), _live(), ~SavedPlace.id.in_(listed),
+                    ~SavedPlace.id.in_(filed))
+            .order_by(SavedPlace.created_at.desc(), SavedPlace.id).all())
+
+
+def list_by_name(session: Session, user, name: str) -> PlaceList | None:
+    """The caller's list whose name matches `name` (case- and accent-blind)."""
+    want = places_geo.fold(name)
+    for lst, _ in lists(session, user):
+        if places_geo.fold(lst.name) == want:
+            return lst
+    return None
