@@ -187,13 +187,32 @@ async def place_update(place_id: str, request: Request,
     if "priority" in form and form.get("priority") not in places_svc.PRIORITIES:
         fields["priority"] = places_svc.MUST if form.get("priority") in ("on", "1") \
             else places_svc.SOMEDAY
+    user = scope.user_of(request)
     try:
-        places_svc.update_place(session, scope.user_of(request), place_id, **fields)
+        places_svc.update_place(session, user, place_id, **fields)
     except ValueError as exc:
         session.rollback()
         return _sheet(request, session, place_id, {"ok": False, "message": str(exc)})
-    return _sheet(request, session, place_id, {"ok": True, "message": "Saved."},
+    message, ok = "Saved.", True
+    if any(k in fields for k in places_svc.ADDRESS_FIELDS):
+        # A corrected address places a pin the place doesn't have yet (YONDER-314).
+        outcome = places_svc.pin_from_address(session, user, place_id)
+        said = places_svc.pin_message(outcome)
+        if said:
+            message, ok = f"Saved. {said}", outcome == places_svc.PINNED
+    return _sheet(request, session, place_id, {"ok": ok, "message": message},
                   headers=_CHANGED)
+
+
+@router.post("/{place_id}/pin", response_class=HTMLResponse)
+def place_pin(place_id: str, request: Request, session: Session = Depends(get_session)):
+    """Move the pin to the place's address, when the person asks (it already had one)."""
+    outcome = places_svc.pin_from_address(session, scope.user_of(request), place_id,
+                                          move=True)
+    said = places_svc.pin_message(outcome) or "There's no address to look up."
+    return _sheet(request, session, place_id,
+                  {"ok": outcome in (places_svc.PINNED, places_svc.MOVED), "message": said},
+                  headers=_CHANGED if outcome in (places_svc.PINNED, places_svc.MOVED) else None)
 
 
 @router.post("/{place_id}/lists", response_class=HTMLResponse)

@@ -564,6 +564,9 @@ def update_saved_place(place_id: Annotated[str, Field(description="Saved place i
         p = places_svc.update_place(session, user, place_id, name=name, address=address,
                                     notes=notes, activity_type=activity_type, todo=todo,
                                     priority=priority, visited_on=visited_on)
+        if address is not None:                 # a new address can place a missing pin
+            places_svc.pin_from_address(session, user, place_id)
+            session.refresh(p)
         return api_v1._place_out(p, session=session).model_dump()
     return _run(_edit)
 

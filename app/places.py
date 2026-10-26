@@ -970,3 +970,59 @@ def list_by_name(session: Session, user, name: str) -> PlaceList | None:
         if places_geo.fold(lst.name) == want:
             return lst
     return None
+
+
+# The address a person corrects can place the pin (YONDER-314 follow-up). Only a
+# street-level, verified Photon hit counts: a city centre is not "this address",
+# and a wrong pin is worse than none (SPEC-11). A pin the place already has is
+# moved only when the person asks, since a Maps link's own pin is usually exact.
+PINNED, MOVED, KEPT, NOT_FOUND, NO_GEOCODER, NO_ADDRESS = (
+    "pinned", "moved", "kept", "not_found", "no_geocoder", "no_address")
+ADDRESS_FIELDS = ("address", "locality", "country_code")
+
+
+def pin_from_address(session: Session, user, place_id: str, *, move: bool = False,
+                     geocoder=None) -> str:
+    """Look the place's address up and pin it there. Returns what happened:
+    `pinned` (it had no pin), `moved` (with `move`), `kept` (it has a pin and
+    `move` wasn't asked), `not_found`, `no_geocoder` (Photon unset, D-146) or
+    `no_address`. Commits when the pin changes; never raises for a lookup."""
+    place = require_place(session, user, place_id)
+    if not place.address:
+        return NO_ADDRESS
+    if place.lat is not None and not move:
+        return KEPT
+    gc = _reverse_geocoder(geocoder)
+    if gc is None:
+        return NO_GEOCODER
+    try:
+        hit = gc.geocode_place({"name": place.address, "address": place.address,
+                                "city": place.locality, "country": place.country_code})
+    except Exception:
+        log.exception("address lookup failed for a saved place")
+        hit = None
+    if hit is None or not hit.usable or hit.precision != "poi":
+        return NOT_FOUND
+    had_pin = place.lat is not None
+    place.lat, place.lon = hit.lat, hit.lon
+    if not place.country_code and hit.country:
+        place.country_code = hit.country.upper()[:2]
+    if not place.locality and hit.city:
+        place.locality = hit.city
+    if place.locality_source is None:
+        place.locality_source = CLIENT if place.locality else None
+    refresh(place)
+    session.commit()
+    return MOVED if had_pin else PINNED
+
+
+def pin_message(outcome: str) -> str | None:
+    """What to tell the person about a pin lookup, or None to say nothing."""
+    return {
+        PINNED: "Pinned on the map from the address.",
+        MOVED: "Moved the pin to the address.",
+        NOT_FOUND: "Couldn't find that exact address on the map, so the pin wasn't placed. "
+                   "Check the street and city.",
+        NO_GEOCODER: "This server has no address lookup set up, so a pin can't be placed "
+                     "from an address.",
+    }.get(outcome)

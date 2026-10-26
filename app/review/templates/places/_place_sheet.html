@@ -42,23 +42,30 @@
 
     <section class="pl-sec" aria-label="Where">
       <h3 class="pl-h3">Where</h3>
+      {% if ro %}
       <p>{% if p.address %}{{ p.address }}<br>{% endif %}
         {{ p.locality or '' }}{% if p.locality and country %}, {% endif %}{{ country or '' }}
-        {% if not p.locality and not country %}<span class="pl-sub">Not placed yet.</span>{% endif %}</p>
-      <p><a href="{{ map_link }}" target="_blank" rel="noopener noreferrer">Open in Maps</a>{% if p.lat is none %} · <span class="pl-warn">no pin</span>{% endif %}</p>
-      {% if not ro %}
-      <details class="pl-manage"><summary>Correct the address or city</summary>
-        <form class="pl-grid" hx-post="/places/{{ p.id }}/update" {{ post|safe }}>
-          <label class="cap-lbl" for="pl-addr">Address</label>
-          <input id="pl-addr" class="cap-input sm" name="address" value="{{ p.address or '' }}">
-          <label class="cap-lbl" for="pl-city">City</label>
-          <input id="pl-city" class="cap-input sm" name="locality" value="{{ p.locality or '' }}">
-          <label class="cap-lbl" for="pl-cc">Country code</label>
-          <input id="pl-cc" class="cap-input sm" name="country_code" value="{{ p.country_code or '' }}" maxlength="2" placeholder="e.g. PT">
-          <span></span><button class="act tiny" type="submit">Save</button>
-        </form>
-      </details>
+        {% if not p.address and not p.locality and not country %}<span class="pl-sub">Not placed yet.</span>{% endif %}</p>
+      {% else %}
+      {# Saves as soon as a field changes, like the rest of this panel. A corrected
+         address places the pin when the place has none (YONDER-314). #}
+      <form class="pl-grid" hx-post="/places/{{ p.id }}/update" hx-trigger="change, submit" {{ post|safe }}>
+        <label class="cap-lbl" for="pl-addr">Address</label>
+        <input id="pl-addr" class="cap-input sm" name="address" value="{{ p.address or '' }}"
+               placeholder="Street and number" autocomplete="off">
+        <label class="cap-lbl" for="pl-city">City</label>
+        <input id="pl-city" class="cap-input sm" name="locality" value="{{ p.locality or '' }}" autocomplete="off">
+        <label class="cap-lbl" for="pl-cc">Country code</label>
+        <input id="pl-cc" class="cap-input sm pl-cc" name="country_code" value="{{ p.country_code or '' }}"
+               maxlength="2" placeholder="e.g. PT" autocomplete="off"{% if country %} title="{{ country }}"{% endif %}>
+      </form>
       {% endif %}
+      <p class="pl-where-links"><a href="{{ map_link }}" target="_blank" rel="noopener noreferrer">Open in Maps</a>
+        {% if p.lat is none %}· <span class="pl-warn">no pin yet</span>{% endif %}
+        {% if not ro and p.address and p.lat is not none %}
+        · <button type="button" class="act tiny quiet" hx-post="/places/{{ p.id }}/pin" {{ post|safe }}
+                  title="Look the address up and put the pin there">Move the pin to this address</button>
+        {% endif %}</p>
     </section>
 
     <section class="pl-sec" aria-label="What to do there">
