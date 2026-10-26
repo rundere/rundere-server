@@ -1,0 +1,134 @@
+{# One place, everything about it (SPEC-11 D-214): what it is, where, what to do
+   there, its lists and trips, and adding it to another trip. Each change saves on
+   its own and re-renders this sheet; the lens behind it refreshes itself. Read-only
+   on the demo (D-198). #}
+{% set ro = demo_mode() %}
+{% set post = 'hx-target="#pl-sheet" hx-swap="innerHTML"' %}
+<div class="rd-sheet-backdrop" id="pl-sheet-backdrop"
+     onclick="if (event.target === this) document.getElementById('pl-sheet').innerHTML = ''">
+<div class="rd-sheet pl-sheet" role="dialog" aria-modal="true" aria-labelledby="pl-sheet-title" tabindex="-1">
+  <div class="rd-sheet-head">
+    <h2 id="pl-sheet-title">{{ p.name }}</h2>
+    <button type="button" class="rd-sheet-x" aria-label="Close"
+            onclick="document.getElementById('pl-sheet').innerHTML = ''">×</button>
+  </div>
+  <div class="rd-sheet-body">
+    {% if notice %}<div class="cap-msg {{ 'ok' if notice.ok else 'err' }}" role="status">{{ notice.message }}
+      {% if notice.ok and notice.trip_id %}<a class="cap-go" href="/trips/{{ notice.trip_id }}">Open the trip →</a>{% endif %}</div>{% endif %}
+
+    <section class="pl-sec" aria-label="What it is">
+      {% if ro %}
+        <p><b>{{ kind }}</b>{% if p.priority == 'must' %} · Must go{% endif %}</p>
+      {% else %}
+      <div class="pl-grid">
+        <label class="cap-lbl" for="pl-name">Name</label>
+        <input id="pl-name" class="cap-input sm" name="name" value="{{ p.name }}" required
+               hx-post="/places/{{ p.id }}/update" hx-trigger="change" {{ post|safe }}>
+        <label class="cap-lbl" for="pl-type">Type</label>
+        <select id="pl-type" class="cap-input sm" name="activity_type"
+                hx-post="/places/{{ p.id }}/update" hx-trigger="change" {{ post|safe }}>
+          {% for k in kinds %}<option value="{{ k.value }}" {% if k.value == p.activity_type %}selected{% endif %}>{{ k.label }}</option>{% endfor %}
+        </select>
+        <span class="cap-lbl">Priority</span>
+        <div class="pl-seg" role="group" aria-label="Priority">
+          {% for val, label in (("must", "Must go"), ("someday", "Someday")) %}
+          <button type="button" class="act tiny {{ 'primary' if p.priority == val }}" aria-pressed="{{ 'true' if p.priority == val else 'false' }}"
+                  hx-post="/places/{{ p.id }}/update" hx-vals='{"priority": "{{ val }}"}' {{ post|safe }}>{{ label }}</button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="pl-sec" aria-label="Where">
+      <h3 class="pl-h3">Where</h3>
+      <p>{% if p.address %}{{ p.address }}<br>{% endif %}
+        {{ p.locality or '' }}{% if p.locality and country %}, {% endif %}{{ country or '' }}
+        {% if not p.locality and not country %}<span class="pl-sub">Not placed yet.</span>{% endif %}</p>
+      <p><a href="{{ map_link }}" target="_blank" rel="noopener noreferrer">Open in Maps</a>{% if p.lat is none %} · <span class="pl-warn">no pin</span>{% endif %}</p>
+      {% if not ro %}
+      <details class="pl-manage"><summary>Correct the address or city</summary>
+        <form class="pl-grid" hx-post="/places/{{ p.id }}/update" {{ post|safe }}>
+          <label class="cap-lbl" for="pl-addr">Address</label>
+          <input id="pl-addr" class="cap-input sm" name="address" value="{{ p.address or '' }}">
+          <label class="cap-lbl" for="pl-city">City</label>
+          <input id="pl-city" class="cap-input sm" name="locality" value="{{ p.locality or '' }}">
+          <label class="cap-lbl" for="pl-cc">Country code</label>
+          <input id="pl-cc" class="cap-input sm" name="country_code" value="{{ p.country_code or '' }}" maxlength="2" placeholder="e.g. PT">
+          <span></span><button class="act tiny" type="submit">Save</button>
+        </form>
+      </details>
+      {% endif %}
+    </section>
+
+    <section class="pl-sec" aria-label="What to do there">
+      <h3 class="pl-h3"><label for="pl-todo">What to do there</label></h3>
+      {% if ro %}<p>{{ p.todo or '—' }}</p>{% else %}
+      <textarea id="pl-todo" class="cap-area" name="todo" rows="2" placeholder="Try the tasting menu; go at sunset"
+                hx-post="/places/{{ p.id }}/update" hx-trigger="change" {{ post|safe }}>{{ p.todo or '' }}</textarea>{% endif %}
+      <h3 class="pl-h3"><label for="pl-notes">Notes</label></h3>
+      {% if ro %}<p>{{ p.notes or '—' }}</p>{% else %}
+      <textarea id="pl-notes" class="cap-area" name="notes" rows="2" placeholder="Who recommended it, why it's on the list"
+                hx-post="/places/{{ p.id }}/update" hx-trigger="change" {{ post|safe }}>{{ p.notes or '' }}</textarea>{% endif %}
+      {% if not ro %}
+      <div class="pl-grid">
+        <label class="cap-lbl" for="pl-visited">Been there</label>
+        <input id="pl-visited" class="cap-input sm" type="date" name="visited_on" value="{{ p.visited_on or '' }}"
+               hx-post="/places/{{ p.id }}/update" hx-trigger="change" {{ post|safe }}>
+      </div>
+      {% elif p.visited_on %}<p>Been there: {{ p.visited_on }}</p>{% endif %}
+    </section>
+
+    <section class="pl-sec" aria-label="Lists">
+      <h3 class="pl-h3">Lists</h3>
+      {% if lists %}
+      <div class="pl-checks">
+        {% for lst, member in lists %}
+        <label class="pl-check"><input type="checkbox" {% if member %}checked{% endif %} {% if ro %}disabled{% endif %}
+               hx-post="/places/{{ p.id }}/lists" hx-vals='{"list_id": "{{ lst.id }}", "on": "{{ '0' if member else '1' }}"}' {{ post|safe }}>
+          {{ lst.name }}</label>
+        {% endfor %}
+      </div>
+      {% else %}<p class="pl-sub">No lists yet.</p>{% endif %}
+      {% if not ro %}
+      <form class="lookup-row" hx-post="/places/{{ p.id }}/lists" {{ post|safe }}>
+        <input class="cap-input sm" name="new_list" placeholder="New list" aria-label="New list name" required>
+        <button class="act tiny" type="submit">Add to a new list</button>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="pl-sec" aria-label="Trips">
+      <h3 class="pl-h3">Trips</h3>
+      {% if trips_on %}<p>On {% for t in trips_on %}<a href="/trips/{{ t.id }}">{{ t.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+      {% if not ro %}
+      <form class="lookup-row" hx-post="/places/{{ p.id }}/file" {{ post|safe }}>
+        <select name="trip_id" class="cap-input sm" aria-label="Trip to add it to">
+          <option value="">Add to a trip…</option>
+          {% for t in trips %}<option value="{{ t.id }}" {% if suggested == t.id %}selected{% endif %}>{{ t.name }}{% if suggested == t.id %} (suggested){% endif %}{% if t.dates %} · {{ t.dates }}{% endif %}</option>{% endfor %}
+        </select>
+        <input type="date" name="starts_at" class="cap-input sm" aria-label="Date (optional)"
+               title="Date (optional): leave it blank to schedule later">
+        <button type="submit" class="act tiny primary">Add as {{ kind }}</button>
+      </form>
+      {% elif not trips_on %}<p class="pl-sub">Not on a trip yet.</p>{% endif %}
+    </section>
+
+    {% if not ro %}
+    <div class="pl-foot">
+      <button type="button" class="act tiny danger" hx-post="/places/{{ p.id }}/delete"
+              hx-target="#pl-sheet" hx-swap="innerHTML"
+              hx-confirm="Remove this place from your library?">Remove from library</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+<script>
+(function () {
+  var host = document.getElementById('pl-sheet');
+  function esc(e) { if (e.key === 'Escape') { host.innerHTML = ''; document.removeEventListener('keydown', esc); } }
+  document.addEventListener('keydown', esc);
+  var s = host.querySelector('.rd-sheet'); if (s && !host.contains(document.activeElement)) s.focus();
+})();
+</script>
+</div>

@@ -19,7 +19,7 @@ relevant set:
 
 | Lens | The question | Shape |
 |---|---|---|
-| Inbox | What did I just save, and what needs fixing? | New, unlisted or pinless places, triaged to zero |
+| Unsorted | What did I just save, and what needs fixing? | New, unlisted or pinless places, sorted to zero (not "Inbox", which is the captures queue, D-200) |
 | Atlas | What have I got in Japan? | Continent → country → city boards with counts and kinds |
 | Lists | My ramen list; Want to go | The person's own boards (Google lists come over intact) |
 | Map | What's around here? | A clustered map that follows the visible area (optional) |
@@ -70,6 +70,12 @@ Everything is own-only, with no admin view (D-166).
   - *What to do* is `todo`.
   - The library is searched, grouped and filtered on these, so they are columns. A future
     view never has to parse notes.
+  - *The type is the person's to set.* A Google link carries no category, so every such
+    place used to arrive as a Tour (owner, 2026-10-26). The place panel has a type picker,
+    limited to the types that are places (tour, restaurant, lodging, event, note). When no
+    category arrives, the name gives a first guess ("Café …", "… Inn"). A category always
+    beats the name, and the guess applies only to a new save, so a type the person chose is
+    never replaced.
 - **D-215 — Locality is worked out once and kept as Run·dere's own data (D-146).** The city,
   region and country of a place come from the first source that has them:
   1. what the client sent (MapKit on iOS knows them);
@@ -95,7 +101,7 @@ Everything is own-only, with no admin view (D-166).
     (starred places, GeoJSON). The file is parsed in memory and never stored (D-153).
   - Each CSV becomes a list with `source = google:<name>`.
   - A CSV row's link usually has no coordinates. Such places come in without a pin and wait in
-    the Inbox's "Needs a pin" tray, with a Photon name match offered as a suggestion. Nothing
+    the Unsorted view's "Needs a pin" tray, with a Photon name match offered as a suggestion. Nothing
     is placed automatically: a wrong pin is worse than none.
   - Repeating the import is safe (D-169 identity), and `dry_run` previews it.
   - A shared Google list link is not supported: the page is drawn in the browser and carries
@@ -116,8 +122,10 @@ Everything is own-only, with no admin view (D-166).
 ## Phases
 
 0. Shared Maps links that never reached Saved Places (a fix; SPEC-9 §9 note).
-1. **Data foundation:** the model, migration, services and filing rewrite (D-212 to D-216).
-2. The library web page: Search, Inbox, Atlas, Lists and the place drawer.
+1. **Data foundation:** the model, migration, services and filing rewrite (D-212 to D-216)
+   (built, 4.12.11).
+2. The library web page: Search, Unsorted, Atlas, Lists and the place panel, with the type
+   picker and Atlas map thumbnails (built).
 3. The Map lens (D-218).
 4. Takeout import (D-217).
 5. Trip and Discover integration (D-219).

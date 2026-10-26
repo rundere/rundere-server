@@ -1,0 +1,22 @@
+{# One compact row per place; the whole row opens the place panel. #}
+{% macro rows(items, empty="") %}
+{% if items %}
+<ul class="pl-rows">
+  {% for r in items %}{% set p = r.p %}
+  <li><button type="button" class="pl-row" hx-get="/places/{{ p.id }}" hx-target="#pl-sheet"
+              hx-swap="innerHTML" aria-label="Open {{ p.name }}">
+    <span class="pl-row-main">
+      <span class="pl-name">{% if p.priority == 'must' %}<span class="pl-must" title="Must go">Must</span> {% endif %}{{ p.name }}</span>
+      <span class="pl-sub">{{ r.kind }}{% if p.locality %} · {{ p.locality }}{% endif %}{% if p.lat is none %} · <span class="pl-warn">no pin</span>{% endif %}{% if p.visited_on %} · been {{ p.visited_on[:4] }}{% endif %}</span>
+      {% if p.todo %}<span class="pl-todo">{{ p.todo }}</span>{% endif %}
+    </span>
+    <span class="pl-row-meta">{% if r.trips %}<span class="pl-chip" title="On {{ r.trips }} trip{{ 's' if r.trips != 1 }}">{{ r.trips }} trip{{ 's' if r.trips != 1 }}</span>{% endif %}{% if r.lists %}<span class="pl-chip">{{ r.lists }} list{{ 's' if r.lists != 1 }}</span>{% endif %}</span>
+  </button></li>
+  {% endfor %}
+</ul>
+{% elif empty %}
+<div class="dash-empty"><span>{{ empty }}</span></div>
+{% endif %}
+{% endmacro %}
+
+{% macro kinds(counts) %}{% for k, n in counts.items() %}<span class="pl-chip">{{ n }} {{ kind_label(k) }}</span>{% endfor %}{% endmacro %}

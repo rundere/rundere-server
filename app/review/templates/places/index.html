@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Places{% endblock %}
+{% block content %}
+{# SPEC-11 phase 2: the Places Library. One search box over everything; below it a
+   lens (Unsorted, Atlas, Lists, All) that shows a small, relevant set. The lens area
+   (#pl-body) reloads itself after any change made in the place panel. #}
+<div class="app">
+  <div class="dash pl-page">
+    <div class="dash-hero">
+      <div>
+        <h1>Places</h1>
+        <p>Places you want to go, and what to do there. Add them to a trip when you're ready.</p>
+      </div>
+      <div class="dash-hero-actions">
+        {% if not demo_mode() %}<a class="act tiny" href="/capture">＋ Save a place</a>{% endif %}
+      </div>
+    </div>
+
+    <form class="pl-search" role="search" action="/places" method="get"
+          hx-get="/places" hx-target="#pl-body" hx-swap="outerHTML" hx-push-url="true"
+          hx-trigger="input changed delay:300ms from:#pl-q, submit">
+      <label class="sr-only" for="pl-q">Search your places</label>
+      <span class="pl-search-ico" aria-hidden="true">{{ icon('search', 18) }}</span>
+      <input id="pl-q" name="q" type="search" value="{{ q }}" autocomplete="off"
+             placeholder="Search places, or try must, kind:restaurant, list:Want, city:Lisbon"
+             aria-describedby="pl-q-hint">
+      <span id="pl-q-hint" class="pl-kbd" title="Press / to search">/</span>
+    </form>
+
+    {% include "places/_body.html" %}
+  </div>
+</div>
+<div id="pl-sheet"></div>
+<script>
+(function () {
+  // "/" searches; j and k move between places; Enter opens one (SPEC-11).
+  document.addEventListener('keydown', function (e) {
+    var t = e.target, typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
+                                     || t.tagName === 'SELECT' || t.isContentEditable);
+    if (document.getElementById('pl-sheet-backdrop')) return;
+    if (e.key === '/' && !typing) { e.preventDefault(); document.getElementById('pl-q').focus(); return; }
+    if (typing || (e.key !== 'j' && e.key !== 'k')) return;
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.pl-row'));
+    if (!rows.length) return;
+    var i = rows.indexOf(document.activeElement);
+    i = e.key === 'j' ? Math.min(i + 1, rows.length - 1) : Math.max(i - 1, 0);
+    rows[i].focus(); e.preventDefault();
+  });
+})();
+</script>
+{% endblock %}

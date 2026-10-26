@@ -1,0 +1,93 @@
+{# The lens area. Its own wrapper carries the current URL, so it can reload itself
+   when the place panel changes something (the places-changed event). #}
+{% from "places/_rows.html" import rows as place_rows, kinds %}
+<div id="pl-body" hx-get="/places?{{ request.query_params }}" hx-trigger="places-changed from:body"
+     hx-target="#pl-body" hx-swap="outerHTML">
+  <nav class="pl-lenses" aria-label="Ways to look at your places">
+    <a href="/places?lens=unsorted" class="pl-lens {{ 'on' if lens == 'unsorted' }}" {% if lens == 'unsorted' %}aria-current="page"{% endif %}>Unsorted{% if unsorted_count %}<span class="pl-count">{{ unsorted_count }}</span>{% endif %}</a>
+    <a href="/places?lens=atlas" class="pl-lens {{ 'on' if lens == 'atlas' }}" {% if lens == 'atlas' %}aria-current="page"{% endif %}>Atlas</a>
+    <a href="/places?lens=lists" class="pl-lens {{ 'on' if lens == 'lists' }}" {% if lens == 'lists' %}aria-current="page"{% endif %}>Lists</a>
+    <a href="/places?lens=all" class="pl-lens {{ 'on' if lens == 'all' }}" {% if lens == 'all' %}aria-current="page"{% endif %}>All</a>
+  </nav>
+  {% if err %}<div class="cap-msg err">{{ err }}</div>{% endif %}
+
+  {% if lens == 'search' %}
+    {% if notice %}<div class="cap-msg err">{{ notice }}</div>{% endif %}
+    <p class="pl-lead">{{ rows|length }} place{{ 's' if rows|length != 1 }} match “{{ q }}”.</p>
+    {{ place_rows(rows, "Nothing matches. Try fewer words, or a chip like must or kind:restaurant.") }}
+
+  {% elif lens == 'unsorted' %}
+    <p class="pl-lead">New places that aren't in a list or on a trip yet. Open one to say what
+      it is, add it to a list or a trip, or remove it.</p>
+    {{ place_rows(rows, "Nothing to sort. New places you save land here first." if not pinless else "") }}
+    {% if pinless %}
+      <h2 class="pl-h">Needs a pin <span class="pl-count">{{ pinless|length }}</span></h2>
+      <p class="pl-lead">These came without a location, so the Atlas can't place them yet.</p>
+      {{ place_rows(pinless) }}
+    {% endif %}
+
+  {% elif lens == 'atlas' %}{% set a = atlas %}
+    {% if a.crumbs %}<nav class="pl-crumbs" aria-label="Where you are">{% for c in a.crumbs %}<a href="{{ c.href }}">{{ c.label }}</a> › {% endfor %}<b>{{ a.title }}</b></nav>{% endif %}
+    {% if a.level == 'places' %}
+      {{ place_rows(a.rows, "No places here.") }}
+    {% elif a.boards %}
+      <div class="pl-boards">
+        {% for b in a.boards %}
+          {% if a.level == 'continent' %}{% set href = "/places?lens=atlas&continent=" ~ b.key %}{% set mapq = "continent=" ~ b.key %}
+          {% elif a.level == 'country' %}{% set href = "/places?lens=atlas&country=" ~ b.key %}{% set mapq = "country=" ~ b.key %}
+          {% else %}{% set href = "/places?lens=atlas&country=" ~ a.country ~ "&city=" ~ (b.key|urlencode) %}{% set mapq = "country=" ~ a.country ~ "&city=" ~ (b.key|urlencode) %}{% endif %}
+          <a class="pl-board" href="{{ href }}">
+            {% if b.key != '-' %}<img class="pl-board-map" src="/places/atlas/map.png?{{ mapq }}" alt="" loading="lazy" width="280" height="120" onerror="this.remove()">{% endif %}
+            <span class="pl-board-name">{{ b.name }}</span>
+            <span class="pl-board-count">{{ b.count }} place{{ 's' if b.count != 1 }}{% if b.must %} · {{ b.must }} must{% endif %}</span>
+            <span class="pl-chips">{{ kinds(b.kinds) }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="dash-empty"><span>No places yet.{% if not demo_mode() %} Share a place from Google or Apple Maps, or paste its link on the <a href="/capture">Capture</a> page.{% endif %}</span></div>
+    {% endif %}
+
+  {% elif lens == 'lists' %}
+    {% if list %}
+      <nav class="pl-crumbs"><a href="/places?lens=lists">Lists</a> › <b>{{ list.name }}</b></nav>
+      {% if list.description %}<p class="pl-lead">{{ list.description }}</p>{% endif %}
+      {{ place_rows(rows, "This list is empty. Open a place and tick this list to add it.") }}
+      {% if not demo_mode() %}
+      <details class="pl-manage"><summary>Rename or delete this list</summary>
+        <form method="post" action="/places/lists/{{ list.id }}" class="lookup-row">
+          <input class="cap-input sm" name="name" value="{{ list.name }}" aria-label="List name" required>
+          <input class="cap-input sm" name="description" value="{{ list.description or '' }}" aria-label="Description" placeholder="What it's for (optional)">
+          <button class="act tiny" type="submit">Save</button>
+        </form>
+        <form method="post" action="/places/lists/{{ list.id }}/delete" onsubmit="return confirm('Delete this list? Its places stay in your library.')">
+          <button class="act tiny danger" type="submit">Delete list</button>
+        </form>
+      </details>
+      {% endif %}
+    {% else %}
+      {% if lists %}
+      <div class="pl-boards">
+        {% for lst, n in lists %}
+        <a class="pl-board" href="/places?lens=lists&list={{ lst.id }}">
+          <span class="pl-board-name">{{ lst.name }}</span>
+          <span class="pl-board-count">{{ n }} place{{ 's' if n != 1 }}</span>
+          {% if lst.description %}<span class="pl-sub">{{ lst.description }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="dash-empty"><span>No lists yet. Lists are yours to make: "Want to go", "Ramen", "Rainy days".</span></div>
+      {% endif %}
+      {% if not demo_mode() %}
+      <form method="post" action="/places/lists" class="lookup-row pl-newlist">
+        <input class="cap-input sm" name="name" placeholder="New list name" aria-label="New list name" required>
+        <button class="act tiny primary" type="submit">Make a list</button>
+      </form>
+      {% endif %}
+    {% endif %}
+
+  {% else %}
+    {{ place_rows(rows, "No places yet.") }}
+  {% endif %}
+</div>

@@ -125,10 +125,12 @@ def _save(url=A_Q):
 
 
 def test_places_page_lists_saved_places_and_empty_state():
-    assert "No saved places" in client.get("/places").text
-    _save(G_PLACE)
-    t = client.get("/places").text
-    assert "Sagrada Família" in t and "File to a trip" in t
+    assert "No places yet" in client.get("/places").text
+    pid = _save(G_PLACE)
+    t = client.get("/places").text                    # a new place waits in Unsorted
+    assert "Sagrada Família" in t and 'class="pl-lens on"' in t and ">Unsorted<" in t.replace(
+        '<span class="pl-count">1</span>', "")
+    assert "Add to a trip" in client.get(f"/places/{pid}").text
 
 
 def test_file_without_a_date_lands_undated_and_keeps_the_place():
@@ -193,7 +195,8 @@ def test_places_page_is_own_only(monkeypatch):
         assert "Sagrada" not in client.get("/places").text
         tb = _trip("B trip", b.id)
         r = client.post(f"/places/{pid}/file", data={"trip_id": tb})
-        assert "cap-msg err" in r.text and len(_places()) == 1
+        assert r.status_code == 404 and len(_places()) == 1    # not hers: 404, like a missing one
+        assert client.get(f"/places/{pid}").status_code == 404
         client.post(f"/places/{pid}/delete")
         assert len(_places()) == 1
     finally:
@@ -220,8 +223,8 @@ def test_places_page_preselects_the_suggested_trip_but_does_not_file():
         t.start_date = (date.today() + timedelta(days=2)).isoformat()
         t.end_date = (date.today() + timedelta(days=5)).isoformat()
         s.commit()
-    page = client.get("/places").text
-    assert f'<option value="{tid}" selected>' in page and "(suggested)" in page
+    sheet = client.get(f"/places/{pid}").text
+    assert f'<option value="{tid}" selected>' in sheet and "(suggested)" in sheet
     assert len(_places()) == 1                                   # nothing filed by suggesting
 
 
