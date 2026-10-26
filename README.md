@@ -1,20 +1,28 @@
-<p align="center">
+<div align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="design/logo/rundere-lockup-horizontal-silver.svg">
     <img src="design/logo/rundere-lockup-horizontal-night.svg" alt="Run·dere" width="360">
   </picture>
-</p>
 
 # Run·dere
 
-**Version 4.12.11** · [AGPL-3.0](LICENSE) · [changelog](https://github.com/rundere/rundere-server/releases) · [demo](https://demo.rundere.app) · [rundere.app](https://rundere.app)
+A self-hosted travel planner for you and the people you travel with.
 
-**A self-hosted travel planner for you and the people you travel with.** Forward a booking
-email, drop in a PDF or click a bookmarklet, and Run·dere reads the flight, hotel, train or
-tour out of it, asks you to check it, and puts it on the right trip. Each trip gets a
-timeline, a map, research for the destination, a packing list, shared costs and a travel
-journal. It runs on your own server, and the reading is done by structured parsers and a
-local LLM, so your bookings stay with you.
+[![CI](https://github.com/rundere/rundere-server/actions/workflows/ci.yml/badge.svg)](https://github.com/rundere/rundere-server/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/rundere/rundere-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/rundere/rundere-server/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/rundere/rundere-server?sort=semver&display_name=tag)](https://github.com/rundere/rundere-server/releases/latest)
+[![Image](https://img.shields.io/badge/GHCR-rundere--server-2496ED?logo=docker&logoColor=white)](https://github.com/rundere/rundere-server/pkgs/container/rundere-server)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-6B7280.svg)](LICENSE)
+[![Demo](https://img.shields.io/badge/demo-try_it-111827)](https://demo.rundere.app)
+
+**Version 4.12.11** · [Documentation](docs/) · [Demo](https://demo.rundere.app) · [Releases](https://github.com/rundere/rundere-server/releases) · [Docker image](https://github.com/rundere/rundere-server/pkgs/container/rundere-server) · [rundere.app](https://rundere.app)
+</div>
+
+Forward a booking email, drop in a PDF or click a bookmarklet, and Run·dere reads the
+flight, hotel, train or tour out of it, asks you to check it, and puts it on the right trip.
+Each trip gets a timeline, a map, research for the destination, a packing list, shared
+costs and a travel journal. It runs on your own server, and the reading is done by
+structured parsers and a local LLM, so your bookings stay with you.
 
 Say it "run there". Plain-text spelling: Rundere.
 
@@ -36,6 +44,8 @@ Say it "run there". Plain-text spelling: Rundere.
 - **Plan the trip.** A timeline and map, **Discover** research (weather, currency, plugs,
   visa, safety, food and drink, local phrases), packing lists, budgets and shared expenses,
   and a private travel journal.
+- **Keep places for later.** Share a place from Google or Apple Maps and it waits in your
+  saved places until it goes on a trip, or on several.
 - **Travel together.** Several people on one server, each seeing only their own trips and
   the ones shared with them. Sharing can be view-only.
 - **Use what you already have.** Optionally also log flights to
@@ -62,12 +72,39 @@ docker compose -f docker-compose.example.yml up -d
 ```
 
 Then open the server in a browser. The first visit creates the admin account (D-203), so
-do that before anyone else can reach it.
+do that before anyone else can reach it. The image is built for Linux on amd64.
 
 - **[Self-hosting guide](docs/self-hosting.md)**: secrets, the proxy, sign-in, optional
   services, backups and upgrades.
 - **[Running a demo server](docs/demo-server.md)** of your own.
 - To work on the code, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Updating
+
+1. Read the [release notes](https://github.com/rundere/rundere-server/releases), especially
+   **Before you upgrade**: it lists migrations, new settings and anything to run once.
+2. Back up the database, the artifacts folder and `TX_SECRETS_KEY`
+   ([backups](docs/self-hosting.md#6-backups)).
+3. Change the image tag and redeploy. Database migrations run when the container starts.
+
+Pin a version (`ghcr.io/rundere/rundere-server:4.12`, or an exact one) rather than `latest`
+if you want to choose when to upgrade and be able to roll back.
+
+## A few things to know
+
+- **It needs HTTPS in front of it.** Run·dere expects a reverse proxy such as Traefik or
+  Caddy. The iPhone app and AI assistants also need a public hostname.
+- **A local LLM does most of the reading.** Without one, Run·dere still reads what has
+  structure (booking markup, calendar invites and Maps links), but most booking emails are
+  free-form, so they wait in the Inbox for you to fill in by hand. Geocoding, web search,
+  email and file scanning are optional too: each adds a feature, and nothing breaks
+  without it.
+- **Captures are kept on purpose.** The original of every booking is kept until 12 months
+  after its trip, so a capture can be re-read and checked. Plan disk space for it.
+- **It isn't encrypted against the server's operator.** Sharing settings decide what
+  admins see in the app; whoever runs the server can still read the database.
+- **Old names show through.** The project was called Yonder, and the `TX_*` settings, the
+  Python package and some code keep that name (D-206).
 
 ## Privacy
 
@@ -79,8 +116,8 @@ do that before anyone else can reach it.
   OpenStreetMap, weather from Open-Meteo and exchange rates from Frankfurter. Each can be
   pointed at your own mirror ([configuration](docs/configuration.md)).
 - **People are kept apart.** Each person sees their own trips and the ones shared with
-  them, and journals are never shared. Admins can see people's trips to help run the
-  server, and anyone can turn that off for their own account.
+  them, and journals are never shared. New accounts are private: an admin sees only the
+  trips you put them on, unless you choose to share more with admins (D-220).
 - **Less is kept.** No photos, receipts or audio are stored (journal photos are links).
   Original captures and uploaded files are deleted 12 months after their trip ends, by
   default (D-196).
@@ -148,16 +185,24 @@ Guides are in [`docs/`](docs/) until the project has a wiki:
 | [AI assistants](docs/claude-connector.md) · [Demo server](docs/demo-server.md) | Extras |
 | [Architecture](docs/architecture.md) · [Decisions](DECISIONS.md) · [Rules](RULES.md) | How it works and why |
 
+## AI usage
+
+Much of Run·dere is written with AI coding assistants, mainly Claude Code, and the
+repository says so: [AGENTS.md](AGENTS.md) holds the rules every contributor and agent works
+to, and commits made with an assistant carry a `Co-Authored-By` line. The maintainer
+decides what gets built, writes down the decisions behind it ([DECISIONS.md](DECISIONS.md)
+and the specs), and reviews every change. Every change goes through a pull request and
+needs the full test suite, the extraction regression set and the pre-publish checks to
+pass before it merges.
+
 ## Contributing and security
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [code of conduct](CODE_OF_CONDUCT.md). Please report vulnerabilities privately as
 [SECURITY.md](SECURITY.md) describes.
 
-The project was called **Yonder** until 2026. The Python package, the `TX_*` settings and
-some code keep that name on purpose (D-206). Images are published as
-`ghcr.io/rundere/rundere-server` from the first public release on; earlier ones were
-private (D-207).
+Images are published as `ghcr.io/rundere/rundere-server` from the first public release
+on; earlier ones were private (D-207).
 
 ## Licence
 
