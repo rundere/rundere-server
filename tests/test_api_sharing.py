@@ -1,7 +1,7 @@
 """YONDER-101 — sharing + email over the API (SPEC-4.2 §3.3).
 
 The user payload carries email / share_with_admins / sharing_prompt /
-opt_out_blocker; PUT /api/v1/auth/me/sharing and /me/email follow the web's
+opt_out_blocker / reset_note; PUT /api/v1/auth/me/sharing and /me/email follow the web's
 rules, are audited, and accept only first-party credentials (the app's login
 token or the web session) — never a connected app or an API token.
 """
@@ -66,27 +66,22 @@ if DEPS:
         _user(email="a@example.com", sharing_prompt=True)
         body = _login()
         u = body["user"]
-        assert u["email"] == "a@example.com" and u["share_with_admins"] is True
+        assert u["email"] == "a@example.com" and u["share_with_admins"] is False   # D-220
         assert u["sharing_prompt"] is True
-        assert "Email isn't set up" in u["opt_out_blocker"]          # no SMTP here
+        assert u["opt_out_blocker"] == ""                            # never blocked now
+        assert "Email isn't set up" in u["reset_note"]               # no SMTP here
         me = client.get("/api/v1/auth/me", headers=_h(body["access"])).json()
         assert me == u
         r = client.post("/api/v1/auth/refresh", json={"refresh": body["refresh"]}).json()
         assert r["user"]["sharing_prompt"] is True
 
-    def test_opt_out_needs_smtp_and_email_then_audits(monkeypatch):
-        _user()
+    def test_going_private_needs_no_smtp_or_email_and_is_audited():
+        """D-220: an opted-in user can always go private again; the payload's
+        reset_note then says what a forgotten password means."""
+        _user(share_with_admins=True)
         tok = _login()["access"]
         r = client.put("/api/v1/auth/me/sharing", headers=_h(tok), json={"share": False})
-        assert r.status_code == 400 and "Email isn't set up" in r.json()["detail"]
-        _smtp(monkeypatch)
-        r = client.put("/api/v1/auth/me/sharing", headers=_h(tok), json={"share": False})
-        assert r.status_code == 400 and "Add your email address first" in r.json()["detail"]
-        r = client.put("/api/v1/auth/me/email", headers=_h(tok),
-                       json={"email": "alice@example.com", "current_password": "pw"})
-        assert r.status_code == 200 and r.json()["email"] == "alice@example.com"
-        assert r.json()["opt_out_blocker"] == ""
-        r = client.put("/api/v1/auth/me/sharing", headers=_h(tok), json={"share": False})
+        assert r.status_code == 200 and "Email isn't set up" in r.json()["reset_note"]
         assert r.status_code == 200
         assert r.json()["share_with_admins"] is False and r.json()["sharing_prompt"] is False
         with SessionLocal() as s:
@@ -115,13 +110,10 @@ if DEPS:
         assert r.status_code == 409
         r = client.put(url, headers=_h(tok), json={"email": "new@example.com", "current_password": "pw"})
         assert r.status_code == 200 and r.json()["email"] == "new@example.com"
-        r = client.put(url, headers=_h(tok), json={"email": "", "current_password": "pw"})
-        assert r.status_code == 200 and r.json()["email"] is None       # clearing is allowed…
-        # …but not while opted out of sharing
         _smtp(monkeypatch)
-        client.put(url, headers=_h(tok), json={"email": "back@example.com", "current_password": "pw"})
-        assert client.put("/api/v1/auth/me/sharing", headers=_h(tok),
-                          json={"share": False}).status_code == 200
+        assert client.put(url, headers=_h(tok), json={
+            "email": "new@example.com", "current_password": "pw"}).json()["reset_note"] == ""
+        # a local account can change its email but never remove it (D-220)
         r = client.put(url, headers=_h(tok), json={"email": "", "current_password": "pw"})
         assert r.status_code == 400 and "don't remove it" in r.json()["detail"]
 
@@ -135,7 +127,7 @@ if DEPS:
         assert r.status_code == 200 and r.json()["share_with_admins"] is False
 
     def test_connected_apps_and_api_tokens_cannot_change_settings():
-        uid = _user(email="a@example.com")
+        uid = _user(email="a@example.com", share_with_admins=True)
         with SessionLocal() as s:
             u = s.get(User, uid)
             pat = oauth.create_pat(s, u, "laptop")[1]

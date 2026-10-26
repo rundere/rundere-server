@@ -147,7 +147,7 @@ def ensure_demo_user(session):
     name = settings.demo_username.strip()
     u = session.query(User).filter_by(username=name).one_or_none()
     if u is None:
-        u = User(username=name, auth_source="local")
+        u = User(username=name, auth_source="local", share_with_admins=False)   # D-220
         session.add(u)
     if not u.password_hash or not authn.verify_password(settings.demo_password, u.password_hash):
         u.password_hash = authn.hash_password(settings.demo_password)

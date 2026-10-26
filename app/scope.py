@@ -14,9 +14,9 @@ normal only in the auth-off single-user world; with auth on they're drift (a
 code path that forgot the owner, or a pre-fix row), and an admin assigns them.
 
 **Admins (4.1 sharing):** an admin additionally sees — and edits — data owned by
-users who SHARE with admins (`User.share_with_admins`, on by default). A user who
-opts out is, to an admin, like any other user: visible only where they invite
-the admin in (roster/share). This is an in-app policy, not encryption; the
+users who SHARE with admins (`User.share_with_admins`, opt-in: off by default
+since D-220). A user who doesn't share is, to an admin, like any other user:
+visible only where they invite the admin in (roster/share). This is an in-app policy, not encryption; the
 server operator can always read the database.
 
 Every function is a **no-op with auth disabled** (`user is None`, the pre-4.0

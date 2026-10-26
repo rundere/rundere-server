@@ -670,6 +670,42 @@ Since D-146 that no longer holds.
   - Considered and set aside: matching on email (Run·dere never verifies an address, so a
     typed email would be a takeover) and invite links (they don't cover accounts that
     arrive through an external SSO).
+- **D-220 — New accounts are private; sharing with admins is opt-in (YONDER-335; owner,
+  2026-10-24).** Amends the 4.1 admin-sharing policy (YONDER-101, migration 0027), under
+  which every account shared with admins unless it opted out. An admin then saw and edited
+  all of that person's captures and trips, which was too broad for a public, multi-user
+  server ("open government, not gaping").
+  - *The default is off.* `User.share_with_admins` defaults to false (migration 0045
+    changes only the column default). This covers every way an account is made: by an
+    admin (web or CLI), by sign-up, through SSO, through the trusted proxy header, and the
+    demo login. **Existing accounts keep the choice they have.**
+  - *Private means what it did before.* Admins see only the trips the person puts them on
+    (the roster or an explicit share). They never see the person's Inbox captures, batches
+    or journal. They can still manage the account (deactivate it, link a traveller), and
+    the person is told when they do.
+  - *The first sign-in question asks people to opt in.* Self-registered and SSO accounts
+    are still asked, with "Keep my data to myself" pre-selected; admin-created accounts
+    aren't asked. A blank or unknown answer stays private.
+  - *A local account always has an email.* An admin never sees a private person's reset
+    link and can't set their password or email, so the email is the only way a reset
+    reaches them.
+    - Sign-up and first-run setup require one.
+    - A local account without an email (made by an admin or the CLI, or from before this
+      decision) is sent to "Add your email" at every web visit until it saves one, with its
+      password asked again. Signing out is the only other way out.
+    - The JSON API isn't redirected. The user payload's `email_required` tells the app to
+      ask.
+    - An email can be changed, never removed.
+    - SSO and proxy accounts (the password lives with the provider) and the shared demo
+      login are exempt.
+  - *Going private never waits on server email.* The old rule that opting out needs SMTP is
+    dropped: with private as the default, it would leave people stuck sharing.
+    - `opt_out_blocker` stays in the payload and is always empty.
+    - On a server without email, a forgotten password can only be reset by whoever runs the
+      server (`python -m app.cli set-password`), who can read the database anyway. The
+      account page, the sharing question and the payload's `reset_note` say so.
+  - *Not changed here:* what an opted-in admin can do. Narrowing that, and audited,
+    time-limited support access, is the separate redesign in YONDER-336.
 - **D-205 — Legacy machine access is retired (YONDER-292; owner, 2026-10-19).** Every
   credential and endpoint that remains is one to defend, so what the built-in ones replaced
   goes.

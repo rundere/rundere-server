@@ -24,19 +24,19 @@
       </fieldset>
       {% endif %}
       <label class="pax-opt on" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0">
-        <input type="radio" name="choice" value="share" checked>
-        <span><b>Share with admins</b> (default)<br>
-          <span class="why">Admins can view and edit your trips, captures and journal —
-            handy if someone sets trips up for you.</span></span>
-      </label>
-      <label class="pax-opt" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0">
-        <input type="radio" name="choice" value="private" {% if blocker %}disabled{% endif %}>
-        <span><b>Keep my data to myself</b><br>
+        <input type="radio" name="choice" value="private" checked>
+        <span><b>Keep my data to myself</b> (default)<br>
           <span class="why">Admins only see trips you invite them into. They can still
             manage your account (for example deactivate it), and they'll never see a
             password-reset link for you — it's emailed to you instead.</span>
-          {% if blocker %}<br><span class="why"><b>Not available yet:</b> {{ blocker }}</span>{% endif %}
+          {% if reset_note %}<br><span class="why">{{ reset_note }}</span>{% endif %}
         </span>
+      </label>
+      <label class="pax-opt" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0">
+        <input type="radio" name="choice" value="share">
+        <span><b>Share with admins</b><br>
+          <span class="why">Admins can view and edit your trips, captures and journal —
+            handy if someone sets trips up for you.</span></span>
       </label>
       <p class="why" style="margin-top:14px">Either way, whoever runs this server can reach the
         database directly — this setting controls what admins see in Run·dere, it isn't

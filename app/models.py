@@ -206,15 +206,14 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)  # -> traveler_identities.id
-    # 4.1 admin sharing (migration 0027). ON (default): admins can view and edit
-    # this user's data. OFF (opted out): admins see only what the user invites
-    # them into, like any other user. A UI policy, not encryption — the server
-    # operator can always read the database. Opting out needs SMTP + an email so
-    # a password reset never has to pass through an admin.
-    share_with_admins: Mapped[bool] = mapped_column(Boolean, default=True,
-                                                    server_default="1")
-    # Self-registered / SSO-provisioned accounts are asked to choose at their
-    # first sign-in; accounts an admin creates share by default, unasked.
+    # 4.1 admin sharing (migration 0027). ON (opted in): admins can view and edit
+    # this user's data. OFF (the default since D-220, migration 0045): admins see
+    # only what the user invites them into, like any other user. A UI policy, not
+    # encryption — the server operator can always read the database.
+    share_with_admins: Mapped[bool] = mapped_column(Boolean, default=False,
+                                                    server_default="0")
+    # Self-registered / SSO-provisioned accounts are asked at their first sign-in
+    # whether to opt in; accounts an admin creates start private, unasked (D-220).
     sharing_prompt: Mapped[bool] = mapped_column(Boolean, default=False,
                                                  server_default="0")
     # SPEC-8 D-196: an admin's per-user override of TX_DOCUMENT_QUOTA_MB (NULL =

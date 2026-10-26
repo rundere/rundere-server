@@ -62,7 +62,7 @@ if DEPS:
             assert scope.can_edit_trip(s, admin, opn)
             assert not scope.can_access_trip(s, stranger, priv)   # not shared
             assert scope.can_access_trip(s, stranger, shared)     # shared
-            assert scope.can_access_trip(s, admin, priv)          # admin
+            assert not scope.can_access_trip(s, admin, priv)      # D-220: private by default
             assert scope.can_access_trip(s, None, priv)           # auth off
 
             own_ids = scope.visible_trip_ids(s, owner)
@@ -72,7 +72,12 @@ if DEPS:
             filing = {t.id for t in s.query(Trip).filter(scope.filing_trip_filter(s, stranger))}
             assert opn.id not in filing
             assert opn.id in {t.id for t in s.query(Trip).filter(scope.filing_trip_filter(s, admin))}
-            # 4.1: an admin sees a sharing owner's trips (owners share by default)
+            # D-220: a new owner is private, so not even an admin sees the trip…
+            assert priv.id not in scope.visible_trip_ids(s, admin)
+            # …until the owner opts in to sharing with admins (4.1)
+            s.get(User, owner.id).share_with_admins = True
+            s.commit()
+            assert scope.can_access_trip(s, admin, priv)
             assert priv.id in scope.visible_trip_ids(s, admin)
             assert priv.id not in scope.visible_trip_ids(s, stranger)
             assert shared.id in scope.visible_trip_ids(s, stranger)

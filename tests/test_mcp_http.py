@@ -90,7 +90,7 @@ if DEPS:
                          password_hash=authn.hash_password("pw"))
             bob = User(username="mx-bob", auth_source="local", traveler_id=tb.id,
                        share_with_admins=False, password_hash=authn.hash_password("pw"))
-            carol = User(username="mx-carol", auth_source="local")
+            carol = User(username="mx-carol", auth_source="local", share_with_admins=True)
             admin = User(username="mx-admin", auth_source="local", is_admin=True)
             s.add_all([alice, bob, carol, admin]); s.flush()
             shared = Trip(name="MX Shared", source="manual", owner_id=alice.id,

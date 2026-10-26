@@ -29,7 +29,7 @@ trip snapshot, review list, health, capture, timeline PDF. **No other writes.**
 | **Trip context model**: travellers + timeline are SHARED; **Discover and Packing are per person** (snapshot `discovery`/`packing` are the caller's own) | Never show one person's cached snapshot to another (see §3.4). |
 | Per-person home / discovery / packing profiles; admin "Profile of" picker | Web-only today; the app links out (§3.6). |
 | Captures default to the capturing user's traveller; review has "Who flew" / "Who is this for"; review trip picker = trips you can *file into* (`scope.filing_trip_filter`) | Review write actions must use the same rules (YONDER-57/78). |
-| **Admin sharing**: users share with admins by default, can opt out (`share_with_admins`); SSO/self-registered users are asked at first sign-in (`sharing_prompt`, browser only — the API is never redirected) | An SSO user signing up **through the app** would never be asked → the app must ask (§3.3). |
+| **Admin sharing**: accounts are private by default and can opt in to sharing with admins (`share_with_admins`, D-220); SSO/self-registered users are asked at first sign-in (`sharing_prompt`, browser only — the API is never redirected) | An SSO user signing up **through the app** would never be asked → the app must ask (§3.3). |
 | Account self-service (email, password) and email password reset | Web `/account`; link out. |
 | Review "to process" count | Show it on the Review tab (needs API, §2). |
 
@@ -95,19 +95,24 @@ The user payload then carries `sharing_prompt` (§3.3).
 > `opt_out_blocker`. `PUT /api/v1/auth/me/sharing {share}` and — added by the
 > owner, 2026-09-26 — `PUT /api/v1/auth/me/email {email, current_password}` so
 > the app can set/change the address resets go to (local accounts need their
-> current password; can't remove it while opted out). Both are **first-party
+> current password; a local account can change it but never remove it, D-220). Both are **first-party
 > only**: the app's login token or the web session; connected apps (OAuth
 > agents), personal API tokens and CLI API tokens get 403 — they may use your
 > data, not change your account settings. (When the app moves to OAuth sign-in,
 > YONDER-104, its client must be marked first-party.) Tests:
 > `tests/test_api_sharing.py`.
 Extend the user payload (`/api/v1/auth/me`, login/exchange responses) with
-`email`, `share_with_admins`, `sharing_prompt`, and `opt_out_blocker` (the
-same text the web shows, `accounts_routes.opt_out_blocker`). Add
-`PUT /api/v1/auth/me/sharing {share: bool}` (same rules as the web: local
-accounts need SMTP + own email to opt out; audited). If `sharing_prompt` is
-true, the app shows the same question as `/account/sharing` before the tabs,
-with the same honest "this isn't encryption" note.
+`email`, `share_with_admins`, `sharing_prompt`, `opt_out_blocker`,
+`reset_note` and `email_required`. Add `PUT /api/v1/auth/me/sharing {share: bool}` (audited).
+*Since D-220:* accounts start private and `opt_out_blocker` is always empty.
+`reset_note` is the web's text for a private local account that a reset can't
+reach; show it under the sharing toggle. When `email_required` is true (a local
+account with no email), the app asks for the address and the current password
+(`PUT /api/v1/auth/me/email`) before anything else, as the web does at every
+visit. If
+`sharing_prompt` is true, the app shows the same question as `/account/sharing`
+before the tabs, with "Keep my data to myself" pre-selected and the same honest
+"this isn't encryption" note.
 
 ### 3.4 Per-person cache
 Cache keys must include the **server profile and user id**

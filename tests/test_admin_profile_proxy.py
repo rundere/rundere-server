@@ -38,7 +38,8 @@ if DEPS:
             admin = User(username="px-admin", password_hash=authn.hash_password("pw"),
                          auth_source="local", is_admin=True, traveler_id=t["PX Admin"].id)
             sharer = User(username="px-sharer", password_hash=authn.hash_password("pw"),
-                          auth_source="local", traveler_id=t["PX Sharer"].id)
+                          auth_source="local", traveler_id=t["PX Sharer"].id,
+                          share_with_admins=True)
             private = User(username="px-private", password_hash=authn.hash_password("pw"),
                            auth_source="local", traveler_id=t["PX Private"].id,
                            share_with_admins=False, email="p@example.com")

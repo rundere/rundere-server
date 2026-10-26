@@ -111,16 +111,25 @@ def _base_url(request: Request) -> str:
 
 # --------------------------------------------------------------------------- sharing (4.1)
 def opt_out_blocker(user: User) -> str:
-    """Why this user can't opt out of sharing yet ("" = they can). A local
-    account needs SMTP + its own email first: once private, a password reset
-    must reach the user directly, never pass through an admin."""
-    if user.auth_source != "local":
-        return ""                      # password lives with the SSO provider
+    """Why this user can't stop sharing ("" = they can). Always "" since D-220:
+    accounts start private, so going private never waits on an email address.
+    Kept because the app's user payload carries it (SPEC-4.2 §3.3)."""
+    return ""
+
+
+def reset_note(user: User) -> str:
+    """What a private local account should know about a forgotten password
+    ("" = nothing to say). A web admin can never set a private user's password
+    or see their reset link, so without a reachable email only the server's
+    operator can (`python -m app.cli set-password`, D-220)."""
+    if user.auth_source != "local" or user.share_with_admins:
+        return ""
     if not email_configured():
-        return ("Email isn't set up on this server yet, so a password reset would "
-                "have to go through an admin. Ask the admin to configure email.")
+        return ("Email isn't set up on this server, so if you forget your password, "
+                "only whoever runs the server can reset it. Admins in Run·dere can't.")
     if not user.email:
-        return "Add your email address first, so password resets can reach you directly."
+        return ("Add your email address so a forgotten password can be reset by email. "
+                "Without one, only whoever runs the server can reset it.")
     return ""
 
 
@@ -140,11 +149,8 @@ def _notify_private(user: User, what: str) -> None:
 
 
 def _set_sharing(session: Session, user: User, share: bool) -> str:
-    """Apply a sharing choice; returns an error message or ""."""
-    if not share:
-        blocker = opt_out_blocker(user)
-        if blocker:
-            return blocker
+    """Apply a sharing choice; returns an error message or "" (none since D-220:
+    going private is always allowed, kept for the callers' contract)."""
     changed = bool(user.share_with_admins) != share
     user.share_with_admins = share
     user.sharing_prompt = False
@@ -174,6 +180,10 @@ def setup_submit(request: Request, username: str = Form(...), password: str = Fo
                  new_traveler: str = Form(""), session: Session = Depends(get_session)):
     if authn.user_count(session) > 0:
         return RedirectResponse("/login", status_code=303)
+    if (problem := authn.email_problem(email)) is not None:          # required (D-220)
+        return templates.TemplateResponse(
+            request, "setup.html", {"travelers": _travelers(session), "error": problem,
+                                    "username": username}, status_code=400)
     # The first traveller is the account holder → 'self' if a brand-new one.
     tid = authn.resolve_traveler(session, traveler_id=traveler_id,
                                  new_name=new_traveler, kind="self")
@@ -206,7 +216,11 @@ def register_submit(request: Request, username: str = Form(...), password: str =
             request, "register.html",
             {"travelers": [], "error": "That username is taken.",
              "username": username}, status_code=409)
-    if email.strip() and authn.email_in_use(session, email):
+    if (problem := authn.email_problem(email)) is not None:          # required (D-220)
+        return templates.TemplateResponse(
+            request, "register.html",
+            {"travelers": [], "error": problem, "username": username}, status_code=400)
+    if authn.email_in_use(session, email):
         return templates.TemplateResponse(
             request, "register.html",
             {"travelers": [],
@@ -292,7 +306,7 @@ def reset_submit(request: Request, token: str, password: str = Form(...),
 # --------------------------------------------------------------------------- your account
 def _account_ctx(session: Session, user: User, **extra) -> dict:
     from app import oauth
-    return {"u": user, "smtp": email_configured(), "blocker": opt_out_blocker(user),
+    return {"u": user, "smtp": email_configured(), "reset_note": reset_note(user),
             "apps": oauth.connected_apps(session, user),
             "pats": oauth.list_pats(session, user), "msg": "", "err": "", **extra}
 
@@ -365,12 +379,6 @@ def account_set_email(email: str = Form(""), current_password: str = Form(""),
             current_password, user.password_hash):
         return RedirectResponse("/account?err=Current+password+is+incorrect",
                                 status_code=303)
-    if (not email.strip() and not user.share_with_admins
-            and user.auth_source == "local"):
-        return RedirectResponse(
-            "/account?err=" + quote_plus("While you're not sharing with admins, your "
-                                         "email is how password resets reach you — "
-                                         "change it, don't remove it."), status_code=303)
     error = authn.set_user_email(session, user, email)
     if error:
         return RedirectResponse(f"/account?err={quote_plus(error)}", status_code=303)
@@ -399,6 +407,36 @@ def account_set_password(current_password: str = Form(""), password: str = Form(
     return _login_user(resp, user)    # …but keep this one signed in
 
 
+@router.get("/account/email-required", response_class=HTMLResponse)
+def email_required_page(request: Request, next: str = "/",
+                        user: User = Depends(authn.current_user)):
+    """D-220: a local account adds its email before anything else. Asked at every
+    visit until it has one; signing out is the only other way out."""
+    if not authn.needs_email(user):
+        return RedirectResponse(_safe_next(next), status_code=303)
+    return templates.TemplateResponse(request, "email_required.html", {
+        "u": user, "next": _safe_next(next),
+        "error": request.query_params.get("err", "")})
+
+
+@router.post("/account/email-required")
+def email_required_submit(email: str = Form(""), current_password: str = Form(""),
+                          next: str = Form("/"), user: User = Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """Save the address. The password is asked again, as on /account/email:
+    resets go to this address, so a hijacked session must not be able to set it."""
+    user = session.get(User, user.id)
+    dest = _safe_next(next)
+    back = f"/account/email-required?next={quote_plus(dest)}"
+    if not authn.verify_password(current_password, user.password_hash):
+        return RedirectResponse(f"{back}&err=" + quote_plus("Your password is incorrect."),
+                                status_code=303)
+    error = authn.set_user_email(session, user, email)
+    if error:
+        return RedirectResponse(f"{back}&err={quote_plus(error)}", status_code=303)
+    return RedirectResponse(dest, status_code=303)
+
+
 @router.get("/account/sharing", response_class=HTMLResponse)
 def sharing_prompt_page(request: Request, next: str = "/",
                         user: User = Depends(authn.current_user),
@@ -407,7 +445,7 @@ def sharing_prompt_page(request: Request, next: str = "/",
     # (YONDER-145) — otherwise its profile pages dead-end at "ask an admin".
     travelers = [] if user.traveler_id is None else None    # name only (D-204)
     return templates.TemplateResponse(request, "sharing.html", {
-        "u": user, "next": _safe_next(next), "blocker": opt_out_blocker(user),
+        "u": user, "next": _safe_next(next), "reset_note": reset_note(user),
         "travelers": travelers})
 
 
@@ -421,7 +459,8 @@ def sharing_choose(choice: str = Form(""), next: str = Form("/account"),
     if error:
         dest = f"/account/sharing?next={quote_plus(_safe_next(next))}&err={quote_plus(error)}"
         return RedirectResponse(dest, status_code=303)
-    error = _set_sharing(session, user, choice != "private")
+    # Only an explicit "share" opts in: a blank or unknown choice stays private (D-220).
+    error = _set_sharing(session, user, choice == "share")
     dest = _safe_next(next)
     if error:
         sep = "&" if "?" in dest else "?"

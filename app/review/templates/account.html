@@ -39,12 +39,12 @@
       <form method="post" action="/account/sharing">
         <input type="hidden" name="choice" value="private">
         <input type="hidden" name="next" value="/account?msg=You+no+longer+share+with+admins">
-        <button class="act" type="submit" {% if blocker %}disabled{% endif %}>Stop sharing</button>
+        <button class="act" type="submit">Stop sharing</button>
       </form>
-      {% if blocker %}<p class="why">{{ blocker }}</p>{% endif %}
     {% else %}
-      <p class="why"><b>Off.</b> Admins only see trips you invite them into, and your
-        password-reset links are emailed to you, never shown to an admin.</p>
+      <p class="why"><b>Off</b> (the default). Admins only see trips you invite them into,
+        and your password-reset links are emailed to you, never shown to an admin.</p>
+      {% if reset_note %}<p class="why">{{ reset_note }}</p>{% endif %}
       <form method="post" action="/account/sharing">
         <input type="hidden" name="choice" value="share">
         <input type="hidden" name="next" value="/account?msg=You+now+share+with+admins">

@@ -677,7 +677,8 @@ def test_resolve_auto_link_only_considers_the_owners_trips():
             sis_t = TravelerIdentity(display_name="AL Sister", kind="guest")
             s.add(sis_t); s.flush()
             bro = User(username="al-bro", auth_source="local", is_admin=True)
-            sis = User(username="al-sis", auth_source="local", traveler_id=sis_t.id)
+            sis = User(username="al-sis", auth_source="local", traveler_id=sis_t.id,
+                       share_with_admins=True)
             s.add_all([bro, sis]); s.flush()
             his = Trip(name="His Lisbon", start_date="2027-05-01",
                        end_date="2027-05-31", owner_id=bro.id)

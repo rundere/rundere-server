@@ -644,7 +644,7 @@ if DEPS:
             bob = User(username="oa-bob", password_hash=authn.hash_password("pw"),
                        auth_source="local", share_with_admins=False)
             carol = User(username="oa-carol", password_hash=authn.hash_password("pw"),
-                         auth_source="local")
+                         auth_source="local", share_with_admins=True)
             s.add_all([bob, carol]); s.flush()
             s.add_all([Trip(name="OA Bob Private", source="manual", owner_id=bob.id),
                        Trip(name="OA Carol Shared", source="manual", owner_id=carol.id)])
