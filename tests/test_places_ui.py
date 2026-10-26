@@ -229,3 +229,90 @@ def test_the_demo_shows_places_without_edit_controls(me, monkeypatch):
     sheet = client.get(f"/places/{pid}").text
     assert "Desert garden" in sheet and 'name="activity_type"' not in sheet
     assert "Remove from library" not in sheet and "Save a place" not in _page()
+
+
+# ------------------------------------------------------------------ address → pin (owner, 2026-10-26)
+class _Geo:
+    """A stand-in Photon: street-level hits for "12 Example Row", a city-centre
+    hit for anything else."""
+    def __init__(self):
+        self.asked = []
+
+    def geocode_place(self, place):
+        from resolve.geocode import GeocodeResult
+        self.asked.append(place)
+        if "Example Row" in (place.get("address") or ""):
+            return GeocodeResult(lat=38.71, lon=-9.14, country="PT", city="Lisbon",
+                                 name=None, confidence="verified", precision="poi")
+        return GeocodeResult(lat=38.72, lon=-9.13, country="PT", city="Lisbon", name=None,
+                             confidence="verified", precision="area")
+
+
+def test_a_corrected_address_saves_on_change_and_pins_a_place_without_one(me, monkeypatch):
+    geo = _Geo()
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: geo)
+    pid = _save(me["u"], "Raft somewhere")                      # no pin
+    sheet = client.get(f"/places/{pid}").text
+    assert 'hx-trigger="change, submit"' in sheet and "Correct the address" not in sheet
+    r = client.post(f"/places/{pid}/update", data={"address": "12 Example Row",
+                                                   "locality": "Lisbon", "country_code": "pt"})
+    assert "Pinned on the map from the address" in r.text
+    assert r.headers.get("hx-trigger") == "places-changed"
+    with SessionLocal() as s:
+        p = s.get(SavedPlace, pid)
+        assert (p.address, p.locality, p.country_code) == ("12 Example Row", "Lisbon", "PT")
+        assert (p.lat, p.lon) == (38.71, -9.14) and p.geohash
+    assert geo.asked[0]["country"] == "PT"
+    assert "no pin yet" not in client.get(f"/places/{pid}").text        # and it stays
+
+
+def test_an_address_that_only_finds_the_city_places_no_pin(me, monkeypatch):
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
+    pid = _save(me["u"], "Raft somewhere")
+    r = client.post(f"/places/{pid}/update", data={"address": "Somewhere vague",
+                                                   "locality": "Lisbon"})
+    assert "find that exact address" in r.text
+    with SessionLocal() as s:
+        p = s.get(SavedPlace, pid)
+        assert p.address == "Somewhere vague" and p.lat is None      # saved, but not pinned
+
+
+def test_without_a_geocoder_the_address_still_saves_and_says_why_there_is_no_pin(me):
+    pid = _save(me["u"], "Raft somewhere")
+    r = client.post(f"/places/{pid}/update", data={"address": "12 Example Row"})
+    assert "no address lookup set up" in r.text
+    with SessionLocal() as s:
+        assert s.get(SavedPlace, pid).address == "12 Example Row"
+
+
+def test_an_existing_pin_moves_only_when_asked(me, monkeypatch):
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
+    pid = _save(me["u"], "Tile museum", LIS)
+    r = client.post(f"/places/{pid}/update", data={"address": "12 Example Row"})
+    assert r.text.count("Saved.") == 1 and "Pinned" not in r.text
+    with SessionLocal() as s:
+        assert (s.get(SavedPlace, pid).lat, s.get(SavedPlace, pid).lon) == LIS   # kept
+    assert "Move the pin to this address" in client.get(f"/places/{pid}").text
+    r = client.post(f"/places/{pid}/pin")
+    assert "Moved the pin to the address" in r.text
+    with SessionLocal() as s:
+        assert (s.get(SavedPlace, pid).lat, s.get(SavedPlace, pid).lon) == (38.71, -9.14)
+
+
+def test_the_api_patch_pins_from_a_new_address_too(me, monkeypatch):
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
+    pid = _save(me["u"], "Raft somewhere")
+    with SessionLocal() as s:
+        tok = authn.issue_access_token(s.get(User, me["u"].id))
+    r = client.patch(f"/api/v1/places/{pid}", headers={"Authorization": f"Bearer {tok}"},
+                     json={"address": "12 Example Row", "locality": "Lisbon"})
+    assert r.status_code == 200 and (r.json()["lat"], r.json()["lon"]) == (38.71, -9.14)
+
+
+def test_nobody_else_can_pin_your_place(me, monkeypatch):
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
+    pid = _save(me["u"], "Tile museum", LIS, address="12 Example Row")
+    me["u"] = _mk("ui_b")
+    assert client.post(f"/places/{pid}/pin").status_code == 404
+    with SessionLocal() as s:
+        assert (s.get(SavedPlace, pid).lat, s.get(SavedPlace, pid).lon) == LIS

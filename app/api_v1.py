@@ -2216,12 +2216,16 @@ def api_place_list(user=Depends(authn.current_user),
 def api_place_update(place_id: str, body: SavedPlacePatch,
                      user=Depends(authn.current_user),
                      session: Session = Depends(get_session)):
-    """Rename or otherwise edit a saved place."""
+    """Edit a saved place. A changed address places the pin when the place has
+    none (a street-level match only; nothing changes when there's no geocoder)."""
+    fields = body.model_dump(exclude_unset=True)
     try:
-        p = places_svc.update_place(session, user, place_id,
-                                    **body.model_dump(exclude_unset=True))
+        p = places_svc.update_place(session, user, place_id, **fields)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    if any(k in fields for k in places_svc.ADDRESS_FIELDS):
+        places_svc.pin_from_address(session, user, place_id)
+        session.refresh(p)
     return _place_out(p, places_svc.suggest_trip(session, fileable_trips(session, user), p),
                       session=session)
 

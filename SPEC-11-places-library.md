@@ -84,7 +84,13 @@ Everything is own-only, with no admin view (D-166).
      country alone within 300 km (`resolve/airports.py`).
 
   `locality_source` records which one it was (`client`, `photon`, `airport`). A later run with
-  Photon available upgrades an `airport` guess and leaves the rest alone. The continent comes
+  Photon available upgrades an `airport` guess and leaves the rest alone.
+  *The address can place the pin (owner, 2026-10-26).* A person's corrected address saves as
+  soon as it changes, like every field in the place panel, and is looked up with Photon. A
+  verified, street-level match pins a place that has no pin; a city-centre match doesn't,
+  since a wrong pin is worse than none. A place that already has a pin keeps it unless the
+  person presses "Move the pin to this address", because a Maps link's own pin is usually
+  exact. Without Photon the address still saves, and the panel says why there's no pin. The continent comes
   from the country, through a small table in the code with no dependency. So the Atlas works
   on a server with no Photon at all.
 - **D-216 — Search without a search engine.**
