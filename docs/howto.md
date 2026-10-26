@@ -1,6 +1,6 @@
 # Run·dere (formerly Yonder) — Setup & Usage Guide
 
-> Current for **v4.12.11**. Screenshots are being recaptured against the current
+> Current for **v4.12.12**. Screenshots are being recaptured against the current
 > UI; `_[screenshot: …]_` marks where each one belongs. New screenshots use the
 > demo data only (D-198). The old `docs/howto.html` was retired in 4.12 (YONDER-289).
 
