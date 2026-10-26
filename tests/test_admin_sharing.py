@@ -82,8 +82,10 @@ if DEPS:
         monkeypatch.setattr(settings, "smtp_from", "yonder@example.com")
         sent = []
         from app import accounts_routes
-        monkeypatch.setattr(accounts_routes, "send_email",
-                            lambda to, subj, body: sent.append((to, subj, body)) or True)
+        from app import email as mail
+        fake = lambda to, subj, body: sent.append((to, subj, body)) or True  # noqa: E731
+        monkeypatch.setattr(accounts_routes, "send_email", fake)
+        monkeypatch.setattr(mail, "send_email", fake)            # support.py (D-211)
         return sent
 
     def _visible_to_admin(ids):
@@ -109,8 +111,9 @@ if DEPS:
         _with_smtp(monkeypatch)
 
         def body(ids):
+            # D-211: support access shows trips and the Inbox, never the journal
             assert _visible_to_admin(ids) == {"trip": True, "invited": True,
-                                              "capture": True, "journal": True}
+                                              "capture": True, "journal": False}
             r = client.post("/account/sharing", headers=_h("as-sis"),
                             data={"choice": "private", "next": "/account"},
                             follow_redirects=False)
@@ -124,8 +127,8 @@ if DEPS:
             assert client.get(f"/trips/{ids['mine_for_her']}",
                               headers=_h("as-admin")).status_code == 200
             with SessionLocal() as s:
-                assert [e.action for e in s.query(AccountEvent)
-                        .filter_by(user_id=ids["sis"]).all()] == ["sharing_off"]
+                acts = [e.action for e in s.query(AccountEvent).filter_by(user_id=ids["sis"])]
+                assert "sharing_off" in acts and acts.count("sharing_off") == 1
             # opting back in restores access
             client.post("/account/sharing", headers=_h("as-sis"), data={"choice": "share"})
             assert _visible_to_admin(ids)["trip"] is True
@@ -143,7 +146,7 @@ if DEPS:
             assert "AS Her Trip" not in mine and "AS Her Invite" in mine
             client.post("/account/sharing", headers=_h("as-sis"), data={"choice": "share"})
             assert _visible_to_admin(ids) == {"trip": True, "invited": True,
-                                              "capture": True, "journal": True}
+                                              "capture": True, "journal": False}
         _run(body, sister_shares=False)
 
     def test_going_private_needs_no_email_and_says_what_that_means(monkeypatch):
@@ -229,7 +232,7 @@ if DEPS:
             r = c.get("/trips", follow_redirects=False)
             assert r.status_code == 303 and r.headers["location"].startswith("/account/sharing")
             page = c.get("/account/sharing").text
-            assert "Share your data with admins" in page
+            assert "Let admins see your trips" in page
             assert 'value="private" checked' in page          # D-220: private is the default
             with SessionLocal() as s:
                 assert s.query(User).filter_by(username="as-newbie").one().share_with_admins is False

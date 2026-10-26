@@ -155,7 +155,9 @@ def test_admin_assigns_owner_to_orphan(monkeypatch):
     assert client.get(f"/api/v1/trips/{tid}", headers=_bearer(new_owner)).status_code == 200
     again = client.post(f"/trips/{tid}/owner", headers=_bearer(admin),
                         data={"user_id": admin.id})
-    assert again.status_code == 409
+    # D-211: once it has an owner it is theirs. This owner lets admins look, so
+    # the admin may still view it, read-only: the write is refused.
+    assert again.status_code == 403
 
 
 def test_non_admin_cannot_assign_owner(monkeypatch):

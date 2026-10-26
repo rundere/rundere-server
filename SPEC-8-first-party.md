@@ -704,8 +704,42 @@ Since D-146 that no longer holds.
     - On a server without email, a forgotten password can only be reset by whoever runs the
       server (`python -m app.cli set-password`), who can read the database anyway. The
       account page, the sharing question and the payload's `reset_note` say so.
-  - *Not changed here:* what an opted-in admin can do. Narrowing that, and audited,
-    time-limited support access, is the separate redesign in YONDER-336.
+  - *Not changed here:* what an opted-in admin can do. Narrowing that is D-211.
+- **D-211 — Admins have no standing access to anyone's data; a person can let them look
+  (YONDER-336; owner, 2026-10-26).** Supersedes the 4.1 admin-sharing rule and finishes what
+  D-220 began. Being an admin is about running the server (accounts, settings, jobs), not
+  about reading people's trips. (built)
+  - *Admins are ordinary users for data.* An admin sees another person's trip only when that
+    person puts them on its roster or shares it with them, exactly like anyone else. Inbox
+    captures, batches and journals of other people are never visible to an admin for being
+    one. Ownerless rows stay admin-only (YONDER-186), since nobody else can clean them up.
+  - *Support access, granted by the person.* Under Settings → Account a person can turn on
+    "Let admins see my trips and Inbox", for 24 hours, 7 days or until they turn it off.
+    There's no request flow: on a self-hosted server an admin who needs it asks by email or
+    message.
+    - **Read-only.** While it's on, admins can view the person's trips (with what hangs off
+      them: timeline, Discover, packing, costs) and their Inbox captures and batches. They
+      can't edit, approve, file, delete or reprocess anything. The trip's `my_role` for them
+      is `viewer`.
+    - **Never the journal** (D-134), never integration credentials (D-151), never saved
+      places (D-166), never profiles.
+    - **Visible and logged.** Turning it on, off, or letting it expire is recorded in the
+      account log. The person is emailed when they turn it on (if they have an email). The
+      first time each day an admin opens something under support access is logged too, and
+      the account page shows who looked and when.
+    - **It ends on its own.** A time-limited grant stops at its end time with no job needed;
+      the daily sweep then records it as expired.
+  - *Existing sharers keep access as a standing grant.* Anyone who shares with admins today
+    becomes "until I turn it off", read-only from now on, and is told once (a banner on the
+    next web visit, and an email if they have one) what changed and how to turn it off.
+  - *What stays admin-only, needing no data access:* creating, deactivating and deleting
+    accounts, sending reset links, setting quotas, server settings, merging travellers, and
+    the server-wide jobs (Process, Reprocess, Commit, the inbox reader, retention), which run
+    for everyone without showing contents in the admin's UI.
+  - *Profiles for someone else* (`?for=` on the profile pages) are only for travellers with no
+    account. A person with an account sets up their own.
+  - The web, the JSON API, MCP and the iOS app follow the same rule; the user payload gains
+    `support_until` (null = until turned off).
 - **D-205 — Legacy machine access is retired (YONDER-292; owner, 2026-10-19).** Every
   credential and endpoint that remains is one to defend, so what the built-in ones replaced
   goes.

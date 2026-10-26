@@ -1,12 +1,11 @@
 """Whose profile a profile page shows (4.1): an admin acting for a traveller.
 
 The home, travel, packing and discovery profile pages show the viewer's OWN
-profile. An admin may also pick another traveller — `?for=<traveler_id>` —
-to set things up for someone:
-- a traveller with no account yet (someone the admin plans trips for), or
-- a traveller whose user SHARES with admins (User.share_with_admins).
-Never a user who opted out: their profiles are theirs alone. Non-admins can't
-act for anyone; a `for` they aren't allowed is ignored (they see their own).
+profile. An admin may also pick another traveller — `?for=<traveler_id>` — to
+set things up for someone with no account yet (someone the admin plans trips
+for). Never a traveller with an account: since D-211 people set up their own
+profiles, and support access doesn't include them. Non-admins can't act for
+anyone; a `for` they aren't allowed is ignored (they see their own).
 
 Pages keep the choice by carrying `acting.qs` ("?for=5" or "") on their links
 and form/HTMX URLs.
@@ -43,16 +42,16 @@ def _self_identity(session: Session) -> TravelerIdentity | None:
 
 
 def eligible_travelers(session: Session, admin: User) -> list[TravelerIdentity]:
-    """Travellers an admin may manage profiles for: their own, ones with no
-    account, and ones whose user shares with admins. Generic placeholder guests
-    carry no profile (D-100), so they're left out."""
+    """Travellers an admin may manage profiles for: their own and ones with no
+    account (D-211). Generic placeholder guests carry no profile (D-100), so
+    they're left out."""
     linked = {u.traveler_id: u for u in session.query(User)
               .filter(User.traveler_id.isnot(None)).all()}
     out = []
     for t in (session.query(TravelerIdentity).filter(TravelerIdentity.generic.is_(False))
               .order_by(TravelerIdentity.display_name).all()):
         u = linked.get(t.id)
-        if u is None or u.id == admin.id or u.share_with_admins:
+        if u is None or u.id == admin.id:
             out.append(t)
     return out
 

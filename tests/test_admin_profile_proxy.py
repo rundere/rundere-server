@@ -72,12 +72,14 @@ if DEPS:
             with SessionLocal() as s:
                 _teardown(s)
 
-    def test_picker_offers_unlinked_and_sharing_travellers_only():
+    def test_picker_offers_only_travellers_without_an_account():
+        """D-211: profiles of people with an account are theirs to set up, whether
+        or not they let admins look."""
         def body(ids):
             page = client.get("/trips/settings/travel-profile", headers=_h("px-admin")).text
             assert "Profile of" in page
-            assert "PX Kid" in page and "PX Sharer" in page
-            assert "PX Private" not in page
+            assert "PX Kid" in page
+            assert "PX Sharer" not in page and "PX Private" not in page
             # a regular user gets no picker at all
             assert "Profile of" not in client.get("/trips/settings/travel-profile",
                                                   headers=_h("px-sharer")).text
@@ -93,19 +95,18 @@ if DEPS:
                 assert s.get(TravelerIdentity, ids["PX Admin"]).nationality is None   # not his
         _run(body)
 
-    def test_admin_edits_a_sharing_users_homes_and_it_is_audited():
+    def test_admin_cannot_edit_a_sharing_users_homes():
+        """D-211: support access never includes profiles; a `for` naming someone
+        with an account is ignored, so the edit lands on the admin's own."""
         def body(ids):
             client.post(f"/review/home?for={ids['PX Sharer']}", headers=_h("px-admin"),
                         data={"kind": "home_airport", "label": "px-sharer-sfo", "iata": "SFO",
                               "lat": "37.6", "lon": "-122.4", "radius_km": "50"})
             with SessionLocal() as s:
-                row = s.query(HomeProfile).filter_by(label="px-sharer-sfo").one()
-                assert row.traveler_id == ids["PX Sharer"]
-                ev = s.query(AccountEvent).filter_by(user_id=ids["sharer_uid"]).one()
-                assert ev.action == "profile_edited" and ev.detail == "home profiles"
-            # and it shows on HER page, not his
-            assert "px-sharer-sfo" in client.get("/review/home", headers=_h("px-sharer")).text
-            assert "px-sharer-sfo" not in client.get("/review/home", headers=_h("px-admin")).text
+                rows = s.query(HomeProfile).filter_by(label="px-sharer-sfo").all()
+                assert all(r.traveler_id != ids["PX Sharer"] for r in rows)
+                assert s.query(AccountEvent).filter_by(user_id=ids["sharer_uid"]).count() == 0
+            assert "px-sharer-sfo" not in client.get("/review/home", headers=_h("px-sharer")).text
         _run(body)
 
     def test_admin_cannot_act_for_an_opted_out_user():

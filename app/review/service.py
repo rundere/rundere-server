@@ -248,7 +248,7 @@ def recheck_for_trip(session: Session, trip, user) -> int:
     if not (start and end):
         return 0
     rows = (session.query(TravelItem)
-            .filter(scope.capture_filter(user), TravelItem.trip_id.is_(None))
+            .filter(scope.capture_edit_filter(user), TravelItem.trip_id.is_(None))
             .all())
     n = 0
     for item in rows:

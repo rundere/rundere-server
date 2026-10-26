@@ -206,12 +206,17 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)  # -> traveler_identities.id
-    # 4.1 admin sharing (migration 0027). ON (opted in): admins can view and edit
-    # this user's data. OFF (the default since D-220, migration 0045): admins see
-    # only what the user invites them into, like any other user. A UI policy, not
-    # encryption — the server operator can always read the database.
+    # Support access (D-211, was the 4.1 admin sharing of migration 0027). ON: the
+    # person lets admins VIEW their trips and Inbox, read-only, until
+    # `support_until` (NULL = until they turn it off). OFF (the default, D-220):
+    # admins see only what the person invites them into, like any other user. A UI
+    # policy, not encryption — the server operator can always read the database.
     share_with_admins: Mapped[bool] = mapped_column(Boolean, default=False,
                                                     server_default="0")
+    support_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # D-211: a one-time notice for people whose 4.1 sharing became read-only.
+    support_notice: Mapped[bool] = mapped_column(Boolean, default=False,
+                                                 server_default="0")
     # Self-registered / SSO-provisioned accounts are asked at their first sign-in
     # whether to opt in; accounts an admin creates start private, unasked (D-220).
     sharing_prompt: Mapped[bool] = mapped_column(Boolean, default=False,

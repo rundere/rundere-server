@@ -937,7 +937,7 @@ def api_review_edit(item_id: str, body: ReviewPatch, user=Depends(authn.current_
     `traveler_ids` (others, from GET's `who`). Re-resolves on change.
     `approve: true` then approves it if it now resolves ("Save & approve")."""
     from app.review import service
-    item = scope.require_capture(session, user, item_id)
+    item = scope.require_capture(session, user, item_id, edit=True)
     try:
         changed = service.apply_edits(session, item, fields=body.fields,
                                       passenger_ids=body.passengers,
@@ -959,7 +959,7 @@ def api_review_approve(item_id: str, user=Depends(authn.current_user),
     """Stage a capture for logging (nothing is written yet — see /review/commit).
     `ok: false` when it doesn't resolve yet; the item says why."""
     from app.review import service
-    item = scope.require_capture(session, user, item_id)
+    item = scope.require_capture(session, user, item_id, edit=True)
     ok = service.approve(session, item, resolved_by="api")
     return _action_out(session, item_id, user, ok,
                        None if ok else "can't be approved yet — see note and reason_codes")
@@ -970,7 +970,7 @@ def api_review_unapprove(item_id: str, user=Depends(authn.current_user),
                          session: Session = Depends(get_session)):
     """Take back an approval that hasn't been logged yet."""
     from app.review import service
-    item = scope.require_capture(session, user, item_id)
+    item = scope.require_capture(session, user, item_id, edit=True)
     ok = service.unapprove(session, item)
     return _action_out(session, item_id, user, ok,
                        None if ok else "already logged — it can't be un-approved")
@@ -982,7 +982,7 @@ def api_review_ignore(item_id: str, user=Depends(authn.current_user),
     """Take a capture off the pipeline; it writes nothing."""
     from app.review import service
     from app.review.routes import _is_logged
-    item = scope.require_capture(session, user, item_id)
+    item = scope.require_capture(session, user, item_id, edit=True)
     if _is_logged(item):
         return _action_out(session, item_id, user, False, "already logged")
     service.ignore(session, item, resolved_by="api")
@@ -1027,7 +1027,7 @@ def api_review_process(user=Depends(authn.current_user)):
 def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
                       session: Session = Depends(get_session)):
     """Log the caller's approved captures to AirTrail + AdventureLog — only
-    their own (an admin: + users who share), never anyone else's.
+    their own (an admin: + ownerless ones), never anyone else's (D-211).
     `dry_run: true` (default) returns the exact plan and writes nothing;
     `dry_run: false` starts the irreversible write as a job (202 + JobOut)."""
     from fastapi.responses import JSONResponse
@@ -1036,7 +1036,7 @@ def api_review_commit(body: CommitIn, user=Depends(authn.current_user),
     from app.db import SessionLocal
     from app.resolving import load_identities
     from app.integrations import ClientCache
-    mine = scope.capture_filter(user)
+    mine = scope.capture_edit_filter(user)
     # Each capture logs to its OWNER's connections (D-150); an owner with none
     # gets Run·dere only, the AirTrail/AdventureLog targets skipped.
     if body.dry_run:
@@ -1308,7 +1308,7 @@ def assign_capture_to_trip(session: Session, user, item_id: str, trip_id: str) -
     enough: 404 if the trip isn't visible, 403 if visible but not fileable.
     Pins the link so the resolver won't override a human choice."""
     from sqlalchemy.orm.attributes import flag_modified
-    item = scope.require_capture(session, user, item_id)
+    item = scope.require_capture(session, user, item_id, edit=True)
     trip = scope.require_trip(session, user, trip_id)        # 404 if not visible
     fileable = (session.query(Trip.id)
                 .filter(Trip.id == trip.id, scope.filing_trip_filter(session, user))
