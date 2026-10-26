@@ -120,7 +120,7 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         traveler_id = _opt(args, "--traveler")
         user = User(username=username, email=_opt(args, "--email"),
                     password_hash=authn.hash_password(pw), auth_source="local",
-                    is_admin="--admin" in args,
+                    is_admin="--admin" in args, share_with_admins=False,   # D-220
                     traveler_id=int(traveler_id) if traveler_id else None)
         session.add(user)
         session.commit()

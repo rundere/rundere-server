@@ -275,10 +275,11 @@ def provision_oidc_user(session, *, sub: str, username: str, email: str | None =
     if user is None:
         if not settings.oidc_auto_create:
             return None
-        # Signed themselves up via SSO: ask at first sign-in whether to share
-        # their data with admins (4.1).
+        # Signed themselves up via SSO: private (D-220), and asked at first
+        # sign-in whether to opt in to sharing with admins (4.1).
         user = User(username=username, email=email, auth_source="oidc",
-                    external_subject=subject, is_admin=is_admin, sharing_prompt=True)
+                    external_subject=subject, is_admin=is_admin, sharing_prompt=True,
+                    share_with_admins=False)
         session.add(user)
         session.commit()
         session.refresh(user)
@@ -311,7 +312,8 @@ def resolve_proxy_user(session, request) -> User | None:
             or session.query(User).filter_by(username=name).one_or_none())
     if user is None:
         user = User(username=name, auth_source="proxy", external_subject=subject,
-                    is_active=True, is_admin=settings.auth_proxy_auto_admin, sharing_prompt=True)
+                    is_active=True, is_admin=settings.auth_proxy_auto_admin, sharing_prompt=True,
+                    share_with_admins=False)                     # private (D-220)
         session.add(user)
         session.commit()
     # A deactivated account stays out even when the proxy vouches for the name
@@ -425,11 +427,12 @@ def create_user(session, username: str, password: str | None = None, *,
                 auth_source: str = "local", traveler_id: int | None = None,
                 external_subject: str | None = None,
                 sharing_prompt: bool = False) -> User:
+    # Every new account starts private, whoever creates it (D-220).
     user = User(username=username.strip(), email=(email or "").strip() or None,
                 password_hash=hash_password(password) if password else None,
                 is_admin=is_admin, auth_source=auth_source,
                 traveler_id=traveler_id, external_subject=external_subject,
-                sharing_prompt=sharing_prompt)
+                sharing_prompt=sharing_prompt, share_with_admins=False)
     session.add(user)
     session.commit()
     session.refresh(user)
@@ -446,13 +449,35 @@ def email_in_use(session, email: str, *, exclude_id: str | None = None) -> bool:
     return q.count() > 0
 
 
+def email_problem(email: str | None) -> str | None:
+    """Why `email` can't be an account's address, or None when it can."""
+    email = (email or "").strip()
+    if "@" not in email or " " in email or len(email) > 255:
+        return "That doesn't look like an email address."
+    return None
+
+
+def needs_email(user) -> bool:
+    """A local account must have an email (D-220): it is the only way a password
+    reset reaches the person, since an admin never sees one for a private account.
+    Until it has one, every web visit asks for it. SSO and proxy accounts keep
+    their password with the provider, and the shared demo login is exempt."""
+    if user is None or getattr(user, "auth_source", None) != "local" or user.email:
+        return False
+    from app import demo
+    return not (demo.enabled() and user.username == settings.demo_username.strip())
+
+
 def set_user_email(session, user: User, email: str | None) -> str | None:
     """Set (or clear, with an empty value) a user's email. Returns an error
-    message instead of saving when it's malformed or already taken."""
+    message instead of saving when it's malformed or already taken. A local
+    account can change its address but not remove it (D-220)."""
     email = (email or "").strip() or None
+    if email is None and user.auth_source == "local":
+        return "Your account needs an email address for password resets: change it, don't remove it."
     if email is not None:
-        if "@" not in email or " " in email or len(email) > 255:
-            return "That doesn't look like an email address."
+        if (problem := email_problem(email)) is not None:
+            return problem
         if email_in_use(session, email, exclude_id=user.id):
             return "That email is already used by another account."
     user.email = email

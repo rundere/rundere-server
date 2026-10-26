@@ -1,0 +1,21 @@
+{% extends "authcard.html" %}
+{% block title %}Add your email{% endblock %}
+{% block body %}
+<form class="card" method="post" action="/account/email-required">
+  <div class="brand"><h1><span class="rd-lockup-stacked" role="img" aria-label="Run·dere"></span></h1><span>one more step</span></div>
+  <p class="sub">Add your email address to finish signing in. It's where a password
+     reset goes. An admin never sees a reset link for you.</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="email">Email</label>
+  <input id="email" name="email" type="email" autocomplete="email" autofocus required>
+  <label for="current_password">Your password</label>
+  <input id="current_password" name="current_password" type="password"
+         autocomplete="current-password" required>
+  <button type="submit">Save and continue</button>
+</form>
+<form method="post" action="/logout" style="text-align:center;margin:0">
+  <button type="submit" style="width:auto;background:none;border:0;color:var(--accent);
+          font-size:12.5px;padding:4px 8px;margin-top:8px;cursor:pointer">Sign out</button>
+</form>
+{% endblock %}

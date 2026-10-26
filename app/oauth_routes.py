@@ -148,6 +148,9 @@ def authorize_page(request: Request, session: Session = Depends(get_session)):
     user = authn.resolve_user(session, request)
     if user is None:
         return RedirectResponse(f"/login?next={quote(here, safe='')}", status_code=303)
+    if authn.needs_email(user):                                  # D-220
+        return RedirectResponse(f"/account/email-required?next={quote(here, safe='')}",
+                                status_code=303)
     if getattr(user, "sharing_prompt", False):
         return RedirectResponse(f"/account/sharing?next={quote(here, safe='')}",
                                 status_code=303)

@@ -172,6 +172,7 @@ if DEPS:
             assert "Scope Reg Victim" not in page.text          # not offered…
             r = c.post("/register", data={"username": "scope-reg-thief",
                                           "password": "pw-thief-123",
+                                          "email": "thief@example.com",
                                           "traveler_id": str(victim_tid)},
                        follow_redirects=False)
             assert r.status_code == 409                          # …and not accepted

@@ -69,9 +69,11 @@ class UserOut(BaseModel):
     auth_source: str
     traveler_id: int | None = None
     email: str | None = None
-    share_with_admins: bool = True
+    share_with_admins: bool = False        # private by default (D-220)
     sharing_prompt: bool = False
-    opt_out_blocker: str = ""
+    opt_out_blocker: str = ""              # always "" since D-220; kept for the app
+    reset_note: str = ""                   # what a forgotten password means here (D-220)
+    email_required: bool = False           # a local account must add an email first (D-220)
     # From the person's own travel profile — theirs alone, so only on their own
     # payload: the currency an expense defaults to (YONDER-213) and the zone
     # their "now" runs on (D-187).
@@ -91,7 +93,7 @@ def _user_public(u: User) -> dict:
     """The user payload of /me and every token response. The sharing fields
     (YONDER-101, SPEC-4.2 §3.3) let the app ask the first-sign-in sharing
     question and show the Settings toggle with the web's exact rules."""
-    from app.accounts_routes import opt_out_blocker
+    from app.accounts_routes import opt_out_blocker, reset_note
     base_currency = tz = None
     if u.traveler_id is not None:
         from app.db import SessionLocal
@@ -105,9 +107,14 @@ def _user_public(u: User) -> dict:
             "auth_source": u.auth_source, "traveler_id": u.traveler_id,
             "email": u.email, "share_with_admins": bool(u.share_with_admins),
             "sharing_prompt": bool(u.sharing_prompt),
-            # Why opting out isn't possible yet ("" = it is): a local account
-            # needs server email + its own address so resets never go via an admin.
-            "opt_out_blocker": opt_out_blocker(u)}
+            # Always "" since D-220 (going private never waits on an email); kept
+            # for the app, which reads it.
+            "opt_out_blocker": opt_out_blocker(u),
+            # The same note the web shows a private local account without a
+            # reachable email: only the server's operator could reset its password.
+            "reset_note": reset_note(u),
+            # The web asks for it at every visit; the app should too (SPEC-4.2 §3.3).
+            "email_required": authn.needs_email(u)}
 
 
 # --------------------------------------------------------------------------- web
@@ -307,16 +314,12 @@ def api_set_email(body: EmailBody, user: User = Depends(authn.first_party_user),
                   session: Session = Depends(get_session)):
     """Set, change or clear your email — where password-reset links go. As on
     the web (/account/email): a local account must give its current password
-    (a hijacked session must not be able to redirect resets), and can't remove
-    the address while opted out of sharing. First-party only."""
+    (a hijacked session must not be able to redirect resets). First-party only.
+    Removing it is allowed (D-220); `reset_note` then says what that means."""
     user = session.get(User, user.id)
     if user.auth_source == "local" and not authn.verify_password(
             body.current_password, user.password_hash):
         return JSONResponse({"detail": "current password is incorrect"}, status_code=403)
-    if not body.email.strip() and not user.share_with_admins and user.auth_source == "local":
-        return JSONResponse({"detail": "while you're not sharing with admins, your email is "
-                                       "how password resets reach you — change it, don't "
-                                       "remove it"}, status_code=400)
     error = authn.set_user_email(session, user, body.email)
     if error:
         status = 409 if "already used" in error else 400

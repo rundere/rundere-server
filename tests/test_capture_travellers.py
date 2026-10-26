@@ -58,7 +58,7 @@ if DEPS:
             me = User(username="ct-me", password_hash=authn.hash_password("pw"),
                       auth_source="local", is_admin=True, traveler_id=me_t.id)
             sis = User(username="ct-sis", password_hash=authn.hash_password("pw"),
-                       auth_source="local", traveler_id=sis_t.id)
+                       auth_source="local", traveler_id=sis_t.id, share_with_admins=True)
             s.add_all([me, sis]); s.flush()
             shared = Trip(name="CT Shared Lisbon", start_date="2027-05-01",
                           end_date="2027-05-31", owner_id=me.id)

@@ -57,8 +57,13 @@ if DEPS:
         _wipe_users()
         c = TestClient(app)
         assert c.get("/setup").status_code == 200
+        # the first admin needs an email too (D-220)
         r = c.post("/setup", data={"username": "root", "password": "rootpw",
                                    "email": "", "traveler_id": "none",
+                                   "new_traveler": "Owner"}, follow_redirects=False)
+        assert r.status_code == 400 and "email" in r.text
+        r = c.post("/setup", data={"username": "root", "password": "rootpw",
+                                   "email": "root@example.com", "traveler_id": "none",
                                    "new_traveler": "Owner"}, follow_redirects=False)
         assert r.status_code == 303 and r.headers["location"] == "/"
         assert settings.auth_cookie_name in c.cookies         # logged in
@@ -77,6 +82,11 @@ if DEPS:
                               follow_redirects=False).headers["location"] == "/login"
             settings.auth_registration_open = True
             r = client.post("/register", data={"username": "selfsignup", "password": "pw",
+                                               "traveler_id": "none", "new_traveler": ""},
+                            follow_redirects=False)
+            assert r.status_code == 400                      # an email is required (D-220)
+            r = client.post("/register", data={"username": "selfsignup", "password": "pw",
+                                               "email": "selfsignup@example.com",
                                                "traveler_id": "none", "new_traveler": ""},
                             follow_redirects=False)
             assert r.status_code == 303
@@ -124,7 +134,15 @@ if DEPS:
         with SessionLocal() as s:
             u = s.query(User).filter_by(username="created1").one()
             assert u.traveler_id is not None and not u.is_admin
+            assert not u.share_with_admins and not u.sharing_prompt   # private, unasked (D-220)
             uid = u.id
+        # private: an admin can't set its password (they could then sign in as it)
+        r = client.post(f"/users/{uid}/password", headers=hdr, data={"password": "np"},
+                        follow_redirects=False)
+        assert "err=" in r.headers["location"]
+        with SessionLocal() as s:                  # the rest manages an account that opted in
+            s.query(User).filter_by(username="created1").update({User.share_with_admins: True})
+            s.commit()
         # duplicate username rejected (neutral redirect with err)
         assert "err=" in client.post("/users/create", headers=hdr,
                                      data={"username": "created1", "password": "pw"},

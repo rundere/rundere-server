@@ -1060,7 +1060,7 @@ def test_commit_only_logs_the_committers_own_approvals():
         synchronize_session=False)
     s.query(TravelItem).delete(); s.commit()
     me = User(username="c105-me", auth_source="local", is_admin=True)
-    sis = User(username="c105-sis", auth_source="local")
+    sis = User(username="c105-sis", auth_source="local", share_with_admins=True)   # opted in
     s.add_all([me, sis]); s.commit()
     mine = _add(s, _flight_payload(), targets=["airtrail.flight"])
     hers = _add(s, _flight_payload(), targets=["airtrail.flight"])
@@ -1075,7 +1075,7 @@ def test_commit_only_logs_the_committers_own_approvals():
         return {p["item_id"] for p in env["plans"]}
 
     assert committed(sis) == {hers.id}                  # hers only, never mine
-    assert committed(me) == {mine.id, hers.id}          # admin: she shares by default
+    assert committed(me) == {mine.id, hers.id}          # admin: she opted in to sharing
     sis.share_with_admins = False; s.commit()
     assert committed(me) == {mine.id}                   # opted out: not the admin's to log
     assert committed(None) == {mine.id, hers.id}        # operator CLI: everything
