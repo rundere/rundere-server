@@ -768,7 +768,7 @@ Since D-146 that no longer holds.
     release. Earlier images stay private.
   - **Development** moves to the public repository after launch.
   - It's created private and goes public only when the launch checklist passes
-    (`docs/PUBLISHING.md`).
+    (the maintainer's publishing runbook; `docs/prepublish.md` covers the check).
 - **D-206 — Yonder stays as the internal name (YONDER-292; owner, 2026-10-19).** The
   Python package `yonder`, the `TX_*` settings prefix and code names such as the `yonder.*` loggers
   keep the old name. Renaming them would break every self-hoster's environment file for no
