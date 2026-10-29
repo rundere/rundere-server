@@ -31,6 +31,16 @@
   </div>
 </div>
 <div id="pl-sheet"></div>
+{% if map_enabled %}
+{# SPEC-11 D-218: Leaflet is vendored (no CDN). Loaded here, not with the Map lens, so
+   the lens can be swapped in by htmx without racing script loads. #}
+<link rel="stylesheet" href="{{ asset('/review/static/vendor/leaflet/leaflet.css') }}">
+<link rel="stylesheet" href="{{ asset('/review/static/vendor/leaflet/MarkerCluster.css') }}">
+<link rel="stylesheet" href="{{ asset('/review/static/vendor/leaflet/MarkerCluster.Default.css') }}">
+<script src="{{ asset('/review/static/vendor/leaflet/leaflet.js') }}" defer></script>
+<script src="{{ asset('/review/static/vendor/leaflet/leaflet.markercluster.js') }}" defer></script>
+<script src="{{ asset('/review/static/places_map.js') }}" defer></script>
+{% endif %}
 <script>
 (function () {
   // "/" searches; j and k move between places; Enter opens one (SPEC-11).

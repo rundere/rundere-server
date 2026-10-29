@@ -31,7 +31,9 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app import api_v1, places as places_svc, places_geo, scope
+from app.config import settings
 from app.db import get_session
+from app.places_map_web import map_enabled
 
 router = APIRouter(prefix="/places")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
@@ -39,7 +41,7 @@ from app.icons import install as _install_icons  # noqa: E402
 _install_icons(templates)
 templates.env.globals["kind_label"] = places_svc.type_label
 
-LENSES = ("unsorted", "atlas", "lists", "all")
+LENSES = ("unsorted", "atlas", "lists", "map", "all")   # "map" only with a tile source (D-218)
 _CHANGED = {"HX-Trigger": "places-changed"}      # the open lens refreshes itself
 
 
@@ -98,6 +100,7 @@ def _body_ctx(request: Request, session: Session) -> dict:
     q = (qp.get("q") or "").strip()
     unsorted = places_svc.unsorted(session, user)
     ctx = {"request": request, "q": q, "lens": lens, "unsorted_count": len(unsorted),
+           "map_enabled": map_enabled(), "map_attribution": settings.map_tile_attribution,
            "kinds": places_svc.place_type_options(), "err": qp.get("err", "")}
     if q:                                           # a search overrides the lens
         f = places_svc.parse_query(q)
@@ -114,6 +117,8 @@ def _body_ctx(request: Request, session: Session) -> dict:
     if not lens:                                    # first visit: sort if there's any
         lens = "unsorted" if unsorted else "atlas"
     ctx["lens"] = lens
+    if lens == "map" and ctx["map_enabled"]:        # drawn in the browser from /places/map/data
+        return ctx
     if lens == "unsorted":
         pinless = [p for p in unsorted if p.lat is None]
         return {**ctx, "rows": _rows(session, user, [p for p in unsorted if p.lat is not None]),

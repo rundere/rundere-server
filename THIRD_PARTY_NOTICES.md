@@ -9,6 +9,8 @@ file named, or in the package as installed.
 | What | Where | Licence | Notes |
 |---|---|---|---|
 | [htmx](https://htmx.org/) 2.0.4 | `app/review/static/htmx.min.js` | 0BSD (Zero-Clause BSD) | |
+| [Leaflet](https://leafletjs.com/) 1.9.4 | `app/review/static/vendor/leaflet/` (`leaflet.js`, `leaflet.css`, `images/`) | BSD-2-Clause, Copyright (c) 2010-2023 Volodymyr Agafonkin, (c) 2010-2011 CloudMade | `LICENSE-leaflet.txt`; the Places Map lens (D-218) |
+| [Leaflet.markercluster](https://github.com/Leaflet/Leaflet.markercluster) 1.5.3 | `app/review/static/vendor/leaflet/` (`leaflet.markercluster.js`, `MarkerCluster*.css`) | MIT, Copyright 2012 David Leaver | `LICENSE-markercluster.txt` |
 | [Figtree](https://github.com/erikdkennedy/figtree) | `design/fonts/figtree-*` | SIL Open Font License 1.1 | `design/fonts/LICENSE-figtree.txt` |
 | [Outfit](https://github.com/Outfitio/Outfit-Fonts) | `design/fonts/outfit-*` | SIL Open Font License 1.1 | `design/fonts/LICENSE-outfit.txt` |
 | [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) | `design/fonts/jetbrains-mono-*` | SIL Open Font License 1.1 | `design/fonts/LICENSE-jetbrains-mono.txt` |

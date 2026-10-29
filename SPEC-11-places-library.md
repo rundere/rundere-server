@@ -112,7 +112,7 @@ Everything is own-only, with no admin view (D-166).
   - Repeating the import is safe (D-169 identity), and `dry_run` previews it.
   - A shared Google list link is not supported: the page is drawn in the browser and carries
     no data. The UI points to Takeout instead.
-- **D-218 — The map is optional (proposed; D-146).**
+- **D-218 — The map is optional (owner, 2026-10-29; D-146).**
   - Leaflet and markercluster are vendored into the static folder, like htmx. No CDN.
   - Tiles go through the server, from the same `map_tile_url` and tile cache the PDF maps use.
     The browser never talks to a tile server, and tiles are cached.
@@ -132,7 +132,7 @@ Everything is own-only, with no admin view (D-166).
    (built, 4.12.11).
 2. The library web page: Search, Unsorted, Atlas, Lists and the place panel, with the type
    picker and Atlas map thumbnails (built).
-3. The Map lens (D-218).
+3. The Map lens (D-218) (built).
 4. Takeout import (D-217).
 5. Trip and Discover integration (D-219).
 6. The mobile API and MCP surface: filters, lists, Atlas, clusters, import, and

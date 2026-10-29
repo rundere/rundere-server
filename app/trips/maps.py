@@ -185,6 +185,24 @@ def _tile(template: str, z: int, x: int, y: int) -> bytes | None:
     return data
 
 
+def tile(z: int, x: int, y: int) -> bytes | None:
+    """One tile for the Map lens (SPEC-11 D-218), through the server's own cache.
+
+    The browser never talks to the tile server: it asks us, and we fetch from the
+    configured `map_tile_url` (server config, never user input, so D-152's SSRF
+    policy isn't in play) or serve the disk cache the PDF maps already fill.
+    z, x and y are checked against the real tile grid first, so a client can't make
+    the server fetch tiles that don't exist. None when there's no template, the
+    coordinates are out of range, or the tile server has none to give."""
+    from app.config import settings
+    template = (settings.map_tile_url or "").strip()
+    if not template or not (0 <= z <= 19):
+        return None
+    if not (0 <= x < (1 << z) and 0 <= y < (1 << z)):
+        return None
+    return _tile(template, z, x, y)
+
+
 def _paint_tiles(img, canvas: _Canvas, template: str) -> bool:
     """Paste the tiles covering the canvas; False if any is missing."""
     from PIL import Image
