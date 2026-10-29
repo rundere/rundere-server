@@ -323,6 +323,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from app.capture import router as capture_router  # noqa: E402
 from app.dashboard import router as dashboard_router  # noqa: E402
 from app.journal_web import router as journal_router  # noqa: E402
+from app.places_map_web import router as places_map_router  # noqa: E402
 from app.places_web import router as places_router  # noqa: E402
 from app.review.home import router as home_router  # noqa: E402
 from app.review.routes import inbox_router  # noqa: E402
@@ -337,6 +338,8 @@ app.include_router(capture_router)
 app.include_router(trips_router)
 app.include_router(costs_router)
 app.include_router(journal_router)
+# The Map lens first: places_router has a GET /places/{place_id} catch-all (D-218).
+app.include_router(places_map_router)
 app.include_router(places_router)
 # Root ("/") is the dashboard — registered last so it never shadows a router
 # above that also owns "/" behaviour; there is none today, but this keeps the

@@ -12,7 +12,7 @@ Accepted shapes:
 - Google `/maps/place/<Name>/@lat,lon,zoom/data=…!3d<lat>!4d<lon>…` — the data
   blob's `!3d/!4d` is the pin itself and beats the `@` viewport centre;
 - Google `?api=1&query=<name>&query_place_id=<id>` (`/maps/search/`) and
-  `/maps?q=<name>[&ll=lat,lon]`;
+  `/maps?q=<name>[, <address>][&ll=lat,lon][&ftid=…]` (the name is the first part);
 - Apple `maps.apple.com/?q=<name>&ll=lat,lon[&address=…]` and
   `/place?name=…&coordinate=lat,lon&address=…`;
 - Google `maps.app.goo.gl` short links, but only after `classify` expands them
@@ -69,6 +69,20 @@ def _name(raw: str | None) -> str | None:
     return s[:300]
 
 
+def _name_and_address(text: str | None) -> tuple[str | None, str | None]:
+    """"Illstyl3 Sammies, 300 Richmond St W, Toronto, ON M5V 1X2" → the name and
+    the address. Text that starts with a house number is an address with no name,
+    so it stays whole as the name (a place needs one) and is the address too."""
+    if not text or "," not in text:
+        return text, None
+    head, rest = (x.strip() for x in text.split(",", 1))
+    if not head or not rest:
+        return text, None
+    if head[0].isdigit():
+        return text, text[:500]
+    return head, rest[:500]
+
+
 def _is_google(url: str) -> bool:
     return bool(_GOOGLE_HOST.match((urlsplit(url).hostname or "").lower()))
 
@@ -91,8 +105,17 @@ def _google(url: str) -> dict | None:
     q = parse_qs(parts.query)
     if q.get("origin") and q.get("destination"):
         return None
-    m = _PLACE_PATH.search(parts.path) or _SEARCH_PATH.search(parts.path)
-    name = _name(m.group(1)) if m else _name((q.get("query") or q.get("q") or [None])[0])
+    m = _PLACE_PATH.search(parts.path)
+    address = None
+    if m:
+        name = _name(m.group(1))
+    else:
+        # A search or `?q=` link carries what Google shows for the place, usually
+        # "Name, street, city, province postcode" (the iOS share sheet sends these,
+        # with no coordinates, YONDER-339). The name is the first part.
+        s = _SEARCH_PATH.search(parts.path)
+        name, address = _name_and_address(
+            _name(s.group(1)) if s else _name((q.get("query") or q.get("q") or [None])[0]))
     # The data blob's !3d/!4d is the pin; the @ pair is only the map's viewport.
     pin = _PIN_COORDS.search(url) or _AT_COORDS.search(parts.path)
     lat, lon = _coords(*pin.groups()) if pin else (None, None)
@@ -106,7 +129,8 @@ def _google(url: str) -> dict | None:
                 or (ftid.group(1).lower() if ftid else None))
     if not (name or lat is not None):
         return None
-    return _place("google", url, name=name, lat=lat, lon=lon, place_id=place_id)
+    return _place("google", url, name=name, lat=lat, lon=lon, address=address,
+                  place_id=place_id)
 
 
 def _apple(url: str) -> dict | None:

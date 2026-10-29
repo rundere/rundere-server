@@ -233,54 +233,95 @@ def test_the_demo_shows_places_without_edit_controls(me, monkeypatch):
 
 # ------------------------------------------------------------------ address → pin (owner, 2026-10-26)
 class _Geo:
-    """A stand-in Photon: street-level hits for "12 Example Row", a city-centre
-    hit for anything else."""
+    """A stand-in Photon, shaped like the real one (`_query` returns GeoJSON
+    features). It has the building at 12 Example Row, Lisbon; another branch of the
+    same café two streets away (the decoy a name match would take); and the city
+    itself, which is never a pin. The behaviour it mimics was measured against a
+    real Photon on 2026-10-29 (YONDER-339)."""
     def __init__(self):
         self.asked = []
 
-    def geocode_place(self, place):
-        from resolve.geocode import GeocodeResult
-        self.asked.append(place)
-        if "Example Row" in (place.get("address") or ""):
-            return GeocodeResult(lat=38.71, lon=-9.14, country="PT", city="Lisbon",
-                                 name=None, confidence="verified", precision="poi")
-        return GeocodeResult(lat=38.72, lon=-9.13, country="PT", city="Lisbon", name=None,
-                             confidence="verified", precision="area")
+    @staticmethod
+    def _f(lat, lon, **props):
+        props.setdefault("countrycode", "PT")
+        props.setdefault("city", "Lisbon")
+        return {"geometry": {"coordinates": [lon, lat]}, "properties": props}
+
+    def _query(self, q, limit=5, near=None):
+        self.asked.append(q)
+        out = []
+        if "Example Row" in q:
+            out.append(self._f(38.71, -9.14, osm_key="place", osm_value="house",
+                               housenumber="12", street="Example Row"))
+        if "Café Inventado" in q:
+            out.insert(0, self._f(38.73, -9.15, osm_key="amenity", osm_value="cafe",
+                                  name="Café Inventado", housenumber="88",
+                                  street="Rua Fictícia"))
+        out.append(self._f(38.72, -9.13, osm_key="place", osm_value="city",
+                           type="city", name="Lisbon"))
+        return out
+
+    def reverse(self, lat, lon):
+        return None
 
 
-def test_a_corrected_address_saves_on_change_and_pins_a_place_without_one(me, monkeypatch):
+def test_the_address_saves_with_its_button_and_pins_a_place_without_one(me, monkeypatch):
     geo = _Geo()
     monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: geo)
     pid = _save(me["u"], "Raft somewhere")                      # no pin
     sheet = client.get(f"/places/{pid}").text
-    assert 'hx-trigger="change, submit"' in sheet and "Correct the address" not in sheet
-    r = client.post(f"/places/{pid}/update", data={"address": "12 Example Row",
-                                                   "locality": "Lisbon", "country_code": "pt"})
-    assert "Pinned on the map from the address" in r.text
+    # An explicit Save for the address group, not save-on-change (YONDER-339).
+    assert f'hx-post="/places/{pid}/address"' in sheet and "Save address" in sheet
+    assert "Not on the map yet" in sheet
+    r = client.post(f"/places/{pid}/address", data={"address": "12 Example Row",
+                                                    "locality": "Lisbon", "country_code": "pt"})
+    assert "Address saved. Pinned on the map from the address" in r.text
     assert r.headers.get("hx-trigger") == "places-changed"
+    assert f"/places/{pid}/map.png" in r.text                   # the pin's small map
     with SessionLocal() as s:
         p = s.get(SavedPlace, pid)
         assert (p.address, p.locality, p.country_code) == ("12 Example Row", "Lisbon", "PT")
         assert (p.lat, p.lon) == (38.71, -9.14) and p.geohash
-    assert geo.asked[0]["country"] == "PT"
-    assert "no pin yet" not in client.get(f"/places/{pid}").text        # and it stays
+    # The country goes in by name: "PT" or "CA" alone can read as something else.
+    assert geo.asked[0] == "Raft somewhere, 12 Example Row, Lisbon, Portugal"
+    assert "Not on the map yet" not in client.get(f"/places/{pid}").text
 
 
-def test_an_address_that_only_finds_the_city_places_no_pin(me, monkeypatch):
+def test_another_branch_with_the_same_name_is_not_a_pin(me, monkeypatch):
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
+    pid = _save(me["u"], "Café Inventado")
+    r = client.post(f"/places/{pid}/address", data={"address": "5 Rua Fictícia",
+                                                    "locality": "Lisbon", "country_code": "PT"})
+    assert "on the map, so there" in r.text and "Find on map" in r.text
+    with SessionLocal() as s:
+        assert s.get(SavedPlace, pid).lat is None               # number 88 isn't number 5
+
+
+def test_a_town_alone_places_no_pin_and_says_what_to_add(me, monkeypatch):
     monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
     pid = _save(me["u"], "Raft somewhere")
-    r = client.post(f"/places/{pid}/update", data={"address": "Somewhere vague",
-                                                   "locality": "Lisbon"})
-    assert "find that exact address" in r.text
+    r = client.post(f"/places/{pid}/address", data={"address": "", "locality": "Lisbon",
+                                                    "country_code": "PT"})
+    assert "Without a street and number" in r.text and "Find on map" in r.text
     with SessionLocal() as s:
         p = s.get(SavedPlace, pid)
-        assert p.address == "Somewhere vague" and p.lat is None      # saved, but not pinned
+        assert p.locality == "Lisbon" and p.lat is None          # saved, but not pinned
+
+
+def test_find_on_map_retries_a_saved_address(me, monkeypatch):
+    pid = _save(me["u"], "Raft somewhere", address="12 Example Row", locality="Lisbon",
+                country_code="PT")
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
+    assert "Find on map" in client.get(f"/places/{pid}").text
+    r = client.post(f"/places/{pid}/pin")
+    assert "Pinned on the map from the address" in r.text
+    assert client.get(f"/places/{pid}/map.png").status_code == 200
 
 
 def test_without_a_geocoder_the_address_still_saves_and_says_why_there_is_no_pin(me):
     pid = _save(me["u"], "Raft somewhere")
-    r = client.post(f"/places/{pid}/update", data={"address": "12 Example Row"})
-    assert "no address lookup set up" in r.text
+    r = client.post(f"/places/{pid}/address", data={"address": "12 Example Row"})
+    assert "no address lookup set up" in r.text and "Find on map" not in r.text
     with SessionLocal() as s:
         assert s.get(SavedPlace, pid).address == "12 Example Row"
 
@@ -288,8 +329,9 @@ def test_without_a_geocoder_the_address_still_saves_and_says_why_there_is_no_pin
 def test_an_existing_pin_moves_only_when_asked(me, monkeypatch):
     monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
     pid = _save(me["u"], "Tile museum", LIS)
-    r = client.post(f"/places/{pid}/update", data={"address": "12 Example Row"})
-    assert r.text.count("Saved.") == 1 and "Pinned" not in r.text
+    r = client.post(f"/places/{pid}/address", data={"address": "12 Example Row",
+                                                    "locality": "Lisbon", "country_code": "PT"})
+    assert "Address saved." in r.text and "Pinned" not in r.text
     with SessionLocal() as s:
         assert (s.get(SavedPlace, pid).lat, s.get(SavedPlace, pid).lon) == LIS   # kept
     assert "Move the pin to this address" in client.get(f"/places/{pid}").text
@@ -305,14 +347,64 @@ def test_the_api_patch_pins_from_a_new_address_too(me, monkeypatch):
     with SessionLocal() as s:
         tok = authn.issue_access_token(s.get(User, me["u"].id))
     r = client.patch(f"/api/v1/places/{pid}", headers={"Authorization": f"Bearer {tok}"},
-                     json={"address": "12 Example Row", "locality": "Lisbon"})
+                     json={"address": "12 Example Row", "locality": "Lisbon",
+                           "country_code": "PT"})
     assert r.status_code == 200 and (r.json()["lat"], r.json()["lon"]) == (38.71, -9.14)
 
 
-def test_nobody_else_can_pin_your_place(me, monkeypatch):
+def test_a_google_share_with_an_address_gets_its_pin_on_arrival(me, monkeypatch):
+    """The iOS share sheet sends `maps?q=Name, street, city&ftid=…` with no
+    coordinates (YONDER-339): the name and address come apart, and the place is
+    pinned from the address when it's saved."""
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
+    url = ("https://www.google.com/maps?q=Raft+somewhere,+12+Example+Row,+Lisbon,+1100-001"
+           "&ftid=0x1:0x2")
+    with SessionLocal() as s:
+        p, outcome = places_svc.save(s, me["u"], url=url, enrich=True, source="ios-share")
+        assert outcome == places_svc.CREATED
+        assert (p.name, p.address) == ("Raft somewhere", "12 Example Row, Lisbon, 1100-001")
+        assert (p.lat, p.lon, p.locality, p.country_code) == (38.71, -9.14, "Lisbon", "PT")
+
+
+def test_the_backfill_rereads_old_names_and_pins_with_a_dry_run_first(me, monkeypatch):
+    url = "https://www.google.com/maps?q=Raft+somewhere,+12+Example+Row,+Lisbon&ftid=0x3:0x4"
+    with SessionLocal() as s:                                   # as the old parse stored it
+        p, _ = places_svc.save(s, me["u"], name="Raft somewhere, 12 Example Row, Lisbon",
+                               url=url, country_code="PT")
+        pid = p.id
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
+    with SessionLocal() as s:
+        counts = places_svc.backfill(s, dry_run=True)
+        assert counts["renamed"] >= 1 and counts["pinned"] >= 1
+    with SessionLocal() as s:
+        p = s.get(SavedPlace, pid)
+        assert p.name == "Raft somewhere, 12 Example Row, Lisbon" and p.lat is None
+    with SessionLocal() as s:
+        places_svc.backfill(s)
+    with SessionLocal() as s:
+        p = s.get(SavedPlace, pid)
+        assert (p.name, p.address) == ("Raft somewhere", "12 Example Row, Lisbon")
+        assert (p.lat, p.lon) == (38.71, -9.14)
+
+
+def test_the_backfill_leaves_a_name_the_person_changed(me, monkeypatch):
+    url = "https://www.google.com/maps?q=Raft+somewhere,+12+Example+Row,+Lisbon&ftid=0x5:0x6"
+    with SessionLocal() as s:
+        p, _ = places_svc.save(s, me["u"], name="Our raft", url=url)
+        pid = p.id
+    with SessionLocal() as s:
+        places_svc.backfill(s)
+    with SessionLocal() as s:
+        assert s.get(SavedPlace, pid).name == "Our raft"
+
+
+def test_nobody_else_can_pin_or_see_the_map_of_your_place(me, monkeypatch):
     monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: _Geo())
     pid = _save(me["u"], "Tile museum", LIS, address="12 Example Row")
     me["u"] = _mk("ui_b")
     assert client.post(f"/places/{pid}/pin").status_code == 404
+    assert client.post(f"/places/{pid}/address", data={"address": "1 Elsewhere"}).status_code == 404
+    assert client.get(f"/places/{pid}/map.png").status_code == 404
     with SessionLocal() as s:
-        assert (s.get(SavedPlace, pid).lat, s.get(SavedPlace, pid).lon) == LIS
+        p = s.get(SavedPlace, pid)
+        assert (p.lat, p.lon, p.address) == (*LIS, "12 Example Row")

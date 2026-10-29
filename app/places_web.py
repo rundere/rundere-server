@@ -31,7 +31,9 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app import api_v1, places as places_svc, places_geo, scope
+from app.config import settings
 from app.db import get_session
+from app.places_map_web import map_enabled
 
 router = APIRouter(prefix="/places")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
@@ -39,7 +41,7 @@ from app.icons import install as _install_icons  # noqa: E402
 _install_icons(templates)
 templates.env.globals["kind_label"] = places_svc.type_label
 
-LENSES = ("unsorted", "atlas", "lists", "all")
+LENSES = ("unsorted", "atlas", "lists", "map", "all")   # "map" only with a tile source (D-218)
 _CHANGED = {"HX-Trigger": "places-changed"}      # the open lens refreshes itself
 
 
@@ -98,6 +100,7 @@ def _body_ctx(request: Request, session: Session) -> dict:
     q = (qp.get("q") or "").strip()
     unsorted = places_svc.unsorted(session, user)
     ctx = {"request": request, "q": q, "lens": lens, "unsorted_count": len(unsorted),
+           "map_enabled": map_enabled(), "map_attribution": settings.map_tile_attribution,
            "kinds": places_svc.place_type_options(), "err": qp.get("err", "")}
     if q:                                           # a search overrides the lens
         f = places_svc.parse_query(q)
@@ -114,6 +117,8 @@ def _body_ctx(request: Request, session: Session) -> dict:
     if not lens:                                    # first visit: sort if there's any
         lens = "unsorted" if unsorted else "atlas"
     ctx["lens"] = lens
+    if lens == "map" and ctx["map_enabled"]:        # drawn in the browser from /places/map/data
+        return ctx
     if lens == "unsorted":
         pinless = [p for p in unsorted if p.lat is None]
         return {**ctx, "rows": _rows(session, user, [p for p in unsorted if p.lat is not None]),
@@ -148,7 +153,8 @@ def places_page(request: Request, session: Session = Depends(get_session)):
 
 # --------------------------------------------------------------------------- one place
 def _sheet(request: Request, session: Session, place_id: str, notice: dict | None = None,
-           headers: dict | None = None):
+           headers: dict | None = None, where: dict | None = None):
+    from resolve import place_lookup
     user = scope.user_of(request)
     p = places_svc.require_place(session, user, place_id)
     fileable = api_v1.fileable_trips(session, user)
@@ -164,7 +170,10 @@ def _sheet(request: Request, session: Session, place_id: str, notice: dict | Non
            "suggested": places_svc.suggest_trip(session, fileable, p),
            "trips_on": trips_on, "lists": [(lst, lst.id in member) for lst, _ in
                                            places_svc.lists(session, user)],
-           "notice": notice}
+           "notice": notice,
+           # The Where section says what a lookup did, next to the button that
+           # ran it (YONDER-339), and whether this server can look addresses up.
+           "where": where, "can_lookup": place_lookup._default_geocoder() is not None}
     return templates.TemplateResponse(request, "places/_place_sheet.html", ctx,
                                       headers=headers or {})
 
@@ -193,26 +202,47 @@ async def place_update(place_id: str, request: Request,
     except ValueError as exc:
         session.rollback()
         return _sheet(request, session, place_id, {"ok": False, "message": str(exc)})
-    message, ok = "Saved.", True
-    if any(k in fields for k in places_svc.ADDRESS_FIELDS):
-        # A corrected address places a pin the place doesn't have yet (YONDER-314).
-        outcome = places_svc.pin_from_address(session, user, place_id)
-        said = places_svc.pin_message(outcome)
-        if said:
-            message, ok = f"Saved. {said}", outcome == places_svc.PINNED
-    return _sheet(request, session, place_id, {"ok": ok, "message": message},
+    return _sheet(request, session, place_id, {"ok": True, "message": "Saved."},
                   headers=_CHANGED)
+
+
+def _where_result(request: Request, session: Session, place_id: str, outcome: str,
+                  saved: bool = False):
+    user = scope.user_of(request)
+    p = places_svc.require_place(session, user, place_id)
+    done = outcome in (places_svc.PINNED, places_svc.MOVED)
+    said = places_svc.pin_message(outcome, p)
+    if saved:
+        said = "Address saved." + (f" {said}" if said else "")
+    return _sheet(request, session, place_id,
+                  where={"ok": done or outcome == places_svc.KEPT, "message": said},
+                  headers=_CHANGED if (done or saved) else None)
+
+
+@router.post("/{place_id}/address", response_class=HTMLResponse)
+async def place_address(place_id: str, request: Request,
+                        session: Session = Depends(get_session)):
+    """Save the address with its button (YONDER-339: an explicit Save, not on change,
+    for fields filled in together), and look it up when the place has no pin."""
+    form = await request.form()
+    fields = {k: str(form.get(k) or "") for k in places_svc.ADDRESS_FIELDS}
+    user = scope.user_of(request)
+    try:
+        places_svc.update_place(session, user, place_id, **fields)
+    except ValueError as exc:
+        session.rollback()
+        return _sheet(request, session, place_id, where={"ok": False, "message": str(exc)})
+    outcome = places_svc.pin_from_address(session, user, place_id)
+    return _where_result(request, session, place_id, outcome, saved=True)
 
 
 @router.post("/{place_id}/pin", response_class=HTMLResponse)
 def place_pin(place_id: str, request: Request, session: Session = Depends(get_session)):
-    """Move the pin to the place's address, when the person asks (it already had one)."""
+    """Find on map (a place with no pin) or Move the pin to this address (one that
+    has a pin, when the person asks): a lookup of the saved address."""
     outcome = places_svc.pin_from_address(session, scope.user_of(request), place_id,
                                           move=True)
-    said = places_svc.pin_message(outcome) or "There's no address to look up."
-    return _sheet(request, session, place_id,
-                  {"ok": outcome in (places_svc.PINNED, places_svc.MOVED), "message": said},
-                  headers=_CHANGED if outcome in (places_svc.PINNED, places_svc.MOVED) else None)
+    return _where_result(request, session, place_id, outcome)
 
 
 @router.post("/{place_id}/lists", response_class=HTMLResponse)
@@ -344,6 +374,32 @@ def atlas_map(request: Request, country: str = "", city: str = "", continent: st
     img = maps.render_map([maps.Marker(lat, lon, colour=maps.KIND_COLOURS.get(kind,
                                                                         maps.DEFAULT_COLOUR))
                            for lat, lon, kind in pins], [], width=_THUMB_W, height=_THUMB_H)
+    if img is None:
+        return Response(status_code=404)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(img.data)
+    except OSError:                                  # a read-only cache is no reason to fail
+        pass
+    return Response(img.data, media_type=img.mime, headers=headers)
+
+
+@router.get("/{place_id}/map.png")
+def place_map(place_id: str, request: Request, session: Session = Depends(get_session)):
+    """A small map of one place's pin for its panel (YONDER-339), drawn like the
+    Atlas boards and cached by the pin. Own-only; 404 without a pin."""
+    from app.trips import maps
+    p = places_svc.require_place(session, scope.user_of(request), place_id)
+    if p.lat is None or p.lon is None:
+        return Response(status_code=404)
+    pin = (round(p.lat, 5), round(p.lon, 5), p.activity_type)
+    key = hashlib.sha256(repr(("place", p.owner_id, pin)).encode()).hexdigest()[:32]
+    path = _thumb_dir() / f"{key}.png"
+    headers = {"Cache-Control": "private, max-age=86400"}
+    if path.exists():
+        return Response(path.read_bytes(), media_type="image/png", headers=headers)
+    img = maps.render_map([maps.Marker(pin[0], pin[1], colour=maps.KIND_COLOURS.get(
+        pin[2], maps.DEFAULT_COLOUR))], [], width=_THUMB_W, height=_THUMB_H)
     if img is None:
         return Response(status_code=404)
     try:

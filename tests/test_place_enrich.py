@@ -290,3 +290,49 @@ if DEPS:
 
     def test_from_link_404s_for_an_unknown_trip():
         assert client.get("/trips/nope/activity/from-link", params={"mapLink": A_Q}).status_code == 404
+
+
+# --- locate: a pin from an address (YONDER-339) ---------------------------------
+
+def test_postcodes_and_region_codes_never_go_in_the_query():
+    """Measured on a real Photon: the postcode moved the top hit to another building."""
+    assert place_lookup._parts("12 Example Row, Toronto, ON M5V 1X2") == ["12 Example Row", "Toronto"]
+    assert place_lookup._parts("1 Test Ave, Springfield, NY 10001") == ["1 Test Ave", "Springfield"]
+    assert place_lookup._parts("5 Sample Lane, London SW1A 1AA") == ["5 Sample Lane", "London"]
+    assert place_lookup._street(["Rua Inventada 24", "Lisboa"]) == ("Rua Inventada 24", "24")
+
+
+def test_locate_needs_the_same_house_number_on_the_same_street():
+    house = _feat(None, 43.1, -79.1, osm_key="place", osm_value="house", housenumber="12",
+                  street="Example Row West", city="Toronto", countrycode="CA")
+    branch = _feat("Corner Bakery Test", 43.2, -79.2, housenumber="88", street="Other Street",
+                   city="Toronto", countrycode="CA")
+    gc = StubPhoton([branch, house])
+    hit = place_lookup.locate("Corner Bakery Test", "12 Example Row W, Toronto, ON M5V 1X2",
+                              country_code="CA", geocoder=gc)
+    assert (hit["lat"], hit["lon"]) == (43.1, -79.1)            # the house, not the branch
+    assert "Canada" in gc.calls[0][0] and "M5V" not in gc.calls[0][0]
+    gc = StubPhoton([branch])
+    assert place_lookup.locate("Corner Bakery Test", "12 Example Row", locality="Toronto",
+                               country_code="CA", geocoder=gc) is None
+
+
+def test_locate_without_a_street_wants_the_name_and_never_takes_a_town():
+    town = _feat("Testville", 44.0, -79.0, osm_key="place", osm_value="town", type="city",
+                 city="Testville", countrycode="CA")
+    named = _feat("Invented Lookout", 44.01, -79.01, osm_key="tourism", osm_value="viewpoint",
+                  city="Testville", countrycode="CA")
+    assert place_lookup.locate("Invented Lookout", "Testville, ON L0C 1A0", country_code="CA",
+                               geocoder=StubPhoton([town])) is None
+    hit = place_lookup.locate("Invented Lookout", "Testville, ON L0C 1A0", country_code="CA",
+                              geocoder=StubPhoton([town, named]))
+    assert (hit["lat"], hit["lon"]) == (44.01, -79.01)
+
+
+def test_locate_in_the_wrong_country_or_with_no_geocoder_is_nothing(monkeypatch):
+    house = _feat(None, 34.0, -118.0, osm_key="place", osm_value="house", housenumber="12",
+                  street="Example Row", city="Toronto", countrycode="US")
+    assert place_lookup.locate("X", "12 Example Row, Toronto", country_code="CA",
+                               geocoder=StubPhoton([house])) is None
+    monkeypatch.setattr(place_lookup, "_default_geocoder", lambda: None)   # Photon unset
+    assert place_lookup.locate("X", "12 Example Row", geocoder=None) is None

@@ -270,8 +270,15 @@ def save(session: Session, user, *, url: str | None = None, name: str | None = N
     if outcome == CREATED:
         extra = {"todo": todo, "priority": priority, "locality": locality,
                  "region": region, "country_code": country_code}
-        return _commit_new(session, owner_id, f, notes, source, extra=extra,
-                           geocoder=_reverse_geocoder(geocoder) if enrich else None)
+        gc = _reverse_geocoder(geocoder) if enrich else None
+        place, outcome = _commit_new(session, owner_id, f, notes, source, extra=extra,
+                                     geocoder=gc)
+        # A Google share carries a name and an address but no pin (YONDER-339), so
+        # a new place without one is looked up by its address, verified or not at all.
+        if outcome == CREATED and gc is not None and place.lat is None and _locate(place, gc):
+            session.commit()
+            session.refresh(place)
+        return place, outcome
     if outcome == REVIVED:
         return _revive(session, existing), REVIVED
     return existing, outcome
@@ -553,19 +560,48 @@ def _heal(session: Session, user) -> None:
         session.commit()
 
 
-def backfill(session: Session, *, geocoder=None, upgrade: bool = True) -> dict:
-    """Derive locality, geohash and search text for every saved place. Safe to
-    re-run: client and Photon localities are kept, and with a geocoder an airport
-    guess is upgraded (`upgrade=False` leaves those too). Commits as it goes."""
+def _reparse(session: Session, place: SavedPlace) -> bool:
+    """Split a name that an older parse took whole from a Google `?q=` link
+    ("Name, street, city …", YONDER-339) into the name and, when the place has
+    none, the address. A name the person has changed since is left alone."""
+    if place.provider != "google" or not place.source_url:
+        return False
+    parsed = place_url.parse_place_url(place.source_url) or {}
+    nm, addr = parsed.get("name"), parsed.get("address")
+    if not (nm and addr) or place.name != f"{nm}, {addr}"[:300]:
+        return False
+    place.name, place.name_key = nm, name_key(nm)
+    place.address = place.address or addr
+    key = place_key("google", parsed.get("place_id"), nm, parsed.get("lat"), parsed.get("lon"))
+    if key != place.place_key and _find(session, place.owner_id, key) is None:
+        place.place_key = key
+    return True
+
+
+def backfill(session: Session, *, geocoder=None, upgrade: bool = True,
+             dry_run: bool = False) -> dict:
+    """Derive locality, geohash and search text for every saved place, re-read
+    Google `?q=` names, and pin a pinless place from its address when Photon has
+    a verified match (YONDER-339). Safe to re-run: client and Photon localities
+    are kept, and with a geocoder an airport guess is upgraded (`upgrade=False`
+    leaves those too). `dry_run` counts what would change and writes nothing."""
     gc = _reverse_geocoder(geocoder)
     counts = Counter()
     for p in session.query(SavedPlace).yield_per(200):
-        before = (p.locality_source, p.search_text)
+        before = (p.locality_source, p.search_text, p.lat)
+        if _reparse(session, p):
+            counts["renamed"] += 1
+        if gc is not None and p.lat is None and (p.address or p.locality) and _locate(p, gc):
+            counts["pinned"] += 1
         use = gc if (upgrade or p.locality_source is None) else None
         refresh(p, geocoder=use)
         counts[p.locality_source or "none"] += 1
-        counts["changed" if (p.locality_source, p.search_text) != before else "unchanged"] += 1
-    session.commit()
+        counts["changed" if (p.locality_source, p.search_text, p.lat) != before
+               else "unchanged"] += 1
+    if dry_run:
+        session.rollback()
+    else:
+        session.commit()
     return dict(counts)
 
 
@@ -972,13 +1008,30 @@ def list_by_name(session: Session, user, name: str) -> PlaceList | None:
     return None
 
 
-# The address a person corrects can place the pin (YONDER-314 follow-up). Only a
-# street-level, verified Photon hit counts: a city centre is not "this address",
-# and a wrong pin is worse than none (SPEC-11). A pin the place already has is
+# The address a person saves can place the pin (YONDER-314, YONDER-339). Only a
+# verified Photon hit counts (resolve/place_lookup.locate): the house number on
+# that street, or a place by this name. A city centre is not "this address", and a
+# wrong pin is worse than none (SPEC-11 D-215). A pin the place already has is
 # moved only when the person asks, since a Maps link's own pin is usually exact.
 PINNED, MOVED, KEPT, NOT_FOUND, NO_GEOCODER, NO_ADDRESS = (
     "pinned", "moved", "kept", "not_found", "no_geocoder", "no_address")
 ADDRESS_FIELDS = ("address", "locality", "country_code")
+
+
+def _locate(place: SavedPlace, gc) -> bool:
+    """Pin `place` from its name and address when Photon has a verified match.
+    Fills a city and country the place lacks. Never commits or raises."""
+    from resolve import place_lookup
+    hit = place_lookup.locate(place.name, place.address, locality=place.locality,
+                              country_code=place.country_code, geocoder=gc)
+    if hit is None:
+        return False
+    place.lat, place.lon = hit["lat"], hit["lon"]
+    if not place.locality and not place.country_code:
+        place.locality, place.region = hit["locality"], hit["region"]
+        place.country_code, place.locality_source = hit["country_code"], PHOTON
+    refresh(place)
+    return True
 
 
 def pin_from_address(session: Session, user, place_id: str, *, move: bool = False,
@@ -988,41 +1041,47 @@ def pin_from_address(session: Session, user, place_id: str, *, move: bool = Fals
     `move` wasn't asked), `not_found`, `no_geocoder` (Photon unset, D-146) or
     `no_address`. Commits when the pin changes; never raises for a lookup."""
     place = require_place(session, user, place_id)
-    if not place.address:
+    if not (place.address or place.locality):
         return NO_ADDRESS
     if place.lat is not None and not move:
         return KEPT
     gc = _reverse_geocoder(geocoder)
     if gc is None:
         return NO_GEOCODER
-    try:
-        hit = gc.geocode_place({"name": place.address, "address": place.address,
-                                "city": place.locality, "country": place.country_code})
-    except Exception:
-        log.exception("address lookup failed for a saved place")
-        hit = None
-    if hit is None or not hit.usable or hit.precision != "poi":
-        return NOT_FOUND
     had_pin = place.lat is not None
-    place.lat, place.lon = hit.lat, hit.lon
-    if not place.country_code and hit.country:
-        place.country_code = hit.country.upper()[:2]
-    if not place.locality and hit.city:
-        place.locality = hit.city
-    if place.locality_source is None:
-        place.locality_source = CLIENT if place.locality else None
-    refresh(place)
+    if not _locate(place, gc):
+        return NOT_FOUND
     session.commit()
     return MOVED if had_pin else PINNED
 
 
-def pin_message(outcome: str) -> str | None:
+def lookup_text(place: SavedPlace) -> str:
+    """The address as it is looked up, for telling the person what wasn't found."""
+    return ", ".join(x for x in (place.address, place.locality,
+                                 places_geo.country_name(place.country_code)) if x)
+
+
+def has_street_number(place: SavedPlace) -> bool:
+    from resolve import place_lookup
+    return place_lookup._street(place_lookup._parts(place.address))[1] is not None
+
+
+def pin_message(outcome: str, place: SavedPlace | None = None) -> str | None:
     """What to tell the person about a pin lookup, or None to say nothing."""
+    if outcome == NOT_FOUND and place is not None:
+        where = lookup_text(place)
+        if not has_street_number(place):
+            return (f"Couldn't find \u201c{where}\u201d on the map. Without a street "
+                    "and number, only a place listed under this exact name can be "
+                    "pinned. Add them and save again.")
+        return (f"Couldn't find \u201c{where}\u201d on the map, so there's no pin. "
+                "Check the street, number and city.")
     return {
         PINNED: "Pinned on the map from the address.",
         MOVED: "Moved the pin to the address.",
-        NOT_FOUND: "Couldn't find that exact address on the map, so the pin wasn't placed. "
-                   "Check the street and city.",
+        NOT_FOUND: "Couldn't find that address on the map, so there's no pin. "
+                   "Check the street, number and city.",
         NO_GEOCODER: "This server has no address lookup set up, so a pin can't be placed "
                      "from an address.",
+        NO_ADDRESS: "There's no address to look up.",
     }.get(outcome)

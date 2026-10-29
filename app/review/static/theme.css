@@ -309,6 +309,15 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
   text-decoration:none}
 .pl-lens:hover{color:var(--accent)}
 .pl-lens.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+/* The Map lens (D-218): Leaflet draws into .pl-map; cluster bubbles are divIcons. */
+.pl-map{height:min(70vh,640px);min-height:320px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--surface-sunk);z-index:0}
+.pl-map-status{margin:6px 0 0;font-size:13px;color:var(--ink-3);min-height:1em}
+.pl-cluster-icon{background:transparent;border:0}
+.pl-cluster{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--accent);color:#fff;font:700 13px var(--ui);box-shadow:0 0 0 4px rgba(0,0,0,.16)}
+.pl-cluster.md{box-shadow:0 0 0 6px rgba(0,0,0,.16)}
+.pl-cluster.lg{box-shadow:0 0 0 8px rgba(0,0,0,.16)}
 .pl-count{margin-left:6px;min-width:18px;padding:0 6px;border-radius:var(--rd-radius-pill,999px);
   background:var(--accent);color:var(--accent-ink);font-size:11.5px;text-align:center;
   font-variant-numeric:tabular-nums}
@@ -356,6 +365,8 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
 .pl-check{display:flex;align-items:center;gap:6px;font-size:13.5px}
 .pl-foot{border-top:1px solid var(--line);padding-top:12px}
 .pl-cc{max-width:8ch;text-transform:uppercase}
+.pl-save-row{display:flex;justify-content:flex-end}
+.pl-pinmap{display:block;margin-top:10px;max-width:100%;height:auto;border-radius:var(--r)}
 .pl-where-links{margin-top:8px!important;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 @media (max-width:640px){
   .pl-kbd{display:none}

@@ -1,6 +1,6 @@
 {# One place, everything about it (SPEC-11 D-214): what it is, where, what to do
    there, its lists and trips, and adding it to another trip. Each change saves on
-   its own and re-renders this sheet; the lens behind it refreshes itself. Read-only
+   its own (the address has its Save button) and re-renders this sheet; the lens behind it refreshes itself. Read-only
    on the demo (D-198). #}
 {% set ro = demo_mode() %}
 {% set post = 'hx-target="#pl-sheet" hx-swap="innerHTML"' %}
@@ -47,9 +47,10 @@
         {{ p.locality or '' }}{% if p.locality and country %}, {% endif %}{{ country or '' }}
         {% if not p.address and not p.locality and not country %}<span class="pl-sub">Not placed yet.</span>{% endif %}</p>
       {% else %}
-      {# Saves as soon as a field changes, like the rest of this panel. A corrected
-         address places the pin when the place has none (YONDER-314). #}
-      <form class="pl-grid" hx-post="/places/{{ p.id }}/update" hx-trigger="change, submit" {{ post|safe }}>
+      {# The address is filled in as a group, so it saves with its own button (or
+         Enter), not on change, and the lookup's result shows right under that
+         button and stays (YONDER-339, SPEC-11 D-215). #}
+      <form class="pl-grid" hx-post="/places/{{ p.id }}/address" {{ post|safe }}>
         <label class="cap-lbl" for="pl-addr">Address</label>
         <input id="pl-addr" class="cap-input sm" name="address" value="{{ p.address or '' }}"
                placeholder="Street and number" autocomplete="off">
@@ -58,13 +59,20 @@
         <label class="cap-lbl" for="pl-cc">Country code</label>
         <input id="pl-cc" class="cap-input sm pl-cc" name="country_code" value="{{ p.country_code or '' }}"
                maxlength="2" placeholder="e.g. PT" autocomplete="off"{% if country %} title="{{ country }}"{% endif %}>
+        <span></span>
+        <div class="pl-save-row"><button type="submit" class="act tiny">Save address</button></div>
       </form>
       {% endif %}
+      {% if where and where.message %}<div class="cap-msg {{ 'ok' if where.ok else 'err' }}" role="status">{{ where.message }}</div>{% endif %}
+      {% if p.lat is not none %}
+      <img class="pl-pinmap" src="/places/{{ p.id }}/map.png?v={{ '%.5f,%.5f'|format(p.lat, p.lon) }}"
+           width="280" height="120" alt="Map of where {{ p.name }} is pinned" loading="lazy">
+      {% endif %}
       <p class="pl-where-links"><a href="{{ map_link }}" target="_blank" rel="noopener noreferrer">Open in Maps</a>
-        {% if p.lat is none %}· <span class="pl-warn">no pin yet</span>{% endif %}
-        {% if not ro and p.address and p.lat is not none %}
+        {% if p.lat is none %}· <span class="pl-warn">{% if not can_lookup %}No pin, and this server has no address lookup{% else %}Not on the map yet{% endif %}</span>{% endif %}
+        {% if not ro and can_lookup and (p.address or p.locality) %}
         · <button type="button" class="act tiny quiet" hx-post="/places/{{ p.id }}/pin" {{ post|safe }}
-                  title="Look the address up and put the pin there">Move the pin to this address</button>
+                  title="Look the saved address up and put the pin there">{% if p.lat is none %}Find on map{% else %}Move the pin to this address{% endif %}</button>
         {% endif %}</p>
     </section>
 
