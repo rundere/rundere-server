@@ -356,6 +356,8 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
 .pl-check{display:flex;align-items:center;gap:6px;font-size:13.5px}
 .pl-foot{border-top:1px solid var(--line);padding-top:12px}
 .pl-cc{max-width:8ch;text-transform:uppercase}
+.pl-save-row{display:flex;justify-content:flex-end}
+.pl-pinmap{display:block;margin-top:10px;max-width:100%;height:auto;border-radius:var(--r)}
 .pl-where-links{margin-top:8px!important;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 @media (max-width:640px){
   .pl-kbd{display:none}

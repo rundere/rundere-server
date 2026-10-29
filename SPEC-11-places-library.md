@@ -85,14 +85,29 @@ Everything is own-only, with no admin view (D-166).
 
   `locality_source` records which one it was (`client`, `photon`, `airport`). A later run with
   Photon available upgrades an `airport` guess and leaves the rest alone.
-  *The address can place the pin (owner, 2026-10-26).* A person's corrected address saves as
-  soon as it changes, like every field in the place panel, and is looked up with Photon. A
-  verified, street-level match pins a place that has no pin; a city-centre match doesn't,
-  since a wrong pin is worse than none. A place that already has a pin keeps it unless the
-  person presses "Move the pin to this address", because a Maps link's own pin is usually
-  exact. Without Photon the address still saves, and the panel says why there's no pin. The continent comes
-  from the country, through a small table in the code with no dependency. So the Atlas works
-  on a server with no Photon at all.
+  *The address can place the pin (owner, 2026-10-26; amended 2026-10-29, YONDER-339).*
+  - *Saving.* The address, city and country are filled in together, so they save with a
+    **Save address** button (or Enter), not on change like the rest of the panel. The
+    result shows under that button, and a pinless place keeps showing "Not on the map
+    yet" with **Find on map** to try again.
+  - *When it's looked up.* On that Save, on Find on map, and when a place arrives with an
+    address and no pin. A Google share link (`maps?q=Name, street, city …&ftid=…`) carries
+    no coordinates, so this is how every Google-shared place gets its pin. The name is the
+    first part of `q=` and the address is the rest.
+  - *What counts as a match.* The query is the name, street, city and the country spelled
+    out; the postcode is left out, because measured against a real Photon it moved the top
+    hit to another building. With a house number, a hit must have that number on that
+    street, since a chain's other branch has the same name. With no street, a hit must
+    bear the place's own name. A street, a town or a city centre is never a pin, since a
+    wrong pin is worse than none.
+  - *An existing pin.* It stays unless the person presses "Move the pin to this address",
+    because a Maps link's own pin is usually exact.
+  - *Without Photon* the address still saves, and the panel says there's no lookup.
+  - `places-backfill` re-reads older `q=` names and pins pinless places the same way, with
+    `--dry-run` to preview.
+
+  The continent comes from the country, through a small table in the code with no
+  dependency. So the Atlas works on a server with no Photon at all.
 - **D-216 — Search without a search engine.**
   - `search_text` is the name, address, locality, country, notes and to-do, folded for case
     and accents the way `discover.items.name_key` folds names.
