@@ -48,7 +48,7 @@ python3 rules.py --docs > RULES.md
 ```
 app/            FastAPI service
   dashboard.py    the root ("/") dashboard — next trip, pipeline snapshot,
-                  capture activity, quick links (v3.8.1)
+                  capture activity, quick links
   review/         the review queue (HTMX + Jinja), Home Profiles editor
   trips/          Run·dere's own trips: timeline, travellers, Discovery,
                   Planning, AdventureLog managed sync

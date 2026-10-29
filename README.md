@@ -24,7 +24,7 @@ Each trip gets a timeline, a map, research for the destination, a packing list, 
 costs and a travel journal. It runs on your own server, and the reading is done by
 structured parsers and a local LLM, so your bookings stay with you.
 
-Say it "run there". Plain-text spelling: Rundere.
+Say it "run there" ([hear it](design/audio/rundere.m4a)). Plain-text spelling: Rundere.
 
 <p align="center">
   <img src="docs/images/home.png" alt="Run·dere's Home page: the next activity on an upcoming trip, the Inbox and upcoming trips" width="49%">
@@ -71,7 +71,7 @@ docker network create proxy   # unless your reverse proxy already has one
 docker compose -f docker-compose.example.yml up -d
 ```
 
-Then open the server in a browser. The first visit creates the admin account (D-203), so
+Then open the server in a browser. The first visit creates the admin account (D-203; decisions are numbered in [DECISIONS.md](DECISIONS.md)), so
 do that before anyone else can reach it. The image is built for Linux on amd64.
 
 - **[Self-hosting guide](docs/self-hosting.md)**: secrets, the proxy, sign-in, optional
@@ -83,7 +83,7 @@ do that before anyone else can reach it. The image is built for Linux on amd64.
 
 1. Read the [release notes](https://github.com/rundere/rundere-server/releases), especially
    **Before you upgrade**: it lists migrations, new settings and anything to run once.
-2. Back up the database, the artifacts folder and `TX_SECRETS_KEY`
+2. Back up the database, the artifacts folder (`TX_ARTIFACTS_DIR`, `/data/artifacts` by default) and `TX_SECRETS_KEY`
    ([backups](docs/self-hosting.md#6-backups)).
 3. Change the image tag and redeploy. Database migrations run when the container starts.
 

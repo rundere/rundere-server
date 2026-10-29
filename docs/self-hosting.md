@@ -32,10 +32,15 @@ the plain setting, and an unreadable one stops the server from starting.
 
 ## 3. Deploy
 
-1. Copy the example. Replace every `CHANGE_ME` and every `example.com` host.
+1. Copy the example. Replace every `CHANGE_ME` and every example hostname.
 2. Point the volumes at **local disk**, never NFS (Postgres corrupts on NFS).
    The app runs as an unprivileged user (uid and gid 10001). On its first start
    it hands its data folders (artifacts, documents, tile cache) to that user.
+   The tile cache lives inside the artifacts folder by default
+   (`TX_MAP_TILE_CACHE_DIR` is empty), so the one artifacts volume covers it.
+   The documents folder is separate and off until you set `TX_DOCUMENTS_DIR`;
+   the example stack leaves it unset. Mount a volume for it when you turn file
+   capture on.
    Folders on a network share it can't change must already be writable by
    uid 10001. To keep the folders owned by your own account instead, run the
    container as you (`user: "1000:1000"` in the stack, with your uid and gid):
@@ -76,11 +81,13 @@ Everything works without them (D-146). Each is a setting in the example:
 
 ## 6. Backups
 
-Back up three things, and test a restore:
+Back up these, and test a restore:
 
 1. **The database** (`pg_dump`, or the volume while the database is stopped).
 2. **The artifacts folder:** the original of every capture (D-15).
-3. **`TX_SECRETS_KEY`,** kept apart from the database backup.
+3. **The documents folder** (`TX_DOCUMENTS_DIR`), if you turned on file capture:
+   uploaded PDFs, .ics and .eml files are stored there, not in the database.
+4. **`TX_SECRETS_KEY`,** kept apart from the database backup.
 
 ## 7. Upgrades
 

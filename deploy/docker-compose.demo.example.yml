@@ -62,7 +62,9 @@ services:
       - 1.1.1.1
       - 9.9.9.9
     networks:
-      - demo-edge
+      demo-edge:
+        # Pin the address so the firewall can name it (docs/demo-server.md).
+        # ipv4_address: 172.30.0.10
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=demo-edge"
@@ -84,4 +86,5 @@ services:
 
 networks:
   demo-edge:
-    external: true          # created once, shared only with the reverse proxy
+    external: true          # created once, shared only with the reverse proxy:
+                            # docker network create --subnet 172.30.0.0/24 demo-edge

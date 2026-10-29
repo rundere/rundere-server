@@ -83,7 +83,7 @@ services:
       # TX_SMTP_USER: CHANGE_ME@example.com
       # TX_SMTP_PASSWORD: "CHANGE_ME_SMTP_PASSWORD"
       # TX_SMTP_FROM: CHANGE_ME@example.com
-      # Scan every captured email and file before parsing (YONDER-243; required for
+      # Scan every captured email and file before parsing (required for
       # file capture). Run a clamav-rest container next to this one.
       # TX_CLAMAV_URL: http://clamav-rest:9000
       # Email-forward capture (docs/email-forward.md): a mailbox you own that
@@ -97,7 +97,7 @@ services:
       # The public About page's "Get the app" rows (D-202). https:// links only.
       # TX_IOS_TESTFLIGHT_URL: https://testflight.apple.com/join/XXXXXXXX
       # TX_IOS_APP_STORE_URL: https://apps.apple.com/app/idXXXXXXXXXX
-      # TX_ANDROID_APP_URL: https://play.google.com/store/apps/details?id=…
+      # TX_ANDROID_APP_URL: https://play.google.com/store/apps/details?id=your.package.name
       # TX_SERVER_CONTACT: you@example.com    # "Questions about this server" on About
       # Public base URL: OAuth/MCP metadata, token audience, email links.
       # Changing it later invalidates every OAuth token (AI assistants, the iOS app).

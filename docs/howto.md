@@ -1,16 +1,16 @@
 # Run·dere (formerly Yonder) — Setup & Usage Guide
 
-> Current for **v4.12.13**. Screenshots are being recaptured against the current
-> UI; `_[screenshot: …]_` marks where each one belongs. New screenshots use the
-> demo data only (D-198). The old `docs/howto.html` was retired in 4.12 (YONDER-289).
+> Current for **v4.12.13**.
 
 ## 1 What you need
 
 - Docker Engine + Compose
-- PostgreSQL 16 (bundled as `yonder-db` in the stack)
-- A reverse proxy that exposes **only** `POST /ingest` over public HTTPS
-  (e.g., Traefik). The Run·dere container must reach the proxy and any tools it
-  calls; put it on whatever existing Docker network(s) those use — one or several.
+- PostgreSQL 16 (bundled as `rundere-db` in the stack)
+- A reverse proxy with public HTTPS (e.g., Traefik). If the Google add-ons are
+  all you need from outside, expose only `/ingest`; the reference stack's public
+  host also serves the web UI and the machine endpoints (`/mcp`, `/oauth/*`,
+  `/.well-known/*`, `/api/v1`) that the iOS app and AI assistants use.
+  The Run·dere container must reach the proxy and any tools it calls; put it on whatever existing Docker network(s) those use — one or several.
 - Google account for the Gmail/Calendar add-ons
 - Optional external targets: AirTrail 3.13+ (flights), AdventureLog
   (trips/places). Each person connects their own under **Settings →
@@ -20,8 +20,6 @@
   Discovery's LLM tier), Photon (geocoder), SearXNG (Discovery's LLM-tier web
   search), CrowdSec (hardens `/ingest`)
 
-> _[screenshot: Run·dere stack overview]_
-
 ## 2 Deploy Run·dere
 
 1. Pull the image (built by CI on each version tag), or build locally:
@@ -30,17 +28,19 @@
    docker pull ghcr.io/rundere/rundere-server:latest
    ```
 
-2. Deploy the reference Portainer/Compose stack.
+2. Deploy the reference stack, `deploy/docker-compose.example.yml`.
 3. Set configuration via `TX_`-prefixed environment variables.
 4. Database migrations run automatically when the container starts.
 
 ## 3 Create capture keys
 
 ```bash
-python -m app.cli create-key <client-name>
+docker compose exec rundere python -m app.cli create-key <client-name> --user <username>
 ```
 
 One `/ingest` API key per capture client; it is printed once, so keep it safe.
+(Most people make theirs in **Capture Hub → Set up** instead; see
+[capture.md](capture.md#the-google-add-ons).)
 
 ## 4 Set up home profiles
 
@@ -48,8 +48,6 @@ One `/ingest` API key per capture client; it is printed once, so keep it safe.
 - Define your home airport(s) and area(s).
 - Places inside home are never logged as somewhere you "visited" — only as a
   journey's endpoint; purely-home movement is not a trip.
-
-> _[screenshot: Home profiles UI]_
 
 ## 5 Set up travellers
 
@@ -64,7 +62,7 @@ One `/ingest` API key per capture client; it is printed once, so keep it safe.
 ### Gmail & Google Calendar add-ons
 
 Personal Apps Script projects installed for your own account. They POST matched
-items to `/ingest`.
+items to `/ingest`. Setup steps are in [capture.md](capture.md#the-google-add-ons).
 
 ### Web pages & Maps directions (built in)
 
@@ -86,8 +84,6 @@ Open Run·dere's root URL (e.g. `https://rundere.example.com/`) and you land on 
   page (Home profiles, Packing profile, Discovery profile, Travellers, Rules,
   Tables).
 
-> _[screenshot: the dashboard — next trip, pipeline snapshot, quick links]_
-
 ## 8 Capture a web page or drive
 
 ### Bookmarklet (primary, for web pages)
@@ -99,16 +95,12 @@ Use the bookmarklet on the Capture Hub to capture the current page.
 You can paste raw HTML source, provide a public URL, or paste a Google Maps
 directions link into the Capture form.
 
-> _[screenshot: the built-in Capture Hub — bookmarklet and paste/URL/Maps form]_
-
 ## 9 Process & review
 
 - Click **Process new captures** to run extraction and resolution on demand.
 - The review queue sorts items into buckets you work left to right:
 
   `Needs you → Waiting for a trip → Ready to Approve → Approved → Logged → Everything`
-
-> _[screenshot: the review queue, items sorted into buckets]_
 
 ## 10 Correct & approve
 
@@ -124,8 +116,6 @@ directions link into the Capture form.
 4. Approving only **stages** the item; nothing is written until you log the batch.
 5. Editing or re-assigning re-checks the item.
 
-> _[screenshot: reviewing an item — what was read, what it will write, Approve]_
-
 ## 11 Log to your trackers
 
 Two-step and irreversible:
@@ -139,8 +129,6 @@ Two-step and irreversible:
 2. Confirm to execute.
 3. Re-running is safe: an already-written record is skipped (each target dedups),
    so nothing double-writes.
-
-> _[screenshot: the two-step log — dry-run preview, then confirm]_
 
 ## 12 Your trips — timeline, Discovery, Planning
 
@@ -173,8 +161,6 @@ as-is. Set your **Discovery profile** (**Administer → Discovery profile**) onc
 — dietary restrictions, drink/activity interests, a budget ceiling, mobility
 needs — so the searches reflect what you'd actually want to see.
 
-> _[screenshot: a trip's Discovery findings, grouped by topic]_
-
 ### Planning — the Packing Plan
 
 Click **Generate packing plan** on a trip to turn its dates, derived locations,
@@ -186,8 +172,6 @@ auto-detection missed one.
 Set your **Packing profile** (**Administer → Packing profile**) once — bag
 size, laundry comfort, packing style, must-have items — so every plan starts
 from your real habits.
-
-> _[screenshot: a trip's Packing Plan, categorized and bag-assigned]_
 
 ### Syncing with AdventureLog
 
@@ -202,8 +186,6 @@ two-way sync page:
 - **Pull** AdventureLog's own transportation/lodging records into the Run·dere
   timeline, in case someone edited the trip directly in AdventureLog.
 
-> _[screenshot: the AdventureLog sync page — push/pull selections]_
-
 ## 13 Scenarios & edge cases
 
 ### An item "Needs you"
@@ -212,8 +194,6 @@ It needs a human decision — usually which trip it belongs to (pick one in the
 AdventureLog picker) or a missing detail to fix. A flight whose trip is still
 unresolved is still approvable and logs to AirTrail; its AdventureLog trip record
 simply waits until you pick or create a trip.
-
-> _[screenshot: a "Needs you" item — a flight with no single matching trip]_
 
 ### Trains, buses & ferries keep their real time
 
@@ -237,9 +217,8 @@ errors, those topics are just absent until both services are configured.
 
 ## 14 Version & About
 
-The **Administer → About** page shows the running version (currently 3.8.1),
+The **Administer → About** page shows the running version when you are signed in,
 the capture surfaces, the source repository, and the license. The
 **dashboard** (the root URL) is the faster day-to-day check: what's next, and
 what's moving through the pipeline right now.
 
-> _[screenshot: the About page]_
