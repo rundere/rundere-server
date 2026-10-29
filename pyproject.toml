@@ -4,10 +4,10 @@ version = "4.12.13"
 description = "Yonder — travel documents -> AirTrail + AdventureLog."
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.151.0",
+    "fastapi>=0.162.0",
     "uvicorn>=0.54.0",
-    "sqlalchemy>=2.1.5",
-    "alembic>=1.20.0",
+    "sqlalchemy>=2.1.6",
+    "alembic>=1.20.1",
     "psycopg[binary]>=3.3.6",
     "sqladmin>=0.32.0",
     # sqladmin imports SQLAlchemy's asyncio layer, which needs greenlet; it is
@@ -24,7 +24,7 @@ dependencies = [
     # also needs it). >=13.0.0: the CVE-2026-1123xx/1128xx image-decoder fixes.
     "pillow>=13.0.0",
     "jinja2>=3.1",
-    "timezonefinder>=9.0.0",
+    "timezonefinder>=9.2.0",
     "babel>=2.12",
     # Timeline PDF export (HTML/CSS -> PDF). Needs pango + fonts in the image.
     "weasyprint>=62",
