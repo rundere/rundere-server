@@ -144,3 +144,23 @@ def test_short_link_expansion_reads_past_googles_consent_page():
     evil = "https://consent.google.com/ml?continue=https%3A%2F%2Fexample.com%2F"
     assert _past_consent(evil) == evil                  # only a Google page is followed
     assert _past_consent(real) == real
+
+
+def test_google_q_link_splits_the_name_from_the_address():
+    """The iOS share sheet's Google link (YONDER-339): `q=` is "Name, address", with
+    Google's feature id and no coordinates."""
+    p = place_url.parse_place_url(
+        "https://www.google.com/maps?q=Corner+Bakery+Test,+12+Example+Row,+Lisbon,+1100-001"
+        "&ftid=0x1a:0x2b&entry=gps")
+    assert (p["name"], p["address"]) == ("Corner Bakery Test", "12 Example Row, Lisbon, 1100-001")
+    assert p["lat"] is None and p["place_id"] == "0x1a:0x2b"
+
+
+def test_google_q_link_that_is_only_an_address_keeps_it_as_the_name():
+    p = place_url.parse_place_url("https://www.google.com/maps?q=12+Example+Row,+Lisbon")
+    assert p["name"] == p["address"] == "12 Example Row, Lisbon"
+
+
+def test_google_q_link_with_no_comma_is_just_a_name():
+    p = place_url.parse_place_url("https://www.google.com/maps?q=Corner+Bakery+Test")
+    assert (p["name"], p["address"]) == ("Corner Bakery Test", None)
