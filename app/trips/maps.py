@@ -18,6 +18,7 @@ import math
 import os
 import time
 import urllib.request
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -133,7 +134,17 @@ def great_circle(a: tuple[float, float], b: tuple[float, float], n: int = 48
 
 # ------------------------------------------------------------------ tiles
 
-_MEMORY: dict[str, bytes] = {}
+# Recently used tiles, most recent last. Capped: the Map lens (D-218) lets a person
+# pan the whole world, and the disk cache already keeps every tile for its TTL.
+_MEMORY: OrderedDict[str, bytes] = OrderedDict()
+_MEMORY_MAX = 512                   # ~10 MB of 256 px PNGs
+
+
+def _remember(url: str, data: bytes) -> None:
+    _MEMORY[url] = data
+    _MEMORY.move_to_end(url)
+    while len(_MEMORY) > _MEMORY_MAX:
+        _MEMORY.popitem(last=False)
 _TILE_TTL = 30 * 24 * 3600          # OSM asks for >= 7 days of caching
 
 
@@ -155,6 +166,7 @@ def _tile(template: str, z: int, x: int, y: int) -> bytes | None:
     url = (template.replace("{z}", str(z)).replace("{x}", str(x))
            .replace("{y}", str(y)).replace("{r}", "@2x"))    # {r}: high-res tiles
     if url in _MEMORY:
+        _MEMORY.move_to_end(url)
         return _MEMORY[url]
     cache = _cache_dir()
     path = None
@@ -164,7 +176,7 @@ def _tile(template: str, z: int, x: int, y: int) -> bytes | None:
         try:
             if time.time() - path.stat().st_mtime < _TILE_TTL:
                 data = path.read_bytes()
-                _MEMORY[url] = data
+                _remember(url, data)
                 return data
         except OSError:
             pass
@@ -176,13 +188,31 @@ def _tile(template: str, z: int, x: int, y: int) -> bytes | None:
             data = resp.read()
     except Exception:
         return None
-    _MEMORY[url] = data
+    _remember(url, data)
     if path is not None:
         try:
             path.write_bytes(data)
         except OSError:
             pass
     return data
+
+
+def tile(z: int, x: int, y: int) -> bytes | None:
+    """One tile for the Map lens (SPEC-11 D-218), through the server's own cache.
+
+    The browser never talks to the tile server: it asks us, and we fetch from the
+    configured `map_tile_url` (server config, never user input, so D-152's SSRF
+    policy isn't in play) or serve the disk cache the PDF maps already fill.
+    z, x and y are checked against the real tile grid first, so a client can't make
+    the server fetch tiles that don't exist. None when there's no template, the
+    coordinates are out of range, or the tile server has none to give."""
+    from app.config import settings
+    template = (settings.map_tile_url or "").strip()
+    if not template or not (0 <= z <= 19):
+        return None
+    if not (0 <= x < (1 << z) and 0 <= y < (1 << z)):
+        return None
+    return _tile(template, z, x, y)
 
 
 def _paint_tiles(img, canvas: _Canvas, template: str) -> bool:

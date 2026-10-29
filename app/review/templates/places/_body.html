@@ -7,6 +7,7 @@
     <a href="/places?lens=unsorted" class="pl-lens {{ 'on' if lens == 'unsorted' }}" {% if lens == 'unsorted' %}aria-current="page"{% endif %}>Unsorted{% if unsorted_count %}<span class="pl-count">{{ unsorted_count }}</span>{% endif %}</a>
     <a href="/places?lens=atlas" class="pl-lens {{ 'on' if lens == 'atlas' }}" {% if lens == 'atlas' %}aria-current="page"{% endif %}>Atlas</a>
     <a href="/places?lens=lists" class="pl-lens {{ 'on' if lens == 'lists' }}" {% if lens == 'lists' %}aria-current="page"{% endif %}>Lists</a>
+    {% if map_enabled %}<a href="/places?lens=map" class="pl-lens {{ 'on' if lens == 'map' }}" {% if lens == 'map' %}aria-current="page"{% endif %}>Map</a>{% endif %}
     <a href="/places?lens=all" class="pl-lens {{ 'on' if lens == 'all' }}" {% if lens == 'all' %}aria-current="page"{% endif %}>All</a>
   </nav>
   {% if err %}<div class="cap-msg err">{{ err }}</div>{% endif %}
@@ -25,6 +26,9 @@
       <p class="pl-lead">These came without a location, so the Atlas can't place them yet.</p>
       {{ place_rows(pinless) }}
     {% endif %}
+
+  {% elif lens == 'map' %}
+    {% include "places/_map.html" %}
 
   {% elif lens == 'atlas' %}{% set a = atlas %}
     {% if a.crumbs %}<nav class="pl-crumbs" aria-label="Where you are">{% for c in a.crumbs %}<a href="{{ c.href }}">{{ c.label }}</a> › {% endfor %}<b>{{ a.title }}</b></nav>{% endif %}

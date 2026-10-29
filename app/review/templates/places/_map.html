@@ -1,0 +1,11 @@
+{# The Map lens (SPEC-11 D-218). Drawn in the browser by places_map.js from
+   /places/map/data; tiles come through /places/map/tiles, never from a tile server
+   directly. The attribution is the configured one. #}
+<p class="pl-lead">Your saved places around the area you are looking at. Zoom in to see single
+  places; open one to see what to do there.</p>
+<div class="pl-map-wrap">
+  <div id="pl-map" class="pl-map" role="region" aria-label="Map of your saved places"
+       data-tiles="/places/map/tiles/{z}/{x}/{y}.png" data-data="/places/map/data"
+       data-attribution="{{ map_attribution }}"></div>
+  <p id="pl-map-status" class="pl-map-status" role="status"></p>
+</div>
