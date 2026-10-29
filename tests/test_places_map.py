@@ -170,3 +170,14 @@ def test_a_valid_tile_is_served_from_the_cache_layer(monkeypatch):
 def test_no_tile_source_means_no_tiles(monkeypatch, no_network):
     monkeypatch.setattr(settings, "map_tile_url", "")
     assert client.get("/places/map/tiles/5/10/12.png").status_code == 404
+
+
+def test_the_in_memory_tile_cache_is_capped(monkeypatch):
+    """Panning the world can't grow the server's memory: the disk cache keeps
+    every tile, the memory only the most recently used (D-218)."""
+    from app.trips import maps
+    monkeypatch.setattr(maps, "_MEMORY", maps.OrderedDict())
+    monkeypatch.setattr(maps, "_MEMORY_MAX", 3)
+    for i in range(5):
+        maps._remember(f"tile-{i}", b"x")
+    assert list(maps._MEMORY) == ["tile-2", "tile-3", "tile-4"]
