@@ -1,6 +1,6 @@
 [project]
 name = "yonder"
-version = "4.13.0"
+version = "4.13.1"
 description = "Run·dere (formerly Yonder): a self-hosted travel tracker that reads bookings from email, files and web pages and puts them on trips."
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
