@@ -9,6 +9,7 @@
     <label>{{ fl.label }}</label>
     <input class="input" type="{{ fl.type }}" name="{{ fl.key }}" value="{{ fl.value }}"
            {% if fl.hint %}placeholder="{{ fl.hint }}"{% endif %}>
+    {% if fl.note %}<div class="bp-who-hint">{{ fl.note }}</div>{% endif %}
   </div>
   {% endif %}
 {% endfor %}

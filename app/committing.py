@@ -883,6 +883,8 @@ def commit_item(session: Session, item: TravelItem, adventurelog, airtrail, *,
                 session.add(act)
                 session.flush()
                 act_id = act.id
+            if payload.get("item_type") == "flight":
+                _join_roster(session, tid, _booked_passengers(payload, identities))
             _tag_booked_travelers(session, act_id, tid, payload, identities,
                                   keep_existing=existing is not None, item=item)
             _record(target, op, {"trip_id": tid, "type": atype, "values": values},
@@ -1146,10 +1148,61 @@ def _resolve_or_mint_yonder_trip(session: Session, item: TravelItem,
                owner_id=item.owner_id)
     session.add(trip)
     session.flush()
+    _join_roster(session, trip.id, [_capturer_traveler(session, item)])
     item.trip_id = trip.id
     item.resolution = {**(item.resolution or {}), "yonder_trip_id": trip.id}
     flag_modified(item, "resolution")
     return trip.id
+
+
+def _capturer_traveler(session: Session, item: TravelItem):
+    """The traveller of whoever captured the item, or the `self` traveller when
+    the capture has no owner (an open key, auth off)."""
+    from app.models import TravelerIdentity, User
+    user = session.get(User, item.owner_id) if item.owner_id else None
+    if user is not None:
+        return (session.get(TravelerIdentity, user.traveler_id)
+                if user.traveler_id is not None else None)
+    return (session.query(TravelerIdentity).filter(TravelerIdentity.kind == "self")
+            .order_by(TravelerIdentity.id).first())
+
+
+def _booked_passengers(payload: dict, identities) -> list:
+    """The known travellers named on a flight booking."""
+    if not identities:
+        return []
+    from resolve.identity import match_identity
+    found = []
+    for t in (payload.get("travelers") or []):
+        ident, _, _ = match_identity(t.get("raw_name", ""), identities)
+        if ident is not None:
+            found.append(ident)
+    return found
+
+
+def _join_roster(session: Session, trip_id: str | None, travelers) -> None:
+    """Put travellers on a trip's roster (YONDER-340): a trip the pipeline mints
+    starts with the person who captured it, and a flight's named passengers join
+    the trip it files under, as a hand-added traveller would. Already on it is
+    a no-op; nobody is ever removed here."""
+    from app.models import TravelerIdentity, TripTraveler
+    if not trip_id:
+        return
+    for who_ in travelers:
+        if who_ is None:
+            continue
+        # The resolver's identities are plain records with string ids; the
+        # roster needs the traveller row itself.
+        try:
+            ident = session.get(TravelerIdentity, int(who_.id))
+        except (TypeError, ValueError):
+            continue
+        if ident is None or ident.generic:
+            continue
+        if session.get(TripTraveler, {"trip_id": trip_id, "traveler_id": ident.id}) is None:
+            session.add(TripTraveler(trip_id=trip_id, traveler_id=ident.id,
+                                     role="self" if ident.kind == "self" else "companion"))
+    session.flush()
 
 
 def _tag_booked_travelers(session: Session, activity_id: str, trip_id: str,
@@ -1172,13 +1225,7 @@ def _tag_booked_travelers(session: Session, activity_id: str, trip_id: str,
         return
     chosen: set = set()
     if payload.get("item_type") == "flight":
-        if not identities:
-            return
-        from resolve.identity import match_identity
-        for t in (payload.get("travelers") or []):
-            ident, _, _ = match_identity(t.get("raw_name", ""), identities)
-            if ident is not None:
-                chosen.add(ident.id)
+        chosen = {i.id for i in _booked_passengers(payload, identities)}
     elif item is not None:
         chosen = set((item.review or {}).get("traveler_ids") or [])
         if not chosen and item.owner_id:
