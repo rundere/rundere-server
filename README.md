@@ -15,7 +15,7 @@ A self-hosted travel planner for you and the people you travel with.
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-6B7280.svg)](LICENSE)
 [![Demo](https://img.shields.io/badge/demo-try_it-111827)](https://demo.rundere.app)
 
-**Version 4.13.0** · [Documentation](docs/) · [Demo](https://demo.rundere.app) · [Releases](https://github.com/rundere/rundere-server/releases) · [Docker image](https://github.com/rundere/rundere-server/pkgs/container/rundere-server) · [rundere.app](https://rundere.app)
+**Version 4.13.1** · [Documentation](docs/) · [Demo](https://demo.rundere.app) · [Releases](https://github.com/rundere/rundere-server/releases) · [Docker image](https://github.com/rundere/rundere-server/pkgs/container/rundere-server) · [rundere.app](https://rundere.app)
 </div>
 
 Forward a booking email, drop in a PDF or click a bookmarklet, and Run·dere reads the
