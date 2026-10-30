@@ -2617,8 +2617,19 @@ _NOT_CONNECTED = ("Connect your AdventureLog first (Settings → Connections).")
 
 def _push_msg(text: str) -> HTMLResponse:
     """Inline failure notice swapped next to the Push button (a success answers
-    with an HX-Redirect that reloads the detail showing the new link)."""
-    return HTMLResponse(f'<span class="bp-push-err">{text}</span>')
+    with an HX-Redirect that reloads the detail showing the new link). Escaped:
+    the text can carry an error from the person's AdventureLog server."""
+    from html import escape
+    return HTMLResponse(f'<span class="bp-push-err">{escape(text)}</span>')
+
+
+def _push_failed(ex: Exception) -> HTMLResponse:
+    """A failed AdventureLog request. The exception can quote the server's URL
+    and response body, so it's logged by type only and the person gets a plain
+    notice (CodeQL py/stack-trace-exposure)."""
+    log.warning("AdventureLog push failed: %s", type(ex).__name__)
+    return _push_msg("AdventureLog request failed. Check that it's running and "
+                     "the connection in Settings → Connections still works.")
 
 
 # Every Yonder activity type becomes a Transportation, except lodging (its own
@@ -2797,7 +2808,7 @@ def push_adventurelog(trip_id: str, request: Request, session: Session = Depends
         status, parsed, raw = client.create_collection(
             trip.name, trip.start_date, trip.end_date, is_public=True)
     except Exception as ex:                              # network/adapter error
-        return _push_msg(f"AdventureLog request failed: {ex}")
+        return _push_failed(ex)
     if status >= 400 or not isinstance(parsed, dict) or not parsed.get("id"):
         return _push_msg(f"AdventureLog rejected the collection (HTTP {status}).")
     collection_id = str(parsed["id"])
@@ -3101,7 +3112,7 @@ def adventurelog_pull(trip_id: str, request: Request,
     try:
         status, data, raw = client.get_collection(trip.adventurelog_collection_id)
     except Exception as ex:
-        return _push_msg(f"AdventureLog request failed: {ex}")
+        return _push_failed(ex)
     by_id = {}
     if isinstance(data, dict):
         for rec in (data.get("transportations") or []):
