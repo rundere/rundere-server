@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import places as places_svc, scope
@@ -2193,7 +2194,7 @@ def edit_travel_profile(request: Request, session: Session = Depends(get_session
 @router.post("/settings/travel-profile", response_class=HTMLResponse)
 def save_travel_profile(request: Request, nationality: str = Form(""),
                         base_currency: str = Form(""), timezone: str = Form(""),
-                        aliases: str = Form(""),
+                        aliases: str = Form(""), display_name: str = Form(""),
                         notes: str = Form(""), session: Session = Depends(get_session)):
     from sqlalchemy.orm.attributes import flag_modified
     from babel.numbers import list_currencies
@@ -2218,12 +2219,31 @@ def save_travel_profile(request: Request, nationality: str = Form(""),
     trav.aliases = [a.strip() for a in (aliases or "").splitlines() if a.strip()]
     flag_modified(trav, "aliases")
     trav.notes = (notes or "").strip()[:512] or None
+    name_error = _rename_traveler(session, trav, display_name)
     session.commit()
     session.refresh(trav)
     return templates.TemplateResponse(request, "travel_profile.html",
         {"request": request, "trav": trav, "no_traveller": False, "acting": acting,
          "currencies": _currency_options(), "zones": _zones(),
-         "countries": _country_options(), "saved": True})
+         "countries": _country_options(), "saved": True, "name_error": name_error})
+
+
+def _rename_traveler(session: Session, trav: TravelerIdentity, name: str) -> str:
+    """A person renames their own traveller (YONDER-319): basic set-up needs no
+    admin. Names stay unique, so a taken name is refused with a reason rather
+    than merged; joining two travellers into one stays an admin action (D-204).
+    A blank name keeps the current one. Returns an error message or ""."""
+    name = (name or "").strip()[:128]
+    if not name or name == trav.display_name:
+        return ""
+    taken = (session.query(TravelerIdentity)
+             .filter(func.lower(TravelerIdentity.display_name) == name.lower(),
+                     TravelerIdentity.id != trav.id).first())
+    if taken is not None:
+        return (f"There's already a traveller called {name}, so the name wasn't changed. "
+                "If that's you, an admin can join the two.")
+    trav.display_name = name
+    return ""
 
 
 # ---- Discovery Profile editor (3.2, SPEC-3.2 §11.1) ------------------------
@@ -3138,9 +3158,38 @@ def _activity_modal_ctx(request: Request, trip_id: str, *, mode: str,
 def _modal_fields(t: activity_types.ActivityType, values: dict) -> list[dict]:
     """The type's own fields, without the Map link: that one field sits under
     the type picker (D-209), so the form never shows two."""
-    return [{"key": f["key"], "label": f["label"], "type": f["type"],
-             "is_textarea": f["type"] == "textarea", "hint": f.get("hint", ""),
-             "value": values.get(f["key"], "")} for f in t.fields if f["key"] != "mapLink"]
+    rows = []
+    for f in t.fields:
+        if f["key"] == "mapLink":
+            continue
+        row = {"key": f["key"], "label": f["label"], "type": f["type"],
+               "is_textarea": f["type"] == "textarea", "hint": f.get("hint", ""),
+               "note": "", "value": values.get(f["key"], "")}
+        if f["type"] == "datetime-local":
+            _date_only_field(t.key, row)
+        rows.append(row)
+    return rows
+
+
+# A booking can give a stay's dates and no times (YONDER-341). A datetime-local
+# input shows a date-only value as blank, so the modal offered empty fields for
+# dates the timeline showed. A stay gets the usual hotel times filled in, said
+# so under the field; any other type shows a plain date field. Nothing is
+# stored until the person saves.
+_USUAL_TIME = {("lodging", "when"): "15:00", ("lodging", "endWhen"): "11:00"}
+
+
+def _date_only_field(type_key: str, row: dict) -> None:
+    v = str(row["value"] or "")
+    if len(v) != 10 or v[4] != "-" or v[7] != "-":
+        return
+    usual = _USUAL_TIME.get((type_key, row["key"]))
+    if usual:
+        row["value"] = f"{v}T{usual}"
+        row["note"] = "The booking gave no time, so this is the usual one. Change it if needed."
+    else:
+        row["type"] = "date"
+        row["note"] = "The booking gave a date but no time."
 
 
 @router.get("/{trip_id}/activity/new", response_class=HTMLResponse)

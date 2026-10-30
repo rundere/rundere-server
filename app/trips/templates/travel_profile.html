@@ -29,8 +29,12 @@
 
 <form method="post" action="/trips/settings/travel-profile{{ acting.qs if acting else '' }}"
       class="card blueprint yn-profile-card">
-  <div class="field"><label>Name</label>
-    <div class="yn-readonly">{{ trav.display_name }}</div></div>
+  {# YONDER-319: the name is the person's own to set; joining two travellers
+     into one stays an admin action (D-204). #}
+  <div class="field"><label for="tp-name">Name <span class="yn-help">— how you appear on trips</span></label>
+    <input id="tp-name" class="input" name="display_name" maxlength="128" required
+           value="{{ trav.display_name }}" autocomplete="name">
+    {% if name_error %}<div class="bp-who-hint" style="color:var(--rd-danger)">{{ name_error }}</div>{% endif %}</div>
 
   <div class="yn-form-grid">
     <div class="field"><label for="tp-nat">Nationality <span class="yn-help">— drives visa research</span></label>

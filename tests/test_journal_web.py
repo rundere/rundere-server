@@ -42,7 +42,7 @@ if DEPS:
     def test_page_renders():
         r = client.get("/journal")
         assert r.status_code == 200
-        assert "Travel journal" in r.text
+        assert "Travel Journal" in r.text
 
     def test_compose_creates_and_shows_entry():
         body = "web-note ferry was late uid-A"
