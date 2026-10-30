@@ -9,8 +9,8 @@ All configuration is environment variables with the prefix **`TX_`** (`app/confi
 | Requirement | Why | Notes |
 |---|---|---|
 | **Docker Engine + Compose** | Runs the app and its Postgres | Any orchestrator works — a reference stack is provided |
-| **Docker network reachability to your tools** | Run·dere talks to the reverse proxy and to each target/geocoder it calls over Docker networking | Put the container on whatever existing Docker network(s) those services use — one or several. The stack *joins* external networks, it doesn't create them (`docker network create` any that are missing). The reference stack's `traefik-net` + `travel-net` split is just this deployment's shape, not a requirement |
-| **PostgreSQL 16** | App database | Bundled in the stack as `yonder-db` — nothing to install separately |
+| **Docker network reachability to your tools** | Run·dere talks to the reverse proxy and to each target/geocoder it calls over Docker networking | Put the container on whatever existing Docker network(s) those services use — one or several. The stack *joins* external networks, it doesn't create them (`docker network create` any that are missing). The reference stack uses one external network, `proxy`, plus a private `rundere-internal` one for the database; that is just its shape, not a requirement |
+| **PostgreSQL 16** | App database | Bundled in the stack as `rundere-db` — nothing to install separately |
 
 ### Optional (Run·dere works without each of these)
 
@@ -21,7 +21,6 @@ All configuration is environment variables with the prefix **`TX_`** (`app/confi
 | **AdventureLog and/or AirTrail** (external targets) | Also pushing out — flights → AirTrail, trips/places → AdventureLog | Run·dere still records everything to its **own built-in trips** (the default, first-party target); the external pushes simply don't happen |
 | **[Ollama](https://ollama.com/)** + a model (`qwen3:14b`) | LLM extractor for free-form text | Structured sources (JSON-LD/iCal/PDF/Maps) still work; unstructured items go to review unparsed |
 | **[Photon](https://github.com/komoot/photon)** (self-hosted geocoder) | Address → coordinates without Google quota (D-22) | Geocoding unavailable; places needing lookup stall in review |
-| **AirTrail's own Postgres** (read-only) | Committing flights to airports you've **never flown before** (D-50) — supplies internal airport id/coords/tz | A flight to a never-flown airport is refused at commit |
 | **[SearXNG](https://github.com/searxng/searxng)** (self-hosted metasearch) + Ollama | Discovery's **LLM tier** — visa, safety, events, food & drink, and regional/local language findings | Discovery still runs its deterministic tier (weather/currency/plugs/language basics); the four search-backed topics are simply absent |
 | **CrowdSec bouncer** | Hardens the public `/ingest` route | Route works; less abuse protection |
 
@@ -34,19 +33,19 @@ keep Run·dere fully local.
 
 ### Setting each one up
 
-- **Docker network reachability** — Run·dere must share a Docker network with your reverse proxy and with each target/tool it calls (AdventureLog, AirTrail, Photon, Ollama). Put it on whatever external network(s) those already use — check with `docker network ls`; the stack joins them, so `docker network create <name>` any that are missing. Whether that's one network or several (the reference stack uses `traefik-net` + `travel-net`) is up to your setup.
+- **Docker network reachability** — Run·dere must share a Docker network with your reverse proxy and with each target/tool it calls (AdventureLog, AirTrail, Photon, Ollama). Put it on whatever external network(s) those already use — check with `docker network ls`; the stack joins them, so `docker network create <name>` any that are missing. Whether that's one network or several (the reference stack uses `proxy` for the reverse proxy and a private `rundere-internal` for the database) is up to your setup.
 - **Secrets key** (`TX_SECRETS_KEY`) — `openssl rand -base64 32`. Encrypts the per-user AirTrail / AdventureLog tokens at rest (SPEC-8 D-151). Back it up apart from the database. Without it, connections can't be saved; Run·dere itself works fine.
 - **AirTrail / AdventureLog (optional, per person)** — nothing to configure on the server. Each person connects their own under **Settings → Connections**, which walks through creating a token in that app. Run·dere works fully without either (D-146). AirTrail needs 3.13 or newer; Run·dere talks to it only through its API. If they run on your LAN, list their hosts in `TX_INTEGRATION_ALLOWED_HOSTS` (e.g. `airtrail:3000,adventurelog-server`); anything else has to be public https (D-152).
-- **Ollama** — `docker`-run Ollama on `travel-net`/`traefik-net`, then `ollama pull qwen3:14b`. Point `TX_OLLAMA_URL` at it.
+- **Ollama** — `docker`-run Ollama on a network Run·dere shares (`proxy` in the reference stack), then `ollama pull qwen3:14b`. Point `TX_OLLAMA_URL` at it.
 - **Photon** — self-host the Photon container with an OpenStreetMap index; point `TX_PHOTON_URL` at it.
 - **SearXNG** — self-host with its JSON API enabled (`search.formats: [html, json]` in `settings.yml`); point `TX_SEARXNG_URL` at it. Needed only for Discovery's LLM-tier topics (visa/safety/events/food/regional language) — it also requires Ollama.
-- **Run·dere `/ingest` API keys** — you create these yourself with the CLI (see [capture.md](capture.md#keys-for-the-google-add-ons)); one per capture client.
+- **Run·dere `/ingest` API keys** — you create these yourself with the CLI (see [capture.md](capture.md#the-google-add-ons)); one per capture client.
 
 ## Settings
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TX_DATABASE_URL` | `sqlite:///./yonder_dev.sqlite3` | App DB (Postgres in prod) |
+| `TX_DATABASE_URL` | `sqlite:///./yonder_dev.sqlite3` | App DB (Postgres in prod). The dev file keeps the old Yonder name |
 | `TX_DB_POOL_SIZE` / `TX_DB_MAX_OVERFLOW` | `20` / `20` | Postgres connection pool (40 total matches the worker threads) |
 | `TX_DB_POOL_TIMEOUT_SECONDS` | `10` | How long a request waits for a pooled connection before failing |
 | `TX_DB_POOL_RECYCLE_SECONDS` | `1800` | Replace pooled connections older than this |
@@ -68,14 +67,14 @@ keep Run·dere fully local.
 | `TX_OPEN_METEO_URL` | `https://api.open-meteo.com/v1` | Forecast weather source for Discovery |
 | `TX_OPEN_METEO_ARCHIVE_URL` | `https://archive-api.open-meteo.com/v1` | Historical weather source for Discovery (trips beyond the forecast window) |
 | `TX_SEARXNG_URL` | `http://searxng:8080` | Metasearch backend for Discovery's LLM tier (visa/safety/events/food/regional language). Empty = those topics degrade to absent findings |
-| `TX_FORWARDED_ALLOW_IPS` | `*` | Trust Traefik's `X-Forwarded-Proto` |
+| `TX_FORWARDED_ALLOW_IPS` | `*` | Which proxies uvicorn trusts for `X-Forwarded-Proto`. Read by the image's start command (`Dockerfile`), not by `app/config.py`. Narrow it to your proxy's address if you need to |
 | `TX_AUTH_REQUIRED` | `true` | Sign-in for everything but the public pages (D-203). `false` only for a trusted single-user LAN; start-up warns while it's off |
 | `TX_JWT_SECRET` (or `_FILE`) | `""` | Signs sessions and tokens: `openssl rand -base64 32`. Empty = a key that changes on every restart, which signs everyone out (start-up logs an error) |
 | `TX_LOGIN_RATE_LIMIT`, `TX_LOGIN_RATE_WINDOW_SECONDS` | `10`, `900` | Failed password sign-ins allowed per address and per username in the window, then refused until it passes |
 | `TX_FORGOT_RATE_LIMIT` | `5` | Password-reset requests per address in the same window |
 | `TX_MAX_REQUEST_MB` | `32` | Largest request body accepted; bigger ones get 413. `0` = no limit |
 | `TX_*_FILE` | — | Read a secret from a file (a Docker secret) instead of the environment: `TX_JWT_SECRET_FILE`, `TX_SECRETS_KEY_FILE`, `TX_DATABASE_URL_FILE`, `TX_SMTP_PASSWORD_FILE`, `TX_INBOX_IMAP_PASSWORD_FILE`, `TX_OIDC_CLIENT_SECRET_FILE` |
-| `TX_PUBLIC_BASE_URL` | `""` | Public https base (e.g. `https://yonder.example.net`) for email links and the OAuth/MCP metadata. Set it when using the Claude connector |
+| `TX_PUBLIC_BASE_URL` | `""` | Public https base (e.g. `https://rundere.example.net`) for email links and the OAuth/MCP metadata. Set it when using the Claude connector |
 | `TX_INBOX_ADDRESS`, `TX_INBOX_IMAP_*` | off | Email-forward capture: a mailbox you own (e.g. `trips@example.com`) read over IMAP; each person forwards to their own `trips+<token>@…`. See [docs/email-forward.md](email-forward.md) |
 | `TX_CLAMAV_URL` | `""` | A [clamav-rest](https://github.com/ajilach/clamav-rest) service (e.g. `http://clamav-rest:9000`) that scans every captured email, attachments included, before anything is extracted. An infected email is quarantined to review; if the scanner is unreachable, attachments are skipped (the body is still read). Empty = no antivirus. Static PDF checks (no scripts, launch actions, embedded files; 25 MB / 200 pages) always run |
 | `TX_DOCUMENTS_DIR` | `""` | File capture (PDF, .ics, .eml): a local folder for the stored files — any disk you like; mount it into the container. Empty = file capture off. Needs `TX_CLAMAV_URL` too. Rundere writes a `.rundere-documents` marker there and stops storing files if it later goes missing (a drive that didn't mount). A local folder backed up to a NAS is safer than an NFS share mounted `hard`, which hangs uploads while the NAS is away |
@@ -105,8 +104,8 @@ keep Run·dere fully local.
 **Force SSO on the public name, keep the LAN as the fallback.** One Authentik redirect URI, and a way in when Authentik is down:
 
 ```
-TX_OIDC_HOSTS=yonder.example.net
-TX_OIDC_FORCE_HOSTS=yonder.example.net
+TX_OIDC_HOSTS=rundere.example.net
+TX_OIDC_FORCE_HOSTS=rundere.example.net
 ```
 
-`yonder.example.net` always signs in through Authentik (redirect URI `https://yonder.example.net/oidc/callback`); `rundere.home.example` shows only the username/password form. To offer SSO on the LAN too, leave `TX_OIDC_HOSTS` empty and add the LAN callback as a second redirect URI in Authentik. Emailed password-reset links (built from `TX_PUBLIC_BASE_URL`) still open on a forced host; the new password is used on the LAN.
+`rundere.example.net` always signs in through Authentik (redirect URI `https://rundere.example.net/oidc/callback`); `rundere.home.example` shows only the username/password form. To offer SSO on the LAN too, leave `TX_OIDC_HOSTS` empty and add the LAN callback as a second redirect URI in Authentik. Emailed password-reset links (built from `TX_PUBLIC_BASE_URL`) still open on a forced host; the new password is used on the LAN.

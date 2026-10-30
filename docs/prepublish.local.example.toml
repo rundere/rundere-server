@@ -17,7 +17,7 @@ regexes = [
   # e.g. a home subnet: '\b10\.20\.\d{1,3}\.\d{1,3}\b'
 ]
 
-# Optional: for a history rewrite (--rewrite-rules; see docs/PUBLISHING.md).
+# Optional: for a history rewrite (--rewrite-rules; see docs/prepublish.md).
 [rewrite]
 "your-name" = "Alex"
 "you@example.com" = "owner@example.com"

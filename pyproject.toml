@@ -1,7 +1,8 @@
 [project]
 name = "yonder"
 version = "4.12.13"
-description = "Yonder — travel documents -> AirTrail + AdventureLog."
+description = "Run·dere (formerly Yonder): a self-hosted travel tracker that reads bookings from email, files and web pages and puts them on trips."
+license = "AGPL-3.0-only"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.162.0",
