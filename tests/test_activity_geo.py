@@ -295,6 +295,19 @@ def test_route_ends_parsing():
     assert geo._route_ends("PHX to Sedona") == ("PHX", "Sedona")
     assert geo._route_ends("A -> B") == ("A", "B")
     assert geo._route_ends("Scenic loop") is None
+    assert geo._route_ends("Toronto  TO  Boston") == ("Toronto", "Boston")
+    assert geo._route_ends("Lago Inventado —> Monte Ficticio") == ("Lago Inventado",
+                                                                 "Monte Ficticio")
+
+
+def test_route_ends_is_linear_on_long_spaces():
+    """CodeQL alert 3: the old `\\s*(?:→|…)\\s*` pattern went quadratic here."""
+    if not DEPS:
+        return
+    import time
+    start = time.perf_counter()
+    assert geo._route_ends("a" + " " * 50_000 + "b") is None
+    assert time.perf_counter() - start < 1.0
 
 
 def test_backfill_second_pass_uses_the_trips_own_places(monkeypatch):

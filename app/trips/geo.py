@@ -71,10 +71,11 @@ def fingerprint(atype: str, values: dict) -> str:
 
 def _route_ends(route: str) -> tuple[str, str] | None:
     """'A → B' / 'A -> B' / 'A to B' — the two ends a route-only road trip
-    names (older entries have no From/To)."""
+    names (older entries have no From/To). No quantifier around the separator:
+    `\\s*` on both sides went quadratic on long runs of spaces (CodeQL
+    py/polynomial-redos); the parts are stripped instead."""
     import re
-    parts = re.split(r"\s*(?:→|->|—>)\s*|\s+to\s+", route or "", maxsplit=1,
-                     flags=re.IGNORECASE)
+    parts = re.split(r"→|->|—>|\sto\s", route or "", maxsplit=1, flags=re.IGNORECASE)
     if len(parts) == 2 and all(p.strip() for p in parts):
         return parts[0].strip(), parts[1].strip()
     return None

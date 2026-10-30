@@ -274,6 +274,29 @@ def test_push_reports_adventurelog_rejection(monkeypatch):
         assert s.get(Trip, tid).adventurelog_collection_id is None
 
 
+
+def test_push_failure_shows_no_server_text(monkeypatch):
+    """CodeQL alert 40: an adapter error can quote the AdventureLog server's
+    response, so it never reaches the page, escaped or not."""
+    if not DEPS:
+        return
+
+    class Broken:
+        def create_collection(self, *a, **k):
+            raise OSError("GET https://al.example.test/api: <img src=x onerror=alert(1)>")
+
+    tid = _mk_trip("Broken", "2026-01-01", "2026-01-05")
+    _connect(monkeypatch, Broken())
+    r = client.post(f"/trips/{tid}/push-adventurelog")
+    assert "AdventureLog request failed" in r.text
+    assert "<img" not in r.text and "al.example.test" not in r.text
+
+
+def test_push_message_is_escaped():
+    if not DEPS:
+        return
+    assert "&lt;b&gt;" in trips_routes._push_msg("<b>").body.decode()
+
 # ------------------------------------------------------------------ manual id + link
 
 def test_manual_collection_id_persists():
