@@ -1,4 +1,4 @@
-"""D-200 (YONDER-228): the sidebar is Home · Trips · Journal | Capture · Places · Inbox,
+"""D-200 (YONDER-228): the sidebar is Home · Trips | Notebook (Journal · Places) | Capture Hub · Inbox (D-222),
 a global Capture button opens a sheet from any page, the review queue is the Inbox at
 /inbox (with /review redirecting), and a trip says how many of its captures wait there."""
 import re
@@ -57,8 +57,10 @@ if DEPS:
         nav = html[html.index('aria-label="Sections"'):]
         nav = nav[:nav.index("</nav>")]
         labels = re.findall(r'</span>(Home|Trips|Journal|Capture Hub|Capture|Places|Inbox)<', nav)
-        assert labels == ["Home", "Trips", "Journal", "Capture Hub", "Places", "Inbox"]   # D-221
-        assert nav.index('class="navsep"') < nav.index(">Capture")      # the divider
+        # D-221, D-222: Notebook groups Journal and Places; Capture Hub and Inbox follow.
+        assert labels == ["Home", "Trips", "Journal", "Places", "Capture Hub", "Inbox"]
+        assert nav.index('>Notebook<') < nav.index(">Journal") < nav.index(">Places")
+        assert nav.index(">Places") < nav.index('class="navsep"') < nav.index(">Capture")
         assert 'class="navcap"' in html and 'hx-get="/capture/sheet"' in html
         assert ">Review<" not in nav
 
