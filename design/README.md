@@ -154,10 +154,13 @@ bodyLarge 16/24 · bodyMedium 14/20 · labelLarge 14/20 600 · codes JetBrains M
 
 **Web (desktop):** a 248px sidebar with the horizontal lockup at the top. The active item has a Night 700
 fill and a 2px Beacon inset bar. Content is 48px padded. Capture is the primary header button.
+A nav **group label** (small, muted, above its links; not a link) groups related items: the
+sidebar reads Home · Trips, **Notebook** (Journal · Places), then Capture · Inbox (D-222). The
+label hides on phone widths.
 Load `tokens/tokens.css`, then use `var(--rd-*)`.
 
-**iOS:** tab bar with Today · Trips · Capture · Review · Journal (SF Symbols `safari`, `suitcase`,
-`plus.viewfinder`, `tray`, `book`). Use native controls tinted with `.rdAccent`, `List(.insetGrouped)`,
+**iOS:** tab bar with Today · Trips · Capture · Notebook · Inbox (SF Symbols `safari`, `suitcase`,
+`plus.viewfinder`, `book`, `tray`). Notebook holds a `Journal | Places` segmented picker (D-222). Use native controls tinted with `.rdAccent`, `List(.insetGrouped)`,
 sheets with `[.medium, .large]` detents, and `.ultraThinMaterial` chrome. Success haptic on commit.
 App icon: default / dark (Beacon 300 on black) / tinted (greyscale). Next-flight Live Activity.
 Use `tokens/RundereTheme.swift`.
