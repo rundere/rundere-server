@@ -469,9 +469,9 @@ What the Share Extension (and the app) can rely on. All calls use the app's bear
     turned down: it only looks back, and Apple Photos uses the name.
   - **Web sidebar:** Journal and Places stay two separate links, each with its own page,
     because the web has room for both. They sit together under a small **Notebook** group
-    label: Home · Trips, then Notebook (Journal · Places), then Capture · Inbox. The label
-    is a heading, not a link, and replaces the divider between those groups. This moves
-    Places out of D-200's second group. Capture (the global button and the Capture Hub,
+    label: Home · Trips, then Notebook (Journal · Places), a divider, then Capture Hub ·
+    Inbox. The label is a heading, not a link; the divider now follows Notebook instead of
+    Journal. This moves Places out of D-200's second group. Capture (the global button and the Capture Hub,
     D-221) and Inbox are unchanged.
   - **Phones on the web:** the top bar has no room for a label, so it is hidden there and
     the two links show as before.

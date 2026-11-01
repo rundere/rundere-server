@@ -217,6 +217,7 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
   .navbadge{margin-left:auto}
   .navcap{min-height:var(--rd-control-md);width:100%;font-size:15px}
   .navsep{width:auto;height:1px;margin:10px 12px}
+  .appnav .grouplbl{padding:10px 12px 2px;font-size:11px;font-weight:600}   /* D-222 */
   .appnav .lbl-short{display:none}
   .appbar .signout-btn{width:100%;text-align:left;min-height:var(--rd-control-md);padding:0 12px}
   .appbar .theme{border-radius:var(--rd-radius-control)}
