@@ -102,6 +102,7 @@ if DEPS:
         m = client.get("/api/v1/auth/methods").json()
         assert (m["demo"], m["password"], m["oauth"], m["oauth_client_id"], m["sso"],
                 m["registration_open"]) == (True, True, False, None, False, False)
+        assert m["oauth_clients"] == {"ios": None, "android": None}      # D-223
         settings.demo_mode = False
         assert client.get("/api/v1/auth/methods").json()["demo"] is False
 

@@ -211,6 +211,9 @@ class AuthMethodsOut(BaseModel):
     # The built-in app client to use with it (D-194); None = this server can't
     # sign the app in with OAuth (older server, or no app redirect configured).
     oauth_client_id: str | None = None
+    # Each platform's built-in client (D-223): {"ios": …, "android": …}, None
+    # where it isn't usable. oauth_client_id stays the iOS alias for shipped builds.
+    oauth_clients: dict[str, str | None] = {}
     sso: bool                      # "Sign in with <sso_name>" is offered here
     sso_name: str | None = None
     sso_forced: bool = False       # SSO is the only way in on the web here
@@ -234,16 +237,19 @@ def api_auth_methods(request: Request):
     from app.db import SessionLocal
     if demo.enabled():
         # Plain username and password only: no OAuth, SSO or registration.
-        return {"password": True, "oauth": False, "oauth_client_id": None, "sso": False,
+        return {"password": True, "oauth": False, "oauth_client_id": None,
+                "oauth_clients": dict.fromkeys(oauth.APP_CLIENT_PLATFORMS), "sso": False,
                 "sso_name": None, "sso_forced": False, "registration_open": False,
                 "demo": True, "version": settings.app_version}
     forced = oidc.forced_on(request)
     sso = oidc.offered_on(request)
     with SessionLocal() as session:
-        app_client = oauth.APP_CLIENT_ID if oauth.app_client_ready(session) else None
+        clients = {platform: cid if oauth.app_client_ready(session, cid) else None
+                   for platform, cid in oauth.APP_CLIENT_PLATFORMS.items()}
     return {"password": not (settings.oidc_force_api_login and forced),
             "oauth": True,
-            "oauth_client_id": app_client,
+            "oauth_client_id": clients["ios"],
+            "oauth_clients": clients,
             "sso": sso,
             "sso_name": settings.oidc_display_name if sso else None,
             "sso_forced": forced,

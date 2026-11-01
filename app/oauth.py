@@ -10,9 +10,10 @@ The protocol logic, free of HTTP (the routes are app/oauth_routes.py):
   `aud` = this server's /mcp resource, `gid` = the grant) for ~1 h; refresh
   token = opaque `yrt_<grant id>_<secret>`, rotated on every use, sliding
   ~90-day idle expiry. Presenting a retired refresh token revokes the grant.
-- **the app client** (D-194, YONDER-235): `rundere-ios`, built in on every
-  server and upserted at startup. First-party: no consent screen, and its
-  tokens may change account settings like the app's password login can.
+- **the app clients** (D-194, YONDER-235; D-223, YONDER-353): `rundere-ios` and
+  `rundere-android`, built in on every server and upserted at startup.
+  First-party: no consent screen, and their tokens may change account
+  settings like the app's password login can.
 - **personal API tokens**: opaque `ypat_…`, stored hashed, per-token revoke and
   optional expiry, for clients that can't do OAuth (Claude Code, scripts).
 
@@ -35,6 +36,16 @@ from app.models import (AccountEvent, OAuthClient, OAuthCode, OAuthGrant,
 
 SCOPES = ("yonder", "offline_access")
 APP_CLIENT_ID = "rundere-ios"           # the built-in iOS app client (D-194)
+ANDROID_CLIENT_ID = "rundere-android"   # the built-in Android app client (D-223)
+# The built-in app clients: id -> (display name, redirect-URI setting). D-223
+# keeps one client per platform so Connected apps can name the phone and a
+# self-hoster can turn one platform off without the other.
+_APP_CLIENTS = {
+    APP_CLIENT_ID: ("Run·dere for iOS", "oauth_app_redirect_uris"),
+    ANDROID_CLIENT_ID: ("Run·dere for Android", "oauth_android_redirect_uris"),
+}
+# /api/v1/auth/methods names each platform's client under these keys (D-223).
+APP_CLIENT_PLATFORMS = {"ios": APP_CLIENT_ID, "android": ANDROID_CLIENT_ID}
 DEFAULT_SCOPE = "yonder"
 _LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "[::1]", "::1")
 _MAX_REDIRECTS = 10
@@ -162,30 +173,36 @@ def register_client(session, *, name: str, redirect_uris: list[str],
     return client, secret
 
 
-def app_redirect_uris() -> list[str]:
-    return [u.strip() for u in settings.oauth_app_redirect_uris.split(",")
+def app_redirect_uris(client_id: str = APP_CLIENT_ID) -> list[str]:
+    raw = getattr(settings, _APP_CLIENTS[client_id][1])
+    return [u.strip() for u in raw.split(",")
             if u.strip() and registrable_redirect(u.strip())]
 
 
 def ensure_app_client(session) -> OAuthClient | None:
-    """Upsert the built-in iOS app client (D-194) so every server supports the
-    app's OAuth sign-in with no admin setup. Public (PKCE) and first-party; the
-    redirect URIs follow TX_OAUTH_APP_REDIRECT_URIS. With none configured the
-    row is kept but no redirect matches, so it can't be used."""
-    uris = app_redirect_uris()
-    client = session.get(OAuthClient, APP_CLIENT_ID)
-    if client is None:
-        if not uris:
-            return None
-        client = OAuthClient(id=APP_CLIENT_ID, name="Run·dere for iOS", source="builtin")
-        session.add(client)
-    client.redirect_uris, client.secret_hash, client.first_party = uris, None, True
+    """Upsert the built-in app clients (iOS D-194, Android D-223) so every server
+    supports the apps' OAuth sign-in with no admin setup. Public (PKCE) and
+    first-party; each one's redirect URIs follow its own setting. With none
+    configured the row is kept but no redirect matches, so it can't be used.
+    Returns the iOS client."""
+    clients = {}
+    for client_id, (name, _setting) in _APP_CLIENTS.items():
+        uris = app_redirect_uris(client_id)
+        client = session.get(OAuthClient, client_id)
+        if client is None:
+            if not uris:
+                clients[client_id] = None
+                continue
+            client = OAuthClient(id=client_id, name=name, source="builtin")
+            session.add(client)
+        client.redirect_uris, client.secret_hash, client.first_party = uris, None, True
+        clients[client_id] = client
     session.commit()
-    return client
+    return clients[APP_CLIENT_ID]
 
 
-def app_client_ready(session) -> bool:
-    c = session.get(OAuthClient, APP_CLIENT_ID)
+def app_client_ready(session, client_id: str = APP_CLIENT_ID) -> bool:
+    c = session.get(OAuthClient, client_id)
     return bool(c is not None and c.first_party and c.redirect_uris)
 
 

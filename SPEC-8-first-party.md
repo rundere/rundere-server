@@ -563,6 +563,19 @@ Since D-146 that no longer holds.
   (`oauth_client_id`); null means "password only" to the app. Supersedes the
   server-brokered OIDC handoff in SPEC-4.2 §3.2 (YONDER-77/104, cancelled).
   (YONDER-235 server side; app side YONDER-175)
+- **D-223 — The Android app gets its own built-in OAuth client, on D-194's terms
+  (owner, 2026-11-01).** Every server also upserts a public (PKCE), first-party,
+  `source="builtin"` client **`rundere-android`** ("Run·dere for Android"), with
+  redirect URIs from `TX_OAUTH_ANDROID_REDIRECT_URIS` (default
+  `https://rundere.app/auth/callback`, the same path as iOS, opened on Android as
+  an App Link verified by rundere.app's `assetlinks.json`). It is separate from
+  `rundere-ios` so Connected apps names the platform, one platform can be turned
+  off (empty setting) without the other, and grants revoke per client. A code is
+  bound to its client, so the shared redirect lets neither app redeem the
+  other's. `/api/v1/auth/methods` adds `oauth_clients: {"ios", "android"}` (null
+  where not usable; both null on a demo server). `oauth_client_id` stays the iOS
+  alias for good, so shipped iOS builds are unchanged. No custom-scheme
+  redirects. Extends D-194. (YONDER-353; rundere-server#48)
 - **D-149 — External writes are owner-scoped.** Until per-user connections
   exist, only the credential owner's captures produce AirTrail or AdventureLog
   targets. (shipped as D-156; superseded by D-150 in 4.8)

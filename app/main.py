@@ -469,7 +469,7 @@ def startup() -> None:
         except Exception:                   # pragma: no cover
             log.exception("connection migration failed; integrations stay as they were")
         try:
-            # D-194: the iOS app's built-in OAuth client, on every server.
+            # D-194 / D-223: the apps' built-in OAuth clients, on every server.
             from app.oauth import ensure_app_client
             ensure_app_client(session)
         except Exception:                   # pragma: no cover
