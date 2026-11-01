@@ -281,6 +281,11 @@ class Settings(BaseSettings):
     # redirect URIs are https universal links (comma-separated); only a fork
     # that ships its own app bundle needs to change them. Empty = no app client.
     oauth_app_redirect_uris: str = "https://rundere.app/auth/callback"
+    # The Android app's built-in OAuth client (D-223, YONDER-353): client id
+    # `rundere-android`, on the same terms. The same https path, opened on
+    # Android as an App Link verified by rundere.app's assetlinks.json. Empty =
+    # no Android client; the iOS one is unaffected.
+    oauth_android_redirect_uris: str = "https://rundere.app/auth/callback"
 
     app_version: str = "4.13.3"
 

@@ -306,8 +306,8 @@ class OAuthClient(Base):
     redirect_uris: Mapped[list] = mapped_column(JsonCol)
     secret_hash: Mapped[str | None] = mapped_column(String(64))
     source: Mapped[str] = mapped_column(String(8), default="dcr")      # dcr | cli | builtin
-    # The built-in Run·dere app client (D-194, YONDER-235): its tokens count as
-    # first-party and it skips the consent screen. Only startup sets it, never
+    # The built-in Run·dere app clients (D-194, D-223): their tokens count as
+    # first-party and they skip the consent screen. Only startup sets it, never
     # registration (DCR or CLI).
     first_party: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_by: Mapped[str | None] = mapped_column(String(36))         # user id (None = DCR/CLI)

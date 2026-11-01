@@ -1,4 +1,5 @@
-"""The Run·dere iOS app's built-in OAuth client (YONDER-235, SPEC-8 D-194).
+"""The Run·dere apps' built-in OAuth clients: iOS (YONDER-235, SPEC-8 D-194) and
+Android (YONDER-353, D-223).
 
 The app signs in through the server's own OAuth (PKCE) on any host — the web
 sign-in sheet shows a password form or SSO, whatever that host offers — and its
@@ -41,6 +42,7 @@ if DEPS:
         monkeypatch.setattr(settings, "oidc_enabled", False)
         monkeypatch.setattr(settings, "auth_proxy_header_trust", False)
         monkeypatch.setattr(settings, "oauth_app_redirect_uris", APP_CB)
+        monkeypatch.setattr(settings, "oauth_android_redirect_uris", APP_CB)
         oauth_routes.token_limiter._hits.clear()
         with SessionLocal() as s:
             uids = [u.id for u in s.query(User).filter(User.username.like("oapp-%")).all()]
@@ -77,10 +79,22 @@ if DEPS:
                      f"&code_challenge_method=S256&state=s1"
                      f"&resource={quote(BASE, safe='')}", follow_redirects=False)
 
-    def _app_tokens(name):
+    def _app_code(name, cid=oauth.APP_CLIENT_ID):
         c = _signed_in(name)
         v, ch = _pkce()
-        r = _authorize(c, challenge=ch)
+        r = _authorize(c, cid=cid, challenge=ch)
+        assert r.status_code == 303, r.text[:300]
+        return parse_qs(urlparse(r.headers["location"]).query)["code"][0], v
+
+    def _redeem(code, verifier, cid):
+        return TestClient(app).post("/oauth/token", data={
+            "grant_type": "authorization_code", "code": code, "redirect_uri": APP_CB,
+            "code_verifier": verifier, "client_id": cid, "resource": BASE})
+
+    def _app_tokens(name, cid=oauth.APP_CLIENT_ID):
+        c = _signed_in(name)
+        v, ch = _pkce()
+        r = _authorize(c, cid=cid, challenge=ch)
         # no consent page: straight back to the app's universal link with a code
         assert r.status_code == 303, r.text[:300]
         loc = urlparse(r.headers["location"])
@@ -90,7 +104,7 @@ if DEPS:
         t = TestClient(app).post("/oauth/token", data={
             "grant_type": "authorization_code", "code": q["code"][0],
             "redirect_uri": APP_CB, "code_verifier": v,
-            "client_id": oauth.APP_CLIENT_ID, "resource": BASE})
+            "client_id": cid, "resource": BASE})
         assert t.status_code == 200, t.text
         return t.json()
 
@@ -223,3 +237,91 @@ if DEPS:
             oauth.ensure_app_client(s)
         m = TestClient(app).get("/api/v1/auth/methods").json()
         assert m["oauth_client_id"] is None
+        # turning iOS off leaves Android usable (D-223)
+        assert m["oauth_clients"] == {"ios": None, "android": oauth.ANDROID_CLIENT_ID}
+
+    # ------------------------------------------------------------------ Android (D-223)
+    def test_android_client_is_built_in_public_and_first_party():
+        with SessionLocal() as s:
+            c = s.get(OAuthClient, oauth.ANDROID_CLIENT_ID)
+            assert c.first_party and c.secret_hash is None and c.source == "builtin"
+            assert c.name == "Run·dere for Android" and c.redirect_uris == [APP_CB]
+            oauth.ensure_app_client(s)            # idempotent: still one row each
+            assert s.query(OAuthClient).filter(OAuthClient.id.in_(
+                [oauth.APP_CLIENT_ID, oauth.ANDROID_CLIENT_ID])).count() == 2
+
+    def test_auth_methods_names_both_clients_and_keeps_the_ios_alias():
+        m = TestClient(app).get("/api/v1/auth/methods").json()
+        assert m["oauth_clients"] == {"ios": oauth.APP_CLIENT_ID,
+                                      "android": oauth.ANDROID_CLIENT_ID}
+        assert m["oauth_client_id"] == oauth.APP_CLIENT_ID
+
+    def test_turning_android_off_leaves_ios_alone(monkeypatch):
+        monkeypatch.setattr(settings, "oauth_android_redirect_uris", "")
+        with SessionLocal() as s:
+            oauth.ensure_app_client(s)
+            assert not oauth.app_client_ready(s, oauth.ANDROID_CLIENT_ID)
+            assert oauth.app_client_ready(s)
+        m = TestClient(app).get("/api/v1/auth/methods").json()
+        assert m["oauth_clients"] == {"ios": oauth.APP_CLIENT_ID, "android": None}
+        _user("oapp-jo")
+        r = _authorize(_signed_in("oapp-jo"), cid=oauth.ANDROID_CLIENT_ID)
+        assert r.status_code == 400
+
+    def test_android_custom_scheme_redirect_is_ignored(monkeypatch):
+        monkeypatch.setattr(settings, "oauth_android_redirect_uris",
+                            "app.rundere.android:/oauth, " + APP_CB)
+        assert oauth.app_redirect_uris(oauth.ANDROID_CLIENT_ID) == [APP_CB]
+
+    def test_android_sign_in_skips_consent_and_is_first_party():
+        _user("oapp-kai", email="kai@example.com")
+        tok = _app_tokens("oapp-kai", cid=oauth.ANDROID_CLIENT_ID)
+        r = TestClient(app).put("/api/v1/auth/me/email", headers=_h(tok["access_token"]),
+                                json={"email": "kai2@example.com", "current_password": "pw"})
+        assert r.status_code == 200 and r.json()["email"] == "kai2@example.com"
+
+    def test_android_needs_pkce_and_a_code_is_single_use():
+        _user("oapp-lee")
+        code, v = _app_code("oapp-lee", oauth.ANDROID_CLIENT_ID)
+        assert _redeem(code, "wrong-" + v, oauth.ANDROID_CLIENT_ID).status_code == 400
+        # the failed try spent it
+        assert _redeem(code, v, oauth.ANDROID_CLIENT_ID).status_code == 400
+
+    def test_a_code_cant_cross_between_the_apps_on_the_shared_redirect():
+        _user("oapp-mo")
+        code, v = _app_code("oapp-mo", oauth.APP_CLIENT_ID)
+        r = _redeem(code, v, oauth.ANDROID_CLIENT_ID)
+        assert r.status_code == 400 and "another client" in r.text
+        code, v = _app_code("oapp-mo", oauth.ANDROID_CLIENT_ID)
+        assert _redeem(code, v, oauth.APP_CLIENT_ID).status_code == 400
+
+    def test_registration_cant_claim_the_android_client():
+        r = TestClient(app).post("/oauth/register", json={
+            "client_name": "Run·dere for Android", "redirect_uris": [APP_CB],
+            "first_party": True, "client_id": oauth.ANDROID_CLIENT_ID})
+        assert r.status_code == 201
+        body = r.json()
+        assert body["client_id"] != oauth.ANDROID_CLIENT_ID
+        with SessionLocal() as s:
+            assert s.get(OAuthClient, body["client_id"]).first_party is False
+            s.query(OAuthClient).filter_by(id=body["client_id"]).delete()
+            s.commit()
+
+    def test_revoking_android_leaves_the_ios_grant_alive():
+        _user("oapp-ned")
+        ios = _app_tokens("oapp-ned")
+        android = _app_tokens("oapp-ned", cid=oauth.ANDROID_CLIENT_ID)
+        c = TestClient(app)
+        c.post("/oauth/revoke", data={"token": android["refresh_token"],
+                                      "client_id": oauth.ANDROID_CLIENT_ID})
+        assert c.get("/api/v1/auth/me", headers=_h(android["access_token"])).status_code == 401
+        assert c.get("/api/v1/auth/me", headers=_h(ios["access_token"])).status_code == 200
+
+    def test_android_grant_is_a_named_device_only_its_owner_sees():
+        _user("oapp-ora")
+        _user("oapp-pip")
+        _app_tokens("oapp-ora", cid=oauth.ANDROID_CLIENT_ID)
+        page = _signed_in("oapp-ora").get("/account").text
+        assert "Run·dere for Android" in page and "signed-in device" in page
+        other = _signed_in("oapp-pip").get("/account").text
+        assert "Run·dere for Android" not in other

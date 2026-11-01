@@ -85,6 +85,7 @@ keep Run·dere fully local.
 | `TX_OAUTH_ACCESS_TTL_SECONDS` | `3600` | OAuth access-token lifetime (Claude connector) |
 | `TX_OAUTH_REFRESH_IDLE_TTL_SECONDS` | `7776000` | A connected app's grant expires after this long unused (90 days) |
 | `TX_OAUTH_APP_REDIRECT_URIS` | `https://rundere.app/auth/callback` | The iOS app's built-in OAuth client `rundere-ios` (D-194). Change only for a fork that ships its own app; empty turns app OAuth sign-in off |
+| `TX_OAUTH_ANDROID_REDIRECT_URIS` | `https://rundere.app/auth/callback` | The Android app's built-in OAuth client `rundere-android` (D-223), opened as an App Link. Change only for a fork that ships its own app; empty turns Android OAuth sign-in off without affecting iOS |
 
 ## Single sign-on (OIDC, e.g. Authentik)
 
