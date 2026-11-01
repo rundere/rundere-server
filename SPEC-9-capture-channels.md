@@ -459,3 +459,22 @@ What the Share Extension (and the app) can rely on. All calls use the app's bear
   stays `/capture`, so bookmarks, the bookmarklet and setup links keep working. The same
   reasoning names the Places view for new places **Unsorted**, not Inbox (SPEC-11): the
   Inbox is the captures queue alone.
+- **D-222: Notebook groups Journal and Places (owner, 2026-10-31; YONDER-348).** Amends
+  D-200's tab bar and sidebar. A saved place is somewhere you want to go and a journal
+  entry is what happened; both are kept over time and neither belongs to one trip.
+  - **iOS (0.13.0):** the Journal tab is renamed **Notebook**, with a `Journal | Places`
+    segmented picker at the top. The tab bar stays Today · Trips · Capture · Notebook ·
+    Inbox. "Journal entry" wording is unchanged in Quick Actions, Siri,
+    `rundere://journal/new` and the Watch; only the tab takes the new name. "Memories" was
+    turned down: it only looks back, and Apple Photos uses the name.
+  - **Web sidebar:** Journal and Places stay two separate links, each with its own page,
+    because the web has room for both. They sit together under a small **Notebook** group
+    label: Home · Trips, then Notebook (Journal · Places), then Capture · Inbox. The label
+    is a heading, not a link, and replaces the divider between those groups. This moves
+    Places out of D-200's second group. Capture (the global button and the Capture Hub,
+    D-221) and Inbox are unchanged.
+  - **Phones on the web:** the top bar has no room for a label, so it is hidden there and
+    the two links show as before.
+  - **Design board:** gains a nav group label (small, muted, above its links), used by
+    the web sidebar only. iOS shows the grouping through the picker.
+  - No URL or API changes: `/journal` and `/places` stay as they are.
