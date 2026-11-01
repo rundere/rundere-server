@@ -14,7 +14,7 @@ way, one coming up and one in the past:
 
 The demo user's traveller is Jane Doe, who lives in central London and flies
 from Heathrow (British Airways, and a Ryanair hop home into Stansted). Her home
-profile is what keeps London out of Discover. Plus two captures waiting in
+profile is what keeps London out of Discover. Plus 13 saved places (YONDER-351) and two captures waiting in
 Review, for a trip that isn't planned yet.
 
 Everything is written through the app's own validated paths (the agent's
@@ -436,6 +436,28 @@ BUDGET = [    # (trip key, title, amount, currency, category)
 
 
 # --------------------------------------------------------------------------- helpers
+# Jane's saved places (YONDER-351): 13 real, public places so Notebook → Places and
+# "Saved places near me" aren't empty. Keys beyond the `places.save` fields are seed
+# instructions: `pin: False` saves it without coordinates ("Needs a pin"), `trip` files
+# it undated to that seeded trip, `visited_offset` is `visited_on` in days from today
+# (so the roll moves it). The same list seeds the iOS showcase server.
+SAVED_PLACES = [
+    {'name': 'Miradouro da Senhora do Monte', 'lat': 38.7194, 'lon': -9.1325, 'address': 'Largo Monte, 1170-107 Lisboa', 'locality': 'Lisbon', 'country_code': 'PT', 'category': 'Viewpoint', 'activity_type': 'tour', 'priority': 'must', 'todo': 'Go at sunset', 'provider': 'google'},
+    {'name': 'Cervejaria Ramiro', 'lat': 38.7206, 'lon': -9.1355, 'address': 'Av. Almirante Reis 1, 1150-007 Lisboa', 'locality': 'Lisbon', 'country_code': 'PT', 'category': 'Seafood restaurant', 'activity_type': 'dining', 'todo': 'Garlic prawns; no bookings, expect a queue', 'provider': 'google'},
+    {'name': 'Clube de Fado', 'lat': 38.7106, 'lon': -9.129, 'address': 'R. de São João da Praça 86, 1100-521 Lisboa', 'locality': 'Lisbon', 'country_code': 'PT', 'category': 'Live music venue', 'activity_type': 'event', 'provider': 'apple'},
+    {'name': 'Pastelaria Versailles', 'pin': False, 'address': 'Av. da República 15A, 1050-185 Lisboa', 'locality': 'Lisbon', 'country_code': 'PT', 'category': 'Bakery', 'activity_type': 'dining', 'provider': 'google', 'todo': "Saved from a friend's message, no pin yet"},
+    {'name': 'Livraria Lello', 'lat': 41.1469, 'lon': -8.6148, 'address': 'R. das Carmelitas 144, 4050-161 Porto', 'locality': 'Porto', 'country_code': 'PT', 'category': 'Book store', 'activity_type': 'tour', 'todo': 'Book a timed ticket online', 'provider': 'google', 'trip': 'lisbon'},
+    {'name': 'Musée Matisse', 'lat': 43.7194, 'lon': 7.2759, 'address': '164 Av. des Arènes de Cimiez, 06000 Nice', 'locality': 'Nice', 'country_code': 'FR', 'category': 'Art museum', 'activity_type': 'tour', 'provider': 'apple', 'trip': 'france'},
+    {'name': 'La Merenda', 'lat': 43.6966, 'lon': 7.2747, 'address': '4 Rue Raoul Bosio, 06300 Nice', 'locality': 'Nice', 'country_code': 'FR', 'category': 'French restaurant', 'activity_type': 'dining', 'priority': 'must', 'todo': 'Cash only, and no phone: book in person', 'provider': 'google'},
+    {'name': 'Colline du Château', 'lat': 43.6952, 'lon': 7.281, 'address': 'Montée du Château, 06300 Nice', 'locality': 'Nice', 'country_code': 'FR', 'category': 'Park', 'activity_type': 'tour', 'todo': 'Views over the Baie des Anges', 'provider': 'apple'},
+    {'name': 'Trattoria Da Enzo al 29', 'lat': 41.888, 'lon': 12.4776, 'address': 'Via dei Vascellari 29, 00153 Roma', 'locality': 'Rome', 'country_code': 'IT', 'category': 'Italian restaurant', 'activity_type': 'dining', 'todo': 'Cacio e pepe', 'provider': 'google'},
+    {'name': 'Fushimi Inari Taisha', 'lat': 34.9671, 'lon': 135.7727, 'address': '68 Fukakusa Yabunouchicho, Fushimi Ward, Kyoto', 'locality': 'Kyoto', 'country_code': 'JP', 'category': 'Shinto shrine', 'activity_type': 'tour', 'priority': 'must', 'todo': 'Start early to beat the crowds', 'provider': 'google'},
+    {'name': 'Hoshinoya Kyoto', 'lat': 35.0156, 'lon': 135.6768, 'address': '11-2 Arashiyama Genrokuzancho, Nishikyo Ward, Kyoto', 'locality': 'Kyoto', 'country_code': 'JP', 'category': 'Hotel', 'activity_type': 'lodging', 'provider': 'apple'},
+    {'name': "Katz's Delicatessen", 'lat': 40.7223, 'lon': -73.9874, 'address': '205 E Houston St, New York, NY 10002', 'locality': 'New York', 'country_code': 'US', 'category': 'Deli', 'activity_type': 'dining', 'provider': 'google', 'visited_offset': -61},
+    {'name': 'Sky Garden', 'lat': 51.5113, 'lon': -0.0835, 'address': '1 Sky Garden Walk, London EC3M 8AF', 'locality': 'London', 'country_code': 'GB', 'category': 'Garden', 'activity_type': 'tour', 'todo': 'Free, but book about 3 weeks ahead', 'provider': 'apple'},
+]
+
+
 def _d(today: date, offset: int) -> str:
     return (today + timedelta(days=offset)).isoformat()
 
@@ -533,6 +555,7 @@ def seed(session: Session, *, replace: bool = False, today: date | None = None) 
         _seed_packing(session, user, trips["france"])
         _seed_costs(session, user, people, trips, today)
         _seed_journal(session, user, trips, today)
+        _seed_places(session, user, trips, today)
         _seed_captures(session, user, today)
     log.info("demo seed written: %s", ", ".join(t.name for t in trips.values()))
     return {"seeded": True, "trips": [t.name for t in trips.values()]}
@@ -623,6 +646,29 @@ def _seed_journal(session, user, trips, today):
             user=user, session=session)
 
 
+def _seed_places(session, user, trips, today):
+    """Jane's saved places, through the same `places.save` / `update_place` /
+    `file_place` the app uses (no geocoding: coordinates and localities are in the
+    list). Saved as `ios` since that is where the demo's places come from."""
+    from app import api_v1, places
+    for spec in SAVED_PLACES:
+        pinned = spec.get("pin", True)
+        place, _ = places.save(
+            session, user, name=spec["name"], lat=spec.get("lat") if pinned else None,
+            lon=spec.get("lon") if pinned else None, address=spec.get("address"),
+            category=spec.get("category"), provider=spec.get("provider"),
+            todo=spec.get("todo"), priority=spec.get("priority"),
+            locality=spec.get("locality"), country_code=spec.get("country_code"),
+            source="ios")
+        fields = {"activity_type": spec["activity_type"]}
+        if "visited_offset" in spec:
+            fields["visited_on"] = _d(today, spec["visited_offset"])
+        places.update_place(session, user, place.id, **fields)
+        if spec.get("trip"):
+            api_v1.file_place(session, user, place.id, trips[spec["trip"]].id,
+                              api_v1.SavedPlaceFileIn())
+
+
 def _ld_page(doc: dict) -> str:
     return (f'<html><head><script type="application/ld+json">{json.dumps(doc)}</script>'
             "</head><body>Your booking (Run·dere demo sample).</body></html>")
@@ -679,6 +725,11 @@ def _remove(session, user) -> None:
         q.delete(synchronize_session=False)
     session.query(m.JournalEntry).filter(m.JournalEntry.owner_id == user.id).delete(
         synchronize_session=False)
+    # Saved places and their filings, lists included, so a re-seed can't hit the
+    # (owner_id, place_key) unique index.
+    for model in (m.SavedPlaceFiling, m.PlaceListMember, m.PlaceList, m.SavedPlace):
+        session.query(model).filter(model.owner_id == user.id).delete(
+            synchronize_session=False)
     _remove_captures(session, user)
     session.query(m.Trip).filter(m.Trip.id.in_(tids)).delete(synchronize_session=False)
     # The seed's people and Jane's homes (a re-seed recreates them).
@@ -762,6 +813,9 @@ def roll(session: Session, today: date | None = None) -> dict:
         j.entry_date = _shift(j.entry_date, days)
         if j.captured_at:
             j.captured_at = j.captured_at + timedelta(days=days)
+    for p in session.query(m.SavedPlace).filter(m.SavedPlace.owner_id == user.id,
+                                                m.SavedPlace.visited_on.isnot(None)):
+        p.visited_on = _shift(p.visited_on, days)
     session.commit()
     # The date-driven findings and the waiting captures are rebuilt for the new
     # dates; everything else only moved.

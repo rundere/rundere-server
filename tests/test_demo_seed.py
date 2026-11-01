@@ -115,8 +115,10 @@ if DEPS:
         later = TODAY + timedelta(days=3)
         with SessionLocal() as s:
             lis = _trips(s)["demo:lisbon"]
+            # (Livraria Lello is filed undated, YONDER-351: nothing to move.)
             before_act = sorted(a.starts_at for a in
-                                s.query(m.TripActivity).filter_by(trip_id=lis.id))
+                                s.query(m.TripActivity).filter_by(trip_id=lis.id)
+                                if a.starts_at)
             before_journal = sorted(j.entry_date for j in
                                     s.query(m.JournalEntry).filter_by(owner_id=uid))
             assert demo_seed.drift(s, TODAY) == 0 and demo_seed.drift(s, later) == 3
@@ -125,10 +127,12 @@ if DEPS:
             lis = _trips(s)["demo:lisbon"]
             assert lis.start_date == (later - timedelta(days=1)).isoformat()
             after_act = sorted(a.starts_at for a in
-                               s.query(m.TripActivity).filter_by(trip_id=lis.id))
+                               s.query(m.TripActivity).filter_by(trip_id=lis.id)
+                               if a.starts_at)
             shift = lambda v: (date.fromisoformat(v[:10]) + timedelta(days=3)).isoformat() + v[10:]
             assert after_act == [shift(v) for v in before_act]           # times kept
-            a = s.query(m.TripActivity).filter_by(trip_id=lis.id).first()
+            a = s.query(m.TripActivity).filter(m.TripActivity.trip_id == lis.id,
+                                               m.TripActivity.starts_at != "").first()
             assert a.values["when"] == a.starts_at
             assert sorted(j.entry_date for j in s.query(m.JournalEntry).filter_by(
                 owner_id=uid)) == [shift(v) for v in before_journal]
@@ -136,6 +140,35 @@ if DEPS:
             assert s.query(m.TravelItem).filter_by(owner_id=uid).count() == 2
             # Again the same day: nothing to do.
             assert demo_seed.roll(s, later) == {"rolled": 0}
+
+    def test_the_seed_saves_janes_places_and_the_roll_moves_the_visit(seeded):
+        # YONDER-351: Notebook → Places isn't empty on the demo.
+        _, uid = seeded
+        h = _bearer(uid)
+        got = client.get("/api/v1/places", headers=h).json()
+        rows = got["places"] if isinstance(got, dict) else got
+        assert len(rows) == 13
+        with SessionLocal() as s:
+            trips = _trips(s)
+            by = {p.name: p for p in s.query(m.SavedPlace).filter_by(owner_id=uid)}
+            assert by["Pastelaria Versailles"].lat is None            # "Needs a pin"
+            assert by["Fushimi Inari Taisha"].priority == "must"
+            assert by["Hoshinoya Kyoto"].activity_type == "lodging"
+            katz = by["Katz's Delicatessen"]
+            assert katz.visited_on == (TODAY - timedelta(days=61)).isoformat()
+            filed = {(by_id.name, f.trip_id) for f in s.query(m.SavedPlaceFiling).filter_by(
+                owner_id=uid) for by_id in by.values() if by_id.id == f.place_id}
+            assert filed == {("Livraria Lello", trips["demo:lisbon"].id),
+                             ("Musée Matisse", trips["demo:france"].id)}
+            later = TODAY + timedelta(days=3)
+            assert demo_seed.roll(s, later) == {"rolled": 3}
+            s.expire_all()
+            assert s.get(m.SavedPlace, katz.id).visited_on == (
+                TODAY - timedelta(days=58)).isoformat()
+        # Still read-only: no edit, delete or filing.
+        pid = rows[0]["id"]
+        assert client.patch(f"/api/v1/places/{pid}", json={"todo": "x"}, headers=h).status_code == 403
+        assert client.delete(f"/api/v1/places/{pid}", headers=h).status_code == 403
 
     def test_shift_keeps_times_and_ignores_non_dates():
         assert demo_seed._shift("2031-02-27T09:30", 2) == "2031-03-01T09:30"
