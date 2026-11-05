@@ -52,6 +52,32 @@ if DEPS:
         assert _latest_id(body) is not None        # persisted
         _cleanup(body)
 
+    def test_compose_keeps_the_browsers_zone():
+        # D-224: the compose box sends the browser's zone; the note keeps it.
+        body = "web-note zone uid-Z"
+        client.post("/journal", data={"body": body, "captured_tz": "Europe/Lisbon"})
+        with SessionLocal() as s:
+            assert s.get(JournalEntry, _latest_id(body)).captured_tz == "Europe/Lisbon"
+        assert 'name="captured_tz"' in client.get("/journal").text
+        _cleanup(body)
+
+    def test_times_read_as_the_writers_clock():
+        # D-224 (YONDER-355): a note written at 22:15 in Lisbon shows 22:15, not the
+        # UTC or server time; one with only coordinates gets the zone found there.
+        from datetime import datetime, timezone
+        lisbon, nyc = "web-note lisbon uid-L", "web-note nyc uid-N"
+        with SessionLocal() as s:
+            s.add(JournalEntry(entry_date="2026-07-10", body=lisbon, captured_tz="Europe/Lisbon",
+                               captured_at=datetime(2026, 7, 10, 21, 15, tzinfo=timezone.utc)))
+            s.add(JournalEntry(entry_date="2026-07-11", body=nyc, place_lat=40.758,
+                               place_lon=-73.9855,
+                               captured_at=datetime(2026, 7, 12, 1, 40, tzinfo=timezone.utc)))
+            s.commit()
+        page = client.get("/journal").text
+        assert "22:15 WEST" in page               # Lisbon summer time
+        assert "21:40 EDT" in page                # zone from the coordinates
+        _cleanup(lisbon, nyc)
+
     def test_blank_body_is_noop():
         r = client.post("/journal", data={"body": "   "})
         assert r.status_code == 200

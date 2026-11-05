@@ -49,6 +49,8 @@ def _panel_ctx(request: Request, session: Session) -> dict:
     entries = journal_svc.list_entries(session, user)
     trips = _visible_trips(session, user)
     names = {t["id"]: t["name"] for t in trips}
+    from app import clock
+    mine = clock.zone_for(session, user)   # the viewer's own zone (D-187)
     groups: list[dict] = []
     for e in entries:                      # already sorted entry_date desc, captured_at desc
         if not groups or groups[-1]["date"] != e.entry_date:
@@ -56,7 +58,7 @@ def _panel_ctx(request: Request, session: Session) -> dict:
         groups[-1]["entries"].append({
             "id": e.id,
             "body": e.body or "",
-            "time": e.captured_at.strftime("%H:%M") if e.captured_at else "",
+            "time": journal_svc.local_time(e, mine),   # the writer's clock (D-224)
             "trip_id": e.trip_id,
             "trip_name": names.get(e.trip_id),
             "place": e.place_label or (
@@ -67,7 +69,6 @@ def _panel_ctx(request: Request, session: Session) -> dict:
             # Nearest-to-this-entry's-day first (YONDER-188); its own trip stays selected.
             "trips": journal_svc.rank_trips(trips, e.entry_date),
         })
-    from app import clock
     today = clock.today_for(session, user)          # the person's own date (D-187)
     return {"request": request, "groups": groups, "today": today,
             "trips": journal_svc.rank_trips(trips, today),
@@ -107,22 +108,25 @@ def journal_trip_options(request: Request, entry_date: str = "", picked: str = "
 @router.post("", response_class=HTMLResponse)
 @router.post("/", response_class=HTMLResponse)
 def journal_create(request: Request, body: str = Form(""), entry_date: str = Form(""),
-                   trip_id: str = Form(""), session: Session = Depends(get_session)):
+                   trip_id: str = Form(""), captured_tz: str = Form(""),
+                   session: Session = Depends(get_session)):
     """Create from the compose box. A blank note is a no-op (the box just
     re-renders) — never persist an empty entry. captured_at is the server's
     now: the browser has no reliable device clock/geo, so precise time+geo is
-    the mobile path (D-142)."""
+    the mobile path (D-142). The browser does know its zone, and sends it as
+    `captured_tz` so the note's time reads as it did when written (D-224)."""
     user = scope.user_of(request)
     if body.strip():
         try:
             journal_svc.create_entry(session, user, entry_date=(entry_date or None),
                                      body=body.strip(), trip_id=(trip_id or None),
-                                     source="web")
+                                     source="web", captured_tz=captured_tz)
         except ValueError:
             # A malformed date from a hand-edited field: fall back to today
             # rather than 500 — the note matters more than the exact day.
             journal_svc.create_entry(session, user, body=body.strip(),
-                                     trip_id=(trip_id or None), source="web")
+                                     trip_id=(trip_id or None), source="web",
+                                     captured_tz=captured_tz)
     return _panel(request, session)
 
 

@@ -48,6 +48,7 @@ JournalEntry (per-user)
 - id, owner_id                      # personal; own-only scope filter (§4)
 - entry_date (ISO date)             # the day the entry is ABOUT (D-132)
 - captured_at (datetime, REQUIRED)  # date+time context — the minimum stamp (D-142)
+- captured_tz (nullable)           # IANA zone it was written in; times show in it (D-224)
 - trip_id (nullable, soft link)     # attach-to-trip, backfillable (D-133)
 - body (Text)                       # the note itself, markdown-lite
 - values (JSON)                     # mood, tags[], place label, weather —

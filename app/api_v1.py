@@ -1901,6 +1901,9 @@ class JournalOut(BaseModel):
     id: str
     entry_date: str
     captured_at: Instant = None
+    # The IANA zone it was written in (D-224): show captured_at in it, so a note
+    # reads as the writer's clock did. Null when unknown — use the device's.
+    captured_tz: str | None = None
     trip_id: str | None = None
     body: str = ""
     values: dict[str, Any] = {}
@@ -1915,6 +1918,7 @@ class JournalOut(BaseModel):
 class JournalCreate(BaseModel):
     entry_date: str | None = None          # day the entry is ABOUT; defaults to today
     captured_at: str | None = None         # device time context (ISO-8601); defaults to now
+    captured_tz: str | None = None         # the device's IANA zone, e.g. "Europe/Lisbon" (D-224)
     body: str = ""
     trip_id: str | None = None             # optional attach at create; validated
     values: dict[str, Any] | None = None
@@ -1945,7 +1949,7 @@ class JournalDuplicate(BaseModel):
 def _journal_out(e: JournalEntry) -> JournalOut:
     return JournalOut(
         id=e.id, entry_date=e.entry_date, captured_at=e.captured_at,
-        trip_id=e.trip_id, body=e.body or "", values=e.values or {},
+        captured_tz=journal_svc.entry_zone(e), trip_id=e.trip_id, body=e.body or "", values=e.values or {},
         place_lat=e.place_lat, place_lon=e.place_lon, place_label=e.place_label,
         place_accuracy_m=e.place_accuracy_m,
         source=e.source or "api", duplicated_from=e.duplicated_from)
@@ -1964,7 +1968,7 @@ def api_journal_create(body: JournalCreate, user=Depends(authn.current_user),
             body=body.body, trip_id=body.trip_id, values=body.values,
             place_lat=body.place_lat, place_lon=body.place_lon,
             place_label=body.place_label, place_accuracy_m=body.place_accuracy_m,
-            source=body.source)
+            source=body.source, captured_tz=body.captured_tz)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return _journal_out(e)

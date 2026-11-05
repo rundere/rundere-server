@@ -154,6 +154,7 @@ if DEPS:
         for r in rows:
             key, hm = want[r["body"]]
             assert r["captured_at"].endswith("Z")
+            assert r["captured_tz"] == demo_seed.JOURNAL_ZONES[key]
             at = datetime.fromisoformat(r["captured_at"])
             local = at.astimezone(ZoneInfo(demo_seed.JOURNAL_ZONES[key]))
             assert local.strftime("%H:%M") == hm

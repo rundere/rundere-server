@@ -647,7 +647,8 @@ def _seed_journal(session, user, trips, today):
         zone = ZoneInfo(JOURNAL_ZONES[key])
         local = datetime.fromisoformat(f"{when}T{hm}:00").replace(tzinfo=zone)
         api_v1.api_journal_create(api_v1.JournalCreate(
-            entry_date=when, captured_at=local.isoformat(), body=body, trip_id=trips[key].id,
+            entry_date=when, captured_at=local.isoformat(), captured_tz=JOURNAL_ZONES[key],
+            body=body, trip_id=trips[key].id,
             place_lat=lat, place_lon=lon, place_label=label, source="mobile"),
             user=user, session=session)
 

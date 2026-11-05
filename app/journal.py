@@ -101,6 +101,40 @@ def parse_captured_at(value) -> datetime:
     return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def capture_zone(captured_tz=None, place_lat=None, place_lon=None) -> str | None:
+    """The IANA zone an entry was written in (D-224): the one the client sent if
+    it's real, else the zone at the entry's coordinates, else None. Both apps
+    send `captured_at` in UTC, so the stamp itself never says where."""
+    from app.clock import valid_zone
+    from resolve.geocode import tz_from_coords
+    return valid_zone(captured_tz) or tz_from_coords(place_lat, place_lon)
+
+
+def entry_zone(entry) -> str | None:
+    """The zone to show an entry's time in: stored, else from its coordinates
+    (rows written before D-224 have no `captured_tz`)."""
+    return capture_zone(entry.captured_tz, entry.place_lat, entry.place_lon)
+
+
+def local_time(entry, fallback=None) -> str:
+    """An entry's time as the writer's clock read it (D-224), "HH:MM", with the
+    zone's abbreviation when it isn't `fallback`'s (the viewer's own zone, D-187)
+    — so a Lisbon note reads "22:15 WET" to someone in Toronto, not "17:15".
+    With no known zone, the viewer's zone, then UTC."""
+    if not entry.captured_at:
+        return ""
+    from zoneinfo import ZoneInfo
+    at = entry.captured_at
+    at = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+    name = entry_zone(entry)
+    zone = ZoneInfo(name) if name else (fallback or timezone.utc)
+    local = at.astimezone(zone)
+    if fallback is not None and local.utcoffset() == at.astimezone(fallback).utcoffset():
+        return local.strftime("%H:%M")
+    abbr = local.tzname() or ""
+    return local.strftime("%H:%M") + (f" {abbr}" if abbr else "")
+
+
 def _owner_id(user):
     return getattr(user, "id", None)
 
@@ -119,7 +153,7 @@ def create_entry(session: Session, user, *, entry_date=None, captured_at=None,
                  body: str = "", trip_id: str | None = None, values: dict | None = None,
                  place_lat: float | None = None, place_lon: float | None = None,
                  place_label: str | None = None, place_accuracy_m: float | None = None,
-                 source: str = "api") -> JournalEntry:
+                 source: str = "api", captured_tz: str | None = None) -> JournalEntry:
     """Create one entry owned by `user`. If `trip_id` is given it must be a trip
     the user can see (else 404) — attaching is never a way to discover trips."""
     if trip_id:
@@ -128,6 +162,7 @@ def create_entry(session: Session, user, *, entry_date=None, captured_at=None,
         owner_id=_owner_id(user),
         entry_date=normalize_entry_date(entry_date),
         captured_at=parse_captured_at(captured_at),
+        captured_tz=capture_zone(captured_tz, place_lat, place_lon),
         trip_id=trip_id or None,
         body=body or "",
         values=dict(values or {}),
@@ -215,6 +250,7 @@ def duplicate_entry(session: Session, user, entry_id: str, *,
         owner_id=orig.owner_id,
         entry_date=orig.entry_date,
         captured_at=parse_captured_at(None),  # the fork happens now
+        captured_tz=orig.captured_tz,
         trip_id=new_trip or None,
         body=orig.body,
         values=dict(orig.values or {}),

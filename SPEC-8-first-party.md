@@ -587,6 +587,14 @@ Since D-146 that no longer holds.
   `captured_at` sent with an offset is converted to UTC before it's stored
   (SQLite kept the digits and dropped the offset). The demo seed's journal
   times are wall-clock at the place and are converted to UTC when seeded.
+  **A journal entry's time is shown in the zone it was written in**, not the
+  viewer's or the server's, so a note from Lisbon reads 22:15 wherever you
+  are (with the zone's abbreviation when it isn't yours). The entry keeps that
+  IANA zone as `captured_tz`: the browser's zone from the web compose box, the
+  device's zone from the apps (`captured_tz` on `POST /api/v1/journal`; both
+  apps send `captured_at` in UTC, so the stamp can't say). Without one, the
+  zone at the entry's coordinates; then the viewer's own zone (D-187).
+  `JournalOut.captured_tz` returns the zone to show it in, or null.
   (YONDER-355; blocks RUNDEREAND-64)
 - **D-149 — External writes are owner-scoped.** Until per-user connections
   exist, only the credential owner's captures produce AirTrail or AdventureLog
