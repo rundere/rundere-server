@@ -141,6 +141,23 @@ if DEPS:
             # Again the same day: nothing to do.
             assert demo_seed.roll(s, later) == {"rolled": 0}
 
+    def test_the_seed_journal_times_are_local_to_the_place(seeded):
+        # D-224 (YONDER-355): "10:15 PM, first night in Lisbon" is Lisbon time. The
+        # API returns UTC instants, and they convert back to the written time.
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        _, uid = seeded
+        rows = client.get("/api/v1/journal", headers=_bearer(uid)).json()
+        rows = rows if isinstance(rows, list) else rows["entries"]
+        want = {body: (key, hm) for key, _, hm, body, _ in demo_seed.JOURNAL}
+        assert len(rows) == len(want)
+        for r in rows:
+            key, hm = want[r["body"]]
+            assert r["captured_at"].endswith("Z")
+            at = datetime.fromisoformat(r["captured_at"])
+            local = at.astimezone(ZoneInfo(demo_seed.JOURNAL_ZONES[key]))
+            assert local.strftime("%H:%M") == hm
+
     def test_the_seed_saves_janes_places_and_the_roll_moves_the_visit(seeded):
         # YONDER-351: Notebook → Places isn't empty on the demo.
         _, uid = seeded

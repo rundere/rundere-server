@@ -85,8 +85,10 @@ def default_trip_id(trips: list[dict], on_date: str | None) -> str | None:
 def parse_captured_at(value) -> datetime:
     """The minimum time-context stamp (D-142). Accepts a datetime, an ISO-8601
     string (a trailing 'Z' allowed), or None → now. A naive datetime is treated
-    as UTC. Unparseable input falls back to now rather than failing a save —
-    losing the exact stamp must never lose the note."""
+    as UTC; one with an offset is converted to UTC, because SQLite stores the
+    wall-clock digits and drops the offset (D-224). Unparseable input falls back
+    to now rather than failing a save — losing the exact stamp must never lose
+    the note."""
     if isinstance(value, datetime):
         dt = value
     elif value:
@@ -96,7 +98,7 @@ def parse_captured_at(value) -> datetime:
             return _now()
     else:
         return _now()
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def _owner_id(user):

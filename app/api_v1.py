@@ -12,12 +12,12 @@ columns (activity `values`, finding `data`) are passed through as-is.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query, Request, Response,
                      UploadFile)
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel
 from sqlalchemy.orm import Session
 
 from app import (authn, expenses as expenses_svc, journal as journal_svc,
@@ -29,6 +29,20 @@ from app.models import (DiscoveryFinding, DiscoveryRun, JournalEntry, PackingIte
 
 router = APIRouter(prefix="/api/v1")
 log = logging.getLogger("rundere.api")
+
+
+def _utc(v: datetime | None) -> datetime | None:
+    """D-224: an instant leaves the API with its offset. Stored instants are UTC
+    (a naive value is UTC, D-142), but SQLite hands them back naive, and a
+    zone-less ISO string reads as wall-clock time on a phone."""
+    if v is None:
+        return None
+    return v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v.astimezone(timezone.utc)
+
+
+# When something happened (created_at, captured_at, a Discover run). Trip
+# wall-clock times (`starts_at`, trip dates) stay zone-less strings (D-224).
+Instant = Annotated[datetime | None, AfterValidator(_utc)]
 
 
 # --------------------------------------------------------------------------- schemas
@@ -174,7 +188,7 @@ class PackingItemOut(BaseModel):
 
 
 class PackingOut(BaseModel):
-    generated_at: datetime | None = None
+    generated_at: Instant = None
     archetypes: Any = None
     warnings: Any = None
     tasks: Any = None
@@ -185,7 +199,7 @@ class CaptureLite(BaseModel):
     id: str
     kind: str
     headline: str | None = None
-    created_at: datetime | None = None
+    created_at: Instant = None
 
 
 class TripRateOut(BaseModel):
@@ -197,7 +211,7 @@ class TripRateOut(BaseModel):
     rate: str
     as_of: str | None = None
     source: str                            # frankfurter | discover
-    fetched_at: datetime | None = None
+    fetched_at: Instant = None
 
 
 class DiscoveryPlaceOut(BaseModel):
@@ -241,8 +255,8 @@ class DiscoveryStatusOut(BaseModel):
     # The latest run: running | done | failed | cancelled, None = never run.
     # The error text stays server-side (it can carry provider detail).
     last_status: str | None = None
-    last_started_at: datetime | None = None
-    last_finished_at: datetime | None = None
+    last_started_at: Instant = None
+    last_finished_at: Instant = None
     # What the latest run covered: None = the whole suite, else one topic
     # (and one place) — a targeted refresh.
     last_topic: str | None = None
@@ -284,7 +298,7 @@ class ReviewItemOut(BaseModel):
     reason_codes: list[str] = []
     blocked: bool = False
     confidence: float | None = None
-    created_at: datetime | None = None
+    created_at: Instant = None
 
 
 class ReviewListOut(BaseModel):
@@ -1116,7 +1130,7 @@ class DocumentOut(BaseModel):
     batch_id: str | None = None            # the capture it went into
     source: str
     scan_notes: str | None = None          # e.g. "has JavaScript (never run; text read only)"
-    created_at: datetime | None = None
+    created_at: Instant = None
     removed_on: str | None = None          # when the stored copy is removed (D-196)
     purged: bool = False                   # the stored copy is already gone
 
@@ -1440,8 +1454,8 @@ def _discovery_status(session: Session, trip: Trip, user) -> DiscoveryStatusOut:
     out = DiscoveryStatusOut(ended=ended, ended_message=TRIP_ENDED_MESSAGE if ended else None)
     if last is not None:
         out.last_status = last.status
-        out.last_started_at = last.started_at
-        out.last_finished_at = last.finished_at
+        out.last_started_at = _utc(last.started_at)
+        out.last_finished_at = _utc(last.finished_at)
         out.last_topic = (last.params or {}).get("topic")
         out.last_place_key = (last.params or {}).get("place_key")
     if live is not None:
@@ -1886,7 +1900,7 @@ def api_save_finding(trip_id: str, body: FindingIn, request: Request,
 class JournalOut(BaseModel):
     id: str
     entry_date: str
-    captured_at: datetime | None = None
+    captured_at: Instant = None
     trip_id: str | None = None
     body: str = ""
     values: dict[str, Any] = {}
@@ -2035,8 +2049,8 @@ class SavedPlaceOut(BaseModel):
     source_url: str | None = None
     notes: str | None = None
     source: str = "api"
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: Instant = None
+    updated_at: Instant = None
     # The Places Library (SPEC-11): what to do there, how much it matters, the visit,
     # and where it is in words (D-214, D-215).
     todo: str | None = None
@@ -2297,7 +2311,7 @@ class ExpenseCommentOut(BaseModel):
     author_id: str | None = None
     author_name: str = ""
     body: str
-    created_at: datetime | None = None
+    created_at: Instant = None
     mine: bool = False                     # the caller wrote it (and can delete it)
 
 
@@ -2322,7 +2336,7 @@ class ExpenseOut(BaseModel):
     budget_item_id: str | None = None      # the planned item it fulfils (D-181)
     notes: str | None = None
     owner_id: str | None = None
-    created_at: datetime | None = None
+    created_at: Instant = None
     comments: list[ExpenseCommentOut] = []  # the discussion, oldest first (D-185)
     # Where it was logged (YONDER-212). Visible exactly where the expense is (D-183).
     place_lat: float | None = None

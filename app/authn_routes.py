@@ -11,7 +11,6 @@ OIDC endpoints arrive in Phase 1b behind the same router.
 """
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -22,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import authn
+from app.api_v1 import Instant  # D-224: instants carry their offset
 from app.auth import RateLimiter, client_ip
 from app.config import settings
 from app.db import get_session
@@ -75,7 +75,7 @@ class UserOut(BaseModel):
     opt_out_blocker: str = ""              # always "" since D-220; kept for the app
     reset_note: str = ""                   # what a forgotten password means here (D-220)
     email_required: bool = False           # a local account must add an email first (D-220)
-    support_until: datetime | None = None  # when support access ends; null = until turned off (D-211)
+    support_until: Instant = None  # when support access ends; null = until turned off (D-211)
     # From the person's own travel profile — theirs alone, so only on their own
     # payload: the currency an expense defaults to (YONDER-213) and the zone
     # their "now" runs on (D-187).

@@ -86,6 +86,23 @@ if DEPS:
         assert j["body"].startswith("ferry")
         _cleanup("journ_a")
 
+    def test_captured_at_is_returned_as_a_utc_instant():
+        # D-224 (YONDER-355): an instant leaves the API with its offset, so a phone
+        # shows it in its own zone. A naive stamp is UTC (D-142); an offset stamp
+        # is converted.
+        u = _user("journ_a")
+        h = _bearer(u)
+        naive = client.post("/api/v1/journal", headers=h,
+                            json={"body": "a", "captured_at": "2026-11-02T05:20:19"}).json()
+        assert naive["captured_at"] == "2026-11-02T05:20:19Z"
+        toronto = client.post("/api/v1/journal", headers=h, json={
+            "body": "b", "captured_at": "2026-11-02T00:20:19-05:00"}).json()
+        assert toronto["captured_at"] == "2026-11-02T05:20:19Z"
+        listed = client.get("/api/v1/journal", headers=h).json()
+        rows = listed if isinstance(listed, list) else listed["entries"]
+        assert rows and all(r["captured_at"].endswith("Z") for r in rows)
+        _cleanup("journ_a")
+
     def test_bad_entry_date_is_400():
         u = _user("journ_a")
         r = client.post("/api/v1/journal", headers=_bearer(u),

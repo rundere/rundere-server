@@ -117,6 +117,7 @@ if DEPS:
             st = client.get(f"/api/v1/trips/{tid}/discover/status",
                             headers=_bearer(owner)).json()
             assert st["running"] is False and st["last_status"] == "done"
+            assert st["last_started_at"].endswith("Z")   # an instant (D-224)
         finally:
             _drop(tid)
 

@@ -576,6 +576,18 @@ Since D-146 that no longer holds.
   where not usable; both null on a demo server). `oauth_client_id` stays the iOS
   alias for good, so shipped iOS builds are unchanged. No custom-scheme
   redirects. Extends D-194. (YONDER-353; rundere-server#48)
+- **D-224 — Instants leave the API with a UTC offset; wall-clock times don't
+  (owner, 2026-11-04).** A field that says *when something happened* —
+  `created_at`, `updated_at`, `generated_at`, `fetched_at`, a journal entry's
+  `captured_at`, Discover's `last_started_at` / `last_finished_at`,
+  `support_until` — is returned as ISO-8601 UTC with a `Z`. They were already
+  stored in UTC (D-142), but SQLite reads them back naive, so clients couldn't
+  tell them from wall-clock times. Trip wall-clock values (timeline
+  `starts_at`, trip and entry dates) stay zone-less, as D-172 stores them. A
+  `captured_at` sent with an offset is converted to UTC before it's stored
+  (SQLite kept the digits and dropped the offset). The demo seed's journal
+  times are wall-clock at the place and are converted to UTC when seeded.
+  (YONDER-355; blocks RUNDEREAND-64)
 - **D-149 — External writes are owner-scoped.** Until per-user connections
   exist, only the credential owner's captures produce AirTrail or AdventureLog
   targets. (shipped as D-156; superseded by D-150 in 4.8)
