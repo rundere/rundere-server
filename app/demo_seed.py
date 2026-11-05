@@ -405,7 +405,7 @@ RESEARCH = {
     ],
 }
 
-JOURNAL = [   # (trip key, day offset, "HH:MM", body, place)
+JOURNAL = [   # (trip key, day offset, local "HH:MM" at the place, body, place)
     ("nyc", -62, "21:40", "Landed, checked in, and walked to Times Square just to say we did. "
                           "Too loud, loved it anyway.", ("Times Square", 40.7580, -73.9855)),
     ("nyc", -61, "23:10", "The show was worth every penny. Sam cried at the second act.",
@@ -415,6 +415,9 @@ JOURNAL = [   # (trip key, day offset, "HH:MM", body, place)
     ("lisbon", -1, "22:15", "First night in Lisbon. Pastéis de nata count: 3.",
      ("Bairro Alto", 38.7128, -9.1446)),
 ]
+# Where each journal trip's "HH:MM" is wall-clock time. captured_at is an
+# instant stored in UTC (D-142, D-224), so the seed converts.
+JOURNAL_ZONES = {"nyc": "America/New_York", "lisbon": "Europe/Lisbon"}
 
 EXPENSES = [  # (trip key, day offset, title, amount, currency, rate→GBP, category, payer)
     # Split equally between everyone on the trip.
@@ -638,10 +641,14 @@ def _roster_ids(session, trip_id) -> list[int]:
 
 def _seed_journal(session, user, trips, today):
     from app import api_v1
+    from zoneinfo import ZoneInfo
     for key, day, hm, body, (label, lat, lon) in JOURNAL:
         when = _d(today, day)
+        zone = ZoneInfo(JOURNAL_ZONES[key])
+        local = datetime.fromisoformat(f"{when}T{hm}:00").replace(tzinfo=zone)
         api_v1.api_journal_create(api_v1.JournalCreate(
-            entry_date=when, captured_at=f"{when}T{hm}:00", body=body, trip_id=trips[key].id,
+            entry_date=when, captured_at=local.isoformat(), captured_tz=JOURNAL_ZONES[key],
+            body=body, trip_id=trips[key].id,
             place_lat=lat, place_lon=lon, place_label=label, source="mobile"),
             user=user, session=session)
 

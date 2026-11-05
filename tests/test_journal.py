@@ -86,6 +86,50 @@ if DEPS:
         assert j["body"].startswith("ferry")
         _cleanup("journ_a")
 
+    def test_captured_at_is_returned_as_a_utc_instant():
+        # D-224 (YONDER-355): an instant leaves the API with its offset, so a phone
+        # shows it in its own zone. A naive stamp is UTC (D-142); an offset stamp
+        # is converted.
+        u = _user("journ_a")
+        h = _bearer(u)
+        naive = client.post("/api/v1/journal", headers=h,
+                            json={"body": "a", "captured_at": "2026-11-02T05:20:19"}).json()
+        assert naive["captured_at"] == "2026-11-02T05:20:19Z"
+        toronto = client.post("/api/v1/journal", headers=h, json={
+            "body": "b", "captured_at": "2026-11-02T00:20:19-05:00"}).json()
+        assert toronto["captured_at"] == "2026-11-02T05:20:19Z"
+        listed = client.get("/api/v1/journal", headers=h).json()
+        rows = listed if isinstance(listed, list) else listed["entries"]
+        assert rows and all(r["captured_at"].endswith("Z") for r in rows)
+        _cleanup("journ_a")
+
+    def test_captured_tz_is_kept_or_worked_out_from_the_place():
+        # D-224: the device's zone wins; without one, the zone at the entry's
+        # coordinates; a made-up zone is dropped, never stored.
+        u = _user("journ_a")
+        h = _bearer(u)
+        sent = client.post("/api/v1/journal", headers=h, json={
+            "body": "a", "captured_tz": "America/Toronto"}).json()
+        assert sent["captured_tz"] == "America/Toronto"
+        placed = client.post("/api/v1/journal", headers=h, json={
+            "body": "b", "place_lat": 38.7128, "place_lon": -9.1446}).json()
+        assert placed["captured_tz"] == "Europe/Lisbon"
+        bogus = client.post("/api/v1/journal", headers=h, json={
+            "body": "c", "captured_tz": "Mars/Olympus"}).json()
+        assert bogus["captured_tz"] is None
+        _cleanup("journ_a")
+
+    def test_local_time_shows_the_writers_clock():
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+        e = JournalEntry(captured_at=datetime(2026, 1, 5, 22, 15, tzinfo=timezone.utc),
+                         captured_tz="Europe/Lisbon")
+        assert journal_svc.local_time(e, ZoneInfo("Europe/Lisbon")) == "22:15"
+        assert journal_svc.local_time(e, ZoneInfo("America/Toronto")) == "22:15 WET"
+        e.captured_tz = None                       # unknown: the viewer's zone, unlabelled
+        assert journal_svc.local_time(e, ZoneInfo("America/Toronto")) == "17:15"
+        assert journal_svc.local_time(e) == "22:15 UTC"
+
     def test_bad_entry_date_is_400():
         u = _user("journ_a")
         r = client.post("/api/v1/journal", headers=_bearer(u),

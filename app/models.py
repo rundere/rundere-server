@@ -990,6 +990,9 @@ class JournalEntry(Base):
     owner_id: Mapped[str | None] = mapped_column(String(36), index=True)
     entry_date: Mapped[str] = mapped_column(String(10), index=True)  # ISO date, the day it is ABOUT
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # The IANA zone it was written in, so its time reads as the writer's clock
+    # did (D-224). NULL on older rows: worked out from place_lat/lon on read.
+    captured_tz: Mapped[str | None] = mapped_column(String(64))
     trip_id: Mapped[str | None] = mapped_column(String(36), index=True)  # soft link; attach later
     body: Mapped[str] = mapped_column(Text, default="")
     values: Mapped[dict] = mapped_column(JsonCol, default=dict)  # mood, tags[], place label…

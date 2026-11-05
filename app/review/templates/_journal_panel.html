@@ -32,6 +32,12 @@
       </div>
       <button type="submit" class="act primary">Save note</button>
     </div>
+    {# The zone it's written in, so the note's time reads as this clock did (D-224). #}
+    <input type="hidden" name="captured_tz" id="jnl-tz">
+    <script>
+      try { document.getElementById('jnl-tz').value =
+              Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+    </script>
   </form>
   {% endif %}
 

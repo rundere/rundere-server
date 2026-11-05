@@ -434,6 +434,8 @@ def _journal_context(session: Session, trip: Trip, user) -> list[dict]:
     q = session.query(JournalEntry).filter(JournalEntry.trip_id == trip.id)
     if user is not None:
         q = q.filter(JournalEntry.owner_id == user.id)
+    from app import clock, journal as journal_svc
+    mine = clock.zone_for(session, user) if user is not None else None
     groups: list[dict] = []
     for e in q.order_by(JournalEntry.entry_date.desc(), JournalEntry.captured_at.desc()):
         if not groups or groups[-1]["date"] != e.entry_date:
@@ -441,7 +443,7 @@ def _journal_context(session: Session, trip: Trip, user) -> list[dict]:
                            "entries": []})
         groups[-1]["entries"].append({
             "id": e.id, "body": e.body or "",
-            "time": e.captured_at.strftime("%H:%M") if e.captured_at else "",
+            "time": journal_svc.local_time(e, mine),   # the writer's clock (D-224)
             "place": e.place_label or "",
             "tags": (e.values or {}).get("tags") or []})
     return groups
