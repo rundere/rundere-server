@@ -111,6 +111,7 @@ _REGION_ONLY = re.compile(r"^[A-Z]{2,3}$")            # "ON", "NY", "NSW"
 _HOUSE_FIRST = re.compile(r"^(\d+[a-z]?)\b", re.I)    # "300 Richmond St W"
 _HOUSE_LAST = re.compile(r"\b(\d+[a-z]?)$", re.I)     # "Rua Augusta 24"
 _AREAS = {"country", "state", "county", "city", "district", "locality", "postcode"}
+_POINTS = {"house", "house_number"}                  # place=* values that are an address
 
 
 def _parts(address: str | None) -> list[str]:
@@ -181,10 +182,11 @@ def locate(name: str | None, address: str | None, *, locality: str | None = None
             if city and got_city and _norm(city) not in _norm(got_city) \
                     and _norm(got_city) not in _norm(city):
                 continue
-            # An area is never a pin. Photon files address points as place=house,
-            # so only the other place=* values are areas.
+            # An area is never a pin. Photon files address points under place=*
+            # too: place=house, or place=house_number (measured on the live Photon,
+            # YONDER-359), so only the other place=* values are areas.
             if props.get("type") in _AREAS or (props.get("osm_key") == "place"
-                                               and props.get("osm_value") != "house"):
+                                               and props.get("osm_value") not in _POINTS):
                 continue
             if number:
                 # The address is the identity: a chain's other branch has the same

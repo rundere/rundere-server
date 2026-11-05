@@ -317,6 +317,20 @@ def test_locate_needs_the_same_house_number_on_the_same_street():
                                country_code="CA", geocoder=gc) is None
 
 
+def test_locate_takes_an_address_point_photon_files_as_place_house_number():
+    """YONDER-359: the live Photon files an address point as place=house_number. It
+    was skipped as an area, so Find on map failed where Open in Maps found it."""
+    street = _feat("Example Avenue NW", 44.7, -80.3, osm_key="highway",
+                   osm_value="residential", type="street", city="Port Calloway", countrycode="CA")
+    point = _feat(None, 44.71, -80.31, osm_key="place", osm_value="house_number",
+                  type="house", housenumber="4321", street="Example Avenue NW",
+                  city="Port Calloway", countrycode="CA")
+    hit = place_lookup.locate("Invented Brewing Test", "4321 Example Ave NW",
+                              locality="Port Calloway", country_code="CA",
+                              geocoder=StubPhoton([street, point]))
+    assert (hit["lat"], hit["lon"]) == (44.71, -80.31)
+
+
 def test_locate_without_a_street_wants_the_name_and_never_takes_a_town():
     town = _feat("Testville", 44.0, -79.0, osm_key="place", osm_value="town", type="city",
                  city="Testville", countrycode="CA")
