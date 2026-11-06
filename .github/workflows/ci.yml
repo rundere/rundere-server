@@ -6,6 +6,11 @@
 # them current), no checked-out credentials. Runs on `pull_request`, never
 # `pull_request_target`, so a fork's PR gets no secrets: the prepublish job then
 # runs without the private denylist, and the push to main re-runs it with it.
+#
+# Both jobs install from uv.lock (`uv sync --locked`), not `pip install .`, so
+# CI tests the pinned dependency set. A new upstream release then arrives as a
+# Dependabot or `uv lock` bump, instead of breaking an unrelated PR (pypdf 7.0.0
+# removed PdfWriter.add_js and failed a README-only PR).
 name: ci
 
 on:
@@ -27,12 +32,12 @@ jobs:
           python-version: "3.12"
       - name: lockfile matches pyproject.toml (YONDER-194)
         run: pip install uv && uv lock --check
-      - run: pip install .[dev]
+      - run: uv sync --locked --extra dev
       - name: pytest
-        run: pytest -q
+        run: uv run pytest -q
       - name: accuracy metric
         run: |
-          python tests/validate.py | tail -1
+          uv run python tests/validate.py | tail -1
           # e.g. "35/35 cases behaved as expected" — the regression contract.
 
   # YONDER-287: the pre-publish check (scripts/prepublish.py). A gate since
@@ -47,8 +52,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - run: pip install .[dev]
+      - run: pip install uv && uv sync --locked --extra dev
       - name: pre-publish check (current files)
         env:
           PREPUBLISH_DENYLIST: ${{ secrets.PREPUBLISH_DENYLIST }}
-        run: python scripts/prepublish.py
+        run: uv run python scripts/prepublish.py
