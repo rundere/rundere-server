@@ -97,13 +97,12 @@ if you want to choose when to upgrade and be able to roll back.
 - **A local LLM does most of the reading.** Without one, Run·dere still reads what has
   structure (booking markup, calendar invites and Maps links), but most booking emails are
   free-form, so they wait in the Inbox for you to fill in by hand. Geocoding, web search,
-  email and file scanning are optional too: each adds a feature, and nothing breaks
-  without it.
+  email and file scanning are optional.
 - **Captures are kept on purpose.** The original of every booking is kept until 12 months
   after its trip, so a capture can be re-read and checked. Plan disk space for it.
-- **It isn't encrypted against the server's operator.** Sharing settings decide what
-  admins see in the app; whoever runs the server can still read the database.
-- **Old names show through.** The project was called Yonder, and the `TX_*` settings, the
+- **The server operator has full visibility to the household from the database.** Sharing settings decide what
+  admins see in the app; whoever runs the server can still read the database, data is not encrypted at rest. 
+- **Old names show through.** Old Project naming convention was called Yonder, and the `TX_*` settings, the
   Python package and some code keep that name (D-206).
 
 ## Privacy
@@ -170,6 +169,8 @@ secret files. The essentials:
 
 - **iPhone and iPad.** The native app is in its own repository and talks to this
   server's API. [rundere.app](https://rundere.app) has the details.
+- **Android** The native app is in its own repository and talks to this
+  server's API. [rundere.app](https://rundere.app) has the details.
 - **AI assistants.** The server has a built-in MCP endpoint at `/mcp` with OAuth sign-in,
   so Claude and other MCP clients can read your trips, add to them and save research,
   acting as you. Nothing is connected unless you connect it
@@ -189,8 +190,7 @@ Guides are in [`docs/`](docs/) until the project has a wiki:
 
 ## AI usage
 
-Much of Run·dere is written with AI coding assistants, mainly Claude Code, and the
-repository says so: [AGENTS.md](AGENTS.md) holds the rules every contributor and agent works
+Much of Run·dere is written with AI coding assistants, mainly Claude Code: [AGENTS.md](AGENTS.md) holds the rules every contributor and agent works
 to, and commits made with an assistant carry a `Co-Authored-By` line. The maintainer
 decides what gets built, writes down the decisions behind it ([DECISIONS.md](DECISIONS.md)
 and the specs), and reviews every change. Every change goes through a pull request and
@@ -202,6 +202,8 @@ pass before it merges.
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [code of conduct](CODE_OF_CONDUCT.md). Please report vulnerabilities privately as
 [SECURITY.md](SECURITY.md) describes.
+
+Use Issues to request New features and identify any bugs. Issue and work Items are managed offline in Plane but GitHub Issues are synced back to a local Plane Edition to track backlog, bugs and work. 
 
 Images are published as `ghcr.io/rundere/rundere-server` from the first public release
 on; earlier ones were private (D-207).
