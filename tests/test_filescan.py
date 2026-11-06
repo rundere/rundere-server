@@ -115,7 +115,9 @@ def test_active_content_inside_compressed_object_streams_is_found():
     scan can't see; the structural walk does."""
     w = pypdf.PdfWriter()
     w.add_blank_page(612, 792)
-    w.add_js("app.alert('hi');")
+    # add_js was removed in pypdf 7; add_open_action(JavaScript) works on 6.x too.
+    from pypdf.actions import JavaScript
+    w.add_open_action(JavaScript("app.alert('hi');"))
     buf = io.BytesIO()
     w.write(buf)
     reader = pypdf.PdfReader(io.BytesIO(buf.getvalue()))
