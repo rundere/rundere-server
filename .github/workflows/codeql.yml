@@ -5,9 +5,9 @@ name: codeql
 
 on:
   push:
-    branches: [main]
+    branches: [main, next]          # next: the integration branch for a major release
   pull_request:
-    branches: [main]
+    branches: [main, next]
   schedule:
     - cron: "17 6 * * 1"              # weekly, Monday morning UTC
 

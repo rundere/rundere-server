@@ -45,6 +45,23 @@ publishes the image for a given version — it's for rebuilding/backfilling a
 tag that predates the workflow, and deliberately does **not** touch the
 GitHub Release or README/docs.
 
+## A major release on `next`
+
+A major release (5.0) is built over weeks on the integration branch `next`, so
+`main` stays releasable for 4.x patch releases in the meantime.
+
+- Branch feature work from `next` and open its PRs against `next`. They follow the
+  same rules as PRs to `main`: CI must pass, they merge with a merge commit, and
+  CodeQL scans them.
+- Nothing is published from `next`. `tag-release.yml` only runs on `main`,
+  `cut-release.yml` always checks out `main`, and `release.yml` only builds
+  `vX.Y.Z` tags. Test `next` on a server you build from a local checkout.
+- After every 4.x release, merge `main` into `next` in a PR. If a patch release
+  added a migration, renumber `next`'s migrations after it (and update their
+  `down_revision`), because two branches can pick the same next number.
+- When the major release is ready, merge `next` into `main` in one PR, then cut the
+  release as above.
+
 ## Refreshing bundled data
 
 Before a minor release, refresh Run·dere's own airport table (SPEC-8 D-147,

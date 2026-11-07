@@ -51,7 +51,8 @@ For a Postgres-backed stack like production, run
 ## Making the change
 
 - Branch from `main` as `feat/…`, `fix/…`, `docs/…` or `chore/…`, and keep a pull request
-  to one topic.
+  to one topic. Work for the next major release branches from `next` and targets
+  `next` instead (see [RELEASING.md](RELEASING.md)).
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/),
   with an optional scope: `fix(trips): …`, `feat(mcp): …`, `docs: …`.
 - Match the code around you: explain *why* in comments and cite the D-number when a
