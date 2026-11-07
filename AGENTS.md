@@ -46,7 +46,7 @@ python3 rules.py --docs > RULES.md    # regenerate after ANY change to rules.py
 | `adapters/targets/` | AirTrail and AdventureLog clients (optional integrations) |
 | `discover/`, `planning/` | Research resolvers and data; packing and planning data |
 | `alembic/versions/` | Migrations, numbered `00NN_name.py`. Always add a new one; never edit a merged one |
-| `schemas/`, `contracts/` | JSON Schemas; iOS DTO contracts |
+| `schemas/`, `contracts/` | JSON Schemas; iOS and Android app contracts |
 | `tests/` | pytest suite. `tests/samples.json` is the extraction regression contract |
 | `deploy/`, `docs/` | Example stacks; self-hosting, demo-server and publishing guides |
 | `SPEC-*.md`, `DECISIONS.md` | Specs and numbered **decisions (D-###)**: the source of truth for intent |

@@ -75,7 +75,7 @@ tests/          pytest suite + samples.json regression corpus
 docs/           A5/A6 specs, shared-capabilities guideline (D-96),
                 home-profiles.example.json, the setup/usage guide
 scripts/        prepublish.py (secrets and personal-data check), extract_eval.py,
-                dto_drift.py, build_airports.py
+                dto_drift.py (iOS), schema_drift.py (Android), build_airports.py
 ```
 
 The design specs (`docs/A5-canonical-keys.md`, `docs/A6-collection-resolution.md`,
