@@ -57,7 +57,9 @@ def test_greeting_uses_the_traveller_name_and_the_viewers_clock():
         assert greeting_name(s, None) == ""
         s.rollback()
     html = _fixture().get("/").text
-    assert 'id="dash-greeting"' in html and "new Date().getHours()" in html
+    assert 'id="dash-greeting"' in html and "data-browser-clock" in html
+    import pathlib
+    assert "new Date().getHours()" in (pathlib.Path(__file__).resolve().parent.parent / "app/review/static/review_pages.js").read_text()
 
 
 def test_home_trip_card_shows_packing_progress_per_user():

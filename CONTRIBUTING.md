@@ -56,6 +56,9 @@ For a Postgres-backed stack like production, run
   with an optional scope: `fix(trips): …`, `feat(mcp): …`, `docs: …`.
 - Match the code around you: explain *why* in comments and cite the D-number when a
   decision drives the code.
+- **No inline JavaScript.** The pages run under `script-src 'self'`, so templates never hold
+  a `<script>` block or an `onclick=`-style handler (`tests/test_csp.py` fails on either).
+  Use the `data-` attributes in `app/review/static/rundere.js`, or a page's own static file.
 - Changing models needs a new Alembic migration (`alembic/versions/00NN_name.py`). Never
   edit one that's already merged.
 - Changing `rules.py` means regenerating `RULES.md`: `python3 rules.py --docs > RULES.md`.

@@ -63,7 +63,7 @@
             <form method="post" action="/settings/integrations/{{ card.kind }}/test"><button class="btn btn-secondary bp-sm" type="submit">Test</button></form>
             <form method="post" action="/settings/integrations/{{ card.kind }}/toggle"><button class="btn btn-ghost bp-sm" type="submit">{{ 'Turn off' if c.enabled else 'Turn on' }}</button></form>
             <form method="post" action="/settings/integrations/{{ card.kind }}/delete"
-                  onsubmit="return confirm('Remove your {{ card.label }} connection? The saved token is deleted.')">
+                  data-confirm="Remove your {{ card.label }} connection? The saved token is deleted.">
               <button class="btn btn-danger bp-sm" type="submit">Remove</button></form>
           </div>
           {% endif %}

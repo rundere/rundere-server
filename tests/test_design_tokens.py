@@ -51,6 +51,8 @@ if DEPS:
         for path in ("/", "/trips", "/login"):
             html = client.get(path, follow_redirects=True).text
             assert '<html lang="en" data-theme="dark">' in html, path
-            assert "t||'dark'" in html, path
+            assert "/review/static/theme.js" in html, path
         admin = (ROOT / "app/review/admin_templates/sqladmin/base.html").read_text()
-        assert "t||'dark'" in admin
+        assert "/review/static/theme.js" in admin
+        # theme.js applies it before first paint (YONDER-303 moved it out of the pages).
+        assert 't || "dark"' in (ROOT / "app/review/static/theme.js").read_text()

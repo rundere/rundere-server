@@ -7,7 +7,7 @@
 <span id="sec-discovery" class="yn-anchor"></span>
 <div class="bp-timeline-head">
   <div class="yn-sec-title">
-    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Discovery">▾</button>
+    <button class="yn-sec-caret" type="button" data-action="sec" aria-label="Collapse Discovery">▾</button>
     <h2 class="bp-h2">Discovery</h2>
   </div>
   <div class="bp-head-actions">
@@ -54,7 +54,7 @@
     {% for s in discovery_sections %}
     <button type="button" role="tab" class="yn-disc-link{% if not s.count %} is-empty{% endif %}"
             id="dtab-{{ s.key }}" data-sec="{{ s.key }}" aria-controls="dsec-{{ s.key }}"
-            aria-selected="false" onclick="ynDisc(this.dataset.sec)">
+            aria-selected="false" data-action="disc">
       <span class="yn-disc-label">{{ s.label }}</span>
       <span class="yn-disc-meta">{{ s.count if s.count else "none yet" }}{% if s.from_agent %}<span class="yn-disc-flag"> · {{ s.from_agent }} new from agent</span>{% endif %}</span>
     </button>
@@ -108,5 +108,4 @@
   </div>
 {% endif %}
 </div>
-<script>if (window.ynDiscInit) ynDiscInit();</script>
 </div>

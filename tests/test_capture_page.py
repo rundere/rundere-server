@@ -126,7 +126,10 @@ if DEPS:
         _, ck = _user("cp-hand")
         try:
             page = client.get("/capture/handoff", cookies=ck)
-            assert page.status_code == 200 and "rundere-page" in page.text and "e.source !== window.opener" in page.text
+            assert page.status_code == 200 and 'id="hand-form"' in page.text
+            # The hand-off code is static since YONDER-303 (no inline scripts).
+            js = (Path(__file__).resolve().parent.parent / "app/review/static/review_pages.js").read_text()
+            assert "rundere-page" in js and "e.source !== window.opener" in js
         finally:
             _cleanup("cp-hand")
 

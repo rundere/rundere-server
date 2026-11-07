@@ -1,8 +1,9 @@
 {# Plan a cost / edit a planned cost (YONDER-221, D-178–D-184). One amount for
    the people it's for — a room for two is one cost, nothing is multiplied by
    people or days (D-179). An agent's draft is kept by saving it. #}
-<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
-  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root"
+     hx-trigger="click target:.dialog-backdrop">{# a click on the backdrop itself, not the dialog #}
+  <div class="dialog blueprint bp-dialog-tall">
     <div class="dialog-title">{% if item is none %}Plan a cost{% elif draft %}Suggested cost{% else %}Planned cost{% endif %}</div>
     {% if draft %}<p class="bp-trip-notes">An agent's suggestion. Save (or Keep on the list) to make it part of your plan.</p>{% endif %}
     {% if error %}<div class="bp-error">{{ error }}</div>{% endif %}
@@ -24,7 +25,7 @@
           <label for="bd-cur">Currency</label>
           {% set cc = currency_choices %}
           {% set known = cc.suggested | map(attribute=0) | list %}
-          <select id="bd-cur" class="input" name="currency" required onchange="ynMoreCurrencies(this)">
+          <select id="bd-cur" class="input" name="currency" required data-action-change="more-currencies">
             {% if not form.currency %}<option value="" selected disabled>Choose…</option>{% endif %}
             {% for code, label in cc.suggested %}<option value="{{ code }}" {% if code == form.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
             {% if form.currency and form.currency not in known %}<option value="{{ form.currency }}" selected>{{ form.currency }}</option>{% endif %}

@@ -33,7 +33,7 @@
           <td class="num">{% if f.purged %}removed{% else %}{{ f.removed_on }}{% endif %}</td>
           <td>
             <form method="post" action="/capture/files/{{ f.id }}/delete"
-                  onsubmit="return confirm('Delete “{{ f.name }}” now? What was read from it stays.');">
+                  data-confirm="Delete “{{ f.name }}” now? What was read from it stays.">
               <button class="act tiny" type="submit">Delete</button>
             </form>
           </td>

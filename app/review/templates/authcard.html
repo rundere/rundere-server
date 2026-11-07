@@ -11,11 +11,9 @@
 <link rel="stylesheet" href="{{ asset('/brand/tokens/tokens.css') }}">
 <link rel="stylesheet" href="{{ asset('/brand/fonts/fonts.css') }}">
 <link rel="stylesheet" href="{{ asset('/review/static/theme.css') }}">
-<script>
-// No saved choice means dark, whatever the OS prefers (D-201).
-(function(){var t;try{t=localStorage.getItem('tx-theme');}catch(e){}
-  document.documentElement.setAttribute('data-theme',t||'dark');})();
-</script>
+<script src="{{ asset('/review/static/theme.js') }}"></script>{# no defer: before first paint #}
+<script src="{{ asset('/review/static/rundere.js') }}" defer></script>
+<script src="{{ asset('/review/static/review_pages.js') }}" defer></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;background:var(--ground);color:var(--ink);

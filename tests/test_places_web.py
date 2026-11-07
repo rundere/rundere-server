@@ -115,7 +115,9 @@ def test_explicit_directions_path_refuses_a_place_link():
 
 def test_capture_page_mentions_saved_places_and_does_not_require_a_date_for_short_links():
     t = client.get("/capture").text
-    assert 'href="/places"' in t and "isShort" in t
+    assert 'href="/places"' in t and 'id="dir-fields"' in t
+    import pathlib
+    assert "isShort" in (pathlib.Path(__file__).resolve().parent.parent / "app/review/static/review_pages.js").read_text()
 
 
 # ---------------------------------------------------------------- /places page

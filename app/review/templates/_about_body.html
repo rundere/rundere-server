@@ -27,31 +27,6 @@
         ready, so all that's left is to run there. <span class="rd-dict-note">Formerly <b>Yonder</b>; renamed in 4.4.0.</span></p>
     </div>
   </div>
-  <script>
-  (function(){
-    // Plays the recorded pronunciation (design/audio: AAC for Safari/Chrome/Edge,
-    // Opus for browsers without AAC). If neither plays, the browser's voice says it.
-    var b = document.getElementById('rd-say'), a = document.getElementById('rd-say-audio');
-    var canSpeak = 'speechSynthesis' in window;
-    var canPlay = !!(a && a.canPlayType &&
-      (a.canPlayType('audio/mp4') || a.canPlayType('audio/webm; codecs=opus')));
-    if (!b || !(canPlay || canSpeak)) return;
-    function speak(){
-      if (!canSpeak) return;
-      var u = new SpeechSynthesisUtterance('Run there');
-      u.lang = 'en-US'; u.rate = 0.9;
-      window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
-    }
-    b.hidden = false;
-    b.addEventListener('click', function(){
-      if (!canPlay) return speak();
-      a.currentTime = 0;
-      var p = a.play();
-      if (p && p.catch) p.catch(speak);
-    });
-    if (a) a.addEventListener('error', function(){ canPlay = false; });
-  })();
-  </script>
 
   {# What it is, Run·dere-first (D-146): AdventureLog and AirTrail are optional extras. #}
   <p class="about-lead">

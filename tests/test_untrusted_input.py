@@ -40,9 +40,13 @@ if DEPS:
             tid, fid = t.id, f.id
         r = client.get(f"/trips/{tid}/finding/{fid}/calculator")
         assert r.status_code == 200
-        script = r.text[r.text.index("var perPivot"):]
-        script = script[:script.index("</script>")]
-        assert "</SCRIPT" not in script and "<IMG" not in script   # escaped as <…
+        # The rates sit in a single-quoted data- attribute (YONDER-303): nothing
+        # in them may end the attribute or open a tag.
+        attr = r.text[r.text.index("data-rates='") + len("data-rates='"):]
+        attr = attr[:attr.index("'")]
+        assert "<" not in attr and ">" not in attr and "&" not in attr.replace("&#34;", "")
+        import json
+        assert f"per_{_EVIL}" not in json.loads(attr.replace("&#34;", '"'))
 
     def test_currency_edit_keeps_iso_codes_only():
         with SessionLocal() as s:
@@ -65,9 +69,13 @@ if DEPS:
     def test_handoff_waits_for_a_confirm_click():
         """Any site can open the hand-off tab and post to it; nothing is captured
         until the person confirms, in a tab no site can frame."""
+        import pathlib
         page = client.get("/capture/handoff").text
-        assert 'id="hand-go"' in page and "e.origin" in page
-        handler = page[page.index("addEventListener('message'"):page.index("hand-go').addEventListener")]
+        assert 'id="hand-go"' in page and 'id="hand-form" data-max-bytes=' in page
+        js = (pathlib.Path(__file__).resolve().parent.parent / "app/review/static/review_pages.js").read_text()          # YONDER-303: the code is static
+        js = js[js.index('R.onLoad("#hand-form"'):]
+        assert "e.origin" in js
+        handler = js[js.index('addEventListener("message"'):js.index('hand-go").addEventListener')]
         assert "htmx.trigger" not in handler                 # no auto-submit on message
 
     def test_currency_codes_must_be_real_iso_codes():
