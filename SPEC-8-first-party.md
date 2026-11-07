@@ -575,7 +575,8 @@ Since D-146 that no longer holds.
   other's. `/api/v1/auth/methods` adds `oauth_clients: {"ios", "android"}` (null
   where not usable; both null on a demo server). `oauth_client_id` stays the iOS
   alias for good, so shipped iOS builds are unchanged. No custom-scheme
-  redirects. Extends D-194. (YONDER-353; rundere-server#48)
+  redirects. Extends D-194. (YONDER-353; rundere-server#48) The Android app
+  itself is recorded in `SPEC-4.3-android-companion.md`.
 - **D-224 — Instants leave the API with a UTC offset; wall-clock times don't
   (owner, 2026-11-04).** A field that says *when something happened* —
   `created_at`, `updated_at`, `generated_at`, `fetched_at`, a journal entry's

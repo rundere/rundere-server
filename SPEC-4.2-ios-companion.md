@@ -1,5 +1,7 @@
 # SPEC-4.2 — iOS Companion: from read-only to a working travel app
 
+> **2026-11-07:** the Android counterpart is [`SPEC-4.3-android-companion.md`](SPEC-4.3-android-companion.md).
+>
 > **2026-09-27:** the app moved to its own repository, `rundere/rundere-ios` (renamed
 > Run·dere, bundle ID `app.rundere.ios`). Paths below under `ios/` now live there.
 
