@@ -3,13 +3,13 @@
 <span id="sec-packing" class="yn-anchor"></span>
 <div class="bp-timeline-head">
   <div class="yn-sec-title">
-    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Packing">▾</button>
+    <button class="yn-sec-caret" type="button" data-action="sec" aria-label="Collapse Packing">▾</button>
     <h2 class="bp-h2">Packing</h2>
   </div>
   <div class="bp-head-actions">
     {% if packing_has %}
-    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('packing', true)">Expand all</button>
-    <button class="btn btn-ghost bp-sm" onclick="ynToggleAll('packing', false)">Collapse all</button>
+    <button class="btn btn-ghost bp-sm" data-action="group-open" data-group="packing">Expand all</button>
+    <button class="btn btn-ghost bp-sm" data-action="group-close" data-group="packing">Collapse all</button>
     {% endif %}
     {% if not read_only %}{# D-198: not on a demo server #}
     <a class="btn btn-secondary bp-sm" href="/trips/settings/packing-profile">Profile</a>

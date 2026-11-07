@@ -9,7 +9,7 @@
 </div>
 
 {% if has_any %}
-<form id="trip-controls" class="bp-controls" onsubmit="return false">
+<form id="trip-controls" class="bp-controls" data-no-submit>
   <input class="input bp-search" type="search" name="q" value="{{ q }}" placeholder="Search trips…"
          hx-get="/trips/list" hx-trigger="input changed delay:250ms, search"
          hx-target="#trip-groups" hx-include="#trip-controls, #trip-status">

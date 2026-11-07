@@ -6,9 +6,10 @@
 <title>{% block title %}Inbox{% endblock %} · Run·dere</title>
 {# htmx without eval, and no page snapshots in localStorage, where they would
    outlive signing out (YONDER-293). #}
-<meta name="htmx-config" content='{"allowEval":false,"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
 <script src="{{ asset('/review/static/htmx.min.js') }}" defer></script>
 <script src="{{ asset('/review/static/rundere.js') }}" defer></script>
+<script src="{{ asset('/review/static/review_pages.js') }}" defer></script>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/brand/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/brand/icons/apple-touch-icon.png">
@@ -16,16 +17,7 @@
 <link rel="stylesheet" href="{{ asset('/brand/tokens/tokens.css') }}">
 <link rel="stylesheet" href="{{ asset('/brand/fonts/fonts.css') }}">
 <link rel="stylesheet" href="{{ asset('/review/static/theme.css') }}">
-<script>
-// Apply the saved theme BEFORE first paint so there is no light/dark flash.
-// No saved choice means dark, whatever the OS prefers (D-201).
-(function(){var t;try{t=localStorage.getItem('tx-theme');}catch(e){}
-  document.documentElement.setAttribute('data-theme',t||'dark');})();
-function txToggleTheme(){var r=document.documentElement,c=r.getAttribute('data-theme');
-  var n=c==='dark'?'light':(c==='light'?'dark':
-    (window.matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark'));
-  r.setAttribute('data-theme',n);try{localStorage.setItem('tx-theme',n);}catch(e){}}
-</script>
+<script src="{{ asset('/review/static/theme.js') }}"></script>{# no defer: before first paint #}
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--ui);
@@ -454,30 +446,5 @@ a{color:var(--accent)}
 {# Sheets open here (design board: item detail and commit are sheets, never an
    inline expansion). Escape or a click on the backdrop closes one. #}
 <div id="modal-root"></div>
-<script>
-(function () {
-  function close() { var r = document.getElementById('modal-root'); if (r) r.innerHTML = ''; }
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && document.querySelector('#modal-root .rd-sheet')) close();
-  });
-  document.addEventListener('click', function (e) {
-    if (e.target.classList && e.target.classList.contains('rd-sheet-backdrop')) close();
-    if (e.target.closest && e.target.closest('[data-sheet-close]')) close();
-  });
-  // Focus the sheet when it opens, for keyboard and screen-reader users.
-  document.body.addEventListener('htmx:afterSwap', function (e) {
-    if (e.detail.target && e.detail.target.id === 'modal-root') {
-      var s = document.querySelector('#modal-root .rd-sheet'); if (s) s.focus();
-    }
-  });
-})();
-// Auto-hide the result toast a few seconds after it is swapped in OOB.
-document.body.addEventListener('htmx:oobAfterSwap', function(e){
-  var t = e.detail && e.detail.target;
-  if (!t || t.id !== 'toast') return;
-  clearTimeout(window.__toastTimer);
-  window.__toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 7000);
-});
-</script>
 </body>
 </html>

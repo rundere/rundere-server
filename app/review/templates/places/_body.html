@@ -41,7 +41,7 @@
           {% elif a.level == 'country' %}{% set href = "/places?lens=atlas&country=" ~ b.key %}{% set mapq = "country=" ~ b.key %}
           {% else %}{% set href = "/places?lens=atlas&country=" ~ a.country ~ "&city=" ~ (b.key|urlencode) %}{% set mapq = "country=" ~ a.country ~ "&city=" ~ (b.key|urlencode) %}{% endif %}
           <a class="pl-board" href="{{ href }}">
-            {% if b.key != '-' %}<img class="pl-board-map" src="/places/atlas/map.png?{{ mapq }}" alt="" loading="lazy" width="280" height="120" onerror="this.remove()">{% endif %}
+            {% if b.key != '-' %}<img class="pl-board-map" src="/places/atlas/map.png?{{ mapq }}" alt="" loading="lazy" width="280" height="120" data-remove-on-error>{% endif %}
             <span class="pl-board-name">{{ b.name }}</span>
             <span class="pl-board-count">{{ b.count }} place{{ 's' if b.count != 1 }}{% if b.must %} · {{ b.must }} must{% endif %}</span>
             <span class="pl-chips">{{ kinds(b.kinds) }}</span>
@@ -64,7 +64,7 @@
           <input class="cap-input sm" name="description" value="{{ list.description or '' }}" aria-label="Description" placeholder="What it's for (optional)">
           <button class="act tiny" type="submit">Save</button>
         </form>
-        <form method="post" action="/places/lists/{{ list.id }}/delete" onsubmit="return confirm('Delete this list? Its places stay in your library.')">
+        <form method="post" action="/places/lists/{{ list.id }}/delete" data-confirm="Delete this list? Its places stay in your library.">
           <button class="act tiny danger" type="submit">Delete list</button>
         </form>
       </details>

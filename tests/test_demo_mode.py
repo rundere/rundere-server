@@ -116,7 +116,7 @@ if DEPS:
         assert "Demo dinner" in page
         # Every tab shows (not a D-199 viewer)…
         for tab in ("discovery", "packing", "costs", "journal"):
-            assert f'data-tab="{tab}" onclick' in page, tab
+            assert f'data-tab="{tab}" data-action="tab"' in page, tab
         # …but nothing offers an edit.
         for control in ("+ Add activity", "Edit trip", "Run discovery", "Generate packing plan"):
             assert control not in page, control

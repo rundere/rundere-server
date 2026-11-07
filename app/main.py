@@ -196,16 +196,25 @@ _SECURITY_HEADERS = {"X-Frame-Options": "DENY",
                      "X-Content-Type-Options": "nosniff",
                      "Referrer-Policy": "same-origin"}
 # Everything the pages use is served from here: no outside scripts, styles,
-# fonts or frames. Scripts and styles may still be inline (17 <script> blocks
-# and the onclick= handlers predate this; moving them out is a follow-up), but
-# never eval (htmx's eval features are off) and never from anywhere else; no
-# plugins, no <base> rewriting, and fetches only back to this server, so an
-# injected script has nowhere to send data.
-_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
+# fonts or frames. Scripts come only from this server's static files: no inline
+# <script> blocks and no on*= handlers (YONDER-303; tests/test_csp.py keeps it
+# that way), and never eval (htmx's eval features are off). Styles may still be
+# inline. No plugins, no <base> rewriting, and fetches only back to this server,
+# so an injected script has nowhere to send data.
+_CSP = ("default-src 'self'; script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
         "font-src 'self' data:; media-src 'self'; connect-src 'self'; "
         "object-src 'none'; base-uri 'none'; frame-src 'none'; "
         "worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'")
+# SQLAdmin's own templates (in the installed package) carry inline scripts, so
+# /admin alone keeps 'unsafe-inline' for scripts. It's admin-only and behind
+# sign-in; overriding the package's templates would have to be redone on every
+# SQLAdmin upgrade (owner's choice, 2026-11-07).
+_CSP_ADMIN = _CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'")
+
+
+def _csp_for(path: str) -> str:
+    return _CSP_ADMIN if path == "/admin" or path.startswith("/admin/") else _CSP
 
 
 @app.middleware("http")
@@ -215,7 +224,7 @@ async def security_headers(request, call_next):
         response.headers.setdefault(k, v)
     csp = response.headers.get("Content-Security-Policy")
     if csp is None:
-        response.headers["Content-Security-Policy"] = _CSP
+        response.headers["Content-Security-Policy"] = _csp_for(request.url.path)
     elif "frame-ancestors" not in csp:              # e.g. a download's own `sandbox`
         response.headers["Content-Security-Policy"] = csp + "; frame-ancestors 'none'"
     # Over https (the proxy says so), browsers should never fall back to http

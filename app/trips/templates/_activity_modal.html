@@ -1,5 +1,6 @@
-<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
-  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root"
+     hx-trigger="click target:.dialog-backdrop">{# a click on the backdrop itself, not the dialog #}
+  <div class="dialog blueprint bp-dialog-tall">
     <div class="dialog-title">{{ title }}</div>
     <form class="dialog-body" hx-post="{{ action }}" hx-target="#modal-root" hx-swap="innerHTML">
       {% if discovery_item_id %}
@@ -31,7 +32,7 @@
                  placeholder="Paste a Google or Apple Maps link"
                  {% if mode == "create" %}hx-get="/trips/{{ trip_id }}/activity/from-link" hx-trigger="change"
                  hx-target="#modal-root" hx-swap="innerHTML" hx-include="closest form"
-                 onkeydown="if(event.key==='Enter'){event.preventDefault();this.dispatchEvent(new Event('change',{bubbles:true}))}"{% endif %}>
+                 data-enter-commits{% endif %}>
           {% if mode == "create" %}
           <button type="button" class="btn btn-ghost" style="white-space:nowrap"
                   hx-get="/trips/{{ trip_id }}/activity/from-link"

@@ -1591,14 +1591,12 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
     today = rates_svc.today()
     shown = [c for c in currencies if c != q]
     stale = bool(q) and any(trip_dates.get(c, "") < today for c in shown)
-    import json as _json
     return templates.TemplateResponse(request, "_calculator.html", {
         "request": request, "trip_id": trip_id, "fid": fid,
-        # Inside a <script>: escape <, > and & so no value can close the tag
-        # (YONDER-293; currency codes were free text from the edit form).
-        "currencies": currencies, "per_pivot_json": Markup(
-            _json.dumps(per_pivot).replace("<", "\\u003c").replace(">", "\\u003e")
-            .replace("&", "\\u0026")),
+        # The template puts these in a single-quoted data- attribute through
+        # |tojson, which escapes < > & ' so no value can leave it (YONDER-293;
+        # currency codes were free text from the edit form; YONDER-303).
+        "currencies": currencies, "per_pivot": per_pivot,
         "as_of": as_of or "—",
         "trip_dates": sorted(trip_dates.items()), "trip_currency": q,
         "can_update": stale and scope.can_edit_trip(session, scope.user_of(request), trip),

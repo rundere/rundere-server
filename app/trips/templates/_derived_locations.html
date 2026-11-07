@@ -1,5 +1,6 @@
-<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
-  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root"
+     hx-trigger="click target:.dialog-backdrop">{# a click on the backdrop itself, not the dialog #}
+  <div class="dialog blueprint bp-dialog-tall">
     <div class="dialog-title">Refine Discovery · {{ trip_name }}</div>
     <div class="dialog-body">
       <p class="bp-trip-notes">
