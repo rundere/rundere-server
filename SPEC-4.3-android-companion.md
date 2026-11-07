@@ -85,16 +85,16 @@ The same principle as SPEC-4.2 §2: a **thin client of `/api/v1`**. Every rule
 
 ### 4.3 Android-only decisions
 
-- **D-225 — The app lock also locks after 5 minutes away (proposed; the owner
-  to confirm the interval, §8).** iOS locks only at launch. Android keeps apps
+- **D-225 — The app lock also locks after 5 minutes away (agreed
+  2026-11-07).** iOS locks only at launch. Android keeps apps
   alive in the background for days, so a launch-only lock would rarely ask. It
   is the same setting as on iOS.
-- **D-226 — Switching servers always means signing in again (proposed).** The
+- **D-226 — Switching servers always means signing in again (agreed 2026-11-07).** The
   old server's session is revoked and its cache wiped. Changing the address or
   TLS trust of the server in use signs out too, so a token never goes somewhere,
   or over trust, it wasn't issued for.
 - **D-227 — An add-server link checks the server over public-CA trust only
-  (proposed).** A `rundere://add-server?url=…&name=…` link can't carry a pinned
+  (agreed 2026-11-07).** A `rundere://add-server?url=…&name=…` link can't carry a pinned
   certificate, so private-CA servers are added in Settings → Servers. Links with
   sign-in details in the address, or plain http to anything other than this
   device, are refused. Nothing is saved until the person confirms.
@@ -136,5 +136,5 @@ tablet-specific layouts beyond what Compose adapts on its own.
 
 ## 8. Open decisions for the owner
 
-- D-225's relock interval: 5 minutes is proposed.
-- D-226 and D-227 are recorded as proposed until the owner agrees them.
+None. The owner agreed D-225 (with the 5-minute interval), D-226 and D-227 on
+2026-11-07.
