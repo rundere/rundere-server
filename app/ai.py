@@ -13,9 +13,12 @@ emails carry full names, addresses and passenger lists.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
+from datetime import datetime, timedelta, timezone
 
-from ai.client import PROVIDERS, Endpoint
+from ai import client
+from ai.client import PROVIDERS, CallRecord, Endpoint
 from app.config import settings
 
 log = logging.getLogger("rundere.ai")
@@ -23,6 +26,9 @@ log = logging.getLogger("rundere.ai")
 EXTRACTION = "extraction"       # email, file and web-page captures
 DISCOVER = "discover"           # Discover research and the phrasebook generator
 FEATURES = (EXTRACTION, DISCOVER)
+ADMIN_TEST = "admin_test"       # the admin page's Test connection (call log only)
+
+KEEP_CALLS_DAYS = 90            # SPEC-12 §6
 
 
 def _legacy() -> bool:
@@ -57,8 +63,9 @@ def configured() -> Endpoint | None:
                     timeout=settings.llm_timeout_seconds, cloud=cloud)
 
 
-def endpoint(feature: str) -> Endpoint | None:
-    """The endpoint `feature` may use, or None (D-228)."""
+def endpoint(feature: str, user_id: str | None = None) -> Endpoint | None:
+    """The endpoint `feature` may use, or None (D-228). `user_id` is whom the
+    calls are for, recorded in the call log."""
     if feature not in FEATURES:
         raise ValueError(f"unknown AI feature {feature!r}")
     llm = configured()
@@ -66,12 +73,13 @@ def endpoint(feature: str) -> Endpoint | None:
         return None
     if feature == EXTRACTION and llm.cloud and not settings.ai_cloud_extraction:
         return None
-    return llm
+    return dataclasses.replace(llm, feature=feature, user_id=user_id)
 
 
 def extractor():
     """The LLM extractor for captures, or None when extraction has no AI
-    (off, unconfigured, or a cloud endpoint without TX_AI_CLOUD_EXTRACTION)."""
+    (off, unconfigured, or a cloud endpoint without TX_AI_CLOUD_EXTRACTION).
+    app/processing.py points it at each capture's owner (for_user)."""
     llm = endpoint(EXTRACTION)
     if llm is None:
         return None
@@ -146,3 +154,75 @@ def log_startup() -> None:
                  "on" if d["features"][DISCOVER] else "off")
     for p in d["problems"]:
         log.warning("AI: %s", p)
+
+
+# ------------------------------------------------------------------ call log
+def _record(rec: CallRecord) -> None:
+    """client.observe hook: one AiCall row per call, in its own session so a
+    caller's transaction is never touched. Prompts and replies are never
+    stored, and the error is its class name only (SPEC-12 §6)."""
+    from app.db import SessionLocal
+    from app.models import AiCall
+    llm = rec.endpoint
+    with SessionLocal() as session:
+        session.add(AiCall(feature=(llm.feature or "other")[:24], function=rec.name[:64],
+                           provider=llm.provider, model=llm.model[:120],
+                           started_at=rec.started_at, duration_ms=rec.duration_ms,
+                           ok=rec.ok, error=(rec.error or None) and rec.error[:64],
+                           prompt_tokens=rec.prompt_tokens, out_tokens=rec.out_tokens,
+                           user_id=llm.user_id))
+        session.commit()
+
+
+client.observe(_record)
+
+
+def purge_calls(session, now: datetime | None = None) -> int:
+    """Delete call-log rows older than KEEP_CALLS_DAYS (the daily retention
+    sweep). Returns how many went."""
+    from app.models import AiCall
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=KEEP_CALLS_DAYS)
+    n = session.query(AiCall).filter(AiCall.started_at < cutoff).delete(
+        synchronize_session=False)
+    session.commit()
+    return n
+
+
+def call_summary(session, limit: int = 50) -> dict:
+    """For the admin page: the latest calls, and per-feature totals over the
+    last 7 days."""
+    from sqlalchemy import case, func
+
+    from app.models import AiCall
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    rows = (session.query(AiCall.feature, func.count(), func.sum(case((AiCall.ok.is_(False), 1), else_=0)),
+                          func.avg(AiCall.duration_ms))
+            .filter(AiCall.started_at >= since).group_by(AiCall.feature).all())
+    week = [{"feature": f, "calls": n, "failed": int(bad or 0),
+             "avg_s": round(float(avg or 0) / 1000, 1)} for f, n, bad, avg in rows]
+    recent = (session.query(AiCall).order_by(AiCall.started_at.desc()).limit(limit).all())
+    return {"week": sorted(week, key=lambda w: w["feature"]), "recent": recent}
+
+
+def test_connection() -> tuple[bool, str]:
+    """The admin page's Test connection: list the models, then one tiny JSON
+    call, which lands in the call log as admin_test. Returns (ok, a sentence);
+    errors are named by class and HTTP status only."""
+    import urllib.error
+    llm = configured()
+    if llm is None:
+        return False, "AI is off or not fully configured, so there's nothing to test."
+    llm = dataclasses.replace(llm, feature=ADMIN_TEST)
+    try:
+        client.list_models(llm)
+        reply = client.chat_json(llm, [{"role": "user", "content":
+                                        'Reply with the JSON object {"ok": true}.'}],
+                                 {"type": "object", "properties": {"ok": {"type": "boolean"}}},
+                                 num_ctx=2048, name="connection_test")
+    except urllib.error.HTTPError as ex:
+        return False, f"The endpoint answered HTTP {ex.code}."
+    except Exception as ex:
+        return False, f"The call failed ({type(ex).__name__})."
+    if '"ok"' not in reply.content:
+        return False, "The endpoint answered, but not with the JSON asked for."
+    return True, f"{llm.model} answered."

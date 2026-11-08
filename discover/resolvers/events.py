@@ -250,7 +250,7 @@ class EventsResolver:
         if not results:
             return None
         out = synthesize_json(self._prompt(place, start, end, interests, results),
-                              _SCHEMA, llm=self.llm, system=_SYSTEM)
+                              _SCHEMA, llm=self.llm, system=_SYSTEM, name=self.topic)
         if not out:
             log.warning("events: no usable LLM output for %s (see the synth: line above "
                         "for the cause)", place.label)

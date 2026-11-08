@@ -77,16 +77,20 @@ def _fields(payload: dict) -> list[dict]:
                      "missing": required and not v, "editable": editable})
 
     def place_fields(prefix: str, path: str, airport: bool = False):
+        def text_field_p(what: str, sub: str):
+            # A hotel's place has no prefix: "Name", not " name".
+            label = f"{prefix} {what}".strip()
+            text_field(label[:1].upper() + label[1:], f"{path}/{sub}")
         if airport:
             # A flight can neither be keyed nor logged without its airport code
             # (missing_airport_code), so surface an empty one as the field to
             # fix rather than leaving the operator to guess what "unknown" means.
             text_field(f"{prefix} airport", f"{path}/iata", required=True)
-        text_field(f"{prefix} name", f"{path}/name")
+        text_field_p("name", "name")
         if not airport:
-            text_field(f"{prefix} address", f"{path}/address")
-        text_field(f"{prefix} city", f"{path}/city")
-        text_field(f"{prefix} country", f"{path}/country")
+            text_field_p("address", "address")
+        text_field_p("city", "city")
+        text_field_p("country", "country")
 
     if t == "flight":
         text_field("Flight number", "/flight/flight_number", required=True)
@@ -617,6 +621,42 @@ async def save(item_id: str, request: Request, bucket: str = "attention",
                             approve_refused="and_approve" in form)
 
 
+@router.get("/item/{item_id}/manual", response_class=HTMLResponse)
+def manual_fields(item_id: str, request: Request, item_type: str = "",
+                  bucket: str = "attention", session: Session = Depends(get_session)):
+    """Manual entry: the fields for the type just chosen."""
+    item = scope.capture_or_none(session, request, item_id)
+    if item is None or item.extraction:
+        return HTMLResponse("", status_code=404)
+    return templates.TemplateResponse(request, "_manual_fields.html", {
+        "i": {"id": item.id}, "bucket": bucket, "manual": _manual_ctx(item_type)})
+
+
+@router.post("/item/{item_id}/manual", response_class=HTMLResponse)
+async def manual_save(item_id: str, request: Request, bucket: str = "attention",
+                      session: Session = Depends(get_session)):
+    """Manual entry (SPEC-12 §6, D-228): save what was typed for a capture with
+    no details. Refused with the reasons until it passes the schema gate; then
+    the re-resolve runs the rules, as for any capture."""
+    from app.review import manual
+    item = scope.capture_or_none(session, request, item_id)
+    if item is None:
+        return HTMLResponse("", status_code=404)
+    if item.extraction:                          # it has details: the editor owns it now
+        return HTMLResponse("This already has its details; edit them instead.",
+                            status_code=409)
+    form = await request.form()
+    item_type = str(form.get("item_type") or "")
+    fields = {k[2:]: str(v) for k, v in form.multi_items() if k.startswith("f:")}
+    problems = manual.apply(session, item, item_type, fields)
+    final = scope.capture_or_none(session, request, item_id)
+    if problems:
+        return _detail_response(request, session, final, bucket=bucket, manual_state={
+            "item_type": item_type, "values": fields, "problems": problems})
+    return _detail_response(request, session, final, bucket=bucket, saved=True,
+                            oob_counts=True)
+
+
 @router.post("/item/{item_id}/assign", response_class=HTMLResponse)
 def assign_trip(item_id: str, request: Request, collection_id: str = Form(""),
                 bucket: str = "attention", session: Session = Depends(get_session)):
@@ -921,9 +961,23 @@ def _original_context(session: Session, item: TravelItem) -> dict | None:
             "until": retention._batch_keep_until(session, batch, items).isoformat()}
 
 
+def _manual_ctx(item_type: str, values: dict[str, str] | None = None,
+                problems: list[str] | None = None) -> dict:
+    """Manual entry's form state (SPEC-12 §6): the type chosen so far, its
+    fields with whatever was typed, and why the last save was refused."""
+    from app.review import manual
+    fields = []
+    if item_type in manual.TYPE_NAMES:
+        payload = manual.build(item_type, values or {})[0]
+        fields = [f for f in _fields(payload) if f.get("editable")]
+    return {"types": manual.TYPES, "type": item_type, "fields": fields,
+            "problems": problems or []}
+
+
 def _detail_response(request: Request, session: Session, item: TravelItem,
                      *, bucket: str = "attention", saved: bool = False,
-                     oob_counts: bool = False, approve_refused: bool = False):
+                     oob_counts: bool = False, approve_refused: bool = False,
+                     manual_state: dict | None = None):
     view = _view(item)
     violations = []
     if item.extraction:
@@ -943,6 +997,11 @@ def _detail_response(request: Request, session: Session, item: TravelItem,
            "trip_yonder": _yonder_trip_context(session, item, view,
                                                scope.user_of(request)),
            "original": _original_context(session, item)}
+    if not item.extraction:
+        # Nothing read yet (AI off, or it failed): manual entry, not the editor.
+        from app.review import manual
+        ctx["manual"] = {**_manual_ctx(**(manual_state or {"item_type": ""})),
+                         "original": manual.original(session, item)}
     if oob_counts:
         # Saving can move the item between buckets; refresh the counts too.
         views = _all_views(session, scope.user_of(request))

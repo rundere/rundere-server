@@ -194,6 +194,18 @@ class LLMExtractor:
         self.schema = load_extraction_schema()
         self.format_schema = build_format_schema(self.schema)
 
+    @property
+    def model(self) -> str:
+        """Recorded on each extracted item (app/processing.py)."""
+        return self.llm.model
+
+    def for_user(self, user_id: str | None) -> "LLMExtractor":
+        """The same extractor, with its calls logged against `user_id`."""
+        import dataclasses
+        other = copy.copy(self)
+        other.llm = dataclasses.replace(self.llm, user_id=user_id)
+        return other
+
     # separated for tests to monkeypatch
     def _post(self, messages: list[dict]) -> str:
         return chat_json(self.llm, messages, self.format_schema, name="travel_extraction").content

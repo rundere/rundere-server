@@ -41,6 +41,8 @@ keep Run·dere fully local.
   - **An OpenAI-compatible API** (LiteLLM, vLLM, llama.cpp's server, a cloud provider): `TX_AI_PROVIDER=openai`, `TX_AI_URL` ending in `/v1` (for example `http://litellm:4000/v1`), `TX_AI_MODEL_CHAT`, and `TX_AI_API_KEY` (or `TX_AI_API_KEY_FILE`) if it needs one. LiteLLM can front Anthropic, Google and others the same way.
   - **Cloud** (D-228): say so with `TX_AI_LOCATION=cloud`; it must be https. Discovery may use it. Booking emails and files are read without AI unless you also set `TX_AI_CLOUD_EXTRACTION=true`, because they hold full names, addresses and passenger lists.
   - Start-up logs one line saying what AI will do, and a warning for any setting it can't use.
+  - **Settings → AI** (admins) shows the same, with a Test connection button and the call log: every call's feature, model, duration, outcome and token counts, kept 90 days. Prompts and replies are never stored.
+  - With AI off, a capture the structured readers can't read waits in the inbox; open it to see the original and add its details by hand.
 - **Photon** — self-host the Photon container with an OpenStreetMap index; point `TX_PHOTON_URL` at it.
 - **SearXNG** — self-host with its JSON API enabled (`search.formats: [html, json]` in `settings.yml`); point `TX_SEARXNG_URL` at it. Needed only for Discovery's LLM-tier topics (visa/safety/events/food/regional language) — it also requires Ollama.
 - **Run·dere `/ingest` API keys** — you create these yourself with the CLI (see [capture.md](capture.md#the-google-add-ons)); one per capture client.

@@ -1362,3 +1362,25 @@ class ServerSetting(Base):
     value: Mapped[str] = mapped_column(String(200), default="", server_default="")
     updated_by: Mapped[str | None] = mapped_column(String(36))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AiCall(Base):
+    """One call to the AI endpoint (SPEC-12 §6, D-228): which feature made it,
+    for whom, how long it took and whether it worked. Never the prompt, the
+    reply or the error text, which can echo travel emails. Kept 90 days
+    (app/retention.py)."""
+    __tablename__ = "ai_calls"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    feature: Mapped[str] = mapped_column(String(24), index=True)     # extraction, discover
+    function: Mapped[str] = mapped_column(String(64))                # travel_extraction, food, …
+    provider: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(120))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now,
+                                                 index=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    error: Mapped[str | None] = mapped_column(String(64))           # the class name only
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    out_tokens: Mapped[int | None] = mapped_column(Integer)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)

@@ -1,8 +1,8 @@
 # SPEC-12 — AI providers, and AI on or off
 
-Status: **5.0, in progress** (written 2026-11-07, YONDER-354). Part one, the
-providers and the switch, is built. Part two, manual entry in review and the AI
-call log, is next (§6).
+Status: **5.0, built** (written 2026-11-07, YONDER-354). Part one is the
+providers and the switch; part two (§6) is manual entry in review, the AI call
+log and the admin page.
 
 Before 5.0, Run·dere called Ollama directly in two places: the extractor
 (`extract/llm.py`) and Discovery's synthesis step (`discover/synth.py`). D-11
@@ -87,16 +87,43 @@ isn't watched.
   emails with AI.** Without it, 5.0 reads only the structured sources and the
   rest waits in review. The 5.0 release notes say this first.
 
-## 6. Part two (next)
+## 6. Part two: review, the call log, the admin page
 
-- **AI off in review:** a capture that needs AI says "AI is off: add the
-  details by hand" rather than "no LLM configured", and review gets a
-  manual-entry form (pick the type, fill in the fields, then the same schema
-  gate and rules as an extracted item).
-- **The AI call log:** an `ai_calls` table holding feature, function,
-  provider, model, start time, duration, outcome and error class (never the
-  error body, which can echo the prompt), token counts when given, and the
-  user. Kept 90 days. Prompts and replies are never stored.
-- **A read-only admin page:** on or off, the endpoint and model, where AI is
-  used, a Test connection button, the call log, and how many captures waited
-  for manual entry because AI was off.
+- **AI off in review.** A capture that needs AI leads with the reason code
+  `ai_off`: "AI is off, so this wasn't read automatically. Add the details by
+  hand." The capture belongs to the person who captured it. Before 5.0 a
+  capture extraction couldn't read was saved with no owner, so only an admin
+  could see it.
+- **Manual entry** (`app/review/manual.py`). For any capture with no details
+  (AI off, or AI couldn't read it), review shows the original next to a form:
+  the email's subject, sender and text, a page's text, a calendar file, or a
+  PDF's text. The person picks the type and fills in review's usual fields.
+  The form then:
+  - says in plain words what is still missing;
+  - passes the result through the extraction schema gate (D-11);
+  - stores it as `extractor: manual`, with every typed field locked (D-13), as
+    a review edit is;
+  - re-resolves it, so the rules run.
+
+  A journey's end with no time becomes "no date yet" (D-210), never a made-up
+  one.
+- **The AI call log** (`ai_calls`). `ai.client.chat_json` reports every call,
+  successful or not. Each row holds the feature, the call (the extractor, a
+  Discover topic, `phrasebook`, `connection_test`), the provider and model,
+  the start time and duration, the outcome, the error's class name (never its
+  text, which can echo the prompt), the token counts when the server gives
+  them, and the user. The feature and user travel on the `Endpoint`, because
+  Discover calls from a worker thread. Prompts and replies are never stored.
+  The daily retention sweep deletes rows after 90 days, and a failure to log
+  never fails the call.
+- **The admin page**, Settings → AI (`/settings/ai`), admins only and
+  read-only. It shows:
+  - whether AI is on or off, the endpoint (without any credentials in the
+    address) and the model;
+  - whether captures and Discover use AI;
+  - any configuration problems;
+  - how many captures are waiting for manual entry because AI was off;
+  - the last 7 days per feature, and the latest calls.
+
+  Test connection lists the endpoint's models, then makes one tiny call,
+  which is logged as `admin_test`.
