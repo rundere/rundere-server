@@ -181,7 +181,7 @@ class LanguageLocalResolver:
         if not results:
             return None
         out = synthesize_json(self._prompt(place, langs, results), _SCHEMA,
-                              llm=self.llm, system=_SYSTEM)
+                              llm=self.llm, system=_SYSTEM, name=self.topic)
         if not out:
             log.warning("language_local: no usable LLM output for %s (see the synth: line above "
                         "for the cause)", place.label)

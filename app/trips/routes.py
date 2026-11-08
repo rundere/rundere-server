@@ -1215,10 +1215,10 @@ def _resolvers():
         open_meteo_archive_url=settings.open_meteo_archive_url)
 
 
-def _llm_resolvers():
+def _llm_resolvers(user_id: str | None = None):
     from discover.resolvers import build_llm
     from app import ai
-    return build_llm(searxng_url=settings.searxng_url, llm=ai.endpoint(ai.DISCOVER),
+    return build_llm(searxng_url=settings.searxng_url, llm=ai.endpoint(ai.DISCOVER, user_id),
                      timeout=settings.llm_timeout_seconds)
 
 
@@ -1288,7 +1288,7 @@ def start_discovery(session: Session, trip: Trip, user, *, topic: str | None = N
         ident = _traveler_of(session, user)
         profile = _discovery_profile_row(session, ident, uid is None)
         dj.launch(trip.id, resolve_airport=_airport_resolver(), geocoder=_photon(),
-                  det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(),
+                  det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(uid),
                   home_profiles=load_homes_for_user(session, uid),
                   excluded=_excluded_keys(session, trip.id, uid),
                   discovery_profile=(profile.values if profile else None),

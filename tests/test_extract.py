@@ -578,7 +578,7 @@ def test_pipeline_plain_email_needs_llm():
                "raw_message_base64": _email_b64(html="<p>Your booking is confirmed.</p>")}
     r = pipeline.extract_ingest_payload(payload, llm=None)
     assert r.needs_review and not r.ok
-    assert any("no LLM configured" in x for x in r.reasons)
+    assert r.ai_off and any("AI is off" in x for x in r.reasons)
 
 
 def test_pipeline_llm_path_with_mock():

@@ -9,6 +9,9 @@ from __future__ import annotations
 
 # code -> (headline sentence, what unblocks it)
 REASON_TEXT: dict[str, tuple[str, str]] = {
+    "ai_off": (                                          # D-228: a mode, not a failure
+        "AI is off, so this wasn’t read automatically.",
+        "Add the details by hand."),
     "missing_time": (
         "The document never stated a time for this.",
         "Add the time, or log it as a date-only entry."),

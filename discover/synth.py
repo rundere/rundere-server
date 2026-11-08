@@ -25,14 +25,16 @@ log = logging.getLogger("yonder.discovery.llm")
 
 
 def _post_chat(llm: Endpoint, messages: list[dict], schema: dict, *,
-               num_ctx: int) -> ChatReply:
+               num_ctx: int, name: str = "discover_finding") -> ChatReply:
     """One chat call. Separated so tests monkeypatch here."""
-    return chat_json(llm, messages, schema, num_ctx=num_ctx, name="discover_finding")
+    return chat_json(llm, messages, schema, num_ctx=num_ctx, name=name)
 
 
 def synthesize_json(prompt: str, schema: dict, *, llm: Endpoint | None,
-                    system: str | None = None, num_ctx: int = 16384) -> dict | None:
-    """Run one schema-constrained synthesis. Returns the parsed object, or None
+                    system: str | None = None, num_ctx: int = 16384,
+                    name: str = "discover_finding") -> dict | None:
+    """Run one schema-constrained synthesis (`name` labels it in the AI call
+    log: the resolver's topic). Returns the parsed object, or None
     on any failure. Callers read the result defensively — a missing key is not an
     error, and grounding filters what survives."""
     if llm is None or not prompt.strip():
@@ -43,7 +45,7 @@ def synthesize_json(prompt: str, schema: dict, *, llm: Endpoint | None,
     messages.append({"role": "user", "content": prompt})
     where, timeout = llm.where, llm.timeout
     try:
-        reply = _post_chat(llm, messages, schema, num_ctx=num_ctx)
+        reply = _post_chat(llm, messages, schema, num_ctx=num_ctx, name=name)
     except urllib.error.HTTPError as e:
         # 404 here usually means the model isn't pulled (or isn't in LiteLLM's list).
         body = e.read().decode(errors="replace")[:200]

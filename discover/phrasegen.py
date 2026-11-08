@@ -102,7 +102,7 @@ def generate_phrasebook(lang_name: str, *, searxng_url: str | None,
     if not results:
         return None
     out = synthesize_json(_prompt(lang_name, results), _GEN_SCHEMA,
-                          llm=llm, system=_GEN_SYSTEM)
+                          llm=llm, system=_GEN_SYSTEM, name="phrasebook")
     if not out:
         return None
     book: dict[str, dict] = {}

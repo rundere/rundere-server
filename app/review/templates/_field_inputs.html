@@ -1,0 +1,31 @@
+{# One input per editable field (routes._fields): the detail pane's editor, and
+   manual entry's (_manual_entry.html). Needs `fields` and `id_prefix`. #}
+    {% for f in fields %}
+      <div class="field {% if f.missing %}missing{% endif %}">
+        <label for="{{ id_prefix }}-{{ loop.index }}">{{ f.label }}</label>
+        {% if not f.editable %}
+          <span class="v ro">{{ f.value or '—' }}</span>
+        {% elif f.kind == 'datetime' %}
+          <input id="{{ id_prefix }}-{{ loop.index }}" name="f:{{ f.path }}"
+                 type="text" inputmode="numeric"
+                 value="{{ f.value }}"
+                 placeholder="YYYY-MM-DD or YYYY-MM-DD 07:20"
+                 pattern="\d{4}-\d{2}-\d{2}([T ]\d{1,2}:?\d{2})?"
+                 title="Date, or date and time (07:20 or 0720). Leave the time off if the document doesn't give one.">
+        {% elif f.kind == 'select' %}
+          <select id="{{ id_prefix }}-{{ loop.index }}" name="f:{{ f.path }}">
+            {% for o in f.options %}
+              <option value="{{ o }}" {% if o == f.value %}selected{% endif %}>{{ f.labels[o] if f.labels and o in f.labels else o }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input id="{{ id_prefix }}-{{ loop.index }}" name="f:{{ f.path }}" type="text"
+                 value="{{ f.value }}" placeholder="not stated in the document">
+        {% endif %}
+        {% if f.missing %}
+          <p class="hint">{{ f.hint or 'Needed before this can be logged. Leave the time off if the document really doesn’t give one.' }}</p>
+        {% elif f.kind == 'datetime' and f.precision == 'date' and f.value %}
+          <p class="hint quiet">Date only — no time was given.</p>
+        {% endif %}
+      </div>
+    {% endfor %}

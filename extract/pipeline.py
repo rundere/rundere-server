@@ -27,10 +27,24 @@ class ExtractionResult:
     reasons: list[str] = field(default_factory=list)
     trace: list[str] = field(default_factory=list)   # what was tried, in order
     llm_attempts: list[dict] = field(default_factory=list)
+    # The capture needed a model and extraction had none (AI off, unconfigured,
+    # or a cloud endpoint without TX_AI_CLOUD_EXTRACTION; D-228). Review shows
+    # it as "add the details by hand" rather than as a failure.
+    ai_off: bool = False
 
     @property
     def ok(self) -> bool:
         return self.batch is not None and not self.needs_review
+
+
+def _ai_off(result: ExtractionResult, why: str) -> ExtractionResult:
+    """No model for this capture (D-228): it waits in review for the details to
+    be added by hand."""
+    result.needs_review = True
+    result.ai_off = True
+    result.reasons.append(f"AI is off: add the details by hand ({why})")
+    result.trace.append("llm: skipped, AI is off for captures")
+    return result
 
 
 def _validated(items: list[dict], extractor: str,
@@ -112,10 +126,7 @@ def extract_ingest_payload(ingest_payload: dict,
         else:
             result.trace.append("jsonld: no reservation markup in page")
         if llm is None:
-            result.needs_review = True
-            result.reasons.append(
-                "web page had no schema.org reservation markup and no LLM configured")
-            return result
+            return _ai_off(result, "the page has no schema.org reservation markup")
         doc = web.html_to_text(html)
         context = web.llm_context(ingest_payload.get("source_url"), cc)
         try:
@@ -212,9 +223,7 @@ def extract_ingest_payload(ingest_payload: dict,
 
     # 4 — LLM (the primary path in practice)
     if llm is None:
-        result.needs_review = True
-        result.reasons.append("no deterministic extraction matched and no LLM configured")
-        return result
+        return _ai_off(result, "no structured reader matched")
 
     doc = mime.best_text(decoded)
     for name, text in pdf_texts.items():
@@ -273,9 +282,7 @@ def _extract_file(payload: dict, llm, scanner, result: ExtractionResult) -> Extr
         return result
     result.trace.append(f"pdf: {len(text)} characters of text")
     if llm is None:
-        result.needs_review = True
-        result.reasons.append("an uploaded PDF needs the LLM, and none is configured")
-        return result
+        return _ai_off(result, "an uploaded PDF is read by AI")
     cc = payload.get("capture_context") or {}
     context = f"Uploaded file: {name}" + (f"\nNotes: {cc['notes']}" if cc.get("notes") else "")
     try:

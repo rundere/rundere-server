@@ -18,12 +18,22 @@ so each keeps its own failure handling.
 
 The API key travels in the Authorization header and nowhere else: never in a
 URL, a log line, an exception message or a repr (house rule 6).
+
+Every call, whether it worked or not, is reported to the observers registered
+with `observe()` as a `CallRecord`: app/ai.py keeps the AI call log from them
+(SPEC-12 §6). A record holds timings, token counts and the error's class name,
+never the prompt, the reply or the error text, which can echo either.
 """
 from __future__ import annotations
 
 import json
+import logging
+import time
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+log = logging.getLogger("rundere.ai")
 
 PROVIDERS = ("ollama", "openai")
 
@@ -38,6 +48,10 @@ class Endpoint:
     api_key: str = field(default="", repr=False)
     timeout: int = 600
     cloud: bool = False
+    # Who the calls are for, for the call log only (app/ai.py fills them in).
+    # They travel on the endpoint because Discover calls from a worker thread.
+    feature: str = ""
+    user_id: str | None = None
 
     def __post_init__(self):
         if self.provider not in PROVIDERS:
@@ -60,13 +74,55 @@ class ChatReply:
     out_tokens: int | None = None
 
 
+@dataclass(frozen=True)
+class CallRecord:
+    """One finished call, for the call log. `error` is the exception's class
+    name only."""
+    endpoint: Endpoint
+    name: str
+    started_at: datetime
+    duration_ms: int
+    ok: bool
+    error: str | None = None
+    prompt_tokens: int | None = None
+    out_tokens: int | None = None
+
+
+_observers: list = []
+
+
+def observe(fn) -> None:
+    """Call `fn(record)` after every chat_json call. Once per function."""
+    if fn not in _observers:
+        _observers.append(fn)
+
+
+def _report(record: CallRecord) -> None:
+    for fn in list(_observers):
+        try:
+            fn(record)
+        except Exception:                    # the log must never break a call
+            log.warning("AI call log observer failed", exc_info=True)
+
+
 def chat_json(llm: Endpoint, messages: list[dict], schema: dict, *,
               num_ctx: int = 16384, name: str = "result") -> ChatReply:
     """One schema-constrained chat call at temperature 0. `num_ctx` sizes
-    Ollama's context window; OpenAI-compatible servers size their own."""
-    if llm.provider == "ollama":
-        return _ollama(llm, messages, schema, num_ctx)
-    return _openai(llm, messages, schema, name)
+    Ollama's context window; OpenAI-compatible servers size their own. `name`
+    says what the call is for, in the call log and to OpenAI-style servers."""
+    started, t0 = datetime.now(timezone.utc), time.monotonic()
+    try:
+        if llm.provider == "ollama":
+            reply = _ollama(llm, messages, schema, num_ctx)
+        else:
+            reply = _openai(llm, messages, schema, name)
+    except Exception as ex:
+        _report(CallRecord(llm, name, started, int((time.monotonic() - t0) * 1000),
+                           ok=False, error=type(ex).__name__))
+        raise
+    _report(CallRecord(llm, name, started, int((time.monotonic() - t0) * 1000), ok=True,
+                       prompt_tokens=reply.prompt_tokens, out_tokens=reply.out_tokens))
+    return reply
 
 
 def _post(url: str, body: dict, timeout: int, headers: dict | None = None) -> dict:

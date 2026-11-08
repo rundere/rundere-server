@@ -48,6 +48,7 @@ class Report:
     captures_held: int = 0               # due, but still waiting in review
     mail_trashed: int = 0
     dropped_trashed: int = 0
+    ai_calls_purged: int = 0             # the AI call log keeps 90 days (SPEC-12 §6)
     mail_skipped: str | None = None      # why the mailbox step didn't run
     due_mail: list[str] = field(default_factory=list, repr=False)
 
@@ -256,6 +257,12 @@ def run(session_factory, *, today: date | None = None, dry_run: bool = False,
                 support.send_notices(session)
         except Exception:
             log.exception("retention: the support-access step failed; retried tomorrow")
+        try:
+            from app import ai
+            with session_factory() as session:
+                report.ai_calls_purged = ai.purge_calls(session)
+        except Exception:
+            log.exception("retention: the AI call-log step failed; retried tomorrow")
     if mailbox:
         try:
             handled = trash_mail(report, today, dry_run=dry_run, connect=connect)

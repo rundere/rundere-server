@@ -42,7 +42,7 @@ def _stub_search(monkeypatch, results):
 
 
 def _stub_synth(monkeypatch, payload, capture=None):
-    def fake(prompt, schema, *, llm, system=None):
+    def fake(prompt, schema, *, llm, system=None, name=None):
         if capture is not None:
             capture["prompt"] = prompt
         return payload
