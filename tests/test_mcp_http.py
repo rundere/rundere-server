@@ -827,13 +827,13 @@ if DEPS:
         try:
             p = ok(client, _tok(w["alice"]), "get_discovery_profile")
             assert p["food"]["dietary_restrictions"] == [{"key": "vegetarian", "label": "Vegetarian"}]
-            assert p["food"]["avoid_cuisines"] == ["sushi"] and p["food"]["allergies"] == "peanuts"
+            assert p["food"]["avoid_cuisines"] == ["Sushi"] and p["food"]["allergies"] == "peanuts"
             assert p["food"]["budget_ceiling"] == {"tier": 2, "label": "$$"}
             assert p["drink"]["interests"][0]["label"] == "Craft beer"
             assert p["practical"]["mobility"]["key"] == "moderate"
             assert p["blank"] is False and "Constraint-first" in p["how_to_use"]
             snap = ok(client, _tok(w["alice"]), "get_trip", trip_id=w["shared"])
-            assert snap["discovery_profile"]["food"]["avoid_cuisines"] == ["sushi"]
+            assert snap["discovery_profile"]["food"]["avoid_cuisines"] == ["Sushi"]
             # bob travels on the same trip but sees only his own (blank) profile
             bob = ok(client, _tok(w["bob"]), "get_trip", trip_id=w["shared"])
             assert bob["discovery_profile"]["blank"] is True

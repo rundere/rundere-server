@@ -6,8 +6,8 @@
   <h1 class="bp-h1">Discovery profile</h1>
   <p class="bp-trip-notes">Your own preferences — they shape what <em>your</em> Discover
     tab searches for on every trip; fellow travellers have their own.
-    It's a filter, not a wish list: say what to <em>skip</em> (dietary, dislikes,
-    budget) and which extras to <em>add</em> (drinks, activities). Leave it blank
+    Say which extras to <em>add</em> (activities, drinks, cuisines you like) and what
+    to <em>skip</em> (dietary, cuisines you don't like, budget). Leave it as it is
     for generic "best of" results. Re-run a trip's discovery to apply changes.</p>
 </div>
 {% include "_acting_for.html" %}
@@ -30,27 +30,15 @@
 <form method="post" action="/trips/settings/discovery-profile{{ acting.qs if acting else '' }}"
       class="card blueprint yn-profile-card">
 
-  <div class="field"><label>Dietary restrictions <span class="yn-help">— results must accommodate these</span></label>
+  {# Order (YONDER-328): what to add to a trip's research first, then food and
+     drink as one section so it's clear what the budget refers to. #}
+  <div class="field"><label>Activity interests <span class="yn-help">— what to look for in each place you visit</span></label>
+    <p class="yn-help">Discover searches for these on top of the usual mix, and uses them to
+      pick suggested events. With all of them ticked (the default) you get the usual
+      mix; untick what you don't care about to focus it.</p>
     <div class="yn-checkrow">
-      {% for d in dietary %}
-      <label class="yn-check"><input type="checkbox" name="dietary_restrictions" value="{{ d.value }}" {% if d.checked %}checked{% endif %}> {{ d.label }}</label>
-      {% endfor %}
-    </div>
-  </div>
-
-  <div class="yn-form-grid">
-    <div class="field"><label>Cuisines to avoid <span class="yn-help">— comma-separated</span></label>
-      <input class="input" type="text" name="cuisine_dislikes" value="{{ cuisine_dislikes }}"
-             placeholder="e.g. sushi, fast food"></div>
-    <div class="field"><label>Allergies <span class="yn-help">— flagged as a warning, not filtered</span></label>
-      <input class="input" type="text" name="allergies" value="{{ allergies }}"
-             placeholder="e.g. peanuts, shellfish"></div>
-  </div>
-
-  <div class="field"><label>Budget ceiling <span class="yn-help">— show this tier and below</span></label>
-    <div class="yn-checkrow">
-      {% for b in budget_opts %}
-      <label class="yn-check"><input type="radio" name="budget_ceiling" value="{{ b.value }}" {% if b.checked %}checked{% endif %}> {{ b.label }}</label>
+      {% for a in activities %}
+      <label class="yn-check"><input type="checkbox" name="activity_interests" value="{{ a.value }}" {% if a.checked %}checked{% endif %}> {{ a.label }}</label>
       {% endfor %}
     </div>
   </div>
@@ -63,13 +51,71 @@
     </div>
   </div>
 
-  <div class="field"><label>Activity interests <span class="yn-help">— opt-in; also the lens for suggested events</span></label>
+  <h2 class="bp-group-label yn-profile-section">Food and drink</h2>
+
+  <div class="field"><label>Budget ceiling <span class="yn-help">— for restaurants, bars and cafés: this tier and below</span></label>
     <div class="yn-checkrow">
-      {% for a in activities %}
-      <label class="yn-check"><input type="checkbox" name="activity_interests" value="{{ a.value }}" {% if a.checked %}checked{% endif %}> {{ a.label }}</label>
+      {% for b in budget_opts %}
+      <label class="yn-check"><input type="radio" name="budget_ceiling" value="{{ b.value }}" {% if b.checked %}checked{% endif %}> {{ b.label }}</label>
       {% endfor %}
     </div>
   </div>
+
+  <div class="field"><label>Dietary restrictions and allergies <span class="yn-help">— results must fit the diet</span></label>
+    <div class="yn-checkrow">
+      {% for d in dietary %}
+      <label class="yn-check"><input type="checkbox" name="dietary_restrictions" value="{{ d.value }}" {% if d.checked %}checked{% endif %}> {{ d.label }}</label>
+      {% endfor %}
+    </div>
+    {# Grouped with the diet on the page, kept apart in the profile: a diet
+       filters places out, an allergy only flags them. #}
+    <label for="dp-allergies" class="yn-subfield">Allergies <span class="yn-help">— flagged as a warning, not filtered</span></label>
+    <input class="input" type="text" id="dp-allergies" name="allergies" value="{{ allergies }}"
+           placeholder="e.g. peanuts, shellfish">
+  </div>
+
+  <div class="field"><label>Cuisines <span class="yn-help">— liked ones are searched for; disliked ones are never suggested</span></label>
+    <p class="yn-cuisine-summary" data-cuisine-summary>
+      <span data-cuisine-likes>{% if cuisine_likes_text %}<b>Likes:</b> {{ cuisine_likes_text }}{% endif %}</span>
+      <span data-cuisine-dislikes>{% if cuisine_dislikes_text %}<b>Doesn't like:</b> {{ cuisine_dislikes_text }}{% endif %}</span>
+      <span data-cuisine-none {% if cuisine_likes_text or cuisine_dislikes_text %}hidden{% endif %}>No preferences yet: every cuisine is neutral.</span>
+    </p>
+    <button type="button" class="btn btn-ghost" data-open-dialog="cuisine-dialog">Choose cuisines…</button>
+  </div>
+
+  <div class="field">
+    <label class="yn-check"><input type="checkbox" name="prefer_local_food" value="1" {% if prefer_local_food %}checked{% endif %}> Prefer local food</label>
+    <p class="yn-help">Lead with each destination's own dishes and the places locals rate,
+      even when that cuisine is one you've marked Don't like. Dietary restrictions
+      and allergies still apply.</p>
+  </div>
+
+  {# The cuisine modal sits inside the form, so its choices save with the page. #}
+  <dialog id="cuisine-dialog" class="dialog blueprint yn-cuisine-dialog" aria-labelledby="cuisine-dialog-title">
+    <div class="dialog-title" id="cuisine-dialog-title">Cuisines</div>
+    <p class="yn-help">Like adds searches for it; Don't like means it's never suggested
+      (unless you prefer local food and it's the local cuisine); Neutral does neither. From OpenStreetMap's list of cuisines. Allergies stay in
+      their own box.</p>
+    <div class="yn-cuisine-list">
+      {% for g in cuisine_groups %}
+      <fieldset class="yn-cuisine-group">
+        <legend>{{ g.label }}</legend>
+        {% for c in g.cuisines %}
+        <div class="yn-cuisine-row" role="radiogroup" aria-label="{{ c.label }}">
+          <span class="yn-cuisine-name">{{ c.label }}</span>
+          {% for v, t in [("like", "Like"), ("neutral", "Neutral"), ("dislike", "Don't like")] %}
+          <label class="yn-check"><input type="radio" name="cuisine:{{ c.key }}" value="{{ v }}" data-label="{{ c.label }}" {% if c.pref == v %}checked{% endif %}> {{ t }}</label>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </fieldset>
+      {% endfor %}
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-primary" data-close-dialog>Done</button>
+    </div>
+    <p class="yn-help">Save the profile to keep your choices.</p>
+  </dialog>
 
   <div class="yn-form-grid">
     <div class="field"><label>Mobility</label>

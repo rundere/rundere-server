@@ -185,7 +185,7 @@ def test_profile_constraints_reach_the_prompt(monkeypatch):
                         "budget_ceiling": 2}}
     _resolver().resolve(_place(), _ctx(profile))
     p = cap["prompt"]
-    assert "vegetarian" in p and "sushi" in p and "peanuts" in p
+    assert "vegetarian" in p and "Sushi" in p and "peanuts" in p        # the label
     assert "$$" in p
 
 

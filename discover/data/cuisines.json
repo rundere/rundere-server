@@ -1,0 +1,322 @@
+{
+ "source": "OpenStreetMap cuisine=* values (https://wiki.openstreetmap.org/wiki/Key:cuisine), curated for Run·dere (YONDER-328). fast_food is OSM's amenity=fast_food, offered here because people avoid it like a cuisine.",
+ "groups": [
+  {
+   "key": "asia",
+   "label": "East, South and Southeast Asian",
+   "cuisines": [
+    {
+     "key": "chinese",
+     "label": "Chinese"
+    },
+    {
+     "key": "japanese",
+     "label": "Japanese"
+    },
+    {
+     "key": "korean",
+     "label": "Korean"
+    },
+    {
+     "key": "thai",
+     "label": "Thai"
+    },
+    {
+     "key": "vietnamese",
+     "label": "Vietnamese"
+    },
+    {
+     "key": "indian",
+     "label": "Indian",
+     "aliases": [
+      "curry"
+     ]
+    },
+    {
+     "key": "nepalese",
+     "label": "Nepalese",
+     "aliases": [
+      "nepali"
+     ]
+    },
+    {
+     "key": "indonesian",
+     "label": "Indonesian"
+    },
+    {
+     "key": "malaysian",
+     "label": "Malaysian"
+    },
+    {
+     "key": "filipino",
+     "label": "Filipino"
+    }
+   ]
+  },
+  {
+   "key": "europe",
+   "label": "European",
+   "cuisines": [
+    {
+     "key": "italian",
+     "label": "Italian"
+    },
+    {
+     "key": "french",
+     "label": "French"
+    },
+    {
+     "key": "spanish",
+     "label": "Spanish"
+    },
+    {
+     "key": "greek",
+     "label": "Greek"
+    },
+    {
+     "key": "portuguese",
+     "label": "Portuguese"
+    },
+    {
+     "key": "german",
+     "label": "German"
+    },
+    {
+     "key": "british",
+     "label": "British",
+     "aliases": [
+      "english"
+     ]
+    },
+    {
+     "key": "polish",
+     "label": "Polish"
+    },
+    {
+     "key": "georgian",
+     "label": "Georgian"
+    },
+    {
+     "key": "scandinavian",
+     "label": "Scandinavian",
+     "aliases": [
+      "nordic"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "mideast_africa",
+   "label": "Middle Eastern and African",
+   "cuisines": [
+    {
+     "key": "lebanese",
+     "label": "Lebanese"
+    },
+    {
+     "key": "turkish",
+     "label": "Turkish"
+    },
+    {
+     "key": "persian",
+     "label": "Persian",
+     "aliases": [
+      "iranian"
+     ]
+    },
+    {
+     "key": "israeli",
+     "label": "Israeli"
+    },
+    {
+     "key": "moroccan",
+     "label": "Moroccan"
+    },
+    {
+     "key": "ethiopian",
+     "label": "Ethiopian"
+    },
+    {
+     "key": "african",
+     "label": "African (other)"
+    }
+   ]
+  },
+  {
+   "key": "americas",
+   "label": "The Americas",
+   "cuisines": [
+    {
+     "key": "american",
+     "label": "American"
+    },
+    {
+     "key": "mexican",
+     "label": "Mexican"
+    },
+    {
+     "key": "tex-mex",
+     "label": "Tex-Mex",
+     "aliases": [
+      "texmex"
+     ]
+    },
+    {
+     "key": "brazilian",
+     "label": "Brazilian"
+    },
+    {
+     "key": "peruvian",
+     "label": "Peruvian"
+    },
+    {
+     "key": "argentinian",
+     "label": "Argentinian",
+     "aliases": [
+      "argentine"
+     ]
+    },
+    {
+     "key": "caribbean",
+     "label": "Caribbean",
+     "aliases": [
+      "jamaican"
+     ]
+    },
+    {
+     "key": "cajun",
+     "label": "Cajun and Creole",
+     "aliases": [
+      "creole"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "style",
+   "label": "Dishes and styles",
+   "cuisines": [
+    {
+     "key": "seafood",
+     "label": "Seafood",
+     "aliases": [
+      "fish"
+     ]
+    },
+    {
+     "key": "sushi",
+     "label": "Sushi"
+    },
+    {
+     "key": "ramen",
+     "label": "Ramen"
+    },
+    {
+     "key": "noodle",
+     "label": "Noodles",
+     "aliases": [
+      "noodles"
+     ]
+    },
+    {
+     "key": "pizza",
+     "label": "Pizza"
+    },
+    {
+     "key": "burger",
+     "label": "Burgers",
+     "aliases": [
+      "burgers",
+      "hamburger"
+     ]
+    },
+    {
+     "key": "steak_house",
+     "label": "Steakhouse",
+     "aliases": [
+      "steak",
+      "steakhouse",
+      "steakhouses"
+     ]
+    },
+    {
+     "key": "barbecue",
+     "label": "Barbecue",
+     "aliases": [
+      "bbq"
+     ]
+    },
+    {
+     "key": "chicken",
+     "label": "Chicken",
+     "aliases": [
+      "fried chicken"
+     ]
+    },
+    {
+     "key": "kebab",
+     "label": "Kebab",
+     "aliases": [
+      "kebabs",
+      "doner",
+      "shawarma"
+     ]
+    },
+    {
+     "key": "fish_and_chips",
+     "label": "Fish and chips",
+     "aliases": [
+      "fish & chips"
+     ]
+    },
+    {
+     "key": "tapas",
+     "label": "Tapas"
+    },
+    {
+     "key": "sandwich",
+     "label": "Sandwiches",
+     "aliases": [
+      "sandwiches",
+      "deli"
+     ]
+    },
+    {
+     "key": "breakfast",
+     "label": "Breakfast and brunch",
+     "aliases": [
+      "brunch"
+     ]
+    },
+    {
+     "key": "dessert",
+     "label": "Desserts and pastry",
+     "aliases": [
+      "desserts",
+      "pastry",
+      "bakery"
+     ]
+    },
+    {
+     "key": "ice_cream",
+     "label": "Ice cream",
+     "aliases": [
+      "gelato"
+     ]
+    },
+    {
+     "key": "fusion",
+     "label": "Fusion"
+    },
+    {
+     "key": "fast_food",
+     "label": "Fast food",
+     "aliases": [
+      "chains",
+      "fast-food"
+     ]
+    }
+   ]
+  }
+ ]
+}
