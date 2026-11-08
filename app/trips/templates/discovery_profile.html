@@ -61,12 +61,17 @@
     </div>
   </div>
 
-  <div class="field"><label>Dietary restrictions <span class="yn-help">— results must accommodate these</span></label>
+  <div class="field"><label>Dietary restrictions and allergies <span class="yn-help">— results must fit the diet</span></label>
     <div class="yn-checkrow">
       {% for d in dietary %}
       <label class="yn-check"><input type="checkbox" name="dietary_restrictions" value="{{ d.value }}" {% if d.checked %}checked{% endif %}> {{ d.label }}</label>
       {% endfor %}
     </div>
+    {# Grouped with the diet on the page, kept apart in the profile: a diet
+       filters places out, an allergy only flags them. #}
+    <label for="dp-allergies" class="yn-subfield">Allergies <span class="yn-help">— flagged as a warning, not filtered</span></label>
+    <input class="input" type="text" id="dp-allergies" name="allergies" value="{{ allergies }}"
+           placeholder="e.g. peanuts, shellfish">
   </div>
 
   <div class="field"><label>Cuisines <span class="yn-help">— liked ones are searched for; disliked ones are never suggested</span></label>
@@ -84,10 +89,6 @@
       even when that cuisine is one you've marked Don't like. Dietary restrictions
       and allergies still apply.</p>
   </div>
-
-  <div class="field"><label>Allergies <span class="yn-help">— flagged as a warning, not filtered</span></label>
-    <input class="input" type="text" name="allergies" value="{{ allergies }}"
-           placeholder="e.g. peanuts, shellfish"></div>
 
   {# The cuisine modal sits inside the form, so its choices save with the page. #}
   <dialog id="cuisine-dialog" class="dialog blueprint yn-cuisine-dialog" aria-labelledby="cuisine-dialog-title">

@@ -229,8 +229,9 @@ if DEPS:
         _, h = _person("local")
         page = client.get("/trips/settings/discovery-profile", headers=h).text
         assert 'name="prefer_local_food" value="1" >' in page       # unticked to start
-        assert page.index("Choose cuisines") < page.index("Prefer local food") \
-            < page.index("Allergies")
+        # Allergies sit with the diet, ahead of the cuisines.
+        assert page.index('name="dietary_restrictions"') < page.index('name="allergies"') \
+            < page.index("Choose cuisines") < page.index("Prefer local food")
         r = client.post("/trips/settings/discovery-profile", headers=h,
                         data={"prefer_local_food": "1"})
         assert 'name="prefer_local_food" value="1" checked>' in r.text
