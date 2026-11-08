@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from extract import apple_maps_url, ical, jsonld, maps_url, mime, pipeline
-from extract.llm import ExtractionFailed, OllamaExtractor, inline_refs, load_extraction_schema
+from ai.client import Endpoint
+from extract.llm import ExtractionFailed, LLMExtractor, inline_refs, load_extraction_schema
 from validation import validate_schema
 
 SCHEMA = load_extraction_schema()
@@ -500,9 +501,9 @@ VALID_BATCH = {"items": [{"item_type": "event", "booking_status": "confirmed",
                "declared_segment_count": None}
 
 
-class _FakeLLM(OllamaExtractor):
+class _FakeLLM(LLMExtractor):
     def __init__(self, responses):
-        super().__init__(base_url="http://fake", model="fake")
+        super().__init__(Endpoint(provider="ollama", url="http://fake.test", model="fake"))
         self._responses = list(responses)
         self.calls = 0
 

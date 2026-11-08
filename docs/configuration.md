@@ -19,9 +19,9 @@ All configuration is environment variables with the prefix **`TX_`** (`app/confi
 | **A reverse proxy with public HTTPS** | The Gmail and Calendar add-ons (they POST from Google's servers to `/ingest`), the iOS app away from home, and the Claude connector | Run·dere works on your LAN only. The reference stack uses **Traefik** |
 | **A Google account** | The Gmail and Calendar capture add-ons | Capture by email forward, file upload, the bookmarklet or the app instead. The add-ons are your own unpublished Apps Script, so no Google review is needed |
 | **AdventureLog and/or AirTrail** (external targets) | Also pushing out — flights → AirTrail, trips/places → AdventureLog | Run·dere still records everything to its **own built-in trips** (the default, first-party target); the external pushes simply don't happen |
-| **[Ollama](https://ollama.com/)** + a model (`qwen3:14b`) | LLM extractor for free-form text | Structured sources (JSON-LD/iCal/PDF/Maps) still work; unstructured items go to review unparsed |
+| **An LLM** ([Ollama](https://ollama.com/), or any OpenAI-compatible API such as LiteLLM or vLLM), turned on with `TX_AI_ENABLED=true` | Reading free-form booking emails and files, and Discovery's LLM tier | AI is **off by default**. Structured sources (JSON-LD, .ics, PDFs with text, Maps links) still work; the rest waits in review for the details by hand (SPEC-12 D-228) |
 | **[Photon](https://github.com/komoot/photon)** (self-hosted geocoder) | Address → coordinates without Google quota (D-22) | Geocoding unavailable; places needing lookup stall in review |
-| **[SearXNG](https://github.com/searxng/searxng)** (self-hosted metasearch) + Ollama | Discovery's **LLM tier** — visa, safety, events, food & drink, and regional/local language findings | Discovery still runs its deterministic tier (weather/currency/plugs/language basics); the four search-backed topics are simply absent |
+| **[SearXNG](https://github.com/searxng/searxng)** (self-hosted metasearch) + an LLM | Discovery's **LLM tier** — visa, safety, events, food & drink, and regional/local language findings | Discovery still runs its deterministic tier (weather/currency/plugs/language basics); the four search-backed topics are simply absent |
 | **CrowdSec bouncer** | Hardens the public `/ingest` route | Route works; less abuse protection |
 
 Discovery's deterministic tier also calls two free, keyless public APIs —
@@ -36,7 +36,11 @@ keep Run·dere fully local.
 - **Docker network reachability** — Run·dere must share a Docker network with your reverse proxy and with each target/tool it calls (AdventureLog, AirTrail, Photon, Ollama). Put it on whatever external network(s) those already use — check with `docker network ls`; the stack joins them, so `docker network create <name>` any that are missing. Whether that's one network or several (the reference stack uses `proxy` for the reverse proxy and a private `rundere-internal` for the database) is up to your setup.
 - **Secrets key** (`TX_SECRETS_KEY`) — `openssl rand -base64 32`. Encrypts the per-user AirTrail / AdventureLog tokens at rest (SPEC-8 D-151). Back it up apart from the database. Without it, connections can't be saved; Run·dere itself works fine.
 - **AirTrail / AdventureLog (optional, per person)** — nothing to configure on the server. Each person connects their own under **Settings → Connections**, which walks through creating a token in that app. Run·dere works fully without either (D-146). AirTrail needs 3.13 or newer; Run·dere talks to it only through its API. If they run on your LAN, list their hosts in `TX_INTEGRATION_ALLOWED_HOSTS` (e.g. `airtrail:3000,adventurelog-server`); anything else has to be public https (D-152).
-- **Ollama** — `docker`-run Ollama on a network Run·dere shares (`proxy` in the reference stack), then `ollama pull qwen3:14b`. Point `TX_OLLAMA_URL` at it.
+- **AI** (SPEC-12) — off unless `TX_AI_ENABLED=true`. Then name the endpoint:
+  - **Ollama:** `TX_AI_PROVIDER=ollama`, `TX_AI_URL=http://ollama:11434`, `TX_AI_MODEL_CHAT=qwen3:14b` (after `ollama pull qwen3:14b`).
+  - **An OpenAI-compatible API** (LiteLLM, vLLM, llama.cpp's server, a cloud provider): `TX_AI_PROVIDER=openai`, `TX_AI_URL` ending in `/v1` (for example `http://litellm:4000/v1`), `TX_AI_MODEL_CHAT`, and `TX_AI_API_KEY` (or `TX_AI_API_KEY_FILE`) if it needs one. LiteLLM can front Anthropic, Google and others the same way.
+  - **Cloud** (D-228): say so with `TX_AI_LOCATION=cloud`; it must be https. Discovery may use it. Booking emails and files are read without AI unless you also set `TX_AI_CLOUD_EXTRACTION=true`, because they hold full names, addresses and passenger lists.
+  - Start-up logs one line saying what AI will do, and a warning for any setting it can't use.
 - **Photon** — self-host the Photon container with an OpenStreetMap index; point `TX_PHOTON_URL` at it.
 - **SearXNG** — self-host with its JSON API enabled (`search.formats: [html, json]` in `settings.yml`); point `TX_SEARXNG_URL` at it. Needed only for Discovery's LLM-tier topics (visa/safety/events/food/regional language) — it also requires Ollama.
 - **Run·dere `/ingest` API keys** — you create these yourself with the CLI (see [capture.md](capture.md#the-google-add-ons)); one per capture client.
@@ -55,9 +59,15 @@ keep Run·dere fully local.
 | `TX_INGEST_RATE_LIMIT` | `30` | Requests per key per window |
 | `TX_INGEST_RATE_WINDOW_SECONDS` | `300` | Rate-limit window |
 | `TX_INGEST_MAX_BODY_BYTES` | `5000000` | Max `/ingest` body (5 MB) |
-| `TX_OLLAMA_URL` | `http://ollama:11434` | Local LLM extractor endpoint |
-| `TX_OLLAMA_MODEL` | `qwen3:14b` | LLM model (OQ-08) |
+| `TX_AI_ENABLED` | `false` | Turns AI on (SPEC-12 D-228). Off: captures use the structured readers and the rest waits in review; Discovery shows its deterministic findings |
+| `TX_AI_PROVIDER` | `ollama` | `ollama` (Ollama's own API) or `openai` (any OpenAI-compatible `/chat/completions`) |
+| `TX_AI_URL` | `""` | The endpoint: `http://ollama:11434`, or an OpenAI-compatible base ending in `/v1` |
+| `TX_AI_MODEL_CHAT` | `""` | The model for chat-style calls (extraction and Discovery), e.g. `qwen3:14b` |
+| `TX_AI_API_KEY` | `""` | Bearer token for an `openai` endpoint that needs one. Never logged or shown. `TX_AI_API_KEY_FILE` reads it from a Docker secret |
+| `TX_AI_LOCATION` | `local` | `local` or `cloud`. A cloud endpoint must be https |
+| `TX_AI_CLOUD_EXTRACTION` | `false` | Lets booking emails and files go to a **cloud** endpoint (D-228). Discovery may use one without it |
 | `TX_LLM_TIMEOUT_SECONDS` | `600` | LLM call timeout |
+| `TX_OLLAMA_URL` / `TX_OLLAMA_MODEL` | `http://ollama:11434` / `qwen3:14b` | **Deprecated in 5.0, removed in 5.1.** Used, with a start-up warning, only when `TX_AI_URL` is unset and `TX_OLLAMA_URL` is set explicitly. `TX_AI_ENABLED=true` is still needed |
 | `TX_SECRETS_KEY` | `""` | 32 random bytes (base64 or hex) that encrypt per-user connection tokens (D-151). Empty = connections can't be saved. `TX_SECRETS_KEY_FILE` reads it from a Docker secret |
 | `TX_SECRETS_KEYS` | `""` | Keyring for rotation, `v2:<key>,v1:<key>`: the first encrypts, any decrypts. Then `python -m app.cli secrets-rotate` |
 | `TX_INTEGRATION_ALLOWED_HOSTS` | `""` | Hosts (or host:port) a connection may reach on the LAN, over http (D-152). Everything else must be public https |
@@ -66,7 +76,7 @@ keep Run·dere fully local.
 | `TX_FRANKFURTER_URL` | `https://api.frankfurter.dev/v2` | Currency-rate source for Discovery (public, keyless; overridable for a self-hosted mirror) |
 | `TX_OPEN_METEO_URL` | `https://api.open-meteo.com/v1` | Forecast weather source for Discovery |
 | `TX_OPEN_METEO_ARCHIVE_URL` | `https://archive-api.open-meteo.com/v1` | Historical weather source for Discovery (trips beyond the forecast window) |
-| `TX_SEARXNG_URL` | `http://searxng:8080` | Metasearch backend for Discovery's LLM tier (visa/safety/events/food/regional language). Empty = those topics degrade to absent findings |
+| `TX_SEARXNG_URL` | `http://searxng:8080` | Metasearch backend for Discovery's LLM tier (visa/safety/events/food/regional language). Empty, or AI off, = those topics degrade to absent findings |
 | `TX_FORWARDED_ALLOW_IPS` | `*` | Which proxies uvicorn trusts for `X-Forwarded-Proto`. Read by the image's start command (`Dockerfile`), not by `app/config.py`. Narrow it to your proxy's address if you need to |
 | `TX_AUTH_REQUIRED` | `true` | Sign-in for everything but the public pages (D-203). `false` only for a trusted single-user LAN; start-up warns while it's off |
 | `TX_JWT_SECRET` (or `_FILE`) | `""` | Signs sessions and tokens: `openssl rand -base64 32`. Empty = a key that changes on every restart, which signs everyone out (start-up logs an error) |

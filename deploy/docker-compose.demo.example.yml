@@ -41,7 +41,7 @@ services:
       TX_OIDC_ENABLED: "false"
       # Demo mode blanks the self-hosted services itself; empty here so nobody
       # wonders. Mail and SSO must stay unset: demo mode refuses to start otherwise.
-      TX_OLLAMA_URL: ""
+      TX_AI_ENABLED: "false"        # a demo never calls AI anyway (D-198)
       TX_PHOTON_URL: ""
       TX_SEARXNG_URL: ""
       TX_CLAMAV_URL: ""

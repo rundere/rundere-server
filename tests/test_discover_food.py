@@ -16,6 +16,9 @@ from discover.resolvers.food import FoodResolver
 from discover.resolvers.base import ResolverContext
 from discover.search import SearchResult
 from discover.places import DerivedPlace
+from ai.client import Endpoint
+
+_LLM = Endpoint(provider="ollama", url="http://ollama.test:11434", model="m")   # where the faked calls would go
 
 
 def _place(city="Lisbon", country="PT"):
@@ -29,7 +32,7 @@ def _ctx(profile=None):
 
 def _resolver(**kw):
     kw.setdefault("searxng_url", "http://searxng:8080")
-    kw.setdefault("ollama_url", "http://ollama:11434")
+    kw.setdefault("llm", _LLM)
     return FoodResolver(**kw)
 
 
@@ -45,7 +48,7 @@ def _stub_search(monkeypatch, results):
 
 
 def _stub_synth(monkeypatch, payload, capture=None):
-    def fake(prompt, schema, *, base_url, system=None, model=None, timeout=600):
+    def fake(prompt, schema, *, llm, system=None):
         if capture is not None:
             capture["prompt"] = prompt
         return payload
@@ -189,8 +192,8 @@ def test_profile_constraints_reach_the_prompt(monkeypatch):
 # ------------------------------------------------------------- degrade paths
 
 def test_none_without_endpoints():
-    assert FoodResolver(searxng_url=None, ollama_url="x").resolve(_place(), _ctx()) is None
-    assert FoodResolver(searxng_url="x", ollama_url=None).resolve(_place(), _ctx()) is None
+    assert FoodResolver(searxng_url=None, llm=_LLM).resolve(_place(), _ctx()) is None
+    assert FoodResolver(searxng_url="x", llm=None).resolve(_place(), _ctx()) is None
 
 
 def test_none_without_city(monkeypatch):

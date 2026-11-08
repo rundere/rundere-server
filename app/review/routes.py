@@ -988,10 +988,10 @@ def _run_extract_resolve(session: Session, progress=None, user=None
     resolved: dict = {}
     try:
         from app.processing import process_pending
-        from extract.llm import OllamaExtractor
-        llm = OllamaExtractor(settings.ollama_url, settings.ollama_model,
-                              settings.llm_timeout_seconds)
-        summary = process_pending(session, llm, progress=progress,
+        from app import ai
+        # None when AI is off for extraction (D-228): the structured readers
+        # still run, and the rest goes to review.
+        summary = process_pending(session, ai.extractor(), progress=progress,
                                   batch_filter=batch_filter)
 
         from app.integrations import ClientCache

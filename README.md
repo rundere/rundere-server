@@ -109,7 +109,7 @@ if you want to choose when to upgrade and be able to roll back.
 
 - **Your data stays on your server.** Run·dere has no cloud service and sends nothing
   home.
-- **Extraction is local.** Bookings are read by parsers and by the LLM you host (Ollama).
+- **Extraction is local.** Bookings are read by parsers and, if you turn AI on, by the LLM you host (Ollama or an OpenAI-compatible server). A cloud model never reads your bookings unless you allow it separately (SPEC-12 D-228).
   No booking is sent to a cloud AI unless you connect an assistant yourself.
 - **A few public lookups, all replaceable.** By default the server fetches map tiles from
   OpenStreetMap, weather from Open-Meteo and exchange rates from Frankfurter. Each can be

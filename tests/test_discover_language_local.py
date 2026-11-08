@@ -15,6 +15,9 @@ from discover.resolvers.language_local import LanguageLocalResolver
 from discover.resolvers.base import ResolverContext
 from discover.search import SearchResult
 from discover.places import DerivedPlace
+from ai.client import Endpoint
+
+_LLM = Endpoint(provider="ollama", url="http://ollama.test:11434", model="m")   # where the faked calls would go
 
 
 def _place(city="Zurich", country="CH"):
@@ -27,7 +30,7 @@ def _ctx(today="2026-08-22"):
 
 def _resolver(**kw):
     kw.setdefault("searxng_url", "http://searxng:8080")
-    kw.setdefault("ollama_url", "http://ollama:11434")
+    kw.setdefault("llm", _LLM)
     return LanguageLocalResolver(**kw)
 
 
@@ -37,7 +40,7 @@ def _stub_search(monkeypatch, results):
 
 
 def _stub_synth(monkeypatch, payload, capture=None):
-    def fake(prompt, schema, *, base_url, system=None, model=None, timeout=600):
+    def fake(prompt, schema, *, llm, system=None):
         if capture is not None:
             capture["prompt"] = prompt
         return payload
@@ -137,7 +140,7 @@ def test_summary_only_still_produces_finding(monkeypatch):
 # ------------------------------------------------------------- degrade paths
 
 def test_none_without_endpoints():
-    assert LanguageLocalResolver(searxng_url=None, ollama_url="x").resolve(
+    assert LanguageLocalResolver(searxng_url=None, llm=_LLM).resolve(
         _place(), _ctx()) is None
 
 

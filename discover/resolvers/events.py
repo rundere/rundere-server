@@ -18,11 +18,12 @@ from __future__ import annotations
 
 import logging
 
+from ai.client import Endpoint
 from discover.grounding import ground_items, normalize_url
 from discover.places import DerivedPlace
 from discover.resolvers.base import Finding, ResolverContext
 from discover.search import searxng_search
-from discover.synth import DEFAULT_MODEL, synthesize_json
+from discover.synth import synthesize_json
 
 log = logging.getLogger("yonder.discovery.llm")
 
@@ -140,12 +141,11 @@ class EventsResolver:
     topic = "events"
     scope = "city"
 
-    def __init__(self, *, searxng_url: str | None, ollama_url: str | None,
-                 model: str = DEFAULT_MODEL, timeout: int = 600,
+    def __init__(self, *, searxng_url: str | None, llm: Endpoint | None,
+                 timeout: int = 600,
                  max_snippets: int = 28):
         self.searxng_url = searxng_url
-        self.ollama_url = ollama_url
-        self.model = model
+        self.llm = llm                           # None = no AI for Discover (D-228)
         self.timeout = timeout
         self.max_snippets = max_snippets
 
@@ -250,8 +250,7 @@ class EventsResolver:
         if not results:
             return None
         out = synthesize_json(self._prompt(place, start, end, interests, results),
-                              _SCHEMA, base_url=self.ollama_url, system=_SYSTEM,
-                              model=self.model, timeout=self.timeout)
+                              _SCHEMA, llm=self.llm, system=_SYSTEM)
         if not out:
             log.warning("events: no usable LLM output for %s (see the synth: line above "
                         "for the cause)", place.label)
@@ -264,7 +263,7 @@ class EventsResolver:
 
     # -- resolve ------------------------------------------------------------
     def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:
-        if not self.searxng_url or not self.ollama_url:
+        if not self.searxng_url or self.llm is None:
             return None
         if not place.city:
             return None

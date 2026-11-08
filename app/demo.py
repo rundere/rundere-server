@@ -120,7 +120,7 @@ def check_startup(session) -> None:
 # owner's network, which the demo's firewall blocks anyway. Blanking them here
 # makes every lookup fail at once instead of waiting out a timeout, and doesn't
 # rely on the compose file remembering to.
-_HOME_SERVICES = ("ollama_url", "photon_url", "searxng_url", "clamav_url",
+_HOME_SERVICES = ("ollama_url", "ai_url", "photon_url", "searxng_url", "clamav_url",
                   "adventurelog_url", "airtrail_url", "valhalla_url")
 
 

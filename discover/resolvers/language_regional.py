@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 
+from ai.client import Endpoint
 from discover import langdata
 from discover.grounding import normalize_url
 from discover.phrasegen import generate_phrasebook
@@ -38,7 +39,6 @@ from discover.places import DerivedPlace
 from discover.resolvers.base import Finding, ResolverContext
 from discover.resolvers.language import (PHRASE_KEYS, _lang_name,
                                         official_language_codes)
-from discover.synth import DEFAULT_MODEL
 
 log = logging.getLogger("yonder.discovery.llm")
 
@@ -47,12 +47,11 @@ class RegionalLanguageResolver:
     topic = "language_regional"
     scope = "city"
 
-    def __init__(self, *, searxng_url: str | None, ollama_url: str | None,
-                 model: str = DEFAULT_MODEL, timeout: int = 600,
+    def __init__(self, *, searxng_url: str | None, llm: Endpoint | None,
+                 timeout: int = 600,
                  max_snippets: int = 12):
         self.searxng_url = searxng_url
-        self.ollama_url = ollama_url
-        self.model = model
+        self.llm = llm                           # None = no AI for Discover (D-228)
         self.timeout = timeout
         self.max_snippets = max_snippets
 
@@ -77,8 +76,7 @@ class RegionalLanguageResolver:
         """Generate a flagged phrasebook for a regional language the vetted set
         lacks. Returns (book, results) or None. Delegates to the shared generator."""
         return generate_phrasebook(
-            lang_name, searxng_url=self.searxng_url, ollama_url=self.ollama_url,
-            model=self.model, timeout=self.timeout, max_snippets=self.max_snippets)
+            lang_name, searxng_url=self.searxng_url, llm=self.llm, timeout=self.timeout, max_snippets=self.max_snippets)
 
     # -- resolve ------------------------------------------------------------
     def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:

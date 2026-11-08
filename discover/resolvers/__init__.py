@@ -7,6 +7,7 @@ background job (a later slice), not the synchronous deterministic pass.
 """
 from __future__ import annotations
 
+from ai.client import Endpoint
 from discover.resolvers.base import Finding, Resolver, ResolverContext
 from discover.resolvers.currency import CurrencyResolver
 from discover.resolvers.events import EventsResolver
@@ -38,21 +39,18 @@ def build_deterministic(*, frankfurter_url: str = "https://api.frankfurter.dev/v
     ]
 
 
-def build_llm(*, searxng_url: str, ollama_url: str,
-              model: str = "qwen3:14b", timeout: int = 600) -> list[Resolver]:
-    """The LLM tier (§10). More resolvers (events, visa, safety) land here behind
-    the same interface as they ship."""
+def build_llm(*, searxng_url: str, llm: Endpoint | None,
+              timeout: int = 600) -> list[Resolver]:
+    """The LLM tier (§10). `llm` is app.ai.endpoint(DISCOVER): None when AI is off
+    for Discover, and every resolver below then degrades to no finding. More
+    resolvers (events, visa, safety) land here behind the same interface as they
+    ship."""
+    kw = {"searxng_url": searxng_url, "llm": llm, "timeout": timeout}
     return [
-        FoodResolver(searxng_url=searxng_url, ollama_url=ollama_url,
-                     model=model, timeout=timeout),
-        EventsResolver(searxng_url=searxng_url, ollama_url=ollama_url,
-                       model=model, timeout=timeout),
-        SafetyResolver(searxng_url=searxng_url, ollama_url=ollama_url,
-                       model=model, timeout=timeout),
-        LanguageLocalResolver(searxng_url=searxng_url, ollama_url=ollama_url,
-                              model=model, timeout=timeout),
-        RegionalLanguageResolver(searxng_url=searxng_url, ollama_url=ollama_url,
-                                 model=model, timeout=timeout),
-        NationalPhrasebookResolver(searxng_url=searxng_url, ollama_url=ollama_url,
-                                   model=model, timeout=timeout),
+        FoodResolver(**kw),
+        EventsResolver(**kw),
+        SafetyResolver(**kw),
+        LanguageLocalResolver(**kw),
+        RegionalLanguageResolver(**kw),
+        NationalPhrasebookResolver(**kw),
     ]

@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import logging
 
+from ai.client import Endpoint
 from discover.grounding import (corroborate, ground_items, normalize_url,
                                 verify_banner)
 from discover.places import DerivedPlace
 from discover.resolvers.base import Finding, ResolverContext
 from discover.search import searxng_search
-from discover.synth import DEFAULT_MODEL, synthesize_json
+from discover.synth import synthesize_json
 
 log = logging.getLogger("yonder.discovery.llm")
 
@@ -78,12 +79,11 @@ class SafetyResolver:
     topic = "safety"
     scope = "city"
 
-    def __init__(self, *, searxng_url: str | None, ollama_url: str | None,
-                 model: str = DEFAULT_MODEL, timeout: int = 600,
+    def __init__(self, *, searxng_url: str | None, llm: Endpoint | None,
+                 timeout: int = 600,
                  max_snippets: int = 24):
         self.searxng_url = searxng_url
-        self.ollama_url = ollama_url
-        self.model = model
+        self.llm = llm                           # None = no AI for Discover (D-228)
         self.timeout = timeout
         self.max_snippets = max_snippets
 
@@ -128,7 +128,7 @@ class SafetyResolver:
 
     # -- resolve ------------------------------------------------------------
     def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:
-        if not self.searxng_url or not self.ollama_url:
+        if not self.searxng_url or self.llm is None:
             return None
         if not place.city:
             return None
@@ -139,8 +139,7 @@ class SafetyResolver:
                         "%s with JSON format enabled?", place.label, self.searxng_url)
             return None
         out = synthesize_json(self._prompt(place, results), _SCHEMA,
-                              base_url=self.ollama_url, system=_SYSTEM,
-                              model=self.model, timeout=self.timeout)
+                              llm=self.llm, system=_SYSTEM)
         if not out:
             log.warning("safety: no usable LLM output for %s (see the synth: line above "
                         "for the cause)", place.label)
