@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "purpose": "Packing template types (SPEC-5 §6.5, D-230). A person's template has one of these types. `suggest_when` = the trip signals that suggest it (archetype ids and modifier names from archetypes.json; `culture_modest` = a destination whose culture.json entry is modest; `long_flight` = a flight of 6 hours or more; `keyword` = the template's own keyword in the trip's title, notes or an activity). No `suggest_when` = picked by hand on the trip. `pretick` = the inventory proposed when a template of this type is created: items whose `seed` tags match, plus these item ids, when the person owns them."
+  },
+  "types": [
+    {"key": "beach",           "label": "Beach",                 "suggest_when": {"archetypes": ["beach"], "modifiers": ["beach"]},             "pretick": {"seed": ["swim", "care:sun"]}},
+    {"key": "hiking",          "label": "Hiking",                "suggest_when": {"modifiers": ["hiking"]},                                     "pretick": {"seed": ["outdoor"], "items": ["trail_snacks", "trekking_poles"]}},
+    {"key": "swimming",        "label": "Swimming",              "suggest_when": {"modifiers": ["watersport", "beach"]},                        "pretick": {"items": ["swimwear", "beach_towel", "waterproof_pouch"]}},
+    {"key": "fine_dining",     "label": "Fine dining",                                                                                          "pretick": {"items": ["evening_outfit", "dress_shoes", "smart_flats"]}},
+    {"key": "formal_events",   "label": "Formal events",                                                                                        "pretick": {"seed": ["formal"]}},
+    {"key": "cultural_events", "label": "Cultural events",                                                                                      "pretick": {"seed": ["smart"]}},
+    {"key": "business",        "label": "Business meetings",     "suggest_when": {"archetypes": ["business"], "modifiers": ["business"]},       "pretick": {"seed": ["formal"], "items": ["laptop", "business_cards"]}},
+    {"key": "road_trip",       "label": "Road trip",             "suggest_when": {"archetypes": ["road_trip"], "modifiers": ["road"]},          "pretick": {"items": ["car_charger", "cooler", "daypack"]}},
+    {"key": "long_flight",     "label": "Long flight",           "suggest_when": {"long_flight": true},                                         "pretick": {"items": ["headphones", "portable_battery"]}},
+    {"key": "sightseeing",     "label": "Sightseeing",           "suggest_when": {"archetypes": ["city_break", "backpacking"]},                 "pretick": {"items": ["walking_shoes", "daypack", "water_bottle"]}},
+    {"key": "cold_ski",        "label": "Cold weather / ski",    "suggest_when": {"archetypes": ["cold_ski"], "modifiers": ["cold_weather", "ski"]}, "pretick": {"seed": ["cold"], "items": ["ski_goggles"]}},
+    {"key": "camping",         "label": "Camping",               "suggest_when": {"modifiers": ["camping"]},                                    "pretick": {"items": ["tent", "sleeping_bag", "headlamp"]}},
+    {"key": "city_break",      "label": "City break",            "suggest_when": {"archetypes": ["city_break"]},                                "pretick": {"seed": ["smart"], "items": ["walking_shoes"]}},
+    {"key": "wellness",        "label": "Wellness / spa",                                                                                       "pretick": {"items": ["swimwear", "sandals"]}},
+    {"key": "festival",        "label": "Festival / concert",                                                                                   "pretick": {"items": ["daypack", "portable_battery", "waterproof_jacket", "compact_umbrella"]}},
+    {"key": "cruise",          "label": "Cruise",                                                                                               "pretick": {"seed": ["formal", "swim"]}},
+    {"key": "family",          "label": "Family / theme park",                                                                                  "pretick": {"items": ["walking_shoes", "daypack", "water_bottle"]}},
+    {"key": "wedding",         "label": "Wedding",                                                                                              "pretick": {"seed": ["formal"]}},
+    {"key": "rainy_tropical",  "label": "Rainy / tropical",      "suggest_when": {"modifiers": ["rain_gear", "humid", "tropical"]},             "pretick": {"items": ["waterproof_jacket", "compact_umbrella", "insect_repellent", "quick_dry_top", "quick_dry_bottoms"]}},
+    {"key": "religious_sites", "label": "Religious sites",       "suggest_when": {"archetypes": ["cultural"], "modifiers": ["temple"], "culture_modest": true}, "pretick": {"seed": ["modest"], "items": ["slip_on_loafers"]}},
+    {"key": "custom",          "label": "Your own keyword",      "suggest_when": {"keyword": true},                                             "pretick": {}}
+  ]
+}

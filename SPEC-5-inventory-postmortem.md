@@ -165,7 +165,7 @@ field, `seed` (4b), kept apart from the engine's existing descriptive `tags`
 
 | Answer | Seeds catalogue items with `seed` tag | Examples from today's catalogue (4b adds the rest) |
 |---|---|---|
-| always | `essential` | passport, tickets, reservations, phone charger, power bank, prescription meds, pain relief, sunglasses |
+| always | `essential`, plus `tech:phone` and `care:toiletries` | passport, tickets, reservations, travel insurance, emergency contacts, cash and cards, pain relief, sunglasses; phone charger and power bank; toothbrush and the other basic toiletries |
 | Q2 `basics` (always) | `basics` | T-shirt, jeans, underwear, socks, sleepwear, cardigan, light jacket, walking shoes |
 | Q2 `smart` | `smart` | smart-casual top, chinos |
 | Q2 `formal` | `formal` | blazer, dress shirt, business trousers, evening outfit, dress shoes / smart flats |
@@ -175,7 +175,7 @@ field, `seed` (4b), kept apart from the engine's existing descriptive `tags`
 | Q2 `modest` | `modest` | modest long-sleeve top, long skirt, loose trousers, modest scarf, headscarf |
 | Q3 `minimal` | footwear: only items with `seed_minimal` | walking shoes, plus sandals if Q2 has `swim` |
 | Q3 `varied` | footwear: every footwear item matched by Q2 | as Q2 matches |
-| Q4 each option | `care:<key>` | `care:sun` → sunscreen, after-sun; `care:toiletries` → toiletry basics; 4b adds skincare, hair, shaving, make-up and eyewear items |
+| Q4 each option | `care:<key>` | `care:sun` → sunscreen, after-sun, sun hat; `care:meds` → prescription meds and a personal medical card; skincare, hair, shaving, make-up and eyewear items for the rest |
 | Q5 bags | — | each bag picked becomes a **`Bag` row** owned by the person, with the count given (`kind` from the answer) |
 | Q5 organisers | `gear:<key>` | packing cubes, compression bags, toiletry bag |
 | Q6 each option | `tech:<key>` | `tech:laptop` → laptop + charger, `tech:adapter` → universal adapter, `tech:car` → car charger |

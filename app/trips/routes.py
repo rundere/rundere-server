@@ -1663,14 +1663,16 @@ PROFILE_CONSTRAINTS = [("no_heels", "No heels"),
                        ("modest_dress", "Always dress modestly"),
                        ("business_casual_only", "Business-casual only")]
 _PACK_CAT_ORDER_FULL = ["clothing", "footwear", "toiletries", "tech", "documents",
-                        "health", "activity"]
+                        "health", "activity", "gear"]
 
 PACK_CAT_ORDER = ["documents", "health", "clothing", "footwear", "toiletries",
-                  "tech", "activity"]
+                  "tech", "activity", "gear"]
 PACK_CAT_LABELS = {"documents": "Documents", "health": "Health",
                    "clothing": "Clothing", "footwear": "Footwear",
                    "toiletries": "Toiletries", "tech": "Tech",
-                   "activity": "Activity gear"}
+                   "activity": "Activity gear",
+                   # 5.0: packing cubes and other organisers (SPEC-5 §6.3).
+                   "gear": "Bags and organisers"}
 
 # ---- Discovery Profile vocabularies (3.2, SPEC-3.2 §2.2) --------------------
 # Constraint-first (D-87): dietary/dislikes/budget/mobility SUBTRACT or bound;
