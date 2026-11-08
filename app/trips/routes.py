@@ -1698,12 +1698,22 @@ DISCOVERY_MOBILITY = [("no_limits", "No limits"),
 
 
 DISCOVERY_NOTES_MAX = 2000
+_ACTIVITY_KEYS = frozenset(k for k, _ in DISCOVERY_ACTIVITIES)
+
+
+def effective_activities(keys) -> list[str]:
+    """The activity interests a search adds. Every one ticked means the generic
+    mix, the same as none (YONDER-328, 5.0 plan decision 4): new profiles start
+    all ticked, and twelve extra query sets on every run would only slow it."""
+    keys = [k for k in keys or [] if k in _ACTIVITY_KEYS]
+    return [] if set(keys) >= _ACTIVITY_KEYS else keys
 
 
 def _discovery_default() -> dict:
-    """A blank profile — "show me everything, no constraints" (SPEC-3.2 §2.2)."""
+    """A blank profile — "show me everything, no constraints" (SPEC-3.2 §2.2).
+    Cuisines are discover/cuisines.py keys (YONDER-328)."""
     return {
-        "food": {"dietary_restrictions": [], "cuisine_dislikes": [],
+        "food": {"dietary_restrictions": [], "cuisine_dislikes": [], "cuisine_likes": [],
                  "allergies": "", "budget_ceiling": 0},
         "drink": {"interests": []},
         "activity": {"interests": []},
@@ -2279,6 +2289,7 @@ def discovery_profile_public(session: Session, traveler: TravelerIdentity | None
     with its label, their free-text notes for agents, the rows they hid as
     "not my thing" (`user_id`'s, across trips), and how to apply it all. Only
     ever the caller's own."""
+    from discover import cuisines
     from discover.items import dislikes as hidden_dislikes
     row = _discovery_profile_row(session, traveler, owner)
     d = _discovery_default()
@@ -2298,13 +2309,18 @@ def discovery_profile_public(session: Session, traveler: TravelerIdentity | None
     out = {
         "food": {
             "dietary_restrictions": tagged(food.get("dietary_restrictions"), diet_l),
-            "avoid_cuisines": list(food.get("cuisine_dislikes") or []),
+            # Labels, as before 5.0 (the apps read this); likes are additive.
+            "avoid_cuisines": [cuisines.label(k) for k in food.get("cuisine_dislikes") or []],
+            "liked_cuisines": [cuisines.label(k) for k in food.get("cuisine_likes") or []],
             "allergies": food.get("allergies") or "",
             "budget_ceiling": {"tier": budget,
                                "label": dict(DISCOVERY_BUDGET).get(budget, "No limit")},
         },
         "drink": {"interests": tagged(drink.get("interests"), drink_l)},
-        "activity": {"interests": tagged(activity.get("interests"), act_l)},
+        "activity": {"interests": tagged(effective_activities(activity.get("interests")), act_l),
+                     # every interest ticked: the generic mix, like none
+                     "all_interests": bool(activity.get("interests"))
+                     and not effective_activities(activity.get("interests"))},
         "practical": {"mobility": {"key": mob,
                                    "label": dict(DISCOVERY_MOBILITY).get(mob, mob)}},
         "travel": {"nationality": traveler.nationality if traveler else None,
@@ -2314,14 +2330,16 @@ def discovery_profile_public(session: Session, traveler: TravelerIdentity | None
     }
     out["blank"] = row is None or not any([
         food.get("dietary_restrictions"), food.get("cuisine_dislikes"),
-        food.get("allergies"), budget, drink.get("interests"),
-        activity.get("interests"), mob != "no_limits", out["notes"]])
+        food.get("cuisine_likes"), food.get("allergies"), budget, drink.get("interests"),
+        effective_activities(activity.get("interests")), mob != "no_limits", out["notes"]])
     out["how_to_use"] = (
         "Constraint-first: every recommendation must fit the dietary restrictions; "
-        "never recommend the avoided cuisines; stay at or under the budget ceiling "
+        "never recommend the avoided cuisines, and include some of the liked ones; "
+        "stay at or under the budget ceiling "
         "(1–4, $–$$$$; 0 = no limit); flag — don't exclude — anything that may "
         "involve a listed allergen. Interests ADD places (breweries, museums, …) on "
-        "top of the usual mix; they never narrow it. Respect mobility for activities. "
+        "top of the usual mix; they never narrow it (`all_interests` true means "
+        "every activity was ticked: use the usual mix). Respect mobility for activities. "
         "`notes` is the person in their own words — likes, dislikes, past "
         "favourites; follow it like the rest. `not_my_thing` lists places and "
         "events they hid as not their thing: don't suggest those again, and steer "
@@ -2342,9 +2360,17 @@ def _discovery_form_ctx(request: Request, session: Session,
     drink = {**d["drink"], **(v.get("drink") or {})}
     activity = {**d["activity"], **(v.get("activity") or {})}
     practical = {**d["practical"], **(v.get("practical") or {})}
+    from discover import cuisines
     diet = set(food.get("dietary_restrictions") or [])
     drinks = set(drink.get("interests") or [])
-    acts = set(activity.get("interests") or [])
+    # A new profile starts with every activity ticked, which searches the usual
+    # mix (effective_activities); drinks start unticked (YONDER-328).
+    acts = set(activity.get("interests") or []) if row else set(_ACTIVITY_KEYS)
+    likes, dislikes = set(food.get("cuisine_likes") or []), set(food.get("cuisine_dislikes") or [])
+    cuisine_groups = [{"key": g["key"], "label": g["label"], "cuisines": [
+        {"key": c["key"], "label": c["label"],
+         "pref": "like" if c["key"] in likes else "dislike" if c["key"] in dislikes
+         else "neutral"} for c in g["cuisines"]]} for g in cuisines.groups()]
     budget = food.get("budget_ceiling") or 0
     mob = practical.get("mobility") or "no_limits"
     return {
@@ -2352,7 +2378,10 @@ def _discovery_form_ctx(request: Request, session: Session,
         "no_traveller": trav is None and not owner,
         "dietary": [{"value": k, "label": t, "checked": k in diet}
                     for k, t in DISCOVERY_DIETARY],
-        "cuisine_dislikes": ", ".join(food.get("cuisine_dislikes") or []),
+        "cuisine_groups": cuisine_groups,
+        "cuisine_likes_text": ", ".join(cuisines.label(k) for k in food.get("cuisine_likes") or []),
+        "cuisine_dislikes_text": ", ".join(cuisines.label(k)
+                                           for k in food.get("cuisine_dislikes") or []),
         "allergies": food.get("allergies") or "",
         "budget_opts": [{"value": k, "label": t, "checked": k == budget}
                         for k, t in DISCOVERY_BUDGET],
@@ -2377,9 +2406,8 @@ def edit_discovery_profile(request: Request, session: Session = Depends(get_sess
 
 
 @router.post("/settings/discovery-profile", response_class=HTMLResponse)
-def save_discovery_profile(request: Request,
+async def save_discovery_profile(request: Request,
                            dietary_restrictions: list[str] = Form(default=[]),
-                           cuisine_dislikes: str = Form(""),
                            allergies: str = Form(""),
                            budget_ceiling: str = Form("0"),
                            drink_interests: list[str] = Form(default=[]),
@@ -2395,15 +2423,21 @@ def save_discovery_profile(request: Request,
         budget = 0
     # Interests are closed vocabularies (they map to query templates) — filter to
     # known keys so the blob stays clean. Dietary allows custom strings (D-93), so
-    # it is not filtered. Cuisine dislikes are free text, split on commas.
+    # it is not filtered. Cuisines are the vocabulary's keys, one radio group
+    # each (cuisine:<key> = like | neutral | dislike; YONDER-328).
+    from discover import cuisines
     drinks_ok = {k for k, _ in DISCOVERY_DRINKS}
     acts_ok = {k for k, _ in DISCOVERY_ACTIVITIES}
     mob_ok = {k for k, _ in DISCOVERY_MOBILITY}
-    dislikes = [c.strip() for c in cuisine_dislikes.split(",") if c.strip()]
+    form = await request.form()
+    prefs = {k[8:]: str(v) for k, v in form.multi_items() if k.startswith("cuisine:")}
+    likes = cuisines.keys_only(k for k, v in prefs.items() if v == "like")
+    dislikes = cuisines.keys_only(k for k, v in prefs.items() if v == "dislike")
     values = {
         "food": {
             "dietary_restrictions": [d.strip() for d in dietary_restrictions if d.strip()],
             "cuisine_dislikes": dislikes,
+            "cuisine_likes": likes,
             "allergies": allergies.strip(),
             "budget_ceiling": budget,
         },

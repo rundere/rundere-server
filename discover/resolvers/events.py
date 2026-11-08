@@ -269,6 +269,8 @@ class EventsResolver:
             return None
         profile = ctx.discovery_profile or {}
         interests = ((profile.get("activity") or {}).get("interests")) or []
+        if set(interests) >= set(_ACTIVITY_PHRASES):
+            interests = []          # every one ticked = the usual mix (YONDER-328)
         month, year = _month_year(ctx.start_date)
         when = f"{month} {year}" if month and year else ""    # broad, for SEARCH
         start, end = _fmt_date(ctx.start_date), _fmt_date(ctx.end_date)

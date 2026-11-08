@@ -35,7 +35,7 @@ def test_form_is_structured_not_json():
     # structured fields, not a JSON blob — the one textarea is the free-text notes (4.5)
     assert "<select" in r.text and r.text.count("<textarea") == 1
     assert 'name="notes"' in r.text
-    for name in ("dietary_restrictions", "cuisine_dislikes", "allergies",
+    for name in ("dietary_restrictions", "cuisine:sushi", "allergies",
                  "budget_ceiling", "drink_interests", "activity_interests",
                  "mobility"):
         assert f'name="{name}"' in r.text
@@ -56,7 +56,9 @@ def test_saves_constraint_first_blob():
     try:
         r = _client.post("/trips/settings/discovery-profile", data={
             "dietary_restrictions": ["vegetarian", "halal"],
-            "cuisine_dislikes": " sushi ,  fast food ,",     # trimmed, empties dropped
+            # one radio group per cuisine (YONDER-328); unknown keys are dropped
+            "cuisine:sushi": "dislike", "cuisine:fast_food": "dislike",
+            "cuisine:thai": "like", "cuisine:italian": "neutral", "cuisine:not_a_cuisine": "like",
             "allergies": "  peanuts  ",
             "budget_ceiling": "2",
             "drink_interests": ["craft_beer", "coffee"],
@@ -66,7 +68,8 @@ def test_saves_constraint_first_blob():
         with SessionLocal() as s:
             v = s.query(DiscoveryProfile).one().values
             assert set(v["food"]["dietary_restrictions"]) == {"vegetarian", "halal"}
-            assert v["food"]["cuisine_dislikes"] == ["sushi", "fast food"]
+            assert v["food"]["cuisine_dislikes"] == ["sushi", "fast_food"]
+            assert v["food"]["cuisine_likes"] == ["thai"]
             assert v["food"]["allergies"] == "peanuts"
             assert v["food"]["budget_ceiling"] == 2          # int, not "2"
             assert set(v["drink"]["interests"]) == {"craft_beer", "coffee"}
@@ -86,7 +89,7 @@ def test_blank_profile_is_all_defaults():
         with SessionLocal() as s:
             v = s.query(DiscoveryProfile).one().values
             assert v["food"] == {"dietary_restrictions": [], "cuisine_dislikes": [],
-                                 "allergies": "", "budget_ceiling": 0}
+                                 "cuisine_likes": [], "allergies": "", "budget_ceiling": 0}
             assert v["drink"]["interests"] == []
             assert v["activity"]["interests"] == []
             assert v["practical"]["mobility"] == "no_limits"

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 
 from ai.client import Endpoint
+from discover import cuisines
 from discover.grounding import ground_items, normalize_url
 from discover.places import DerivedPlace
 from discover.resolvers.base import Finding, ResolverContext
@@ -34,6 +35,9 @@ _DRINK_QUERIES = {
     "tea": "tea house {city}",
     "non_alcoholic": "mocktail bar {city}",
 }
+# Liked cuisines add one search each (YONDER-328), capped like the drinks so a
+# long list of likes doesn't fan out (§5.2).
+_MAX_LIKED_QUERIES = 3
 _BUDGET_LABELS = {0: "no limit", 1: "$ (budget / street food)",
                   2: "$$ (casual to mid-range)", 3: "$$$ (mid to upscale)",
                   4: "$$$$ (fine dining)"}
@@ -48,7 +52,8 @@ _SYSTEM = (
     "ONLY the search results provided — never invent a place or a URL. Every place "
     "you return MUST carry the exact source_url of the search result it came from. "
     "Honour the traveller's constraints: do not recommend cuisines on their avoid "
-    "list, keep within their budget ceiling, and flag (do not exclude) anything "
+    "list, include some of the cuisines they like when the results have them, "
+    "keep within their budget ceiling, and flag (do not exclude) anything "
     "that may involve a listed allergen. Prefer local specialties over chains. "
     "Return a MIX: not only restaurants — include the notable bars, breweries, "
     "distilleries, cafés, and markets the results surface (a well-known local "
@@ -121,6 +126,8 @@ class FoodResolver:
             tmpl = _DRINK_QUERIES.get(interest)
             if tmpl:
                 qs.append(tmpl.format(city=city))
+        for key in (food.get("cuisine_likes") or [])[:_MAX_LIKED_QUERIES]:
+            qs.append(f"best {cuisines.label(key).lower()} restaurant {city}")
         return qs
 
     def _search(self, queries: list[str]):
@@ -142,13 +149,18 @@ class FoodResolver:
     def _prompt(self, place: DerivedPlace, profile: dict, results) -> str:
         food = (profile or {}).get("food") or {}
         diet = food.get("dietary_restrictions") or []
-        dislikes = food.get("cuisine_dislikes") or []
+        # Keys from the vocabulary (YONDER-328); the model reads their labels.
+        dislikes = [cuisines.label(k) for k in food.get("cuisine_dislikes") or []]
+        likes = [cuisines.label(k) for k in food.get("cuisine_likes") or []]
         allergies = (food.get("allergies") or "").strip()
         budget = food.get("budget_ceiling") or 0
         lines = [f"City: {place.label}", "", "Traveller preferences:"]
         lines.append(f"- Dietary: {', '.join(diet) if diet else 'no restrictions'} "
                      "(every place must accommodate these)")
         lines.append(f"- Avoid cuisines: {', '.join(dislikes) if dislikes else 'none'}")
+        if likes:
+            lines.append(f"- Cuisines they like (include some when the results have "
+                         f"them): {', '.join(likes)}")
         lines.append(f"- Budget ceiling: {_BUDGET_LABELS.get(budget, 'no limit')} "
                      "— do not recommend places above this tier")
         lines.append(f"- Allergies to flag (warn, do not exclude): "

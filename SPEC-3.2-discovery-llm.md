@@ -167,6 +167,7 @@ its SearXNG queries and Ollama prompt accordingly.
   "food": {
     "dietary_restrictions": [],
     "cuisine_dislikes": [],
+    "cuisine_likes": [],
     "allergies": "",
     "budget_ceiling": 0
   },
@@ -194,7 +195,8 @@ the profile tells it what to filter out or flag.
 | Field | Type | Values | Resolver effect |
 |---|---|---|---|
 | `dietary_restrictions` | `str[]` | `vegetarian`, `vegan`, `halal`, `kosher`, `gluten_free`, `dairy_free`, + custom strings | Appended to every food SearXNG query; Ollama prompt requires results to accommodate them |
-| `cuisine_dislikes` | `str[]` | free-text cuisine names (e.g. `"sushi"`, `"fast food"`) | Ollama prompt: "exclude recommendations for these cuisines" |
+| `cuisine_dislikes` | `str[]` | cuisine keys (5.0, YONDER-328; see below) | Model prompt: never recommend these cuisines |
+| `cuisine_likes` | `str[]` | cuisine keys (5.0, YONDER-328) | **Adds**: one food search each (the first three), and the prompt asks for some of them. The person entered it, so it isn't an inference (D-93) |
 | `allergies` | `str` | free text | Flagged as a **warning** on results that mention the allergen — not a hard filter (search can't reliably detect allergens) |
 | `budget_ceiling` | `int` | `0` = no limit, `1`–`4` = $/$$/$$$/$$$$ | Ceiling, not floor — see §2.3 |
 
@@ -232,12 +234,28 @@ suppressed — this is additive, never subtractive.
 | `tea` | "tea house {city}", "tea room {city}" |
 | `non_alcoholic` | "mocktail bar {city}", "juice bar {city}" |
 
+**Cuisines (5.0, YONDER-328).** The keys come from a closed vocabulary of
+OpenStreetMap `cuisine=*` values (`discover/data/cuisines.json`, about 50,
+grouped by region and by dish or style), read through `discover/cuisines.py`.
+The profile page sets each one to Like, Neutral (the default) or Don't like in
+a modal. Allergies stay free text. Before 5.0, `cuisine_dislikes` was free
+text; migration 0049 turned each value that names a cuisine into its key, and
+moved the rest into `notes` so nothing was lost. The API and MCP keep
+`avoid_cuisines` (labels) and add `liked_cuisines` (labels).
+
 #### Activity interests
 
 Same opt-in pattern as drink interests. Each checked item generates dedicated
 SearXNG queries per city-level destination. Unchecked = not searched, not blocked.
 Activity interests also serve as the **curation lens** for the events & activities
 resolver (§3.2) — see the three-tier model below.
+
+**All ticked = none (5.0, YONDER-328).** A new profile starts with every activity
+ticked, and the page lists activities first, with help saying what they do.
+Every one ticked searches the usual mix, exactly as none does
+(`effective_activities`), so a default profile doesn't run twelve extra query
+sets. The API reports it as `interests: []` with `all_interests: true`, and the
+profile still counts as `blank` for agents. Drink interests start unticked.
 
 | Interest | SearXNG query template |
 |---|---|
