@@ -1714,7 +1714,7 @@ def _discovery_default() -> dict:
     Cuisines are discover/cuisines.py keys (YONDER-328)."""
     return {
         "food": {"dietary_restrictions": [], "cuisine_dislikes": [], "cuisine_likes": [],
-                 "allergies": "", "budget_ceiling": 0},
+                 "allergies": "", "budget_ceiling": 0, "prefer_local": False},
         "drink": {"interests": []},
         "activity": {"interests": []},
         "practical": {"mobility": "no_limits"},
@@ -2313,6 +2313,7 @@ def discovery_profile_public(session: Session, traveler: TravelerIdentity | None
             "avoid_cuisines": [cuisines.label(k) for k in food.get("cuisine_dislikes") or []],
             "liked_cuisines": [cuisines.label(k) for k in food.get("cuisine_likes") or []],
             "allergies": food.get("allergies") or "",
+            "prefer_local_food": bool(food.get("prefer_local")),
             "budget_ceiling": {"tier": budget,
                                "label": dict(DISCOVERY_BUDGET).get(budget, "No limit")},
         },
@@ -2330,11 +2331,14 @@ def discovery_profile_public(session: Session, traveler: TravelerIdentity | None
     }
     out["blank"] = row is None or not any([
         food.get("dietary_restrictions"), food.get("cuisine_dislikes"),
-        food.get("cuisine_likes"), food.get("allergies"), budget, drink.get("interests"),
+        food.get("cuisine_likes"), food.get("allergies"), food.get("prefer_local"), budget,
+        drink.get("interests"),
         effective_activities(activity.get("interests")), mob != "no_limits", out["notes"]])
     out["how_to_use"] = (
         "Constraint-first: every recommendation must fit the dietary restrictions; "
         "never recommend the avoided cuisines, and include some of the liked ones; "
+        "with `prefer_local_food` true, lead with the destination's own dishes and "
+        "the places locals rate, even when that cuisine is on the avoid list; "
         "stay at or under the budget ceiling "
         "(1–4, $–$$$$; 0 = no limit); flag — don't exclude — anything that may "
         "involve a listed allergen. Interests ADD places (breweries, museums, …) on "
@@ -2383,6 +2387,7 @@ def _discovery_form_ctx(request: Request, session: Session,
         "cuisine_dislikes_text": ", ".join(cuisines.label(k)
                                            for k in food.get("cuisine_dislikes") or []),
         "allergies": food.get("allergies") or "",
+        "prefer_local_food": bool(food.get("prefer_local")),
         "budget_opts": [{"value": k, "label": t, "checked": k == budget}
                         for k, t in DISCOVERY_BUDGET],
         "drinks": [{"value": k, "label": t, "checked": k in drinks}
@@ -2409,6 +2414,7 @@ def edit_discovery_profile(request: Request, session: Session = Depends(get_sess
 async def save_discovery_profile(request: Request,
                            dietary_restrictions: list[str] = Form(default=[]),
                            allergies: str = Form(""),
+                           prefer_local_food: str = Form(""),
                            budget_ceiling: str = Form("0"),
                            drink_interests: list[str] = Form(default=[]),
                            activity_interests: list[str] = Form(default=[]),
@@ -2440,6 +2446,8 @@ async def save_discovery_profile(request: Request,
             "cuisine_likes": likes,
             "allergies": allergies.strip(),
             "budget_ceiling": budget,
+            # Try the destination's own food, past the dislikes (YONDER-328).
+            "prefer_local": bool(prefer_local_food),
         },
         "drink": {"interests": [x for x in drink_interests if x in drinks_ok]},
         "activity": {"interests": [x for x in activity_interests if x in acts_ok]},

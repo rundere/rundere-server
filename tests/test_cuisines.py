@@ -101,6 +101,29 @@ def test_likes_add_searches_capped_and_reach_the_prompt():
     assert "they like" in prompt and "Thai, Peruvian, Tapas, Ramen" in prompt
 
 
+def test_prefer_local_food_searches_it_and_puts_it_ahead_of_dislikes():
+    from discover.places import DerivedPlace
+    from discover.resolvers.food import FoodResolver
+    from discover.search import SearchResult
+    r = FoodResolver(searxng_url="http://searxng.test", llm=None)
+    place = DerivedPlace(country="CA", city="Testville", lat=0, lon=0)
+    hits = [SearchResult(url="https://example.test/a", title="A", snippet="")]
+    off = {"food": {"cuisine_dislikes": ["seafood"]}}
+    on = {"food": {"cuisine_dislikes": ["seafood"], "prefer_local": True}}
+    assert not any("traditional" in q for q in r._queries("Testville", "CA", off))
+    assert "traditional food Testville CA where locals eat" in r._queries("Testville", "CA", on)
+    assert "prefer local food" not in r._prompt(place, off, hits)
+    prompt = r._prompt(place, on, hits)
+    assert "They prefer local food" in prompt and "even when that cuisine is on the avoid list" in prompt
+
+
+def test_a_closed_cuisine_dialog_is_hidden():
+    # .dialog sets display:flex, which beats the browser's own hiding of a closed
+    # <dialog>: without this rule Done left it drawn on the page.
+    css = (ROOT / "app" / "trips" / "static" / "trips.css").read_text()
+    assert "dialog.dialog:not([open]) { display: none; }" in css
+
+
 def test_every_activity_ticked_searches_the_usual_mix(monkeypatch):
     from ai.client import Endpoint
     from discover.places import DerivedPlace
@@ -201,3 +224,18 @@ if DEPS:
         with SessionLocal() as s:
             row = s.query(DiscoveryProfile).filter_by(traveler_id=me.traveler_id).one()
             assert row.values["food"]["cuisine_likes"] == ["thai"]
+
+    def test_prefer_local_food_saves_and_reaches_the_api(auth_on):
+        _, h = _person("local")
+        page = client.get("/trips/settings/discovery-profile", headers=h).text
+        assert 'name="prefer_local_food" value="1" >' in page       # unticked to start
+        assert page.index("Choose cuisines") < page.index("Prefer local food") \
+            < page.index("Allergies")
+        r = client.post("/trips/settings/discovery-profile", headers=h,
+                        data={"prefer_local_food": "1"})
+        assert 'name="prefer_local_food" value="1" checked>' in r.text
+        p = client.get("/api/v1/me/discovery-profile", headers=h).json()
+        assert p["food"]["prefer_local_food"] is True and p["blank"] is False
+        client.post("/trips/settings/discovery-profile", headers=h, data={})
+        p = client.get("/api/v1/me/discovery-profile", headers=h).json()
+        assert p["food"]["prefer_local_food"] is False and p["blank"] is True

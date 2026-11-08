@@ -169,7 +169,8 @@ its SearXNG queries and Ollama prompt accordingly.
     "cuisine_dislikes": [],
     "cuisine_likes": [],
     "allergies": "",
-    "budget_ceiling": 0
+    "budget_ceiling": 0,
+    "prefer_local": false
   },
   "drink": {
     "interests": []
@@ -197,6 +198,7 @@ the profile tells it what to filter out or flag.
 | `dietary_restrictions` | `str[]` | `vegetarian`, `vegan`, `halal`, `kosher`, `gluten_free`, `dairy_free`, + custom strings | Appended to every food SearXNG query; Ollama prompt requires results to accommodate them |
 | `cuisine_dislikes` | `str[]` | cuisine keys (5.0, YONDER-328; see below) | Model prompt: never recommend these cuisines |
 | `cuisine_likes` | `str[]` | cuisine keys (5.0, YONDER-328) | **Adds**: one food search each (the first three), and the prompt asks for some of them. The person entered it, so it isn't an inference (D-93) |
+| `prefer_local` | `bool` | false (5.0, YONDER-328) | **Adds** a search for the place's traditional food, and the prompt leads with local dishes and places locals rate, even when that cuisine is disliked. Dietary restrictions and allergies still apply. The API calls it `prefer_local_food` |
 | `allergies` | `str` | free text | Flagged as a **warning** on results that mention the allergen — not a hard filter (search can't reliably detect allergens) |
 | `budget_ceiling` | `int` | `0` = no limit, `1`–`4` = $/$$/$$$/$$$$ | Ceiling, not floor — see §2.3 |
 
@@ -241,7 +243,9 @@ The profile page sets each one to Like, Neutral (the default) or Don't like in
 a modal. Allergies stay free text. Before 5.0, `cuisine_dislikes` was free
 text; migration 0049 turned each value that names a cuisine into its key, and
 moved the rest into `notes` so nothing was lost. The API and MCP keep
-`avoid_cuisines` (labels) and add `liked_cuisines` (labels).
+`avoid_cuisines` (labels) and add `liked_cuisines` (labels) and
+`prefer_local_food`. "Prefer local food", below the cuisines, lets someone try
+each destination's own food even past their dislikes.
 
 #### Activity interests
 

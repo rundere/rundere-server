@@ -52,7 +52,7 @@ _SYSTEM = (
     "ONLY the search results provided — never invent a place or a URL. Every place "
     "you return MUST carry the exact source_url of the search result it came from. "
     "Honour the traveller's constraints: do not recommend cuisines on their avoid "
-    "list, include some of the cuisines they like when the results have them, "
+    "list (unless they prefer local food and it is this place's own cuisine), include some of the cuisines they like when the results have them, "
     "keep within their budget ceiling, and flag (do not exclude) anything "
     "that may involve a listed allergen. Prefer local specialties over chains. "
     "Return a MIX: not only restaurants — include the notable bars, breweries, "
@@ -126,6 +126,8 @@ class FoodResolver:
             tmpl = _DRINK_QUERIES.get(interest)
             if tmpl:
                 qs.append(tmpl.format(city=city))
+        if food.get("prefer_local"):
+            qs.append(f"traditional food {place} where locals eat")
         for key in (food.get("cuisine_likes") or [])[:_MAX_LIKED_QUERIES]:
             qs.append(f"best {cuisines.label(key).lower()} restaurant {city}")
         return qs
@@ -161,6 +163,12 @@ class FoodResolver:
         if likes:
             lines.append(f"- Cuisines they like (include some when the results have "
                          f"them): {', '.join(likes)}")
+        if food.get("prefer_local"):
+            # The person asked to try the local food (YONDER-328): it goes ahead
+            # of their dislikes, never of the dietary rules or allergies.
+            lines.append("- They prefer local food: lead with this place's own dishes "
+                         "and the places locals rate, mark them local_specialty, and "
+                         "include them even when that cuisine is on the avoid list")
         lines.append(f"- Budget ceiling: {_BUDGET_LABELS.get(budget, 'no limit')} "
                      "— do not recommend places above this tier")
         lines.append(f"- Allergies to flag (warn, do not exclude): "

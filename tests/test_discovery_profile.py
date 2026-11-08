@@ -89,7 +89,8 @@ def test_blank_profile_is_all_defaults():
         with SessionLocal() as s:
             v = s.query(DiscoveryProfile).one().values
             assert v["food"] == {"dietary_restrictions": [], "cuisine_dislikes": [],
-                                 "cuisine_likes": [], "allergies": "", "budget_ceiling": 0}
+                                 "cuisine_likes": [], "allergies": "", "budget_ceiling": 0,
+                                 "prefer_local": False}
             assert v["drink"]["interests"] == []
             assert v["activity"]["interests"] == []
             assert v["practical"]["mobility"] == "no_limits"

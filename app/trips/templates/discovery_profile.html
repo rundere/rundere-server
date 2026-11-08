@@ -78,6 +78,13 @@
     <button type="button" class="btn btn-ghost" data-open-dialog="cuisine-dialog">Choose cuisines…</button>
   </div>
 
+  <div class="field">
+    <label class="yn-check"><input type="checkbox" name="prefer_local_food" value="1" {% if prefer_local_food %}checked{% endif %}> Prefer local food</label>
+    <p class="yn-help">Lead with each destination's own dishes and the places locals rate,
+      even when that cuisine is one you've marked Don't like. Dietary restrictions
+      and allergies still apply.</p>
+  </div>
+
   <div class="field"><label>Allergies <span class="yn-help">— flagged as a warning, not filtered</span></label>
     <input class="input" type="text" name="allergies" value="{{ allergies }}"
            placeholder="e.g. peanuts, shellfish"></div>
@@ -85,8 +92,8 @@
   {# The cuisine modal sits inside the form, so its choices save with the page. #}
   <dialog id="cuisine-dialog" class="dialog blueprint yn-cuisine-dialog" aria-labelledby="cuisine-dialog-title">
     <div class="dialog-title" id="cuisine-dialog-title">Cuisines</div>
-    <p class="yn-help">Like adds searches for it; Don't like means it's never suggested;
-      Neutral does neither. From OpenStreetMap's list of cuisines. Allergies stay in
+    <p class="yn-help">Like adds searches for it; Don't like means it's never suggested
+      (unless you prefer local food and it's the local cuisine); Neutral does neither. From OpenStreetMap's list of cuisines. Allergies stay in
       their own box.</p>
     <div class="yn-cuisine-list">
       {% for g in cuisine_groups %}
