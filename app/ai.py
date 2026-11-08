@@ -199,7 +199,7 @@ def call_summary(session, limit: int = 50) -> dict:
                           func.avg(AiCall.duration_ms))
             .filter(AiCall.started_at >= since).group_by(AiCall.feature).all())
     week = [{"feature": f, "calls": n, "failed": int(bad or 0),
-             "avg_s": round((avg or 0) / 1000, 1)} for f, n, bad, avg in rows]
+             "avg_s": round(float(avg or 0) / 1000, 1)} for f, n, bad, avg in rows]
     recent = (session.query(AiCall).order_by(AiCall.started_at.desc()).limit(limit).all())
     return {"week": sorted(week, key=lambda w: w["feature"]), "recent": recent}
 
