@@ -18,9 +18,9 @@ from __future__ import annotations
 import copy
 import json
 import urllib.error
-import urllib.request
 from pathlib import Path
 
+from ai.client import Endpoint, chat_json
 from validation import validate_schema
 
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "travel-extraction.schema.json"
@@ -184,31 +184,19 @@ Rules — every one of these exists because of a real past failure:
 - Use null for anything the document does not state. Never invent data."""
 
 
-class OllamaExtractor:
-    def __init__(self, base_url: str = "http://ollama:11434",
-                 model: str = "qwen3:14b", timeout: int = 600):
-        self.base_url = base_url.rstrip("/")
-        self.model = model
-        self.timeout = timeout
+class LLMExtractor:
+    """The last extractor in the chain (D-10/D-27): free-form text to the
+    extraction schema, through whichever endpoint app/ai.py allows for
+    extraction (D-228). Before 5.0 this was OllamaExtractor."""
+
+    def __init__(self, llm: Endpoint):
+        self.llm = llm
         self.schema = load_extraction_schema()
         self.format_schema = build_format_schema(self.schema)
 
     # separated for tests to monkeypatch
     def _post(self, messages: list[dict]) -> str:
-        body = json.dumps({
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-            "format": self.format_schema,
-            "think": False,
-            "options": {"temperature": 0, "num_ctx": 16384},
-        }).encode()
-        req = urllib.request.Request(
-            f"{self.base_url}/api/chat", data=body,
-            headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read())
-        return data.get("message", {}).get("content", "")
+        return chat_json(self.llm, messages, self.format_schema, name="travel_extraction").content
 
     def extract(self, document_text: str, context_note: str = "") -> tuple[dict, list[dict]]:
         """Returns (valid PayloadBatch, attempts). Raises ExtractionFailed
@@ -223,9 +211,13 @@ class OllamaExtractor:
         for attempt in (1, 2):                       # exactly one retry (D-11)
             try:
                 content = self._post(messages)
-            except (urllib.error.URLError, TimeoutError, OSError) as ex:
-                attempts.append({"attempt": attempt, "error": f"ollama unreachable: {ex}"})
-                raise ExtractionFailed(f"ollama call failed: {ex}", attempts)
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as ex:
+                # The reason ("Connection refused", "HTTP Error 401"), never the
+                # request: the key is only ever in its header.
+                detail = ex if isinstance(ex, urllib.error.HTTPError) else getattr(ex, "reason", ex)
+                why = f"{type(ex).__name__}: {detail}"[:200]
+                attempts.append({"attempt": attempt, "error": f"AI endpoint unreachable: {why}"})
+                raise ExtractionFailed(f"AI call failed ({self.llm.where}): {why}", attempts)
             try:
                 batch = json.loads(content)
             except ValueError as ex:

@@ -1217,8 +1217,9 @@ def _resolvers():
 
 def _llm_resolvers():
     from discover.resolvers import build_llm
-    return build_llm(searxng_url=settings.searxng_url, ollama_url=settings.ollama_url,
-                     model=settings.ollama_model, timeout=settings.llm_timeout_seconds)
+    from app import ai
+    return build_llm(searxng_url=settings.searxng_url, llm=ai.endpoint(ai.DISCOVER),
+                     timeout=settings.llm_timeout_seconds)
 
 
 def _discovery_section(request: Request, session: Session, trip: Trip) -> HTMLResponse:

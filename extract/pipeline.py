@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 from extract import apple_maps_url, filescan, gcal, ical, jsonld, maps_url, mime, pdf, web
 from extract.normalize import normalize_batch, normalize_payload
-from extract.llm import ExtractionFailed, OllamaExtractor, load_extraction_schema
+from extract.llm import ExtractionFailed, LLMExtractor, load_extraction_schema
 from validation import validate_schema
 
 _SCHEMA = load_extraction_schema()
@@ -50,7 +50,7 @@ def _validated(items: list[dict], extractor: str,
 
 
 def extract_ingest_payload(ingest_payload: dict,
-                           llm: OllamaExtractor | None = None,
+                           llm: LLMExtractor | None = None,
                            scanner: filescan.Scanner | None = None) -> ExtractionResult:
     """ingest_payload is the JSON the capture client POSTed to /ingest
     (the ingest_batches.payload column). `scanner` checks an email and its

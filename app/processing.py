@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import IngestBatch, TravelItem
-from extract.llm import PROMPT_VERSION, OllamaExtractor
+from extract.llm import PROMPT_VERSION, LLMExtractor
 from extract.pipeline import extract_ingest_payload
 
 log = logging.getLogger("yonder.processing")
@@ -39,7 +39,7 @@ def _source(batch: IngestBatch, payload: dict) -> dict:
 
 
 def process_batch(session: Session, batch: IngestBatch,
-                  llm: OllamaExtractor | None) -> str:
+                  llm: LLMExtractor | None) -> str:
     """Runs the chain for one batch; returns the new batch status."""
     from app.config import settings
     from extract.filescan import Scanner
@@ -97,7 +97,7 @@ def process_batch(session: Session, batch: IngestBatch,
     return batch.status
 
 
-def process_pending(session: Session, llm: OllamaExtractor | None,
+def process_pending(session: Session, llm: LLMExtractor | None,
                     limit: int = 0, progress=None, batch_filter=None) -> dict:
     """Process every received batch (oldest first). Per-batch commit: one bad
     batch never blocks the rest, and a crash mid-run loses nothing.

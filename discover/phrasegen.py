@@ -20,7 +20,8 @@ from __future__ import annotations
 from discover.grounding import normalize_url
 from discover.phrases_meta import PHRASE_KEYS, PHRASE_KEYSET
 from discover.search import searxng_search
-from discover.synth import DEFAULT_MODEL, synthesize_json
+from ai.client import Endpoint
+from discover.synth import synthesize_json
 
 _GEN_SCHEMA = {
     "type": "object",
@@ -87,22 +88,21 @@ def _prompt(lang_name: str, results) -> str:
 
 
 def generate_phrasebook(lang_name: str, *, searxng_url: str | None,
-                        ollama_url: str | None, model: str = DEFAULT_MODEL,
+                        llm: Endpoint | None,
                         timeout: int = 600, max_snippets: int = 12):
     """Generate a phrasebook for one language. Returns (book, results) — book is
     {key: {t, p}}, results are the SearXNG hits it was built from (for source
     attribution) — or None. Best-effort: any failure (endpoints unset, no search
     results, empty synthesis) degrades to None, so the caller falls back to a note.
     """
-    if not searxng_url or not ollama_url:
+    if not searxng_url or llm is None:
         return None
     results = _search(lang_name, searxng_url=searxng_url, timeout=timeout,
                       max_snippets=max_snippets)
     if not results:
         return None
     out = synthesize_json(_prompt(lang_name, results), _GEN_SCHEMA,
-                          base_url=ollama_url, system=_GEN_SYSTEM,
-                          model=model, timeout=timeout)
+                          llm=llm, system=_GEN_SYSTEM)
     if not out:
         return None
     book: dict[str, dict] = {}

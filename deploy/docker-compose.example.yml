@@ -38,8 +38,13 @@ services:
       # reach on your LAN over http (D-152); everything else must be public https.
       # TX_INTEGRATION_ALLOWED_HOSTS: "airtrail:3000,adventurelog-server"
       # Optional local AI and lookups (everything works without them, D-146):
-      # TX_OLLAMA_URL: http://ollama:11434
-      # TX_OLLAMA_MODEL: qwen3:14b
+      # AI is off unless TX_AI_ENABLED is true (SPEC-12). Ollama shown; for an
+      # OpenAI-compatible server (LiteLLM, vLLM) use TX_AI_PROVIDER: openai, a
+      # TX_AI_URL ending in /v1, and TX_AI_API_KEY_FILE if it needs a key.
+      # TX_AI_ENABLED: "true"
+      # TX_AI_PROVIDER: ollama
+      # TX_AI_URL: http://ollama:11434
+      # TX_AI_MODEL_CHAT: qwen3:14b
       # TX_LLM_TIMEOUT_SECONDS: "600"
       # TX_PHOTON_URL: http://photon:2322          # self-hosted geocoding
       # TX_SEARXNG_URL: http://searxng:8080        # self-hosted search for Discover

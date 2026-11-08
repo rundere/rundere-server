@@ -177,6 +177,8 @@ fields. Reading Google's parse is often more reliable than parsing the source em
 
 ## D-11 — Local inference only; cloud is a manual, audited escalation
 
+> **Amended by D-228** (5.0, [SPEC-12](SPEC-12-ai-providers.md)): AI is off unless the operator turns it on, and a cloud endpoint may serve Discovery. Email and file extraction still never goes to a cloud model unless the operator allows it separately.
+
 Local models are unreliable at emitting strict tool-call JSON — hence the mandatory schema
 validation gate and one retry before `needs_review`.
 

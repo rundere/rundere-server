@@ -342,18 +342,14 @@ def main(argv: list[str]) -> int:
             print(("dry run: " if "--dry-run" in args else "") +
                   " ".join(f"{k}={v}" for k, v in report.summary().items()))
         elif cmd == "process":
-            from app.config import settings
+            from app import ai
             from app.processing import process_pending
-            llm = None
-            if "--no-llm" not in args:
-                from extract.llm import OllamaExtractor
-                llm = OllamaExtractor(settings.ollama_url, settings.ollama_model,
-                                      settings.llm_timeout_seconds)
+            llm = None if "--no-llm" in args else ai.extractor()
             limit = int(args[args.index("--limit") + 1]) if "--limit" in args else 0
             summary = process_pending(session, llm, limit=limit)
             print(f"extracted={summary['extracted']} "
                   f"needs_review={summary['needs_review']}"
-                  + (" (llm disabled)" if llm is None else f" (model={llm.model})"))
+                  + (" (no AI)" if llm is None else f" (model={llm.llm.model})"))
         elif cmd == "resolve":
             from app.config import settings
             from app.integrations import ClientCache

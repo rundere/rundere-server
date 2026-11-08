@@ -76,7 +76,7 @@ Everything works without them (D-146). Each is a setting in the example:
 - **Email** (password resets, alerts): `TX_SMTP_*`.
 - **Email-forward capture:** a mailbox read over IMAP. See [email-forward.md](email-forward.md).
 - **File capture and attachment scanning:** a `clamav-rest` container (`TX_CLAMAV_URL`).
-- **Local AI** (Ollama), **geocoding** (Photon), **search** (SearXNG), **road routing** (Valhalla, openrouteservice or OSRM).
+- **AI** (Ollama or any OpenAI-compatible API; off by default, SPEC-12), **geocoding** (Photon), **search** (SearXNG), **road routing** (Valhalla, openrouteservice or OSRM).
 - **AirTrail / AdventureLog:** optional per-person connections, under Settings → Connections.
 
 ## 6. Backups
@@ -96,6 +96,11 @@ Back up these, and test a restore:
 3. Bump the image tag and redeploy. Migrations run at start-up.
 
 Pin a version tag rather than `latest` if you want reproducible rollbacks.
+
+**Upgrading to 5.0:** AI is now off unless `TX_AI_ENABLED=true`. To keep reading
+booking emails with your LLM, set it, and move `TX_OLLAMA_URL` / `TX_OLLAMA_MODEL`
+to `TX_AI_URL` / `TX_AI_MODEL_CHAT` (the old names still work in 5.0, with a warning).
+See [SPEC-12](../SPEC-12-ai-providers.md).
 
 ## 8. A demo server
 

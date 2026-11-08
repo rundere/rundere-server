@@ -31,10 +31,25 @@ class Settings(BaseSettings):
     # SPEC-9 D-158: a capture on the Capture Hub starts extract + resolve by itself.
     auto_process: bool = True
 
-    # Extraction (D-11: local Ollama only; model choice = OQ-08)
+    # AI (YONDER-354, SPEC-12 D-228). Off unless TX_AI_ENABLED=true: with it off,
+    # extraction still reads structured sources (JSON-LD, .ics, PDFs, maps links)
+    # and everything else waits in review for the details by hand; Discover
+    # shows its deterministic findings only. Configured here only (env or a
+    # *_FILE secret), never in the database (D-151).
+    ai_enabled: bool = False
+    ai_provider: str = "ollama"            # ollama | openai (any OpenAI-compatible API)
+    ai_url: str = ""                       # e.g. http://ollama:11434, http://litellm:4000/v1
+    ai_model_chat: str = ""                # the model for chat-style calls
+    ai_api_key: str = ""                   # openai only; Bearer token, never logged
+    # local | cloud: the operator says which. A cloud endpoint must be https,
+    # and email/file extraction never goes to one unless the next switch is on.
+    ai_location: str = "local"
+    ai_cloud_extraction: bool = False
+    llm_timeout_seconds: int = 600
+    # Before 5.0 (D-11): Ollama only. Still read for one release when TX_AI_URL
+    # is unset, with a warning at start-up (app/ai.py). Remove in 5.1.
     ollama_url: str = "http://ollama:11434"
     ollama_model: str = "qwen3:14b"
-    llm_timeout_seconds: int = 600
 
     # Targets. Facts confirmed by the A4 probe live in the adapters.
     #
@@ -299,10 +314,11 @@ class Settings(BaseSettings):
     smtp_password_file: str = ""
     inbox_imap_password_file: str = ""
     oidc_client_secret_file: str = ""
+    ai_api_key_file: str = ""
 
     def model_post_init(self, __context) -> None:
         for name in ("jwt_secret", "database_url", "smtp_password",
-                     "inbox_imap_password", "oidc_client_secret"):
+                     "inbox_imap_password", "oidc_client_secret", "ai_api_key"):
             path = (getattr(self, f"{name}_file") or "").strip()
             if not path:
                 continue

@@ -462,6 +462,8 @@ def startup() -> None:
             demo.check_startup(session)     # D-198: raises, and the app doesn't start
         seed_rule_settings(session)
         _warn_risky_auth_config()
+        from app import ai
+        ai.log_startup()                    # YONDER-354: on or off, and any config problem
         if settings.auth_required:
             try:
                 drift = ownerless_counts(session)
