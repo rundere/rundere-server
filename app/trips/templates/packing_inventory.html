@@ -3,12 +3,25 @@
 {% block content %}
 
 <div class="card blueprint bp-trip-header">
+  <div class="yn-page-actions">
+    <a class="btn btn-ghost bp-sm" href="{{ base }}">← Packing profile</a>
+    <a class="btn btn-secondary bp-sm" href="{{ base }}/templates">Templates</a>
+  </div>
   <h1 class="bp-h1">Inventory</h1>
   <p class="bp-trip-notes">What you own and might pack: {{ total }} item{{ '' if total == 1 else 's' }}.
     Packing lists draw only from here. The quantity is how many you own; a must-have
-    goes on every trip's list.
-    <a href="{{ base }}">Packing profile</a> · <a href="{{ base }}/templates">Templates</a></p>
+    goes on every trip's list. Each row saves on its own.</p>
 </div>
+
+{% if added or bags_added %}
+<div class="card blueprint yn-note-card yn-todo yn-profile-saved" role="status">
+  <div class="bp-group-label">Your inventory is ready ✓</div>
+  <p class="bp-trip-notes">Your answers added {{ added }} item{{ '' if added == 1 else 's' }}
+    {%- if bags_added %} and {{ bags_added }} bag{{ '' if bags_added == 1 else 's' }}{% endif %}.
+    Look through them: rename anything to what you actually own, set how many you have,
+    and delete what you don't take. Then try <a href="{{ base }}/templates">a template</a>.</p>
+</div>
+{% endif %}
 
 {% if not taken %}
 <div class="card blueprint yn-note-card yn-todo">
@@ -75,4 +88,9 @@
     <button type="submit" class="btn btn-secondary bp-sm">Add</button>
   </form>
 </section>
+
+<div class="dialog-actions yn-page-done">
+  <a class="btn btn-ghost" href="{{ base }}/templates">Templates</a>
+  <a class="btn btn-primary" href="{{ base }}">Done</a>
+</div>
 {% endblock %}

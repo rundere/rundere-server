@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -133,7 +133,7 @@ def _profile_ctx(request: Request, session: Session, **extra) -> dict:
                    "opts": [{"value": v, "label": t, "selected": v == values.get(k, d)}
                             for v, t in opts]}
                   for k, label, d, opts in PREFERENCES],
-        "saved": False, "added": 0, "bags_added": 0, "error": None,
+        "saved": False, "error": None,
     }
     if not acting.is_other:
         ctx["inventory_count"] = _own(session, InventoryItem, user).count()
@@ -197,8 +197,12 @@ async def save_packing_profile(request: Request, session: Session = Depends(get_
         added = inventory.seed_inventory(session, uid, answers, catalog.items(session))
         bags_added = inventory.seed_bags(session, uid, answers["bags"])
     session.commit()
-    return templates.TemplateResponse(request, "packing_profile.html", _profile_ctx(
-        request, session, saved=True, added=added, bags_added=bags_added))
+    if added or bags_added:
+        # What the answers did is the inventory, so show it there, not a
+        # line on a page of questions that looks the same as before saving.
+        return _back(f"/inventory?added={added}&bags={bags_added}")
+    return templates.TemplateResponse(request, "packing_profile.html",
+                                      _profile_ctx(request, session, saved=True))
 
 
 # --------------------------------------------------------------------------- the inventory
@@ -224,7 +228,9 @@ def _add_item(session: Session, uid, category: str, label: str, quantity=1):
 
 
 @router.get("/inventory", response_class=HTMLResponse)
-def inventory_page(request: Request, session: Session = Depends(get_session)):
+def inventory_page(request: Request, added: int = 0,
+                   bags_added: int = Query(0, alias="bags"),
+                   session: Session = Depends(get_session)):
     user, _ = _owner(request)
     rows = _own(session, InventoryItem, user).order_by(InventoryItem.label).all()
     by_cat: dict[str, list] = {}
@@ -241,7 +247,9 @@ def inventory_page(request: Request, session: Session = Depends(get_session)):
     return templates.TemplateResponse(request, "packing_inventory.html", {
         "request": request, "base": BASE, "cats": cats, "bags": bags,
         "bag_kinds": BAG_KINDS, "catalog_names": names, "total": len(rows),
-        "taken": _taken(request, session)})
+        "taken": _taken(request, session),
+        # Arriving from the questionnaire: say what it added (numbers only).
+        "added": max(0, added), "bags_added": max(0, bags_added)})
 
 
 def _taken(request: Request, session: Session) -> bool:

@@ -103,12 +103,37 @@ def test_the_page_asks_the_six_questions_and_three_preferences(person):
     assert "Which clothing style should your list use?" in page
     assert "a style, not who you are" in page
     assert "Answer these once to start your inventory" in page
+    assert "Save and build my inventory" in page
+
+
+def test_once_answered_the_page_leads_with_inventory_and_templates(person):
+    _, h = person("hub")
+    client.post(BASE, headers=h, data=ANSWERS)
+    page = client.get(BASE, headers=h).text
+    assert page.index('class="yn-pack-hub"') < page.index("How you pack") \
+        < page.index('<details class="yn-profile-section yn-requestions">') \
+        < page.index("Which clothing style")
+    assert "Answer these once" not in page and "Save and build my inventory" not in page
+
+
+def test_inventory_and_templates_have_a_way_back(person):
+    _, h = person("back")
+    for path in ("/inventory", "/templates", "/templates/new?type=beach"):
+        page = client.get(BASE + path, headers=h).text
+        assert 'class="yn-page-actions"' in page, path
+    for path in ("/inventory", "/templates"):
+        page = client.get(BASE + path, headers=h).text
+        assert f'<a class="btn btn-primary" href="{BASE}">Done</a>' in page, path
 
 
 def test_saving_seeds_the_inventory_and_bags(person):
     u, h = person("seed")
-    r = client.post(BASE, headers=h, data=ANSWERS)
-    assert r.status_code == 200 and "Saved ✓" in r.text
+    r = client.post(BASE, headers=h, data=ANSWERS, follow_redirects=False)
+    # What the answers did is the inventory: the save goes there (303), not
+    # back to a page of questions that looks the same.
+    assert r.status_code == 303 and "/inventory?added=" in r.headers["location"]
+    r = client.get(r.headers["location"], headers=h)
+    assert "Your inventory is ready ✓" in r.text
     with SessionLocal() as s:
         v = s.query(PackingProfile).filter_by(traveler_id=u.traveler_id).one().values
     assert v["questionnaire"] == {"style": "masc", "footwear": "minimal",
@@ -120,7 +145,7 @@ def test_saving_seeds_the_inventory_and_bags(person):
     have = _inventory(u.id)
     assert set(have) == set(want)
     assert all(have[k].quantity == q for k, q in want.items())
-    assert f"Added {len(want)} items and 3 bags" in r.text
+    assert f"Your answers added {len(want)} items and 3 bags." in r.text
     with SessionLocal() as s:
         bags = {b.label: b.kind for b in s.query(Bag).filter_by(user_id=u.id)}
     assert bags == {"Daypack": "backpack", "Daypack 2": "backpack",
@@ -136,13 +161,17 @@ def test_saving_again_only_adds(person):
         s.commit()
     before = _inventory(u.id)
     r = client.post(BASE, headers=h, data={**ANSWERS, "clothing": ["swim"]})
+    assert "Your answers added" in r.text and "and 3 bags" not in r.text
     after = _inventory(u.id)
     assert set(before) < set(after)
     assert after["tshirt"].label == "Favourite tee" and after["tshirt"].quantity == 2
     assert "swimwear" in after
     with SessionLocal() as s:
         assert s.query(Bag).filter_by(user_id=u.id).count() == 3      # no duplicates
-    assert "and 3 bags" not in r.text
+    # Saving with nothing new to add stays on the profile and says so.
+    r = client.post(BASE, headers=h, data={**ANSWERS, "clothing": ["swim"]},
+                    follow_redirects=False)
+    assert r.status_code == 200 and "didn't add anything new" in r.text
 
 
 def test_a_style_and_footwear_answer_are_required(person):

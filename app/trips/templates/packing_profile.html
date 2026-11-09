@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Packing profile{% endblock %}
 {% block content %}
+{% set own = not (acting and acting.is_other) %}
 
 <div class="card blueprint bp-trip-header">
   <h1 class="bp-h1">Packing profile</h1>
-  <p class="bp-trip-notes">Tell Run·dere what you travel with. Saving fills your
-    inventory with those things, ready to rename, re-count or delete; packing lists
-    are built from your inventory. Saving again only adds what's newly matched.</p>
+  <p class="bp-trip-notes">{% if taken and own %}Packing lists are built from your inventory,
+    and your templates add the kits a trip needs.{% else %}Tell Run·dere what you travel with.
+    Saving fills your inventory with those things, ready to rename, re-count or delete;
+    packing lists are built from your inventory.{% endif %}</p>
 </div>
 {% include "_acting_for.html" %}
 
@@ -24,34 +26,36 @@
 {% endif %}
 
 {% if saved %}
-<div class="card blueprint yn-note-card yn-todo yn-profile-saved">
+<div class="card blueprint yn-note-card yn-todo yn-profile-saved" role="status">
   <div class="bp-group-label">Saved ✓</div>
-  <p class="bp-trip-notes">
-    {% if acting and acting.is_other %}Preferences saved for {{ acting.traveler.display_name }}.
-    {% elif added or bags_added %}Added {{ added }} item{{ '' if added == 1 else 's' }}
-      {%- if bags_added %} and {{ bags_added }} bag{{ '' if bags_added == 1 else 's' }}{% endif %}
-      to your inventory. <a href="{{ base }}/inventory">Review your inventory</a>.
-    {% else %}Nothing new to add: your inventory already has everything these answers seed.
-      <a href="{{ base }}/inventory">Open your inventory</a>.{% endif %}
-  </p>
-</div>
-{% elif not taken and not (acting and acting.is_other) %}
-<div class="card blueprint yn-note-card yn-todo">
-  <p class="bp-trip-notes">Answer these once to start your inventory. Packing lists need it.</p>
+  <p class="bp-trip-notes">{% if own %}Your answers didn't add anything new: your inventory
+    already has everything they match.{% else %}Preferences saved for {{ acting.traveler.display_name }}.{% endif %}</p>
 </div>
 {% endif %}
 
-{% if inventory_count is defined %}
-<div class="card blueprint yn-pack-links">
-  <a class="btn btn-secondary" href="{{ base }}/inventory">Inventory · {{ inventory_count }} item{{ '' if inventory_count == 1 else 's' }}</a>
-  <a class="btn btn-secondary" href="{{ base }}/templates">Templates · {{ template_count }}</a>
+{% if taken and own and inventory_count is defined %}
+<nav class="yn-pack-hub" aria-label="Your packing">
+  <a class="card blueprint yn-pack-tile" href="{{ base }}/inventory">
+    <span class="yn-pack-tile-title">Inventory</span>
+    <span class="yn-pack-tile-count">{{ inventory_count }} item{{ '' if inventory_count == 1 else 's' }}</span>
+    <span class="yn-help">What you own. Rename, re-count, mark must-haves, add your bags.</span>
+  </a>
+  <a class="card blueprint yn-pack-tile" href="{{ base }}/templates">
+    <span class="yn-pack-tile-title">Templates</span>
+    <span class="yn-pack-tile-count">{{ template_count }}</span>
+    <span class="yn-help">Your kits for kinds of trips: beach, work, hiking…</span>
+  </a>
+</nav>
+{% elif not taken and own %}
+<div class="card blueprint yn-note-card yn-todo">
+  <p class="bp-trip-notes">Answer these once to start your inventory. Packing lists need it.</p>
 </div>
 {% endif %}
 
 <form method="post" action="{{ base }}{{ acting.qs if acting else '' }}"
       class="card blueprint yn-profile-card">
 
-  <h2 class="bp-group-label yn-profile-section">What you travel with</h2>
+  {% macro questions_block() %}
   {% for q in questions %}
   <fieldset class="field yn-question">
     <legend>{{ loop.index }}. {{ q.text }}{% if q.help %} <span class="yn-help">— {{ q.help }}</span>{% endif %}</legend>
@@ -72,8 +76,15 @@
     </div>
   </fieldset>
   {% endfor %}
+  {% endmacro %}
 
+  {% if taken %}
+  <h2 class="bp-group-label">How you pack</h2>
+  {% else %}
+  <h2 class="bp-group-label">What you travel with</h2>
+  {{ questions_block() }}
   <h2 class="bp-group-label yn-profile-section">How you pack</h2>
+  {% endif %}
   <div class="yn-form-grid">
     {% for p in prefs %}
     <div class="field"><label for="pp-{{ p.key }}">{{ p.label }}</label>
@@ -83,9 +94,18 @@
     {% endfor %}
   </div>
 
+  {% if taken %}
+  {# Answered already: the questions fold away. Changing them adds whatever
+     newly matches, and never removes anything. #}
+  <details class="yn-profile-section yn-requestions">
+    <summary>What you travel with <span class="yn-help">— change your answers; anything new they match is added to your inventory</span></summary>
+    {{ questions_block() }}
+  </details>
+  {% endif %}
+
   <div class="dialog-actions">
     <a class="btn btn-ghost" href="/trips">Back to trips</a>
-    <button type="submit" class="btn btn-primary">Save profile</button>
+    <button type="submit" class="btn btn-primary">{% if taken or not own %}Save{% else %}Save and build my inventory{% endif %}</button>
   </div>
 </form>
 {% endblock %}

@@ -3,11 +3,13 @@
 {% block content %}
 
 <div class="card blueprint bp-trip-header">
+  <div class="yn-page-actions">
+    <a class="btn btn-ghost bp-sm" href="{{ base }}/templates">← {% if tpl %}All templates{% else %}Cancel{% endif %}</a>
+  </div>
   <h1 class="bp-h1">{% if tpl %}{{ tpl.name }}{% else %}New template: {{ type.label }}{% endif %}</h1>
   <p class="bp-trip-notes">{% if tpl %}A {{ type.label|lower if type.label else "packing" }} template.{% else %}Your matching inventory is ticked. Change what you like, then save.{% endif %}
     Every ticked item goes on a trip's list when this template applies. Leave a
-    quantity empty to use the usual amount.
-    <a href="{{ base }}/templates">All templates</a></p>
+    quantity empty to use the usual amount.</p>
 </div>
 
 {% if error %}

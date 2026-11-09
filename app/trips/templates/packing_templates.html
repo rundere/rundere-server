@@ -3,11 +3,14 @@
 {% block content %}
 
 <div class="card blueprint bp-trip-header">
+  <div class="yn-page-actions">
+    <a class="btn btn-ghost bp-sm" href="{{ base }}">← Packing profile</a>
+    <a class="btn btn-secondary bp-sm" href="{{ base }}/inventory">Inventory</a>
+  </div>
   <h1 class="bp-h1">Packing templates</h1>
   <p class="bp-trip-notes">Your own kits for a kind of trip or activity, made from your
     inventory: "my beach bag", "work trip". A trip that looks like one suggests it,
-    and every item in it goes on the list.
-    <a href="{{ base }}">Packing profile</a> · <a href="{{ base }}/inventory">Inventory</a></p>
+    and every item in it goes on the list.</p>
 </div>
 
 <section class="card blueprint">
@@ -34,7 +37,11 @@
   <p class="yn-help">One of each type, except your own keywords. Next you'll see your matching
     inventory ticked; nothing is saved until you save it.</p>
   <div class="dialog-actions">
-    <button type="submit" class="btn btn-primary">Next</button>
+    <button type="submit" class="btn btn-secondary">Next</button>
   </div>
 </form>
+
+<div class="dialog-actions yn-page-done">
+  <a class="btn btn-primary" href="{{ base }}">Done</a>
+</div>
 {% endblock %}
