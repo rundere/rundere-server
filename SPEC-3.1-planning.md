@@ -3,6 +3,12 @@
 Status: **PLANNED (spec for discussion)**. Distilled from `planning/*.md` (the
 owner's packing research) and re-cast onto Yonder's real architecture.
 
+> **5.0:** the packing profile, archetypes as the user-facing concept, and
+> generating from the shared catalogue are replaced by a per-person inventory,
+> a questionnaire and templates: see [SPEC-5 §6](SPEC-5-inventory-postmortem.md)
+> (D-127, D-229–D-231). The context pass, the laundry and quantity formulas and
+> review-survives-regeneration (D-63) carry over.
+
 ---
 
 ## 0. The one-paragraph pitch
