@@ -279,6 +279,11 @@ def test_rows_save_as_you_go(person):
     page = client.get(f"{BASE}/inventory", headers=h).text
     assert 'hx-trigger="change, submit"' in page
     assert page.count(">Save</button>") == page.count("<noscript><button")
+    # Add, Delete and Remove swap only their own section, so the page doesn't
+    # reload and jump to the section's anchor; the add fields keep focus.
+    assert 'hx-target="#cat-gear" hx-select="#cat-gear"' in page
+    assert 'hx-target="#bags" hx-select="#bags"' in page
+    assert 'id="add-gear"' in page and 'id="add-bag"' in page and 'id="inv-total"' in page
     hx = {**h, "HX-Request": "true"}
     r = client.post(f"{BASE}/inventory/{iid}", headers=hx, follow_redirects=False,
                     data={"label": "Example headlamp", "quantity": "2", "must_have": "1"})

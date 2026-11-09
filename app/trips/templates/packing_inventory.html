@@ -8,7 +8,7 @@
     <a class="btn btn-secondary bp-sm" href="{{ base }}/templates">Templates</a>
   </div>
   <h1 class="bp-h1">Inventory</h1>
-  <p class="bp-trip-notes">Your bags, and the {{ total }} thing{{ '' if total == 1 else 's' }} you own
+  <p class="bp-trip-notes">Your bags, and the <span id="inv-total-intro">{{ total }} thing{{ '' if total == 1 else 's' }}</span> you own
     and might pack in them. Packing lists draw only from here. The quantity is how many you own; a must-have
     goes on every trip's list. Changes save as you make them.</p>
 </div>
@@ -35,7 +35,11 @@
 </datalist>
 
 {# Bags come first and look different: they're what everything else goes
-   into, not one more thing to pack (SPEC-5 §6.1). #}
+   into, not one more thing to pack (SPEC-5 §6.1).
+   Add, Delete and Remove swap only their own section (htmx follows the
+   redirect and picks the section out of the page), so the page doesn't
+   reload and jump to the section's anchor. The add fields have ids so htmx
+   puts the cursor back in them. Scripts off: plain posts and the redirect. #}
 <section class="card blueprint yn-inv-cat yn-inv-bags" id="bags">
   <h2 class="yn-inv-heading">Your bags <span class="bp-group-count">{{ bags|length }}</span></h2>
   <p class="yn-help">What you pack into. Each line of a packing list can go in one of these.</p>
@@ -58,13 +62,16 @@
         <input class="input yn-bag-cap" name="capacity" value="{{ b.capacity or '' }}" maxlength="32" placeholder="e.g. 40L" aria-label="Capacity">
         <span class="yn-row-save yn-bag-save"><noscript><button type="submit" class="btn btn-ghost bp-sm">Save</button></noscript><span class="yn-row-status" role="status"></span></span>
       </form>
-      <form method="post" action="{{ base }}/bags/{{ b.id }}/remove" class="yn-bag-remove" data-confirm="Remove {{ b.label }}? Lists that used it keep its name.">
+      <form method="post" action="{{ base }}/bags/{{ b.id }}/remove" class="yn-bag-remove"
+            hx-post="{{ base }}/bags/{{ b.id }}/remove" hx-target="#bags" hx-select="#bags" hx-swap="outerHTML"
+            data-confirm="Remove {{ b.label }}? Lists that used it keep its name.">
         <button type="submit" class="btn btn-ghost bp-sm" aria-label="Remove {{ b.label }}">Remove</button>
       </form>
     </div>
     {% endfor %}
-    <form method="post" action="{{ base }}/bags/add" class="yn-bag-row yn-bag-new">
-      <input class="input yn-bag-name" name="label" maxlength="64" placeholder="Add a bag…" aria-label="New bag name" required>
+    <form method="post" action="{{ base }}/bags/add" class="yn-bag-row yn-bag-new"
+          hx-post="{{ base }}/bags/add" hx-target="#bags" hx-select="#bags" hx-swap="outerHTML">
+      <input class="input yn-bag-name" id="add-bag" name="label" maxlength="64" placeholder="Add a bag…" aria-label="New bag name" required>
       <select class="input yn-bag-kind" name="kind" aria-label="New bag type">
         {% for v, t in bag_kinds %}<option value="{{ v }}">{{ t }}</option>{% endfor %}
       </select>
@@ -74,7 +81,7 @@
   </div></div>
 </section>
 
-<h2 class="yn-inv-heading yn-inv-divider">What goes in them <span class="bp-group-count">{{ total }}</span></h2>
+<h2 class="yn-inv-heading yn-inv-divider">What goes in them <span class="bp-group-count" id="inv-total">{{ total }}</span></h2>
 
 {% for c in cats %}
 <section class="card blueprint yn-inv-cat" id="cat-{{ c.key }}">
@@ -90,14 +97,19 @@
       <label class="yn-check"><input type="checkbox" name="must_have" value="1" {% if r.must_have %}checked{% endif %}> Must-have</label>
       <span class="yn-row-save"><noscript><button type="submit" class="btn btn-ghost bp-sm">Save</button></noscript><span class="yn-row-status" role="status"></span></span>
     </form>
-    <form method="post" action="{{ base }}/inventory/{{ r.id }}/delete" data-confirm="Delete {{ r.label }} from your inventory? It also leaves your templates.">
+    <form method="post" action="{{ base }}/inventory/{{ r.id }}/delete"
+          hx-post="{{ base }}/inventory/{{ r.id }}/delete" hx-target="#cat-{{ c.key }}" hx-select="#cat-{{ c.key }}"
+          hx-select-oob="#inv-total,#inv-total-intro" hx-swap="outerHTML"
+          data-confirm="Delete {{ r.label }} from your inventory? It also leaves your templates.">
       <button type="submit" class="btn btn-ghost bp-sm" aria-label="Delete {{ r.label }}">Delete</button>
     </form>
   </div>
   {% endfor %}
-  <form method="post" action="{{ base }}/inventory/add" class="yn-inv-edit yn-inv-add">
+  <form method="post" action="{{ base }}/inventory/add" class="yn-inv-edit yn-inv-add"
+        hx-post="{{ base }}/inventory/add" hx-target="#cat-{{ c.key }}" hx-select="#cat-{{ c.key }}"
+        hx-select-oob="#inv-total,#inv-total-intro" hx-swap="outerHTML">
     <input type="hidden" name="category" value="{{ c.key }}">
-    <input class="input yn-inv-label" name="label" maxlength="128" list="inv-catalog-names"
+    <input class="input yn-inv-label" id="add-{{ c.key }}" name="label" maxlength="128" list="inv-catalog-names"
            placeholder="Add to {{ c.label|lower }}…" aria-label="New item in {{ c.label }}" required>
     <input class="input yn-inv-qty" type="number" name="quantity" value="1" min="1" max="99" aria-label="How many">
     <button type="submit" class="btn btn-secondary bp-sm">Add</button>
