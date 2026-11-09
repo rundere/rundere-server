@@ -3,9 +3,11 @@ config). Reached only via the internal Traefik router in production. The
 RuleSetting view is the D-25 per-rule management UI."""
 import rules as rules_module
 import wtforms
+from fastapi import HTTPException
 from sqladmin import Admin, ModelView
 
 from app import models
+from planning import catalog as _catalog
 from discover.resolvers.language import PHRASE_KEYS as _PHRASE_KEYS
 
 
@@ -175,15 +177,23 @@ def mount_admin(app, engine) -> None:
         # Edit the human fields. `id` is auto-derived from the label on create
         # (its slug, e.g. "Car Phone Mount" -> car_phone_mount) — SQLAdmin drops
         # the PK from the create form, so listing it here would just insert NULL.
-        # `variants`/`updated_at` stay off the form.
-        form_columns = ["label", "category", "bag", "weight_g", "tags", "enabled"]
-        form_overrides = {"tags": LinesField, "category": wtforms.SelectField,
-                          "bag": wtforms.SelectField}
+        # `variants`/`updated_at` stay off the form. The seed fields (5.0,
+        # SPEC-5 §6.3) say which questionnaire answers put it in a new inventory.
+        form_columns = ["label", "category", "bag", "weight_g", "tags", "seed",
+                        "styles", "seed_qty", "minimal", "enabled"]
+        form_overrides = {"tags": LinesField, "seed": LinesField, "styles": LinesField,
+                          "category": wtforms.SelectField, "bag": wtforms.SelectField}
         form_args = {
             "tags": {"description": "One tag per line (e.g. modest, warm, formal)."},
-            "category": {"choices": [(c, c) for c in
-                                     ("clothing", "footwear", "toiletries", "tech",
-                                      "documents", "health", "activity")]},
+            "seed": {"description": "Questionnaire answers that seed it, one per line "
+                                    "(e.g. basics, care:hair, tech:camera). "
+                                    "Empty: never seeded, only suggested."},
+            "styles": {"description": "masc, fem or neutral, one per line. "
+                                      "Empty: every style."},
+            "seed_qty": {"description": "How many a new inventory starts with (1 if empty)."},
+            "minimal": {"description": "Footwear: kept for people who pack minimal footwear."},
+            # From the catalogue itself, so a new category ("gear", 5.0) shows.
+            "category": {"choices": [(c, c) for c in _catalog.categories()]},
             # Single-select on purpose: anything that fits carry-on also fits
             # checked, so carry-on is the safe default for a new item.
             "bag": {"choices": [("carry_on", "carry-on"), ("checked", "checked")],
@@ -208,9 +218,33 @@ def mount_admin(app, engine) -> None:
         column_sortable_list = [models.Bag.kind, models.Bag.label]
         column_default_sort = "kind"
         page_size = 200
-        # `id` auto-derives from the label on create (its slug), same as the
-        # packing catalog — SQLAdmin drops the PK from the create form.
+        # `id` is a uuid on create (5.0: two people's "Carry-on" mustn't
+        # collide); SQLAdmin drops the PK from the create form.
         form_columns = ["label", "kind", "capacity", "enabled"]
+
+        # 5.0 (SPEC-5 §6.6, D-124, D-211): bags now belong to people, and the
+        # admin shows no personal data, so this lists, opens, edits and deletes
+        # only ownerless (pre-5.0 or admin-made) bags. Edit and delete look rows
+        # up by id, past these queries, so the hooks below refuse them too.
+        def list_query(self, request):
+            return super().list_query(request).where(models.Bag.user_id.is_(None))
+
+        def count_query(self, request):
+            return super().count_query(request).where(models.Bag.user_id.is_(None))
+
+        def details_query(self, request):          # the default already selects by id
+            return super().details_query(request).where(models.Bag.user_id.is_(None))
+
+        def form_edit_query(self, request):
+            return super().form_edit_query(request).where(models.Bag.user_id.is_(None))
+
+        async def on_model_change(self, data, model, is_created, request):
+            if not is_created and model.user_id:
+                raise HTTPException(status_code=404)
+
+        async def on_model_delete(self, model, request):
+            if model.user_id:
+                raise HTTPException(status_code=404)
         form_overrides = {"kind": wtforms.SelectField}
         form_args = {
             "kind": {"choices": [("backpack", "backpack"), ("suitcase", "suitcase"),

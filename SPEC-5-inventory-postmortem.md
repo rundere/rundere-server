@@ -273,10 +273,15 @@ to **suggest** which template types fit a trip.
   which owned item it is.
 - **`bags.user_id`**: `Bag` becomes the luggage part of the person's inventory
   (P6). Existing rows stay ownerless, so only admins see them (house rule 2),
-  until the owner takes the questionnaire.
-- **`PackingCatalogItem`** gains `seed` (list), `styles` (list) and `seed_qty`
-  (int). It stays the deployment's editable vocabulary (D-84); nobody packs
-  from it directly (D-127).
+  until the owner takes the questionnaire. A new bag's id is a uuid rather
+  than the label's slug, so two people's "Carry-on" don't collide; older slug
+  ids keep working. The admin's Bag Inventory lists ownerless bags only
+  (D-124).
+- **`PackingCatalogItem`** gains `seed` (list), `styles` (list), `seed_qty`
+  (int) and `minimal` (bool, footwear). They're filled once from items.json
+  at startup where `seed` is still NULL; after that they're the owner's,
+  edited in the admin. It stays the deployment's editable vocabulary (D-84);
+  nobody packs from it directly (D-127).
 - **`PackingProfile.values`** becomes
   `{"questionnaire": {"style", "clothing": [], "footwear", "care": [], "gear": [], "tech": []},
   "questionnaire_saved_at", "laundry_comfort", "packing_style", "climate_preference"}`.
@@ -284,8 +289,10 @@ to **suggest** which template types fit a trip.
   questionnaire (P4).
 - **Scoping** (P15): a new own-only filter in `app/scope.py` for inventory,
   templates and bags, like the journal's (D-134). Trip sharing never exposes
-  them. Admin act-for (D-211) works and is audited. Every route gets a test
-  that another user can't see or change them.
+  them. Every route gets a test that another user can't see or change them.
+  Admin act-for (D-211) doesn't apply: it only reaches travellers without an
+  account, and these rows belong to an account (`user_id`), as packing lists
+  already do (D-123).
 
 ### 6.7 Generating a list (built in 4e)
 

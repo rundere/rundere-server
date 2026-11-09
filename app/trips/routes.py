@@ -392,7 +392,7 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         **_push_state(trip, al),
         **_travelers_context(session, trip.id),
         **_discovery_context(session, trip.id, user.id if user else None),
-        **_packing_context(session, trip.id, user.id if user else None),
+        **_packing_context(session, trip.id, user),
         **_sharing_context(session, trip, user),
         **_costs_context(session, trip, user),
         "journal": _journal_context(session, trip, user),
@@ -1728,8 +1728,9 @@ PACK_BAG_OPTS = [("backpack", "backpack"), ("carry_on", "carry-on"),
 _PACK_BAG_LABELS = dict(PACK_BAG_OPTS)
 
 
-def _bag_inventory(session: Session) -> list[Bag]:
-    return (session.query(Bag).filter(Bag.enabled.is_(True))
+def _bag_inventory(session: Session, user) -> list[Bag]:
+    # 5.0 (SPEC-5 §6.6): bags are the person's own, never another traveller's.
+    return (session.query(Bag).filter(Bag.enabled.is_(True), scope.own_filter(Bag, user))
             .order_by(Bag.kind, Bag.label).all())
 
 
@@ -1737,31 +1738,31 @@ def _bag_option_label(b: Bag) -> str:
     return f"{b.label} · {b.capacity}" if b.capacity else b.label
 
 
-def _bag_options(session: Session) -> list[dict]:
+def _bag_options(session: Session, user) -> list[dict]:
     """The per-item bag dropdown's choices: the owner's real bag inventory
     (Admin → Bag Inventory) once they have one, else the generic carry-on /
     checked / backpack categories — the zero-setup default, same DB-is-truth
     -else-fallback pattern as the packing catalog (D-84)."""
-    rows = _bag_inventory(session)
+    rows = _bag_inventory(session, user)
     if rows:
         return [{"value": b.id, "label": _bag_option_label(b)} for b in rows]
     return [{"value": v, "label": t} for v, t in PACK_BAG_OPTS]
 
 
-def _bag_valid_values(session: Session) -> set[str]:
+def _bag_valid_values(session: Session, user) -> set[str]:
     """Everything a `bag` field may legally be set to: the generic values
     (always valid, so old rows/tests keep working even once an inventory
     exists) plus any currently-enabled Bag id."""
-    return set(_PACK_BAG_LABELS) | {b.id for b in _bag_inventory(session)}
+    return set(_PACK_BAG_LABELS) | {b.id for b in _bag_inventory(session, user)}
 
 
-def _bag_label_lookup(session: Session) -> dict[str, str]:
+def _bag_label_lookup(session: Session, user) -> dict[str, str]:
     """id/generic-value -> display label, for rendering an item's CURRENT
     bag even if it's since been disabled/deleted, or is a legacy generic
     value no longer offered once a real inventory exists — never silently
     mislabel a row just because it fell out of the active option list."""
     lookup = dict(_PACK_BAG_LABELS)
-    for b in session.query(Bag).all():           # incl. disabled: still label it
+    for b in session.query(Bag).filter(scope.own_filter(Bag, user)):   # incl. disabled
         lookup[b.id] = _bag_option_label(b)
     return lookup
 
@@ -1782,7 +1783,8 @@ def _pack_identity(request):
     return (u.id if u else None), (getattr(u, "traveler_id", None) if u else None)
 
 
-def _packing_context(session: Session, trip_id: str, user_id=None) -> dict:
+def _packing_context(session: Session, trip_id: str, user=None) -> dict:
+    user_id = user.id if user else None
     items = (session.query(PackingItem)
              .filter(PackingItem.trip_id == trip_id,
                      PackingItem.user_id == user_id).all())
@@ -1795,7 +1797,7 @@ def _packing_context(session: Session, trip_id: str, user_id=None) -> dict:
     chosen_ids = {a.get("id") for a in chosen_arch}
     included = [i for i in items if i.status in ("draft", "packed")]
     omitted = [i for i in items if i.status == "omitted"]
-    bag_labels = _bag_label_lookup(session)
+    bag_labels = _bag_label_lookup(session, user)
     grouped: dict[str, list] = {}
     for i in included:
         grouped.setdefault(i.category, []).append(i)
@@ -1813,7 +1815,7 @@ def _packing_context(session: Session, trip_id: str, user_id=None) -> dict:
     return {
         "packing_cats": cats,
         "packing_omitted": [_packing_item_view(i, bag_labels) for i in omitted],
-        "packing_bag_options": _bag_options(session),
+        "packing_bag_options": _bag_options(session, user),
         "packing_has": bool(included),
         "packing_warnings": (plan.warnings if plan else None) or [],
         "packing_tasks": (plan.tasks if plan else None) or [],
@@ -1862,7 +1864,7 @@ def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
                   manual_archetypes=ids, user_id=uid, traveler_id=tid)
     return templates.TemplateResponse(request, "_packing_section.html",
         {"request": request, "trip": {"id": trip.id},
-         **_packing_context(session, trip.id, uid)})
+         **_packing_context(session, trip.id, scope.user_of(request))})
 
 
 @router.post("/{trip_id}/pack/archetypes/add", response_class=HTMLResponse)
@@ -1913,9 +1915,10 @@ def _pack_count_oob(session: Session, trip_id: str, category: str, user_id=None)
 
 def _pack_item_row(request: Request, trip_id: str, session: Session,
                    i: PackingItem) -> HTMLResponse:
+    user = scope.user_of(request)
     row_html = templates.env.get_template("_packing_item.html").render(
-        trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
-        packing_bag_options=_bag_options(session))
+        trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session, user)),
+        packing_bag_options=_bag_options(session, user))
     return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category, i.user_id))
 
 
@@ -1952,7 +1955,7 @@ def packing_item_bag(trip_id: str, item_id: str, request: Request,
     uid = _pack_identity(request)[0]
     if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
-    if bag not in _bag_valid_values(session):
+    if bag not in _bag_valid_values(session, scope.user_of(request)):
         return HTMLResponse("", status_code=400)
     i.bag = bag
     i.edited = True
@@ -2006,11 +2009,13 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
         trip = scope.trip_or_none(session, request, trip_id)
         return templates.TemplateResponse(request, "_packing_section.html",
                                           {"request": request, "trip": trip,
-                                           **_packing_context(session, trip_id, uid)})
+                                           **_packing_context(session, trip_id,
+                                                              scope.user_of(request))})
+    user = scope.user_of(request)
     row_html = "" if action == "remove" else templates.env.get_template(
         "_packing_item.html").render(
-            trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
-            packing_bag_options=_bag_options(session))
+            trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session, user)),
+            packing_bag_options=_bag_options(session, user))
     return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category, uid))
 
 
@@ -2027,7 +2032,7 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
         return HTMLResponse("", status_code=404)
     label = label.strip()[:128]
     if (category not in PACK_CAT_LABELS or not label
-            or bag not in _bag_valid_values(session)):
+            or bag not in _bag_valid_values(session, scope.user_of(request))):
         return HTMLResponse("", status_code=400)
     uid = _pack_identity(request)[0]
     item = PackingItem(trip_id=trip_id, user_id=uid,
@@ -2038,7 +2043,8 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
     session.add(item)
     session.commit()
     return templates.TemplateResponse(request, "_packing_section.html",
-        {"request": request, "trip": trip, **_packing_context(session, trip_id, uid)})
+        {"request": request, "trip": trip,
+         **_packing_context(session, trip_id, scope.user_of(request))})
 
 
 def _profile_row(session: Session, traveler_id=None, owner: bool = False):
