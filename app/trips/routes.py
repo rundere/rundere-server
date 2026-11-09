@@ -1639,32 +1639,10 @@ def calculator_refresh(trip_id: str, fid: str, request: Request,
 
 # ----------------------------------------------------------------- planning (3.1)
 
-from app.models import (PackingItem, PackingPlan, PackingProfile,   # noqa: E402
+from app.models import (PackingItem, PackingPlan,   # noqa: E402
                         DiscoveryProfile, Bag)
 
-# The Packing Profile form — closed vocabularies rendered as dropdowns/checkboxes
-# (D-86) so the owner never hand-writes JSON. label pairs are (value, human text).
-PROFILE_SELECTS = {
-    "bag_mode": [("one_bag", "One bag only"), ("carry_on", "Carry-on"),
-                 ("checked", "Checked + carry-on")],
-    "laundry_comfort": [("none", "No laundry — pack the whole trip"),
-                        ("hand_wash", "Hand wash on the trip"),
-                        ("machine", "Machine / laundromat")],
-    "packing_style": [("minimalist", "Minimalist"), ("balanced", "Balanced"),
-                      ("prepared", "Prepared for anything")],
-    "climate_preference": [("runs_cold", "I run cold"), ("neutral", "Neutral"),
-                           ("runs_hot", "I run hot")],
-    "cultural_strictness": [("strict", "Follow local norms strictly"),
-                            ("flexible", "Flexible — suggest, don't enforce")],
-    "clothing_variant": [("neutral", "Neutral"), ("masc", "Masculine cuts"),
-                         ("fem", "Feminine cuts")],
-}
-PROFILE_CONSTRAINTS = [("no_heels", "No heels"),
-                       ("modest_dress", "Always dress modestly"),
-                       ("business_casual_only", "Business-casual only")]
-_PACK_CAT_ORDER_FULL = ["clothing", "footwear", "toiletries", "tech", "documents",
-                        "health", "activity", "gear"]
-
+# Packing categories in the order a list shows them.
 PACK_CAT_ORDER = ["documents", "health", "clothing", "footwear", "toiletries",
                   "tech", "activity", "gear"]
 PACK_CAT_LABELS = {"documents": "Documents", "health": "Health",
@@ -2054,108 +2032,8 @@ def _profile_row(session: Session, traveler_id=None, owner: bool = False):
     return profile_row(session, traveler_id, owner=owner)
 
 
-def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -> dict:
-    from planning.engine import default_profile
-    from planning import catalog
-    from app.acting import acting_for
-    acting = acting_for(session, request)
-    tid = acting.traveler.id if acting.traveler else None
-    row = _profile_row(session, tid, owner=acting.owner_mode)
-    values = {**default_profile(), **((row.values if row else None) or {})}
-    bag = values.get("bag") or {}
-    items = catalog.items(session)
-    by_cat: dict[str, list] = {}
-    for iid, it in items.items():
-        by_cat.setdefault(it.get("category", "activity"), []).append(
-            (iid, it.get("label", iid)))
-    chosen_must = set(values.get("must_have_items") or [])
-    groups = []
-    for cat in _PACK_CAT_ORDER_FULL:
-        rows = sorted(by_cat.get(cat, []), key=lambda p: p[1])
-        if rows:
-            groups.append({"label": PACK_CAT_LABELS.get(cat, cat),
-                           "rows": [{"id": i, "label": l, "checked": i in chosen_must}
-                                    for i, l in rows]})
-
-    def opts(field):
-        cur = values.get(field)
-        return [{"value": v, "label": t, "selected": v == cur}
-                for v, t in PROFILE_SELECTS[field]]
-    chosen_cons = set(values.get("style_constraints") or [])
-    return {
-        "request": request, "saved": saved, "acting": acting,
-        "no_traveller": tid is None and not acting.owner_mode,
-        "bag_opts": [{"value": v, "label": t,
-                      "selected": v == bag.get("mode", "carry_on")}
-                     for v, t in PROFILE_SELECTS["bag_mode"]],
-        "bag_weight_kg": bag.get("weight_kg", 10),
-        "laundry_opts": opts("laundry_comfort"), "style_opts": opts("packing_style"),
-        "climate_opts": opts("climate_preference"),
-        "strictness_opts": opts("cultural_strictness"),
-        "variant_opts": opts("clothing_variant"),
-        "constraints": [{"value": v, "label": t, "checked": v in chosen_cons}
-                        for v, t in PROFILE_CONSTRAINTS],
-        "must_groups": groups,
-    }
-
-
-@router.get("/settings/packing-profile", response_class=HTMLResponse)
-def edit_packing_profile(request: Request, session: Session = Depends(get_session)):
-    """The structured Packing Profile editor (D-86) — a standalone page in the
-    Administer nav (a global preference, like Home Profiles), dropdowns +
-    checkboxes, no JSON. 2-segment static path so `/{trip_id}` doesn't capture it."""
-    return templates.TemplateResponse(request, "packing_profile.html",
-                                      _profile_form_ctx(request, session))
-
-
-@router.post("/settings/packing-profile", response_class=HTMLResponse)
-def save_packing_profile(request: Request,
-                         bag_mode: str = Form("carry_on"),
-                         bag_weight_kg: str = Form("10"),
-                         laundry_comfort: str = Form("none"),
-                         packing_style: str = Form("balanced"),
-                         climate_preference: str = Form("neutral"),
-                         cultural_strictness: str = Form("strict"),
-                         clothing_variant: str = Form("neutral"),
-                         style_constraints: list[str] = Form(default=[]),
-                         must_have_items: list[str] = Form(default=[]),
-                         session: Session = Depends(get_session)):
-    try:
-        weight = int(float(bag_weight_kg))
-    except (TypeError, ValueError):
-        weight = 10
-    values = {
-        "bag": {"mode": bag_mode, "weight_kg": weight},
-        "laundry_comfort": laundry_comfort, "packing_style": packing_style,
-        "climate_preference": climate_preference,
-        "cultural_strictness": cultural_strictness,
-        "clothing_variant": clothing_variant,
-        "style_constraints": style_constraints,
-        "must_have_items": must_have_items,
-    }
-    # Save to the CURRENT user's OWN profile (D-123: tied to their traveller),
-    # creating it if missing — never overwrite another traveller's or the shared
-    # default when this user has their own.
-    from app.acting import acting_for, audit_if_other
-    acting = acting_for(session, request)          # self, or an admin acting for someone
-    traveler_id = acting.traveler.id if acting.traveler else None
-    if traveler_id is None and not acting.owner_mode:
-        # Signed in but no traveller linked: nowhere of their own to save it —
-        # and never into the owner's unassigned row.
-        return templates.TemplateResponse(request, "packing_profile.html",
-                                          _profile_form_ctx(request, session))
-    audit_if_other(session, request, acting, "packing profile")
-    own = _profile_row(session, traveler_id, owner=acting.owner_mode)
-    if own is None:
-        session.add(PackingProfile(values=values, traveler_id=traveler_id))
-    else:
-        own.traveler_id = traveler_id   # claims a pre-4.1 unassigned row for self
-        own.values = values
-    session.commit()
-    # Re-render the page with a saved banner; the plan applies the new profile on
-    # the next Re-generate.
-    return templates.TemplateResponse(request, "packing_profile.html",
-                                      _profile_form_ctx(request, session, saved=True))
+# The packing profile page (5.0: questionnaire, inventory, templates) lives in
+# app/trips/packing_settings.py.
 
 
 def _zones() -> list[tuple[str, str]]:

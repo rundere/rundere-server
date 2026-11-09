@@ -338,12 +338,15 @@ from app.review.home import router as home_router  # noqa: E402
 from app.review.routes import inbox_router  # noqa: E402
 from app.review.routes import router as review_router  # noqa: E402
 from app.trips.routes import router as trips_router  # noqa: E402
+from app.trips.packing_settings import router as packing_settings_router  # noqa: E402
 from app.trips.costs import router as costs_router  # noqa: E402
 
 app.include_router(review_router)
 app.include_router(inbox_router)          # D-200: /inbox
 app.include_router(home_router)
 app.include_router(capture_router)
+# Before trips_router, so /{trip_id}/… patterns never meet the settings paths.
+app.include_router(packing_settings_router)
 app.include_router(trips_router)
 app.include_router(costs_router)
 app.include_router(journal_router)

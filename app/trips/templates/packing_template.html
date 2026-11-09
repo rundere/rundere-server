@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ name or "Template" }}{% endblock %}
+{% block content %}
+
+<div class="card blueprint bp-trip-header">
+  <h1 class="bp-h1">{% if tpl %}{{ tpl.name }}{% else %}New template: {{ type.label }}{% endif %}</h1>
+  <p class="bp-trip-notes">{% if tpl %}A {{ type.label|lower if type.label else "packing" }} template.{% else %}Your matching inventory is ticked. Change what you like, then save.{% endif %}
+    Every ticked item goes on a trip's list when this template applies. Leave a
+    quantity empty to use the usual amount.
+    <a href="{{ base }}/templates">All templates</a></p>
+</div>
+
+{% if error %}
+<div class="card blueprint yn-note-card yn-todo" role="alert"><p class="bp-trip-notes">{{ error }}</p></div>
+{% endif %}
+
+<form method="post" action="{{ base }}/templates{% if tpl %}/{{ tpl.id }}{% endif %}" class="card blueprint yn-profile-card">
+  {% if not tpl %}<input type="hidden" name="type" value="{{ type.key }}">{% endif %}
+  <div class="yn-form-grid">
+    <div class="field"><label for="tpl-name">Name</label>
+      <input class="input" id="tpl-name" name="name" value="{{ name }}" maxlength="128" required></div>
+    {% if type.key == "custom" %}
+    <div class="field"><label for="tpl-keyword">Keyword <span class="yn-help">— a word in a trip's title, notes or an activity</span></label>
+      <input class="input" id="tpl-keyword" name="keyword" value="{{ keyword }}" maxlength="64" required></div>
+    {% endif %}
+  </div>
+
+  {% if not cats %}<p class="yn-help">Your inventory is empty. <a href="{{ base }}">Answer the questionnaire</a> or add an item below.</p>{% endif %}
+  {% for c in cats %}
+  <fieldset class="field yn-question">
+    <legend>{{ c.label }}</legend>
+    {% for r in c.rows %}
+    <div class="yn-tpl-row">
+      <label class="yn-check"><input type="checkbox" name="item" value="{{ r.id }}" {% if r.checked %}checked{% endif %}> {{ r.label }}</label>
+      <input class="input yn-inv-qty" type="number" name="qty:{{ r.id }}" value="{{ r.qty }}" min="1" max="99"
+             placeholder="usual" aria-label="How many {{ r.label }} for this template (you own {{ r.owned }})">
+    </div>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+
+  <fieldset class="field yn-question">
+    <legend>Add something you don't have in your inventory yet <span class="yn-help">— it joins your inventory too</span></legend>
+    <div class="yn-inv-edit">
+      <input class="input yn-inv-label" name="add_label" maxlength="128" placeholder="e.g. Snorkel set" aria-label="New item">
+      <select class="input" name="add_category" aria-label="Category">
+        {% for v, t in cat_opts %}<option value="{{ v }}" {% if v == "activity" %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+  </fieldset>
+
+  <div class="dialog-actions">
+    <a class="btn btn-ghost" href="{{ base }}/templates">Cancel</a>
+    <button type="submit" class="btn btn-primary">Save template</button>
+  </div>
+</form>
+
+{% if tpl %}
+<form method="post" action="{{ base }}/templates/{{ tpl.id }}/delete" class="card blueprint"
+      data-confirm="Delete the template {{ tpl.name }}? Your inventory stays.">
+  <button type="submit" class="btn btn-ghost">Delete template</button>
+</form>
+{% endif %}
+{% endblock %}

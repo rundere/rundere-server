@@ -129,8 +129,9 @@ columns now (§6.6) so they don't need another migration.
 3. Saving it **seeds the inventory** (§6.3). The person then renames, adds,
    deletes and sets quantities. Every category is shown, even an empty one.
    Any item can be marked **must-have** (packed on every trip).
-4. The same page holds the **packing preferences** (§6.4) and the person's
-   **templates** (§6.5).
+4. The same page holds the **packing preferences** (§6.4) and links to the
+   person's **inventory** and **templates** (§6.5), each on its own page under
+   `/trips/settings/packing-profile/` because both get long.
 5. On a trip, **Generate packing list** builds a list for the signed-in person
    only, from their inventory (§6.7). Until the questionnaire has been saved it
    refuses with a link to it (§6.8).

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Inventory{% endblock %}
+{% block content %}
+
+<div class="card blueprint bp-trip-header">
+  <h1 class="bp-h1">Inventory</h1>
+  <p class="bp-trip-notes">What you own and might pack: {{ total }} item{{ '' if total == 1 else 's' }}.
+    Packing lists draw only from here. The quantity is how many you own; a must-have
+    goes on every trip's list.
+    <a href="{{ base }}">Packing profile</a> · <a href="{{ base }}/templates">Templates</a></p>
+</div>
+
+{% if not taken %}
+<div class="card blueprint yn-note-card yn-todo">
+  <p class="bp-trip-notes">You haven't answered the <a href="{{ base }}">packing questionnaire</a> yet.
+    It fills this in for you; you can also add things by hand.</p>
+</div>
+{% endif %}
+
+<datalist id="inv-catalog-names">
+  {% for n in catalog_names %}<option value="{{ n }}">{% endfor %}
+</datalist>
+
+{% for c in cats %}
+<section class="card blueprint yn-inv-cat" id="cat-{{ c.key }}">
+  <h2 class="bp-group-label">{{ c.label }} <span class="bp-group-count">{{ c.rows|length }}</span></h2>
+  {% if not c.rows %}<p class="yn-help">Nothing here yet.</p>{% endif %}
+  {% for r in c.rows %}
+  <div class="yn-inv-row">
+    <form method="post" action="{{ base }}/inventory/{{ r.id }}" class="yn-inv-edit">
+      <input class="input yn-inv-label" name="label" value="{{ r.label }}" maxlength="128" aria-label="Name">
+      <input class="input yn-inv-qty" type="number" name="quantity" value="{{ r.quantity }}" min="1" max="99" aria-label="How many you own">
+      <label class="yn-check"><input type="checkbox" name="must_have" value="1" {% if r.must_have %}checked{% endif %}> Must-have</label>
+      <button type="submit" class="btn btn-ghost bp-sm">Save</button>
+    </form>
+    <form method="post" action="{{ base }}/inventory/{{ r.id }}/delete" data-confirm="Delete {{ r.label }} from your inventory? It also leaves your templates.">
+      <button type="submit" class="btn btn-ghost bp-sm" aria-label="Delete {{ r.label }}">Delete</button>
+    </form>
+  </div>
+  {% endfor %}
+  <form method="post" action="{{ base }}/inventory/add" class="yn-inv-edit yn-inv-add">
+    <input type="hidden" name="category" value="{{ c.key }}">
+    <input class="input yn-inv-label" name="label" maxlength="128" list="inv-catalog-names"
+           placeholder="Add to {{ c.label|lower }}…" aria-label="New item in {{ c.label }}" required>
+    <input class="input yn-inv-qty" type="number" name="quantity" value="1" min="1" max="99" aria-label="How many">
+    <button type="submit" class="btn btn-secondary bp-sm">Add</button>
+  </form>
+</section>
+{% endfor %}
+
+<section class="card blueprint yn-inv-cat" id="bags">
+  <h2 class="bp-group-label">Bags <span class="bp-group-count">{{ bags|length }}</span></h2>
+  <p class="yn-help">Your luggage. A packing list's lines can each go in one of these.</p>
+  {% for b in bags %}
+  <div class="yn-inv-row">
+    <form method="post" action="{{ base }}/bags/{{ b.id }}" class="yn-inv-edit">
+      <input class="input yn-inv-label" name="label" value="{{ b.label }}" maxlength="64" aria-label="Name">
+      <select class="input" name="kind" aria-label="Kind">
+        {% for v, t in bag_kinds %}<option value="{{ v }}" {% if v == b.kind %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+      <input class="input yn-inv-cap" name="capacity" value="{{ b.capacity or '' }}" maxlength="32" placeholder="e.g. 40L" aria-label="Capacity">
+      <button type="submit" class="btn btn-ghost bp-sm">Save</button>
+    </form>
+    <form method="post" action="{{ base }}/bags/{{ b.id }}/remove" data-confirm="Remove {{ b.label }}? Lists that used it keep its name.">
+      <button type="submit" class="btn btn-ghost bp-sm" aria-label="Remove {{ b.label }}">Remove</button>
+    </form>
+  </div>
+  {% endfor %}
+  <form method="post" action="{{ base }}/bags/add" class="yn-inv-edit yn-inv-add">
+    <input class="input yn-inv-label" name="label" maxlength="64" placeholder="Add a bag…" aria-label="New bag" required>
+    <select class="input" name="kind" aria-label="Kind">
+      {% for v, t in bag_kinds %}<option value="{{ v }}">{{ t }}</option>{% endfor %}
+    </select>
+    <input class="input yn-inv-cap" name="capacity" maxlength="32" placeholder="e.g. 40L" aria-label="Capacity">
+    <button type="submit" class="btn btn-secondary bp-sm">Add</button>
+  </form>
+</section>
+{% endblock %}
