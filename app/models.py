@@ -822,6 +822,10 @@ class PackingItem(Base):
     # the same durability `packed`/`removed` already get (D-63 review-survives-
     # regeneration), so e.g. a quantity tweak on a still-"draft" row sticks.
     edited: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 5.0 (SPEC-5 §6.6, D-231): the owned item this line is, a soft link to
+    # InventoryItem.id (no FK, house rule 3). NULL = a hand-typed line, a
+    # pre-5.0 line, or a "Suggested — not in your inventory" one.
+    inventory_item_id: Mapped[str | None] = mapped_column(String(36), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
@@ -853,9 +857,82 @@ class PackingCatalogItem(Base):
     weight_g: Mapped[int] = mapped_column(Integer, default=0)
     tags: Mapped[list | None] = mapped_column(JsonCol, default=list)
     variants: Mapped[dict | None] = mapped_column(JsonCol, default=dict)  # {masc,fem,neutral}
+    # 5.0 (SPEC-5 §6.3, D-229): which questionnaire answers seed this item into
+    # a new inventory, for which clothing styles, and how many. NULL `seed` =
+    # not yet filled from items.json (seed_catalog fills it once); [] = the
+    # owner cleared it, so no answer seeds it.
+    seed: Mapped[list | None] = mapped_column(JsonCol)
+    styles: Mapped[list | None] = mapped_column(JsonCol)      # NULL = every style
+    seed_qty: Mapped[int | None] = mapped_column(Integer)     # NULL = 1
+    minimal: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class InventoryItem(Base):
+    """Run·dere 5.0 — something a person owns and packs (SPEC-5 §6.6, D-127).
+
+    Packing lists draw only from here (D-231): the catalogue is the vocabulary,
+    the inventory is what this person actually has. Seeded by the packing
+    questionnaire (D-229), then edited by hand. Own-only, like the journal
+    (scope.own_filter): sharing a trip never shows someone's inventory.
+
+    `type_key` is the catalogue item it came from (PackingCatalogItem.id, a soft
+    link), so the engine can match a need to it; NULL for a hand-made item,
+    which the engine matches by `tags`. `kind`, `usage_rate`,
+    `reorder_threshold` and `reorder_url` are unused until 5.x (P14,
+    D-128/D-129): they're here so consumables don't need another migration."""
+    __tablename__ = "inventory_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    type_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    label: Mapped[str] = mapped_column(String(128))
+    category: Mapped[str] = mapped_column(String(16), index=True)
+    tags: Mapped[list | None] = mapped_column(JsonCol, default=list)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)       # how many owned
+    must_have: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    brand: Mapped[str | None] = mapped_column(String(64))
+    notes: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    kind: Mapped[str | None] = mapped_column(String(12))           # consumable | durable
+    usage_rate: Mapped[dict | None] = mapped_column(JsonCol)
+    reorder_threshold: Mapped[int | None] = mapped_column(Integer)
+    reorder_url: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PackingTemplate(Base):
+    """Run·dere 5.0 — a person's own packing template (SPEC-5 §6.5, D-230):
+    "my beach kit". `type_key` is one of planning/data/templates.json's types,
+    which says when the engine suggests it; `keyword` is the trip word a
+    `custom` template matches. Own-only, like the inventory."""
+    __tablename__ = "packing_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    type_key: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    keyword: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PackingTemplateItem(Base):
+    """One line of a PackingTemplate: an inventory item, and optionally how
+    many (NULL = the engine's quantity). Soft links to both (house rule 3): it
+    carries no owner of its own and is reached only through its template, and
+    deleting either side removes the line."""
+    __tablename__ = "packing_template_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    template_id: Mapped[str] = mapped_column(String(36), index=True)
+    inventory_item_id: Mapped[str] = mapped_column(String(36), index=True)
+    quantity: Mapped[int | None] = mapped_column(Integer)
 
 
 class Bag(Base):
@@ -868,11 +945,17 @@ class Bag(Base):
     `id` is a slug from the label (same convention as PackingCatalogItem) so a
     PackingItem can soft-link to a specific bag via its own `bag` column
     (generic carry_on/checked/backpack until the owner has bags to assign,
-    then a real Bag.id) without a second column."""
+    then a real Bag.id) without a second column.
+
+    5.0 (SPEC-5 §6.6, P6): bags are the luggage part of a person's inventory,
+    owned by `user_id` and own-only (scope.own_filter). Rows from before 5.0
+    stay ownerless, so only admins see them. A new bag's id is a uuid, not
+    the label's slug: two people's "Carry-on" would otherwise collide, and a
+    slug could equal a generic value ("carry_on"). Older slug ids still work."""
     __tablename__ = "bags"
 
-    id: Mapped[str] = mapped_column(String(64), primary_key=True,
-                                    default=_slug_from_label)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     label: Mapped[str] = mapped_column(String(64))          # "Osprey Farpoint 40"
     kind: Mapped[str] = mapped_column(String(16), default="backpack",
                                       index=True)            # backpack|suitcase|personal_item

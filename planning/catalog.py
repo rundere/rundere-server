@@ -133,7 +133,9 @@ def items(session=None) -> dict:
         return seed_items()
     return {r.id: {"label": r.label, "category": r.category, "bag": r.bag,
                    "weight_g": r.weight_g or 0, "tags": r.tags or [],
-                   "variants": r.variants or {}} for r in rows}
+                   "variants": r.variants or {}, "seed": r.seed or [],
+                   "styles": r.styles or [], "seed_qty": r.seed_qty or 1,
+                   "minimal": bool(r.minimal)} for r in rows}
 
 
 def item(item_id: str, session=None) -> dict | None:
@@ -168,19 +170,32 @@ def label_for(item_id: str, variant: str = "neutral", session=None) -> str:
     return variants.get(variant) or variants.get("neutral") or it.get("label", item_id)
 
 
+def _seed_fields(it: dict) -> dict:
+    return {"seed": it.get("seed", []), "styles": it.get("styles") or None,
+            "seed_qty": it.get("seed_qty"), "minimal": bool(it.get("minimal"))}
+
+
 def seed_catalog(session) -> None:
     """Insert any catalog item missing from the DB (JSON = defaults, DB = truth) —
     same idempotent seed contract as seed_rule_settings. Owner edits and deletions
-    are never overwritten; only genuinely-new item ids are added."""
+    are never overwritten; only genuinely-new item ids are added.
+
+    5.0 (migration 0050): rows from before the seed columns existed have
+    `seed` NULL, and get the questionnaire fields from items.json once. A row
+    whose `seed` is set, even to [], is the owner's and is left alone."""
     from app.models import PackingCatalogItem
-    have = {r.id for r in session.query(PackingCatalogItem.id).all()}
+    rows = {r.id: r for r in session.query(PackingCatalogItem).all()}
     for iid, it in seed_items().items():
-        if iid in have:
-            continue
-        session.add(PackingCatalogItem(
-            id=iid, label=it.get("label", iid), category=it["category"],
-            bag=it.get("bag", "carry_on"), weight_g=it.get("weight_g", 0),
-            tags=it.get("tags", []), variants=it.get("variants", {})))
+        row = rows.get(iid)
+        if row is None:
+            session.add(PackingCatalogItem(
+                id=iid, label=it.get("label", iid), category=it["category"],
+                bag=it.get("bag", "carry_on"), weight_g=it.get("weight_g", 0),
+                tags=it.get("tags", []), variants=it.get("variants", {}),
+                **_seed_fields(it)))
+        elif row.seed is None:
+            for k, v in _seed_fields(it).items():
+                setattr(row, k, v)
     session.commit()
 
 
