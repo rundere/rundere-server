@@ -322,7 +322,7 @@ def test_bag_dropdown_falls_back_to_generic_with_no_inventory():
 
 
 def test_bag_dropdown_lists_real_inventory_once_it_exists():
-    """Once the owner has real bags (Admin -> Bag Inventory), the per-item
+    """Once the owner has real bags (Packing profile -> Inventory), the per-item
     dropdown should offer THOSE, not the generic categories — the owner's own
     framing: bag tracking is separate from what goes in the bag."""
     if not DEPS:

@@ -1718,7 +1718,7 @@ def _bag_option_label(b: Bag) -> str:
 
 def _bag_options(session: Session, user) -> list[dict]:
     """The per-item bag dropdown's choices: the owner's real bag inventory
-    (Admin → Bag Inventory) once they have one, else the generic carry-on /
+    (Packing profile → Inventory) once they have one, else the generic carry-on /
     checked / backpack categories — the zero-setup default, same DB-is-truth
     -else-fallback pattern as the packing catalog (D-84)."""
     rows = _bag_inventory(session, user)
@@ -1926,7 +1926,7 @@ def packing_item_qty(trip_id: str, item_id: str, request: Request,
 def packing_item_bag(trip_id: str, item_id: str, request: Request,
                      bag: str = Form(...), session: Session = Depends(get_session)):
     """Which bag this line goes in — a specific bag from the owner's inventory
-    (Admin → Bag Inventory) once they have one, else the generic backpack /
+    (Packing profile → Inventory) once they have one, else the generic backpack /
     carry-on / checked categories — set per item, per trip, independent of the
     catalog's default load-out."""
     i = session.get(PackingItem, item_id)

@@ -146,6 +146,10 @@ def test_saving_seeds_the_inventory_and_bags(person):
     assert set(have) == set(want)
     assert all(have[k].quantity == q for k, q in want.items())
     assert f"Your answers added {len(want)} items and 3 bags." in r.text
+    # Bags are their own section, above what goes in them.
+    assert r.text.index('id="bags"') < r.text.index("What goes in them") \
+        < r.text.index('id="cat-')
+    assert "3 bags, and what you pack in them" in client.get(BASE, headers=h).text
     with SessionLocal() as s:
         bags = {b.label: b.kind for b in s.query(Bag).filter_by(user_id=u.id)}
     assert bags == {"Daypack": "backpack", "Daypack 2": "backpack",

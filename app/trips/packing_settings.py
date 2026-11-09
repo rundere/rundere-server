@@ -138,6 +138,7 @@ def _profile_ctx(request: Request, session: Session, **extra) -> dict:
     if not acting.is_other:
         ctx["inventory_count"] = _own(session, InventoryItem, user).count()
         ctx["template_count"] = _own(session, PackingTemplate, user).count()
+        ctx["bag_count"] = _own(session, Bag, user).filter(Bag.enabled.is_(True)).count()
     ctx.update(extra)
     return ctx
 
