@@ -16,6 +16,21 @@
     end.min = el.value;
   });
 
+  // Packing templates: the Keyword field belongs to "Add your own" only
+  // (data-show-for-type), so it shows and is required just for that type.
+  window.Rundere.onLoad("#tpl-type", function (sel) {
+    var field = document.getElementById("tpl-keyword-field");
+    if (!field) return;
+    var input = field.querySelector("input");
+    function sync() {
+      var on = sel.value === field.dataset.showForType;
+      field.hidden = !on;
+      input.required = on;
+    }
+    sel.addEventListener("change", sync);
+    sync();
+  });
+
   // Travel profile: offer the browser's own zone in one click (it's only a
   // suggestion until saved).
   window.Rundere.onLoad("#tp-tz-detect", function (btn) {

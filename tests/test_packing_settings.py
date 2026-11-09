@@ -334,6 +334,17 @@ def test_a_new_template_pre_ticks_and_saves_what_is_ticked(person):
     assert "Example dive mask" in _inventory(u.id)            # the inventory stays
 
 
+def test_the_keyword_field_belongs_to_add_your_own(person):
+    """The new-template form's Keyword is only for "Add your own"; trips.js
+    shows it (and makes it required) for that type alone."""
+    u, h = person("kw")
+    page = client.get(f"{BASE}/templates", headers=h).text
+    assert '<option value="custom">Add your own</option>' in page
+    assert 'data-show-for-type="custom"' in page and "Your own keyword" not in page
+    js = (ROOT / "app/trips/static/trips.js").read_text()
+    assert "#tpl-type" in js and "showForType" in js
+
+
 def test_custom_templates_need_a_keyword_and_can_repeat(person):
     u, h = person("custom")
     r = client.post(f"{BASE}/templates", headers=h, data={"type": "custom", "name": "Work"})

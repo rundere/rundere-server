@@ -19,7 +19,7 @@
   <ul class="yn-tpl-list">
     {% for t in mine %}
     <li><a href="{{ base }}/templates/{{ t.id }}">{{ t.name }}</a>
-      <span class="yn-help">— {{ t.type }}{% if t.keyword %} · “{{ t.keyword }}”{% endif %} · {{ t.items }} item{{ '' if t.items == 1 else 's' }}</span></li>
+      <span class="yn-help">— {% if t.keyword %}keyword “{{ t.keyword }}”{% else %}{{ t.type }}{% endif %} · {{ t.items }} item{{ '' if t.items == 1 else 's' }}</span></li>
     {% endfor %}
   </ul>
 </section>
@@ -31,11 +31,14 @@
       <select class="input" id="tpl-type" name="type">
         {% for t in free_types %}<option value="{{ t.key }}">{{ t.label }}</option>{% endfor %}
       </select></div>
-    <div class="field"><label for="tpl-keyword">Keyword <span class="yn-help">— for “Your own keyword”: a word in a trip's title, notes or an activity</span></label>
+    {# Only for "Add your own": trips.js hides it for the other types (with
+       scripts off it simply stays). #}
+    <div class="field" id="tpl-keyword-field" data-show-for-type="custom"><label for="tpl-keyword">Keyword <span class="yn-help">— a word in a trip's title, notes or an activity that suggests this template</span></label>
       <input class="input" id="tpl-keyword" name="keyword" maxlength="64" placeholder="e.g. conference"></div>
   </div>
-  <p class="yn-help">One of each type, except your own keywords. Next you'll see your matching
-    inventory ticked; nothing is saved until you save it.</p>
+  <p class="yn-help">One template of each type; “Add your own” can be used as often as you
+    like, each with its own keyword. Next you'll see your matching inventory ticked;
+    nothing is saved until you save it.</p>
   <div class="dialog-actions">
     <button type="submit" class="btn btn-secondary">Next</button>
   </div>

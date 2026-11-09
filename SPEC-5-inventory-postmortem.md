@@ -244,7 +244,7 @@ to **suggest** which template types fit a trip.
 | Wedding (`wedding`) | never automatically | `formal` items |
 | Rainy / tropical (`rainy_tropical`) | modifiers `rain_gear`, `humid` or `tropical` | rain gear, insect repellent, quick-dry items |
 | Religious sites (`religious_sites`) | archetype `cultural`, modifier `temple`, or a destination whose `culture.json` entry is `modest` | `modest` items, plus the country's `add_items` (slip-on shoes, scarf) |
-| Your own keyword (`custom`) | the keyword appears in the trip's title, notes or an activity name | nothing |
+| Add your own (`custom`) | the keyword appears in the trip's title, notes or an activity name | nothing |
 
 - **Create, rename, delete** a template; pick its type, or a keyword for
   `custom`. One template per type per person, except `custom`, which can have

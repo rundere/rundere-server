@@ -23,6 +23,6 @@
     {"key": "wedding",         "label": "Wedding",                                                                                              "pretick": {"seed": ["formal"]}},
     {"key": "rainy_tropical",  "label": "Rainy / tropical",      "suggest_when": {"modifiers": ["rain_gear", "humid", "tropical"]},             "pretick": {"items": ["waterproof_jacket", "compact_umbrella", "insect_repellent", "quick_dry_top", "quick_dry_bottoms"]}},
     {"key": "religious_sites", "label": "Religious sites",       "suggest_when": {"archetypes": ["cultural"], "modifiers": ["temple"], "culture_modest": true}, "pretick": {"seed": ["modest"], "items": ["slip_on_loafers"]}},
-    {"key": "custom",          "label": "Your own keyword",      "suggest_when": {"keyword": true},                                             "pretick": {}}
+    {"key": "custom",          "label": "Add your own",          "suggest_when": {"keyword": true},                                             "pretick": {}}
   ]
 }
