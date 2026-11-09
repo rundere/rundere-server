@@ -18,6 +18,7 @@ them, and every lookup by id 404s for anyone but the owner.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from html import escape
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -89,6 +90,16 @@ def _own(session: Session, model, user):
 
 def _back(path: str = "", anchor: str = "") -> RedirectResponse:
     return RedirectResponse(BASE + path + (f"#{anchor}" if anchor else ""), status_code=303)
+
+
+def _row_saved(request: Request, path: str, anchor: str, note: str = ""):
+    """A row edit's reply. The inventory rows save as you go (htmx posts the
+    row on change), so htmx gets the small status beside the row instead of
+    a reload that would lose edits in other rows; a plain form post (scripts
+    off) still goes back to the page."""
+    if request.headers.get("hx-request") == "true":
+        return HTMLResponse(f'<span class="yn-saved">{escape(note or "Saved ✓")}</span>')
+    return _back(path, anchor)
 
 
 def _qty(raw, default: int = 1, low: int = 1) -> int:
@@ -273,7 +284,7 @@ def inventory_add(request: Request, category: str = Form(...), label: str = Form
 
 
 @router.post("/inventory/{item_id}")
-def inventory_save(item_id: str, request: Request, label: str = Form(...),
+def inventory_save(item_id: str, request: Request, label: str = Form(""),
                    quantity: str = Form("1"), must_have: str = Form(""),
                    session: Session = Depends(get_session)):
     row = scope.require_own(session, _owner(request)[0], InventoryItem, item_id)
@@ -283,7 +294,8 @@ def inventory_save(item_id: str, request: Request, label: str = Form(...),
     row.quantity = _qty(quantity, row.quantity)
     row.must_have = bool(must_have)
     session.commit()
-    return _back("/inventory", f"cat-{row.category}")
+    return _row_saved(request, "/inventory", f"cat-{row.category}",
+                      "" if label else f"Saved ✓ (kept the name {row.label})")
 
 
 @router.post("/inventory/{item_id}/delete")
@@ -308,7 +320,7 @@ def bag_add(request: Request, label: str = Form(...), kind: str = Form("backpack
 
 
 @router.post("/bags/{bag_id}")
-def bag_save(bag_id: str, request: Request, label: str = Form(...),
+def bag_save(bag_id: str, request: Request, label: str = Form(""),
              kind: str = Form("backpack"), capacity: str = Form(""),
              session: Session = Depends(get_session)):
     bag = scope.require_own(session, _owner(request)[0], Bag, bag_id)
@@ -318,7 +330,8 @@ def bag_save(bag_id: str, request: Request, label: str = Form(...),
         bag.kind = kind
     bag.capacity = capacity.strip()[:32] or None
     session.commit()
-    return _back("/inventory", "bags")
+    return _row_saved(request, "/inventory", "bags",
+                      "" if label.strip() else f"Saved ✓ (kept the name {bag.label})")
 
 
 @router.post("/bags/{bag_id}/remove")

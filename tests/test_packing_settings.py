@@ -265,6 +265,37 @@ def test_bags_are_added_renamed_and_retired(person):
     assert "Example 45L" not in client.get(f"{BASE}/inventory", headers=h).text
 
 
+def test_rows_save_as_you_go(person):
+    """The inventory rows have no Save button (only a noscript fallback): htmx
+    posts a row when it changes and gets a small status back, not the page,
+    so editing one row can't throw away edits in another."""
+    u, h = person("asyougo")
+    client.post(f"{BASE}/inventory/add", headers=h,
+                data={"category": "gear", "label": "Example headlamp", "quantity": "1"})
+    client.post(f"{BASE}/bags/add", headers=h, data={"label": "Example tote", "kind": "backpack"})
+    iid = next(iter(_inventory(u.id).values())).id
+    with SessionLocal() as s:
+        bid = s.query(Bag).filter_by(user_id=u.id).one().id
+    page = client.get(f"{BASE}/inventory", headers=h).text
+    assert 'hx-trigger="change, submit"' in page
+    assert page.count(">Save</button>") == page.count("<noscript><button")
+    hx = {**h, "HX-Request": "true"}
+    r = client.post(f"{BASE}/inventory/{iid}", headers=hx, follow_redirects=False,
+                    data={"label": "Example headlamp", "quantity": "2", "must_have": "1"})
+    assert r.status_code == 200 and "Saved ✓" in r.text and "<html" not in r.text
+    r = client.post(f"{BASE}/bags/{bid}", headers=hx, follow_redirects=False,
+                    data={"label": "", "kind": "backpack", "capacity": "20L"})
+    assert "kept the name Example tote" in r.text
+    with SessionLocal() as s:
+        it, b = s.get(InventoryItem, iid), s.get(Bag, bid)
+        assert (it.quantity, it.must_have) == (2, True)
+        assert (b.label, b.capacity) == ("Example tote", "20L")
+    # Scripts off: the same post goes back to the page.
+    r = client.post(f"{BASE}/bags/{bid}", headers=h, follow_redirects=False,
+                    data={"label": "Example tote", "kind": "backpack"})
+    assert r.status_code == 303 and r.headers["location"].endswith("/inventory#bags")
+
+
 # ------------------------------------------------------------------ templates
 def test_a_new_template_pre_ticks_and_saves_what_is_ticked(person):
     u, h = person("tpl")

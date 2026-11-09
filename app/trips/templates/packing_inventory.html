@@ -10,7 +10,7 @@
   <h1 class="bp-h1">Inventory</h1>
   <p class="bp-trip-notes">Your bags, and the {{ total }} thing{{ '' if total == 1 else 's' }} you own
     and might pack in them. Packing lists draw only from here. The quantity is how many you own; a must-have
-    goes on every trip's list. Each row saves on its own.</p>
+    goes on every trip's list. Changes save as you make them.</p>
 </div>
 
 {% if added or bags_added %}
@@ -42,18 +42,21 @@
   {% if not bags %}<p class="yn-help">No bags yet. Add the ones you travel with.</p>{% endif %}
   {# One grid for the heading, every bag and the add row, so Name, Type and
      Capacity line up and are labelled once. The edit form is display:
-     contents, so its fields are the grid's cells. #}
+     contents, so its fields are the grid's cells. Rows save as you go (htmx
+     on change); with scripts off, the noscript Save does it. #}
   <div class="yn-bag-wrap"><div class="yn-bag-grid">
     <div class="yn-bag-head" aria-hidden="true"><span class="yn-bag-h-name">Name</span><span class="yn-bag-h-kind">Type</span><span class="yn-bag-h-cap">Capacity</span></div>
     {% for b in bags %}
     <div class="yn-bag-row">
-      <form method="post" action="{{ base }}/bags/{{ b.id }}" class="yn-bag-edit">
+      <form method="post" action="{{ base }}/bags/{{ b.id }}" class="yn-bag-edit"
+            hx-post="{{ base }}/bags/{{ b.id }}" hx-trigger="change, submit"
+            hx-target="find .yn-row-status" hx-swap="innerHTML">
         <input class="input yn-bag-name" name="label" value="{{ b.label }}" maxlength="64" aria-label="Name">
         <select class="input yn-bag-kind" name="kind" aria-label="Type">
           {% for v, t in bag_kinds %}<option value="{{ v }}" {% if v == b.kind %}selected{% endif %}>{{ t }}</option>{% endfor %}
         </select>
         <input class="input yn-bag-cap" name="capacity" value="{{ b.capacity or '' }}" maxlength="32" placeholder="e.g. 40L" aria-label="Capacity">
-        <button type="submit" class="btn btn-ghost bp-sm yn-bag-save">Save</button>
+        <span class="yn-row-save yn-bag-save"><noscript><button type="submit" class="btn btn-ghost bp-sm">Save</button></noscript><span class="yn-row-status" role="status"></span></span>
       </form>
       <form method="post" action="{{ base }}/bags/{{ b.id }}/remove" class="yn-bag-remove" data-confirm="Remove {{ b.label }}? Lists that used it keep its name.">
         <button type="submit" class="btn btn-ghost bp-sm" aria-label="Remove {{ b.label }}">Remove</button>
@@ -79,11 +82,13 @@
   {% if not c.rows %}<p class="yn-help">Nothing here yet.</p>{% endif %}
   {% for r in c.rows %}
   <div class="yn-inv-row">
-    <form method="post" action="{{ base }}/inventory/{{ r.id }}" class="yn-inv-edit">
+    <form method="post" action="{{ base }}/inventory/{{ r.id }}" class="yn-inv-edit"
+          hx-post="{{ base }}/inventory/{{ r.id }}" hx-trigger="change, submit"
+          hx-target="find .yn-row-status" hx-swap="innerHTML">
       <input class="input yn-inv-label" name="label" value="{{ r.label }}" maxlength="128" aria-label="Name">
       <input class="input yn-inv-qty" type="number" name="quantity" value="{{ r.quantity }}" min="1" max="99" aria-label="How many you own">
       <label class="yn-check"><input type="checkbox" name="must_have" value="1" {% if r.must_have %}checked{% endif %}> Must-have</label>
-      <button type="submit" class="btn btn-ghost bp-sm">Save</button>
+      <span class="yn-row-save"><noscript><button type="submit" class="btn btn-ghost bp-sm">Save</button></noscript><span class="yn-row-status" role="status"></span></span>
     </form>
     <form method="post" action="{{ base }}/inventory/{{ r.id }}/delete" data-confirm="Delete {{ r.label }} from your inventory? It also leaves your templates.">
       <button type="submit" class="btn btn-ghost bp-sm" aria-label="Delete {{ r.label }}">Delete</button>
