@@ -313,6 +313,32 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
    divider before the item categories. */
 .yn-inv-bags { border-left: 3px solid var(--color-accent); background: var(--color-accent-100); }
 .yn-inv-heading { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
+.yn-bag-wrap { container-type: inline-size; }
+.yn-bag-grid { display: grid; grid-template-columns: minmax(0, 1fr) 9em 6em auto auto;
+  gap: 6px 10px; align-items: center; margin-top: 8px; }
+.yn-bag-head, .yn-bag-row, .yn-bag-edit { display: contents; }
+.yn-bag-head span { font-size: 12px; font-weight: 600; color: var(--color-neutral-600); }
+.yn-bag-h-cap { grid-column: 3 / -1; }
+.yn-bag-grid .input { width: 100%; min-width: 0; }
+.yn-bag-new .yn-bag-save { grid-column: 4; }
+/* Narrow card: each bag takes two lines (name, then type, capacity and the
+   buttons), and the heading has the same two-line shape. */
+@container (max-width: 500px) {
+  .yn-bag-grid { grid-template-columns: minmax(0, 1fr) 6em auto auto; }
+  .yn-bag-h-name, .yn-bag-name { grid-column: 1 / -1; }
+  .yn-bag-h-cap { grid-column: 2; }
+  .yn-bag-row .yn-bag-name { margin-top: 8px; }
+  .yn-bag-new .yn-bag-save { grid-column: 3; }
+}
+/* Phone: too narrow for the buttons beside type and capacity, so they drop
+   below; type and capacity keep a line of their own. */
+@container (max-width: 360px) {
+  .yn-bag-grid { grid-template-columns: minmax(0, 1fr) 6em; }
+  .yn-bag-save, .yn-bag-remove { justify-self: start; }
+  .yn-bag-row .yn-bag-save { grid-column: 1; }
+  .yn-bag-remove { grid-column: 2; justify-self: end; }
+  .yn-bag-new .yn-bag-save { grid-column: 1; }
+}
 .yn-inv-divider { margin: 28px 0 0; padding-top: 14px;
   border-top: 2px solid var(--color-divider); }
 .yn-inv-row { display: flex; align-items: center; gap: 6px 10px;

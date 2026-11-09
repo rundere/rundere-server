@@ -40,29 +40,35 @@
   <h2 class="yn-inv-heading">Your bags <span class="bp-group-count">{{ bags|length }}</span></h2>
   <p class="yn-help">What you pack into. Each line of a packing list can go in one of these.</p>
   {% if not bags %}<p class="yn-help">No bags yet. Add the ones you travel with.</p>{% endif %}
-  {% for b in bags %}
-  <div class="yn-inv-row">
-    <form method="post" action="{{ base }}/bags/{{ b.id }}" class="yn-inv-edit">
-      <input class="input yn-inv-label" name="label" value="{{ b.label }}" maxlength="64" aria-label="Name">
-      <select class="input" name="kind" aria-label="Kind">
-        {% for v, t in bag_kinds %}<option value="{{ v }}" {% if v == b.kind %}selected{% endif %}>{{ t }}</option>{% endfor %}
+  {# One grid for the heading, every bag and the add row, so Name, Type and
+     Capacity line up and are labelled once. The edit form is display:
+     contents, so its fields are the grid's cells. #}
+  <div class="yn-bag-wrap"><div class="yn-bag-grid">
+    <div class="yn-bag-head" aria-hidden="true"><span class="yn-bag-h-name">Name</span><span class="yn-bag-h-kind">Type</span><span class="yn-bag-h-cap">Capacity</span></div>
+    {% for b in bags %}
+    <div class="yn-bag-row">
+      <form method="post" action="{{ base }}/bags/{{ b.id }}" class="yn-bag-edit">
+        <input class="input yn-bag-name" name="label" value="{{ b.label }}" maxlength="64" aria-label="Name">
+        <select class="input yn-bag-kind" name="kind" aria-label="Type">
+          {% for v, t in bag_kinds %}<option value="{{ v }}" {% if v == b.kind %}selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+        <input class="input yn-bag-cap" name="capacity" value="{{ b.capacity or '' }}" maxlength="32" placeholder="e.g. 40L" aria-label="Capacity">
+        <button type="submit" class="btn btn-ghost bp-sm yn-bag-save">Save</button>
+      </form>
+      <form method="post" action="{{ base }}/bags/{{ b.id }}/remove" class="yn-bag-remove" data-confirm="Remove {{ b.label }}? Lists that used it keep its name.">
+        <button type="submit" class="btn btn-ghost bp-sm" aria-label="Remove {{ b.label }}">Remove</button>
+      </form>
+    </div>
+    {% endfor %}
+    <form method="post" action="{{ base }}/bags/add" class="yn-bag-row yn-bag-new">
+      <input class="input yn-bag-name" name="label" maxlength="64" placeholder="Add a bag…" aria-label="New bag name" required>
+      <select class="input yn-bag-kind" name="kind" aria-label="New bag type">
+        {% for v, t in bag_kinds %}<option value="{{ v }}">{{ t }}</option>{% endfor %}
       </select>
-      <input class="input yn-inv-cap" name="capacity" value="{{ b.capacity or '' }}" maxlength="32" placeholder="e.g. 40L" aria-label="Capacity">
-      <button type="submit" class="btn btn-ghost bp-sm">Save</button>
+      <input class="input yn-bag-cap" name="capacity" maxlength="32" placeholder="e.g. 40L" aria-label="New bag capacity">
+      <button type="submit" class="btn btn-secondary bp-sm yn-bag-save">Add</button>
     </form>
-    <form method="post" action="{{ base }}/bags/{{ b.id }}/remove" data-confirm="Remove {{ b.label }}? Lists that used it keep its name.">
-      <button type="submit" class="btn btn-ghost bp-sm" aria-label="Remove {{ b.label }}">Remove</button>
-    </form>
-  </div>
-  {% endfor %}
-  <form method="post" action="{{ base }}/bags/add" class="yn-inv-edit yn-inv-add">
-    <input class="input yn-inv-label" name="label" maxlength="64" placeholder="Add a bag…" aria-label="New bag" required>
-    <select class="input" name="kind" aria-label="Kind">
-      {% for v, t in bag_kinds %}<option value="{{ v }}">{{ t }}</option>{% endfor %}
-    </select>
-    <input class="input yn-inv-cap" name="capacity" maxlength="32" placeholder="e.g. 40L" aria-label="Capacity">
-    <button type="submit" class="btn btn-secondary bp-sm">Add</button>
-  </form>
+  </div></div>
 </section>
 
 <h2 class="yn-inv-heading yn-inv-divider">What goes in them <span class="bp-group-count">{{ total }}</span></h2>
