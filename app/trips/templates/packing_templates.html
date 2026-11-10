@@ -13,13 +13,19 @@
     and every item in it goes on the list.</p>
 </div>
 
+{% if just_saved %}
+<div class="card blueprint yn-note-card yn-todo yn-profile-saved" role="status">
+  <p class="bp-trip-notes">Saved “{{ just_saved }}” ✓</p>
+</div>
+{% endif %}
+
 <section class="card blueprint">
   <h2 class="bp-group-label">Yours <span class="bp-group-count">{{ mine|length }}</span></h2>
   {% if not mine %}<p class="yn-help">No templates yet.</p>{% endif %}
   <ul class="yn-tpl-list">
     {% for t in mine %}
     <li><a href="{{ base }}/templates/{{ t.id }}">{{ t.name }}</a>
-      <span class="yn-help">— {% if t.keyword %}keyword “{{ t.keyword }}”{% else %}{{ t.type }}{% endif %} · {{ t.items }} item{{ '' if t.items == 1 else 's' }}</span></li>
+      <span class="yn-help">— {% if t.keyword %}keyword “{{ t.keyword }}”{% else %}{{ t.type }}{% endif %} · {{ t.count }} item{{ '' if t.count == 1 else 's' }}</span></li>
     {% endfor %}
   </ul>
 </section>

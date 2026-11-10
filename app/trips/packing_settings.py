@@ -386,7 +386,7 @@ def _template_ctx(request: Request, session: Session, *, tpl=None, type_key=None
 
 
 @router.get("/templates", response_class=HTMLResponse)
-def templates_page(request: Request, session: Session = Depends(get_session)):
+def templates_page(request: Request, saved: str = "", session: Session = Depends(get_session)):
     user, _ = _owner(request)
     types = _types()
     rows = _own(session, PackingTemplate, user).order_by(PackingTemplate.name).all()
@@ -397,9 +397,12 @@ def templates_page(request: Request, session: Session = Depends(get_session)):
             counts[tid] = counts.get(tid, 0) + 1
     mine = [{"id": r.id, "name": r.name, "keyword": r.keyword,
              "type": types.get(r.type_key, {}).get("label", r.type_key),
-             "items": counts.get(r.id, 0)} for r in rows]
+             # Not "items": Jinja's t.items would find dict.items first.
+             "count": counts.get(r.id, 0)} for r in rows]
+    # Back from saving one: name it, from the person's own list only.
+    just_saved = next((m["name"] for m in mine if m["id"] == saved), None)
     return templates.TemplateResponse(request, "packing_templates.html", {
-        "request": request, "base": BASE, "mine": mine,
+        "request": request, "base": BASE, "mine": mine, "just_saved": just_saved,
         "free_types": _free_types(session, user)})
 
 
@@ -454,7 +457,7 @@ async def template_create(request: Request, session: Session = Depends(get_sessi
     session.flush()
     _save_lines(request, session, tpl, form)
     session.commit()
-    return _back(f"/templates/{tpl.id}")
+    return _back(f"/templates?saved={tpl.id}")
 
 
 @router.get("/templates/{template_id}", response_class=HTMLResponse)
@@ -478,7 +481,7 @@ async def template_save(template_id: str, request: Request,
             tpl.keyword = keyword
     _save_lines(request, session, tpl, form)
     session.commit()
-    return _back(f"/templates/{tpl.id}")
+    return _back(f"/templates?saved={tpl.id}")
 
 
 @router.post("/templates/{template_id}/delete")

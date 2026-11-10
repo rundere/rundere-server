@@ -322,6 +322,17 @@ def test_a_new_template_pre_ticks_and_saves_what_is_ticked(person):
                  s.query(PackingTemplateItem).filter_by(template_id=tpl.id)}
     snorkel = _inventory(u.id)["Example dive mask"]           # joined the inventory
     assert lines == {have["swimwear"].id: 2, snorkel.id: None}
+    # Saving goes back to the list and names what was saved; editing too.
+    assert r.headers["location"].endswith(f"/templates?saved={tpl.id}")
+    listing = client.get(r.headers["location"], headers=h).text
+    assert "Saved “My beach bag” ✓" in listing and "· 2 items" in listing
+    assert "built-in method" not in listing
+    r = client.post(f"{BASE}/templates/{tpl.id}", headers=h, follow_redirects=False,
+                    data={"name": "My beach bag", "item": [have["swimwear"].id, snorkel.id]})
+    assert r.status_code == 303 and r.headers["location"].endswith(f"/templates?saved={tpl.id}")
+    # Someone else's id names nothing.
+    _, h2 = person("tpl-other")
+    assert "Saved “" not in client.get(f"{BASE}/templates?saved={tpl.id}", headers=h2).text
     # One beach template each: it's no longer offered, and a second is refused.
     assert 'value="beach"' not in client.get(f"{BASE}/templates", headers=h).text
     client.post(f"{BASE}/templates", headers=h, data={"type": "beach", "name": "Again"})
