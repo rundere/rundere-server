@@ -237,6 +237,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _reusable(geo: dict | None, key: str) -> bool:
+    """A stored geo still stands: same location values, complete, and not
+    once geocoded from a placeholder like "Unknown" (redone, to nothing)."""
+    return bool(geo and geo.get("key") == key and geo.get("complete")
+                and not any(is_placeholder(p.get("label")) for p in geo.get("points") or []))
+
+
 def locate_activity(atype: str, values: dict, *, old_geo: dict | None = None,
                     locator: Locator | None = None) -> dict | None:
     """The `geo` for an activity's values. Reuses `old_geo` untouched when the
@@ -247,9 +254,7 @@ def locate_activity(atype: str, values: dict, *, old_geo: dict | None = None,
     if not spec:
         return None
     key = fingerprint(atype, values)
-    if (old_geo and old_geo.get("key") == key and old_geo.get("complete")
-            # A point once geocoded from "Unknown" or "TBD" is redone (to none).
-            and not any(is_placeholder(p.get("label")) for p in old_geo.get("points") or [])):
+    if _reusable(old_geo, key):
         return old_geo
     loc = locator or Locator.default()
     try:
@@ -397,8 +402,7 @@ def backfill(session, *, trip_id: str | None = None, redo: bool = False,
     counts = {"located": 0, "partial": 0, "unlocated": 0, "skipped": 0}
     todo: dict[str, list] = {}
     for a in q.order_by(TripActivity.trip_id, TripActivity.starts_at).all():
-        if not redo and a.geo and a.geo.get("complete") \
-                and a.geo.get("key") == fingerprint(a.type, a.values or {}):
+        if not redo and _reusable(a.geo, fingerprint(a.type, a.values or {})):
             counts["skipped"] += 1
             continue
         todo.setdefault(a.trip_id, []).append(a)

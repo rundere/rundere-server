@@ -356,3 +356,30 @@ def test_a_placeholder_venue_is_never_geocoded():
            "key": geo.fingerprint("event", vals), "complete": True}
     g = geo.locate_activity("event", vals, old_geo=old, locator=loc)
     assert g is not old and not (g or {}).get("points")
+
+
+def test_the_backfill_redoes_a_placeholder_pin(monkeypatch):
+    if not DEPS:
+        return
+    vals = {"name": "Example happy hour", "venue": "Unknown"}
+    with SessionLocal() as s:
+        t = Trip(name="Geo placeholder trip")
+        s.add(t); s.flush()
+        a = TripActivity(trip_id=t.id, type="event", values=vals, geo={
+            "points": [{"role": "place", "label": "Unknown", "lat": 24.65, "lon": 79.02,
+                        "source": "photon"}],
+            "key": geo.fingerprint("event", vals), "complete": True})
+        s.add(a); s.commit()
+        tid, aid = t.id, a.id
+    try:
+        monkeypatch.setattr(geo.Locator, "default", staticmethod(lambda: _loc({})))
+        with SessionLocal() as s:
+            counts = geo.backfill(s, trip_id=tid)
+        assert counts["skipped"] == 0
+        with SessionLocal() as s:
+            assert not (s.get(TripActivity, aid).geo or {}).get("points")
+    finally:
+        with SessionLocal() as s:
+            s.query(TripActivity).filter_by(trip_id=tid).delete()
+            s.query(Trip).filter_by(id=tid).delete()
+            s.commit()
