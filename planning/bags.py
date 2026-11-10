@@ -13,7 +13,9 @@ from dataclasses import dataclass, field
 # No bag packs solid: corners, the frame and the zip take their share.
 USABLE = 0.85
 
-_LITRES = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:l|lt|ltr|litres?|liters?)\b", re.I)
+# A match may only start where a number starts (the lookbehind), so a long
+# run of digits is scanned once, not once per digit (CodeQL: polynomial regex).
+_LITRES = re.compile(r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:l|lt|ltr|litres?|liters?)\b", re.I)
 _BARE = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s*$")
 
 
@@ -23,6 +25,7 @@ def capacity_l(text: str | None) -> float | None:
     so); inches, a word or a blank is None."""
     if not text:
         return None
+    text = text[:64]                # the column holds 32; never scan more
     found = [float(m.group(1).replace(",", ".")) for m in _LITRES.finditer(text)]
     if not found:
         m = _BARE.match(text)

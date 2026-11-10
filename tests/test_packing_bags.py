@@ -245,3 +245,10 @@ def test_the_guess_for_a_line_already_in_a_list():
     assert generic_bag(NS(bag="a-bag-id", inventory_item_id=None, item_key="custom:ab12"),
                        items, False, {}) == "checked"
     assert generic_bag(row, items, True, {}) == "carry_on"         # one_bag
+
+
+def test_a_long_run_of_digits_is_quick_and_unknown():
+    import time
+    t = time.monotonic()
+    assert bagfit.capacity_l("0" * 50_000 + "x") is None
+    assert time.monotonic() - t < 0.5
