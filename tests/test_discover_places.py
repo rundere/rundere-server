@@ -202,3 +202,14 @@ def test_airport_code_detection_ignores_title_case_cities():
     assert not _looks_like_airport_code("Oslo")     # 4 letters but a city name
     assert not _looks_like_airport_code("Bern")
     assert not _looks_like_airport_code("Los Angeles")
+
+
+def test_a_placeholder_venue_is_not_a_place():
+    """An event whose venue is "Unknown" put a village in India on a DC trip:
+    Photon found "Unknown". A place field that names no place is skipped."""
+    geo = _StubGeocoder({"unknown": (24.65, 79.02, "IN", "Badgaon", True)})
+    acts = [_act("event", {"name": "Example happy hour", "venue": v}, id=f"e{i}")
+            for i, v in enumerate(["Unknown", "TBD", "n/a", "?", "To be confirmed"])]
+    res = derive_locations(acts, resolve_airport=_no_airport, geocoder=geo)
+    assert res.places == [] and res.countries == []
+    assert geo.queries == []                          # never even asked
