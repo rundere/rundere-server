@@ -364,3 +364,51 @@ def test_someone_elses_template_cant_be_put_on_my_list(world, monkeypatch):
                 .order_by(PackingPlan.generated_at.desc()).first())
         assert tid not in (plan.manual_archetypes or [])
     assert "Ben&#39;s example beach" not in client.get(f"/trips/{world['trip']}", headers=h).text
+
+
+def test_suggestions_skip_items_of_another_clothing_style():
+    """Seeding already follows the questionnaire's style (D-229); suggestions
+    do too. Menswear isn't offered a bra; Generic / mixed sees everything."""
+    from planning.assemble import _fits_style
+    bra = catalog.seed_items()["bra"]
+    assert not _fits_style(bra, "masc") and _fits_style(bra, "fem")
+    assert _fits_style(bra, "neutral")
+    assert _fits_style(catalog.seed_items()["passport"], "masc")
+
+
+@pytestmark_app
+def test_packing_leaves_out_home_and_excluded_places(world, monkeypatch):
+    """A list packs for the places Discover researches (the shared Refine
+    places sheet): customs for home and for an excluded place never reach its
+    notes."""
+    from app.models import DiscoveryExclusion
+    from planning import runner
+    _answer(world, "a")
+    seen = {}
+    real = runner.culture.summarise
+
+    def spy(countries):
+        seen["countries"] = list(countries)
+        return real(countries)
+    monkeypatch.setattr(runner.culture, "summarise", spy)
+    with SessionLocal() as s:            # control: the flight YYZ → GVA packs for CH
+        generate_plan(s, s.get(Trip, world["trip"]), resolve_airport=_airports,
+                      geocoder=_NoGeo(), user_id=world["a"], traveler_id=world["ta"])
+    assert "CH" in seen["countries"]
+    with SessionLocal() as s:            # now exclude Geneva
+        s.query(PackingPlan).filter_by(trip_id=world["trip"]).delete()
+        s.commit()
+        s.add(DiscoveryExclusion(trip_id=world["trip"], user_id=world["a"],
+                                 place_key="CH:Geneva"))
+        s.commit()
+        generate_plan(s, s.get(Trip, world["trip"]), resolve_airport=_airports,
+                      geocoder=_NoGeo(), user_id=world["a"], traveler_id=world["ta"])
+        plan = s.query(PackingPlan).filter_by(trip_id=world["trip"]).one()
+        assert "CH" not in plan.context["countries"]
+        s.query(DiscoveryExclusion).filter_by(trip_id=world["trip"]).delete()
+        s.commit()
+    assert "CH" not in seen["countries"]
+    h = _h(world["a"])
+    page = client.get(f"/trips/{world['trip']}", headers=h).text
+    assert f'hx-get="/trips/{world["trip"]}/derived-locations"' in page
+    assert "Refine places" in page

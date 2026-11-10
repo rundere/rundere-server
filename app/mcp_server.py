@@ -132,7 +132,7 @@ def get_trip(trip_id: TripId) -> dict[str, Any]:
 
 @mcp.tool()
 def list_discovery_places(trip_id: TripId) -> dict[str, Any]:
-    """The places Discovery researches on this trip for the user (Refine Discovery):
+    """The places Discovery researches on this trip for the user (Refine places):
     each with its `key`, where it came from, `is_home` (never researched),
     `home_country` (local topics skipped) and `excluded` (the user chose to skip
     it). Check before researching; skip what the user doesn't want with

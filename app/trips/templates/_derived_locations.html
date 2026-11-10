@@ -1,11 +1,14 @@
 <div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root"
      hx-trigger="click target:.dialog-backdrop">{# a click on the backdrop itself, not the dialog #}
   <div class="dialog blueprint bp-dialog-tall">
-    <div class="dialog-title">Refine Discovery · {{ trip_name }}</div>
+    {# One sheet for Discover and packing (SPEC-5 §6.7): a list packs for the
+       places Discover researches. #}
+    <div class="dialog-title">Refine places · {{ trip_name }}</div>
     <div class="dialog-body">
       <p class="bp-trip-notes">
-        The places Discovery will research, found from this trip's own activities.
-        Exclude a place to skip it on the next run; include it again any time.
+        The places Discovery researches and your packing list packs for, found from
+        this trip's own activities. Exclude a place to skip it on the next Discovery
+        run and packing list; include it again any time.
       </p>
 
       {% if places %}
@@ -31,7 +34,9 @@
         {% endfor %}
       </div>
       <p class="bp-trip-notes">Exclude a place (a layover you only pass through, a
-        wrong pin) and Discovery won't research it. Changes apply on the next run.
+        wrong pin) and Discovery won't research it, nor will your packing list add its
+        weather or customs. Changes apply the next time you run Discovery or
+        re-generate the list.
         {% if has_home %} Places at home aren't researched; a non-home city in your
         home country still gets weather/events/food, but currency, plugs and
         language (same as home) are skipped.{% endif %}</p>

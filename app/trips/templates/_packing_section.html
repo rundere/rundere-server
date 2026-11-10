@@ -13,6 +13,8 @@
     {% endif %}
     {% if not read_only %}{# D-198: not on a demo server #}
     <a class="btn btn-secondary bp-sm" href="/trips/settings/packing-profile">Profile</a>
+    <button class="btn btn-secondary bp-sm" hx-get="/trips/{{ trip.id }}/derived-locations"
+            hx-target="#modal-root">Refine places</button>
     {% if packing_needs_profile %}
     <a class="btn btn-primary" href="{{ packing_profile_url }}">Set up packing profile</a>
     {% else %}

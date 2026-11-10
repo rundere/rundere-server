@@ -780,7 +780,7 @@ def unshare_trip(trip_id: str, request: Request, user_id: str = Form(""),
 @router.get("/{trip_id}/derived-locations", response_class=HTMLResponse)
 def derived_locations(trip_id: str, request: Request,
                       session: Session = Depends(get_session)):
-    """The Refine Discovery sheet (D-68; renamed from "What Yonder found",
+    """The Refine places sheet (D-68; "What Yonder found", then Refine Discovery,
     YONDER-264): show the destination set Discovery
     DERIVED from this trip's own activities (D-62) — with per-place provenance
     and the places that couldn't be verified — so the operator sees the

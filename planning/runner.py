@@ -14,12 +14,13 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import (DiscoveryFinding, InventoryItem, PackingItem, PackingPlan,
+from app.models import (DiscoveryExclusion, DiscoveryFinding, InventoryItem,
+                        PackingItem, PackingPlan,
                         PackingProfile, PackingTemplate, PackingTemplateItem,
                         TripActivity)
-from discover.home_filter import home_country_set
-from discover.places import derive_locations
-from planning import catalog
+from discover.home_filter import home_country_set, is_home_place
+from discover.places import DerivedLocations, derive_locations
+from planning import catalog, culture
 from planning.assemble import assemble
 from planning.context import derive_context
 from planning.engine import default_profile
@@ -161,6 +162,20 @@ def _latest_manual_archetypes(session: Session, trip_id: str,
     return (prev.manual_archetypes if prev else None) or None
 
 
+def _packing_places(session: Session, trip, user_id, derived, profiles,
+                    home_countries) -> DerivedLocations:
+    """The places a list packs for: the ones Discover researches for this
+    person (the shared Refine places sheet, D-68). Home itself and anything
+    they excluded are left out, so a layover, a wrong pin or the city you
+    live in doesn't add its weather or customs."""
+    excluded = {e.place_key for e in session.query(DiscoveryExclusion).filter(
+        DiscoveryExclusion.trip_id == trip.id, DiscoveryExclusion.user_id == user_id)}
+    keep = [p for p in derived.places
+            if p.place_key not in excluded
+            and not is_home_place(p, profiles, trip.start_date)]
+    return DerivedLocations(places=keep, dropped=derived.dropped)
+
+
 def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
                   home_profiles: list = (), today: str | None = None,
                   manual_archetypes: list | None = None,
@@ -199,11 +214,16 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
         weather = wq.filter(DiscoveryFinding.user_id == user_id).all() or wq.all()
         profiles = list(home_profiles or [])
         home_countries = home_country_set(derived.places, profiles, trip.start_date)
+        derived = _packing_places(session, trip, user_id, derived, profiles,
+                                  home_countries)
         ctx = derive_context(acts, derived, weather, start_date=trip.start_date,
                              end_date=trip.end_date,
                              profile=load_profile(session, traveler_id, owner=owner),
                              home_countries=home_countries,
                              trip_text=f"{trip.name or ''} {trip.notes or ''}")
+        # Customs are a destination's: home's never make the list's notes.
+        ctx.culture = culture.summarise([c for c in ctx.countries
+                                         if c.upper() not in home_countries])
         result = assemble(ctx, catalog.items(session),
                           inventory=_inventory(session, user_id),
                           templates=templates, chosen=override)

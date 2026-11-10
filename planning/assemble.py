@@ -93,6 +93,14 @@ def _resolve(need_id: str, items: dict, inventory: list[dict]) -> dict | None:
     return None
 
 
+def _fits_style(it: dict, variant: str) -> bool:
+    """A suggestion follows the clothing style answered in the questionnaire,
+    as seeding does (D-229): an item limited to other styles isn't offered.
+    Generic / mixed sees everything."""
+    styles = it.get("styles") or []
+    return variant == "neutral" or not styles or variant in styles
+
+
 def assemble(ctx: PlanningContext, items: dict, *, inventory: list[dict],
              templates: list[dict], chosen: list[str] | None = None) -> Assembly:
     """Build one person's list. `inventory` rows are dicts with id, type_key,
@@ -165,7 +173,7 @@ def assemble(ctx: PlanningContext, items: dict, *, inventory: list[dict],
         row = _resolve(iid, items, inventory)
         if row is not None:
             add(row, qty, why)
-        elif iid in items:
+        elif iid in items and _fits_style(items[iid], variant):
             it = items[iid]
             res.suggestions.append(PlanItem(
                 item_id=iid, label=catalog.label_for(iid, variant) if it else iid,
