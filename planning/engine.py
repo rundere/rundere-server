@@ -1,30 +1,25 @@
-"""The packing engine — passes 2–8 (SPEC-3.1-planning.md §2, §5.5).
+"""The packing engine's passes (SPEC-3.1-planning.md §2, §5.5).
 
-Pure and deterministic: a PlanningContext + the item catalog in, a PlanResult out.
-Every included item carries a `reason`; every left-behind item is an `omitted` row
-with a reason (and a swap where one exists) — shown, never hidden. The quantity
-pass is where the intelligence lives: pack `f(duration, laundry)`, and when that
-can't cover the trip on its own, emit an in-trip laundry task rather than packing
-one-of-everything-per-day (D-83).
+Pure and deterministic. Since 5.0 (SPEC-5 §6.7, D-230) the list itself is
+built by planning/assemble.py from the person's inventory; this module keeps
+what it builds on: archetype scoring (it now only suggests template types),
+the active modifiers, the quantity formula, and the reasons a line carries.
+The quantity pass is where the intelligence lives: pack `f(duration,
+laundry)`, and when that can't cover the trip on its own, emit an in-trip
+laundry task rather than packing one-of-everything-per-day (D-83).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from math import ceil
 
 from planning import catalog
 from planning.context import PlanningContext
 
-# Modest filtering / no-heels swaps: omit → swap_for.
-_SWAPS = {"dress_shoes": "smart_flats", "tank_top": "modest_top",
-          "shorts": "loose_trousers"}
-
-
 def default_profile() -> dict:
-    return {"packing_style": "balanced", "laundry_comfort": "none",
-            "cultural_strictness": "strict", "clothing_variant": "neutral",
-            "style_constraints": [], "must_have_items": [],
-            "bag": {"mode": "carry_on", "weight_kg": 10}}
+    # 5.0 (SPEC-5 §6.4): the 4.x keys (cultural strictness, clothing variant,
+    # style constraints, must-haves, bag mode and weight) are no longer read.
+    return {"packing_style": "balanced", "laundry_comfort": "none"}
 
 
 @dataclass
@@ -36,21 +31,19 @@ class PlanItem:
     bag: str
     reason: str
     source: str
-    status: str = "draft"           # draft | omitted
+    status: str = "draft"           # draft | omitted | suggested (5.0)
     swap_for: str | None = None
+    inventory_item_id: str | None = None      # 5.0: the owned item this line is
 
     @property
     def item_key(self) -> str:
+        # 5.0 lines are keyed by what they are: an owned item, or a catalogue
+        # need the person doesn't own (SPEC-5 §6.7), so a re-generate finds them.
+        if self.inventory_item_id:
+            return f"inv:{self.inventory_item_id}"
+        if self.status == "suggested":
+            return f"suggest:{self.item_id}"
         return f"{self.category}:{self.item_id}"
-
-
-@dataclass
-class PlanResult:
-    archetypes: list[dict] = field(default_factory=list)
-    items: list[PlanItem] = field(default_factory=list)
-    omitted: list[PlanItem] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-    tasks: list[dict] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------- pass 2: score
@@ -99,7 +92,8 @@ def _quantities(ctx: PlanningContext) -> tuple[dict, list[dict], list[str]]:
     prof = ctx.profile
     launder = prof.get("laundry_comfort", "none") in ("hand_wash", "machine")
     style = prof.get("packing_style", "balanced")
-    one_bag = (prof.get("bag") or {}).get("mode") == "one_bag"
+    # 5.0: one bag is a packing style (SPEC-5 §6.4); the 4.x bag mode still reads.
+    one_bag = style == "one_bag" or (prof.get("bag") or {}).get("mode") == "one_bag"
 
     cover = min(d, 6) if launder else min(d, 14)
     q = {
@@ -144,145 +138,6 @@ def _active_modifiers(ctx: PlanningContext) -> list[str]:
     if "car" in ctx.transport:
         mods.append("road")
     return mods
-
-
-def _add(acc: dict, entry: dict, source: str, q: dict,
-         trigger: str | None = None) -> None:
-    """Merge one {item, qty|formula} entry into the accumulator, keeping the
-    larger quantity when an item is contributed twice. The first contributor's
-    source + trigger win (the trigger is the modifier name, e.g. "cold_weather",
-    used to explain WHY an item is on the list)."""
-    iid = entry["item"]
-    qty = q[entry["formula"]] if "formula" in entry else int(entry.get("qty", 1))
-    cur = acc.get(iid)
-    if cur is None:
-        acc[iid] = {"qty": qty, "source": source, "trigger": trigger}
-    elif qty > cur["qty"]:
-        cur["qty"] = qty                    # keep the first source/trigger
-
-
-# ---------------------------------------------------------------- main
-
-def all_archetypes() -> list[dict]:
-    """[{id, label}] for the whole catalog — the picker's option list."""
-    return [{"id": a["id"], "label": a["label"]} for a in catalog.archetypes()]
-
-
-def _forced_archetypes(ids: list[str]) -> list[dict]:
-    by_id = {a["id"]: a for a in catalog.archetypes()}
-    return [{"id": i, "label": by_id[i]["label"], "score": None}
-            for i in ids if i in by_id]
-
-
-def build_plan(ctx: PlanningContext, items: dict, *,
-               force_archetypes: list[str] | None = None) -> PlanResult:
-    """Run passes 2–8 and return the plan. `items` is the active catalog
-    (catalog.items(session)). `force_archetypes` overrides auto-detection with the
-    operator's explicit choice (D-98-style confirmable guess)."""
-    res = PlanResult()
-    prof = ctx.profile or default_profile()
-    variant = prof.get("clothing_variant", "neutral")
-    constraints = set(prof.get("style_constraints") or [])
-    strict = prof.get("cultural_strictness", "strict") == "strict"
-
-    # pass 2 — archetypes (operator override wins over auto-detection)
-    if force_archetypes:
-        res.archetypes = _forced_archetypes(force_archetypes)
-    else:
-        res.archetypes = _score_archetypes(ctx)
-    chosen = {a["id"] for a in res.archetypes}
-
-    # pass 5 (compute first — assembly needs the formula values)
-    q, tasks, qnotes = _quantities(ctx)
-    res.tasks += tasks
-
-    # pass 3 — base assembly (essentials + chosen archetypes' base items)
-    acc: dict[str, dict] = {}
-    for e in catalog.essentials():
-        _add(acc, e, "essential", q)
-    if ctx.international:
-        for e in catalog.international_essentials():
-            _add(acc, e, "essential", q)
-    for a in catalog.archetypes():
-        if a["id"] in chosen:
-            for e in a["base_items"]:
-                _add(acc, e, "template", q, trigger=a["id"])
-
-    # pass 4 — modifiers (climate/activity/accommodation/transport)
-    mods = catalog.modifiers()
-    for name in _active_modifiers(ctx):
-        for e in mods.get(name, []):
-            _add(acc, e, "modifier", q, trigger=name)
-
-    # pass 4b — cultural adds
-    for iid in (ctx.culture or {}).get("add_items", []):
-        _add(acc, {"item": iid, "qty": 1}, "cultural", q)
-
-    # pass 6 — profile: must-haves, then constraint-driven omissions
-    for must in prof.get("must_have_items") or []:
-        if must in items:
-            _add(acc, {"item": must, "qty": 1}, "must_have", q)
-
-    modest = bool((ctx.culture or {}).get("modest")) and strict
-    modest = modest or "modest_dress" in constraints
-    no_heels = "no_heels" in constraints
-
-    omit: dict[str, str] = {}                     # item_id -> reason
-    for iid in list(acc):
-        it = items.get(iid) or {}
-        tags = set(it.get("tags") or [])
-        if no_heels and "heel" in tags:
-            omit[iid] = "you don't pack heels (profile)"
-        elif modest and "revealing" in tags:
-            omit[iid] = "modest dress code at your destination(s)"
-    for iid, reason in omit.items():
-        swap = _SWAPS.get(iid)
-        if swap and swap in items:
-            _add(acc, {"item": swap, "qty": acc[iid]["qty"]}, "cultural", q)
-        res.omitted.append(_mk(iid, acc.pop(iid)["qty"], items, variant,
-                               "omitted", reason=reason, swap=swap, source="omitted"))
-
-    # pass 7 — bag assignment + weight. The weight limit is the carry-on
-    # allowance (YONDER-325), so only what goes in the carry-on counts toward it;
-    # a checked bag has its own, separate airline limit.
-    one_bag = (prof.get("bag") or {}).get("mode") == "one_bag"
-    carry_g = 0
-    for iid, info in acc.items():
-        it = items.get(iid) or {}
-        bag = "carry_on" if one_bag else it.get("bag", "checked")
-        weight = (it.get("weight_g") or 0) * info["qty"]
-        if bag == "carry_on":
-            carry_g += weight
-        res.items.append(_mk(iid, info["qty"], items, variant, "draft",
-                             bag=bag, source=info["source"],
-                             reason=_reason(iid, info, ctx, q)))
-    res.items.sort(key=lambda i: (i.category, i.label))
-
-    # pass 8 — warnings
-    if not ctx.has_weather:
-        res.warnings.append("No weather yet — run Discovery for weather-aware "
-                            "packing (layers, rain gear).")
-    res.warnings += qnotes
-    tol = (prof.get("bag") or {}).get("weight_kg")
-    if tol and carry_g / 1000 > tol:
-        res.warnings.append(f"Estimated carry-on weight {carry_g/1000:.1f} kg exceeds your "
-                            f"{tol} kg carry-on limit — wear the bulkiest items on travel day.")
-    if one_bag and len(res.items) > 28:
-        res.warnings.append(f"{len(res.items)} items for one-bag travel — consider "
-                            f"trimming 'just in case' extras.")
-    for n in (ctx.culture or {}).get("notes", []):
-        res.warnings.append(f"{n['country']}: {n['note']}")
-
-    return res
-
-
-def _mk(iid, qty, items, variant, status, *, bag=None, reason="", swap=None,
-        source="") -> PlanItem:
-    it = items.get(iid) or {}
-    return PlanItem(item_id=iid, label=catalog.label_for(iid, variant) if it else iid,
-                    category=it.get("category", "activity"), quantity=qty,
-                    bag=bag or it.get("bag", "checked"), reason=reason,
-                    source=source, status=status, swap_for=swap)
 
 
 # Why a modifier fired — shown as the item's subtext so a surprising item

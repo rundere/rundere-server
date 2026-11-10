@@ -11,15 +11,19 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import (DiscoveryFinding, PackingItem, PackingPlan,
-                        PackingProfile, TripActivity)
-from discover.home_filter import home_country_set
-from discover.places import derive_locations
-from planning import catalog
+from app.models import (DiscoveryExclusion, DiscoveryFinding, InventoryItem,
+                        PackingItem, PackingPlan,
+                        PackingProfile, PackingTemplate, PackingTemplateItem,
+                        TripActivity)
+from discover.home_filter import home_country_set, is_home_place
+from discover.places import DerivedLocations, derive_locations
+from planning import catalog, culture
+from planning.assemble import assemble
 from planning.context import derive_context
-from planning.engine import build_plan, default_profile
+from planning.engine import default_profile
 
 log = logging.getLogger("yonder.planning")
 
@@ -56,6 +60,74 @@ def load_profile(session: Session, traveler_id: int | None = None, *,
     return {**default_profile(), **(row.values or {})} if row else default_profile()
 
 
+PROFILE_URL = "/trips/settings/packing-profile"
+PROFILE_REQUIRED = ("Set up your packing profile first: answer the questions in "
+                    "Settings → Packing profile.")
+
+
+class PackingProfileRequired(HTTPException):
+    """No saved questionnaire, so no inventory to pack from (SPEC-5 §6.8,
+    D-231). The API answers 409 with `detail` still a plain string, which
+    today's iOS and Android builds decode and show; `code` and `url` are
+    extra (app.main's handler adds them)."""
+    code = "packing_profile_required"
+    url = PROFILE_URL
+
+    def __init__(self) -> None:
+        super().__init__(status_code=409, detail=PROFILE_REQUIRED)
+
+
+def profile_ready(session: Session, traveler_id: int | None, *, owner: bool) -> bool:
+    """Has this person saved the packing questionnaire (§6.7.1)?"""
+    row = profile_row(session, traveler_id, owner=owner)
+    return bool(row and (row.values or {}).get("questionnaire_saved_at"))
+
+
+def answer_questionnaire(session: Session, *, user_id: str | None,
+                         traveler_id: int | None, answers: dict,
+                         prefs: dict | None = None) -> None:
+    """Save packing questionnaire answers for one person and seed their
+    inventory and bags, as the Settings → Packing profile form does
+    (SPEC-5 §6.2–6.3). For the demo seed and tests; `answers` must already be
+    valid. The caller commits."""
+    from datetime import datetime, timezone
+    from planning import inventory
+    values = {**(prefs or {}), "questionnaire": answers,
+              "questionnaire_saved_at": datetime.now(timezone.utc).isoformat()}
+    row = profile_row(session, traveler_id, owner=user_id is None)
+    if row is None:
+        session.add(PackingProfile(traveler_id=traveler_id, values=values))
+    else:
+        row.values = {**(row.values or {}), **values}
+    inventory.seed_inventory(session, user_id, answers, catalog.items(session))
+    inventory.seed_bags(session, user_id, answers.get("bags") or {})
+
+
+def _own(model, user_id: str | None):
+    # Auth off (no user): the deployment's ownerless rows, as the packing
+    # settings pages keep them.
+    return model.user_id.is_(None) if user_id is None else model.user_id == user_id
+
+
+def _inventory(session: Session, user_id: str | None) -> list[dict]:
+    return [{"id": r.id, "type_key": r.type_key, "label": r.label, "category": r.category,
+             "tags": r.tags or [], "quantity": r.quantity, "must_have": r.must_have}
+            for r in session.query(InventoryItem).filter(
+                _own(InventoryItem, user_id), InventoryItem.enabled.is_(True))]
+
+
+def _templates(session: Session, user_id: str | None) -> list[dict]:
+    rows = session.query(PackingTemplate).filter(_own(PackingTemplate, user_id)).all()
+    lines: dict[str, list] = {}
+    if rows:
+        for li in session.query(PackingTemplateItem).filter(
+                PackingTemplateItem.template_id.in_([r.id for r in rows])):
+            lines.setdefault(li.template_id, []).append(
+                {"inventory_item_id": li.inventory_item_id, "quantity": li.quantity})
+    return [{"id": r.id, "name": r.name, "type_key": r.type_key, "keyword": r.keyword,
+             "lines": lines.get(r.id, [])} for r in rows]
+
+
 def _upsert_item(session: Session, plan: PackingPlan, trip_id: str, pi,
                  user_id: str | None = None) -> None:
     row = (session.query(PackingItem)
@@ -73,34 +145,58 @@ def _upsert_item(session: Session, plan: PackingPlan, trip_id: str, pi,
     row.reason = pi.reason
     row.source = pi.source
     row.swap_for = pi.swap_for
-    row.status = pi.status              # draft | omitted
+    row.inventory_item_id = pi.inventory_item_id
+    row.status = pi.status              # draft | suggested (5.0); omitted (4.x)
     row.updated_at = _now()
 
 
 def _latest_manual_archetypes(session: Session, trip_id: str,
                               user_id: str | None = None) -> list | None:
-    """The user's last archetype override for this trip, to carry forward across
-    a plain re-generate so the choice sticks (per-user, D-123)."""
+    """The user's last explicit choice for this trip, to carry forward across a
+    plain re-generate so it sticks (per-user, D-123). Since 5.0 it holds
+    template ids (the column kept its name; SPEC-5 §6.7.3); a 4.x archetype
+    id left in it matches none of the person's templates and drops out."""
     prev = (session.query(PackingPlan)
             .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
             .order_by(PackingPlan.generated_at.desc()).first())
     return (prev.manual_archetypes if prev else None) or None
 
 
+def _packing_places(session: Session, trip, user_id, derived, profiles,
+                    home_countries) -> DerivedLocations:
+    """The places a list packs for: the ones Discover researches for this
+    person (the shared Refine places sheet, D-68). Home itself and anything
+    they excluded are left out, so a layover, a wrong pin or the city you
+    live in doesn't add its weather or customs."""
+    excluded = {e.place_key for e in session.query(DiscoveryExclusion).filter(
+        DiscoveryExclusion.trip_id == trip.id, DiscoveryExclusion.user_id == user_id)}
+    keep = [p for p in derived.places
+            if p.place_key not in excluded
+            and not is_home_place(p, profiles, trip.start_date)]
+    return DerivedLocations(places=keep, dropped=derived.dropped)
+
+
 def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
                   home_profiles: list = (), today: str | None = None,
                   manual_archetypes: list | None = None,
                   user_id: str | None = None, traveler_id: int | None = None) -> PackingPlan:
-    """Generate and persist a Packing Plan for `trip`, owned by `user_id`
-    (D-123: per-user; NULL = legacy/auth-off). The viewing user's own packing
-    profile is loaded via `traveler_id`.
+    """Generate and persist ONE person's packing list for `trip`, owned by
+    `user_id` (D-123: per-user; NULL = auth off), from their own inventory and
+    templates (SPEC-5 §6.7, D-231). Raises PackingProfileRequired until they've
+    saved the packing questionnaire.
 
-    `manual_archetypes` is the user's explicit archetype choice. Pass it to force
-    a set; pass None (a plain re-generate) and the last override is carried
-    forward. An explicit empty list resets to auto-detection."""
+    `manual_archetypes` is the person's explicit set of template ids for this
+    trip. Pass it to force a set; pass None (a plain re-generate) and the last
+    choice is carried forward. An explicit empty list goes back to the
+    templates the trip suggests."""
+    owner = user_id is None
+    if not profile_ready(session, traveler_id, owner=owner):
+        raise PackingProfileRequired()
     if manual_archetypes is None:
         manual_archetypes = _latest_manual_archetypes(session, trip.id, user_id)
-    override = [a for a in (manual_archetypes or []) if a] or None
+    templates = _templates(session, user_id)
+    mine = {t["id"] for t in templates}
+    override = [t for t in (manual_archetypes or []) if t in mine] or None
     plan = PackingPlan(trip_id=trip.id, user_id=user_id, status="running",
                        generated_at=_now(), manual_archetypes=override)
     session.add(plan)
@@ -118,29 +214,40 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
         weather = wq.filter(DiscoveryFinding.user_id == user_id).all() or wq.all()
         profiles = list(home_profiles or [])
         home_countries = home_country_set(derived.places, profiles, trip.start_date)
+        derived = _packing_places(session, trip, user_id, derived, profiles,
+                                  home_countries)
         ctx = derive_context(acts, derived, weather, start_date=trip.start_date,
                              end_date=trip.end_date,
-                             profile=load_profile(session, traveler_id,
-                                                  owner=user_id is None),
-                             home_countries=home_countries)
-        result = build_plan(ctx, catalog.items(session), force_archetypes=override)
+                             profile=load_profile(session, traveler_id, owner=owner),
+                             home_countries=home_countries,
+                             trip_text=f"{trip.name or ''} {trip.notes or ''}")
+        # Customs are a destination's: home's never make the list's notes.
+        ctx.culture = culture.summarise([c for c in ctx.countries
+                                         if c.upper() not in home_countries])
+        result = assemble(ctx, catalog.items(session),
+                          inventory=_inventory(session, user_id),
+                          templates=templates, chosen=override)
 
-        plan.archetypes = result.archetypes
-        plan.context = ctx.snapshot()
+        # What people see is their templates (D-230); the detected archetypes
+        # and modifiers stay in the snapshot to explain the suggestions.
+        plan.archetypes = result.templates
+        plan.context = {**ctx.snapshot(), "archetypes": result.archetypes,
+                        "modifiers": result.modifiers,
+                        "template_types": result.suggested_types}
         plan.warnings = result.warnings
         plan.tasks = result.tasks
 
         produced: set[str] = set()
-        for pi in result.items + result.omitted:
+        for pi in result.lines + result.suggestions:
             _upsert_item(session, plan, trip.id, pi, user_id)
             produced.add(pi.item_key)
-        # prune stale drafts/omitted the latest run didn't produce (item removed,
-        # place excluded, activity changed) — keep packed/removed/edited. Scoped
-        # to THIS user's rows (D-123).
+        # prune stale drafts / suggestions / 4.x omissions the latest run didn't
+        # produce (item removed, template dropped, activity changed) — keep
+        # packed/removed/edited. Scoped to THIS user's rows (D-123).
         for row in (session.query(PackingItem)
                     .filter(PackingItem.trip_id == trip.id,
                             PackingItem.user_id == user_id,
-                            PackingItem.status.in_(("draft", "omitted")),
+                            PackingItem.status.in_(("draft", "omitted", "suggested")),
                             PackingItem.edited.is_(False)).all()):
             if row.item_key not in produced:
                 session.delete(row)

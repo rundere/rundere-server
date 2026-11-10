@@ -13,32 +13,52 @@
     {% endif %}
     {% if not read_only %}{# D-198: not on a demo server #}
     <a class="btn btn-secondary bp-sm" href="/trips/settings/packing-profile">Profile</a>
+    <button class="btn btn-secondary bp-sm" hx-get="/trips/{{ trip.id }}/derived-locations"
+            hx-target="#modal-root">Refine places</button>
+    {% if packing_needs_profile %}
+    <a class="btn btn-primary" href="{{ packing_profile_url }}">Set up packing profile</a>
+    {% else %}
     <button class="btn btn-primary" hx-post="/trips/{{ trip.id }}/pack"
-            hx-disabled-elt="this">{{ 'Re-generate' if packing_has else 'Generate packing plan' }}</button>
+            hx-disabled-elt="this">{{ 'Re-generate' if packing_has else 'Generate packing list' }}</button>
+    {% endif %}
     {% endif %}
   </div>
 </div>
 <div class="yn-sec-body">
-{% if packing_when %}
+{# Lists are always one person's (D-123, SPEC-5 §6.7.8). #}
+{% if packing_for %}<p class="bp-trip-notes yn-pack-for">Packing list for {{ packing_for }}</p>{% endif %}
+{% if packing_needs_profile and not read_only %}
+<div class="card blueprint yn-note-card yn-todo" role="status">
+  <p class="bp-trip-notes">{{ packing_profile_msg }} <a href="{{ packing_profile_url }}">Open the packing profile</a>.
+    {% if packing_has %}This list was made before; it stays as it is until you generate again.{% endif %}</p>
+</div>
+{% endif %}
+{% if packing_when or (packing_archetype_options and not packing_needs_profile) %}
+{# The person's templates on this list (SPEC-5 §6.7.3, D-230): the ones the
+   trip suggests, or their own pick, kept across re-generates. #}
 <div class="yn-arch-row">
-  <span class="yn-arch-lbl">Trip type{% if packing_manual %} <span class="yn-arch-manual">· adjusted</span>{% endif %}:</span>
+  <span class="yn-arch-lbl">Templates{% if packing_manual %} <span class="yn-arch-manual">· your pick</span>{% endif %}:</span>
   {% for a in packing_archetypes %}
-  <span class="yn-arch-chip">{{ a.label }}{% if not read_only %}<button class="yn-arch-x" title="Remove {{ a.label }}"
-      hx-post="/trips/{{ trip.id }}/pack/archetypes/remove"
-      hx-vals='{"archetype_id": "{{ a.id }}"}'
+  <span class="yn-arch-chip">{{ a.label }}{% if not read_only and not packing_needs_profile %}<button class="yn-arch-x" title="Take {{ a.label }} off this list"
+      hx-post="/trips/{{ trip.id }}/pack/templates/remove"
+      hx-vals='{"template_id": "{{ a.id }}"}'
       hx-target="#packing-section" hx-swap="outerHTML" hx-disabled-elt="this">×</button>{% endif %}</span>
+  {% else %}
+  <span class="yn-help">none for this trip</span>
   {% endfor %}
-  {% if packing_archetype_options and not read_only %}
-  <select class="input yn-arch-add" name="archetype_id"
-          hx-post="/trips/{{ trip.id }}/pack/archetypes/add"
+  {% if packing_archetype_options and not read_only and not packing_needs_profile %}
+  <select class="input yn-arch-add" name="template_id" aria-label="Add one of your templates"
+          hx-post="/trips/{{ trip.id }}/pack/templates/add"
           hx-target="#packing-section" hx-swap="outerHTML" hx-trigger="change">
-    <option value="" disabled selected>+ Add trip type…</option>
+    <option value="" disabled selected>+ Add a template…</option>
     {% for o in packing_archetype_options %}<option value="{{ o.id }}">{{ o.label }}</option>{% endfor %}
   </select>
   {% endif %}
 </div>
-<p class="bp-trip-notes yn-arch-note">{% if not read_only %}Adjust the trip type above and the plan re-generates —
+{% if packing_when %}
+<p class="bp-trip-notes yn-arch-note">{% if not read_only %}Add or take off a template and the list re-generates —
   your ticked-off items are kept. {% endif %}Generated {{ packing_when }}.</p>
+{% endif %}
 {% endif %}
 
 {% if packing_warnings %}
@@ -58,7 +78,7 @@
 </section>
 {% endif %}
 
-{% if packing_has %}
+{% if packing_has or packing_suggested %}
   {% for grp in packing_cats %}
   <details class="bp-group" data-grp="packing" open>
     <summary class="bp-group-label">{{ grp.label }}
@@ -84,6 +104,32 @@
     </div>
   </details>
   {% endfor %}
+
+  {% if packing_suggested %}
+  {# Needs the person doesn't own: shown, never added silently (D-83, D-231). #}
+  <details class="bp-group" data-grp="packing" open>
+    <summary class="bp-group-label">Suggested — not in your inventory
+      <span class="bp-group-count">{{ packing_suggested | length }}</span></summary>
+    <div class="card blueprint bp-daycard yn-findings">
+      {% for i in packing_suggested %}
+      <div class="yn-pack-row yn-omitted">
+        <div class="yn-pack-main">
+          <div class="yn-pack-label">{{ i.label }}{% if i.quantity and i.quantity > 1 %} × {{ i.quantity }}{% endif %}</div>
+          <div class="yn-pack-reason">{{ i.reason }}</div>
+        </div>
+        {% if not read_only %}
+        <button class="btn btn-secondary bp-sm"
+                hx-post="/trips/{{ trip.id }}/pack-item/{{ i.id }}/own"
+                hx-target="#packing-section" hx-swap="outerHTML" hx-disabled-elt="this">Add to inventory</button>
+        <button class="btn btn-ghost bp-sm" aria-label="Not needed: {{ i.label }}"
+                hx-post="/trips/{{ trip.id }}/pack-item/{{ i.id }}/remove"
+                hx-target="closest .yn-pack-row" hx-swap="outerHTML">Not needed</button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
 
   {% if packing_omitted %}
   <details class="bp-group" data-grp="packing">
@@ -112,8 +158,9 @@
   </div>
 {% else %}
   <div class="card blueprint bp-empty-card">
-    <div class="bp-empty-msg">No packing plan yet. Generate one to get a smart,
-      right-sized list built from this trip's destinations, weather and activities.</div>
+    <div class="bp-empty-msg">No packing list yet. Generate one to get a right-sized
+      list from your inventory and templates, fitted to this trip's destinations,
+      weather and activities.</div>
   </div>
 {% endif %}
 </div>

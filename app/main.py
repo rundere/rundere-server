@@ -59,6 +59,19 @@ from app.api_v1 import router as api_router  # noqa: E402
 
 app.include_router(api_router)
 
+# SPEC-5 §6.8: generating a packing list before the questionnaire is a 409
+# whose `detail` stays a plain string (today's apps decode and show it), with
+# a machine-readable `code` and the page to send people to.
+from fastapi.responses import JSONResponse  # noqa: E402
+
+from planning.runner import PackingProfileRequired  # noqa: E402
+
+
+@app.exception_handler(PackingProfileRequired)
+async def _packing_profile_required(request, exc: PackingProfileRequired):
+    return JSONResponse({"detail": exc.detail, "code": exc.code, "url": exc.url},
+                        status_code=exc.status_code)
+
 
 # --- Auth gate (SPEC-4 Workstream B) --------------------------------------
 # Master switch is TX_AUTH_REQUIRED. OFF => the app behaves exactly as it did

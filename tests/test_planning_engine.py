@@ -1,6 +1,13 @@
-"""Packing engine tests (SPEC-3.1-planning.md §2/§5.5) — offline, hand-built
-context against the JSON seed catalog. Covers the archetype scoring, the laundry
-intelligence, cultural filtering, and profile constraints.
+"""Packing engine tests (SPEC-3.1-planning.md §2/§5.5, SPEC-5 §6.7) — offline,
+hand-built context against the JSON seed catalog. Covers the archetype scoring
+that suggests templates, the climate gates, the laundry intelligence, and the
+reasons each line carries.
+
+5.0 lists draw only from the person's inventory, so these run against someone
+who owns plenty of everything in the catalogue: every need resolves to an
+owned line. tests/test_packing_engine_5.py covers what happens when they don't.
+4.x's modest-dress omissions, no-heels swaps, forced archetypes and carry-on
+weight limit went with the profile fields that drove them (D-229, SPEC-5 §6.4).
 """
 import sys
 from pathlib import Path
@@ -9,10 +16,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from planning import catalog
+from planning.assemble import assemble
 from planning.context import PlanningContext
-from planning.engine import build_plan, default_profile
+from planning.engine import _score_archetypes, default_profile
 
 _ITEMS = catalog.seed_items()
+# Owns plenty of everything, so quantities are the formula's, never the cap.
+_ALL = [{"id": iid, "type_key": iid, "label": it["label"], "category": it["category"],
+         "tags": it.get("tags", []), "quantity": 99, "must_have": False}
+        for iid, it in _ITEMS.items()]
 
 
 def _ctx(days, **kw):
@@ -23,27 +35,31 @@ def _ctx(days, **kw):
     return PlanningContext(**base)
 
 
+def _plan(ctx, inventory=None):
+    return assemble(ctx, _ITEMS, inventory=_ALL if inventory is None else inventory,
+                    templates=[])
+
+
 def _qty(res, iid):
-    return next((i.quantity for i in res.items if i.item_id == iid), None)
+    return next((i.quantity for i in res.lines if i.inventory_item_id == iid), None)
 
 
 def _reason(res, iid):
-    return next((i.reason for i in res.items + res.omitted if i.item_id == iid), None)
+    return next((i.reason for i in res.lines if i.inventory_item_id == iid), None)
 
 
 # ---------------------------------------------------------- reasons / climate
 
 def test_modifier_items_explain_their_trigger():
     # A cold-weather trip: the insulated jacket says WHY it's on the list.
-    res = build_plan(_ctx(5, climate_bands={"cold_weather"}), _ITEMS)
+    res = _plan(_ctx(5, climate_bands={"cold_weather"}))
     assert _qty(res, "insulated_jacket") is not None
     assert _reason(res, "insulated_jacket") == "cold days expected"
 
 
-def test_every_item_has_a_nonempty_reason():
-    res = build_plan(_ctx(6, activity_tags={"hiking"}, climate_bands={"layering"}),
-                     _ITEMS)
-    assert res.items and all((i.reason or "").strip() for i in res.items)
+def test_every_line_has_a_nonempty_reason():
+    res = _plan(_ctx(6, activity_tags={"hiking"}, climate_bands={"layering"}))
+    assert res.lines and all((i.reason or "").strip() for i in res.lines)
 
 
 def test_cold_nights_mild_days_is_layering_not_a_parka():
@@ -54,55 +70,45 @@ def test_cold_nights_mild_days_is_layering_not_a_parka():
     assert _climate_bands(26, 15, 0) == {"lightweight"}
 
 
-def test_cold_ski_not_selected_for_a_warm_trip():
+def test_cold_ski_not_suggested_for_a_warm_trip():
     # The Arizona bug: cold_ski was chosen at 28°C, dumping a parka into a beach plan.
-    res = build_plan(_ctx(10, climate_bands={"lightweight", "rain_gear"},
-                          temp_high_c=28), _ITEMS)
+    res = _plan(_ctx(10, climate_bands={"lightweight", "rain_gear"}, temp_high_c=28))
     assert "cold_ski" not in {a["id"] for a in res.archetypes}
+    assert "cold_ski" not in res.suggested_types
     assert _qty(res, "insulated_jacket") is None            # no parka
-    assert _qty(res, "winter_boots") is None
 
 
-def test_cold_ski_allowed_when_actually_cold():
-    res = build_plan(_ctx(7, activity_tags={"ski"}, accommodation={"cabin"},
-                          climate_bands={"cold_weather"}, temp_high_c=-4), _ITEMS)
-    assert "cold_ski" in {a["id"] for a in res.archetypes}
+def test_cold_ski_suggested_when_actually_cold():
+    ctx = _ctx(7, activity_tags={"ski"}, accommodation={"cabin"},
+               climate_bands={"cold_weather"}, temp_high_c=-4)
+    assert "cold_ski" in {a["id"] for a in _score_archetypes(ctx)}
+    assert "cold_ski" in _plan(ctx).suggested_types
 
 
-def test_force_archetypes_overrides_autodetection():
-    # A warm trip the operator declares a ski trip → cold kit, auto-detect ignored.
-    res = build_plan(_ctx(6, climate_bands={"lightweight"}, temp_high_c=27),
-                     _ITEMS, force_archetypes=["cold_ski"])
-    assert [a["id"] for a in res.archetypes] == ["cold_ski"]
-    assert _qty(res, "insulated_jacket") is not None
-
-
-def test_template_reason_names_the_archetype():
-    # sandals is a beach-archetype base item → its reason names the archetype
-    # (swimwear/sunscreen come from the beach *modifier*, so they say "beach days").
-    res = build_plan(_ctx(7, activity_tags={"beach"}, accommodation={"resort"}),
-                     _ITEMS)
-    assert _reason(res, "sandals") == "for a beach trip"
-    assert _reason(res, "swimwear") == "beach days"        # modifier, not archetype
+def test_needs_say_whether_a_modifier_or_an_essential():
+    res = _plan(_ctx(7, activity_tags={"beach"}, accommodation={"resort"}))
+    assert _reason(res, "swimwear") == "beach days"
+    assert _reason(res, "passport") == "travel essential"
 
 
 # ------------------------------------------------------------------ scoring
 
 def test_beach_activities_pick_the_beach_archetype():
-    res = build_plan(_ctx(7, activity_tags={"beach"}, accommodation={"resort"}), _ITEMS)
+    res = _plan(_ctx(7, activity_tags={"beach"}, accommodation={"resort"}))
     assert res.archetypes[0]["id"] == "beach"
-    assert any(i.item_id == "swimwear" for i in res.items)
+    assert "beach" in res.suggested_types
+    assert _qty(res, "swimwear") is not None
 
 
 def test_business_and_cultural_can_merge():
-    res = build_plan(_ctx(6, activity_tags={"business", "temple", "dining"}), _ITEMS)
-    ids = {a["id"] for a in res.archetypes}
+    ids = {a["id"] for a in _score_archetypes(
+        _ctx(6, activity_tags={"business", "temple", "dining"}))}
     assert "cultural" in ids and "business" in ids
 
 
 def test_essentials_and_international_always_present():
-    res = build_plan(_ctx(4, international=True), _ITEMS)
-    ids = {i.item_id for i in res.items}
+    res = _plan(_ctx(4, international=True))
+    ids = {i.inventory_item_id for i in res.lines}
     assert {"passport", "prescription_meds", "travel_insurance", "universal_adapter"} <= ids
 
 
@@ -111,84 +117,46 @@ def test_essentials_and_international_always_present():
 def test_laundry_caps_quantities_and_adds_a_task():
     """14-day trip WITH laundry → pack ~a week + a laundry task, not 14 of each."""
     prof = {**default_profile(), "laundry_comfort": "machine"}
-    res = build_plan(_ctx(14, profile=prof), _ITEMS)
+    res = _plan(_ctx(14, profile=prof))
     assert _qty(res, "underwear") <= 9                 # not 14+
     assert _qty(res, "socks") <= 8
-    # the archetype's "tops" formula item (quick_dry_top for a long sightseeing
-    # trip) is capped, not one-per-day
-    assert _qty(res, "quick_dry_top") is not None and _qty(res, "quick_dry_top") <= 7
     assert any(t["do"] == "laundry" for t in res.tasks)
 
 
 def test_no_laundry_long_trip_warns_instead():
     prof = {**default_profile(), "laundry_comfort": "none"}
-    res = build_plan(_ctx(14, profile=prof), _ITEMS)
+    res = _plan(_ctx(14, profile=prof))
     assert _qty(res, "underwear") >= 14                # packs the whole trip
     assert any("laundry" in w.lower() for w in res.warnings)
 
 
 def test_short_trip_no_laundry_task():
-    res = build_plan(_ctx(3), _ITEMS)
+    res = _plan(_ctx(3))
     assert not any(t["do"] == "laundry" for t in res.tasks)
+
+
+def test_one_bag_is_a_packing_style_now():
+    prof = {**default_profile(), "packing_style": "one_bag"}
+    res = _plan(_ctx(5, profile=prof))
+    assert res.lines and all(i.bag == "carry_on" for i in res.lines)
 
 
 # ------------------------------------------------------------------ cultural / profile
 
-def test_modest_destination_omits_revealing_with_swap():
+def test_a_modest_destination_adds_its_items_and_omits_nothing():
     culture = {"modest": True, "shoes_off": True, "add_items": ["modest_scarf"], "notes": []}
-    res = build_plan(_ctx(7, activity_tags={"beach"}, culture=culture,
-                          profile={**default_profile(), "cultural_strictness": "strict"}),
-                     _ITEMS)
-    omitted = {i.item_id for i in res.omitted}
-    assert "shorts" in omitted                          # revealing, dropped
-    kept = {i.item_id for i in res.items}
-    assert "loose_trousers" in kept                     # swapped in
-    assert "modest_scarf" in kept                       # cultural add
-    assert any(i.swap_for == "loose_trousers" for i in res.omitted if i.item_id == "shorts")
+    res = _plan(_ctx(7, activity_tags={"beach"}, culture=culture))
+    assert _reason(res, "modest_scarf") == "local dress / custom"
+    assert _qty(res, "swimwear") is not None             # no revealing filter (D-229)
+    assert "religious_sites" in res.suggested_types
 
 
-def test_no_heels_swaps_dress_shoes_for_flats():
-    res = build_plan(_ctx(5, activity_tags={"business", "dining"},
-                          profile={**default_profile(), "style_constraints": ["no_heels"]}),
-                     _ITEMS)
-    assert "dress_shoes" in {i.item_id for i in res.omitted}
-    assert "smart_flats" in {i.item_id for i in res.items}
-
-
-def test_must_have_is_force_added():
-    prof = {**default_profile(), "must_have_items": ["headphones"]}
-    res = build_plan(_ctx(4, profile=prof), _ITEMS)
-    hp = next((i for i in res.items if i.item_id == "headphones"), None)
-    assert hp is not None and hp.source == "must_have"
+def test_must_have_is_added():
+    inv = [{**row, "must_have": row["id"] == "headphones"} for row in _ALL]
+    res = _plan(_ctx(4), inventory=inv)
+    assert _reason(res, "headphones") == "your must-have"
 
 
 def test_no_weather_warns():
-    res = build_plan(_ctx(4, has_weather=False, climate_bands=set(), temp_high_c=None), _ITEMS)
+    res = _plan(_ctx(4, has_weather=False, climate_bands=set(), temp_high_c=None))
     assert any("weather" in w.lower() for w in res.warnings)
-
-
-# ---------------------------------------------------------- carry-on weight (YONDER-325)
-
-def _with_bag(mode, kg):
-    prof = default_profile()
-    prof["bag"] = {"mode": mode, "weight_kg": kg}
-    return prof
-
-
-def test_the_weight_limit_counts_only_carry_on_items():
-    """The limit is the carry-on allowance: items going in a checked bag never
-    push a plan over it, however heavy they are."""
-    ctx = _ctx(5, profile=_with_bag("checked", 7))
-    planned = build_plan(ctx, _ITEMS)
-    checked = next(i.item_id for i in planned.items if i.bag == "checked")
-    heavy = {iid: {**it, "weight_g": 0} for iid, it in _ITEMS.items()}
-    heavy[checked] = {**heavy[checked], "weight_g": 50_000}       # a 50 kg checked item
-    res = build_plan(ctx, heavy)
-    assert checked in {i.item_id for i in res.items}
-    assert not any("exceeds your" in w for w in res.warnings)       # no weight warning at all
-
-
-def test_carry_on_items_over_the_limit_warn():
-    heavy = {iid: {**it, "weight_g": 2_000} for iid, it in _ITEMS.items()}
-    res = build_plan(_ctx(5, profile=_with_bag("one_bag", 7)), heavy)
-    assert any("carry-on weight" in w and "7 kg carry-on limit" in w for w in res.warnings)

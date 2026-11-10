@@ -780,7 +780,7 @@ def unshare_trip(trip_id: str, request: Request, user_id: str = Form(""),
 @router.get("/{trip_id}/derived-locations", response_class=HTMLResponse)
 def derived_locations(trip_id: str, request: Request,
                       session: Session = Depends(get_session)):
-    """The Refine Discovery sheet (D-68; renamed from "What Yonder found",
+    """The Refine places sheet (D-68; "What Yonder found", then Refine Discovery,
     YONDER-264): show the destination set Discovery
     DERIVED from this trip's own activities (D-62) — with per-place provenance
     and the places that couldn't be verified — so the operator sees the
@@ -1640,7 +1640,7 @@ def calculator_refresh(trip_id: str, fid: str, request: Request,
 # ----------------------------------------------------------------- planning (3.1)
 
 from app.models import (PackingItem, PackingPlan,   # noqa: E402
-                        DiscoveryProfile, Bag)
+                        DiscoveryProfile, Bag, InventoryItem, PackingTemplate)
 
 # Packing categories in the order a list shows them.
 PACK_CAT_ORDER = ["documents", "health", "clothing", "footwear", "toiletries",
@@ -1761,6 +1761,16 @@ def _pack_identity(request):
     return (u.id if u else None), (getattr(u, "traveler_id", None) if u else None)
 
 
+def _packing_for(session: Session, user) -> str:
+    """Whose list this is: lists are always one person's (D-123, SPEC-5 §6.7.8)."""
+    from app.models import TravelerIdentity
+    if user is not None:
+        t = session.get(TravelerIdentity, user.traveler_id) if user.traveler_id else None
+        return t.display_name if t else user.username
+    t = session.query(TravelerIdentity).filter_by(kind="self").first()
+    return t.display_name if t else ""
+
+
 def _packing_context(session: Session, trip_id: str, user=None) -> dict:
     user_id = user.id if user else None
     items = (session.query(PackingItem)
@@ -1769,12 +1779,18 @@ def _packing_context(session: Session, trip_id: str, user=None) -> dict:
     plan = (session.query(PackingPlan)
             .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
             .order_by(PackingPlan.generated_at.desc()).first())
-    from planning.engine import all_archetypes as _all_archetypes
-    _all_arch = _all_archetypes()
+    from planning.runner import PROFILE_REQUIRED, PROFILE_URL, profile_ready
+    # Since 5.0 a plan's "archetypes" are the person's templates it applied
+    # (D-230); the picker offers their other templates.
     chosen_arch = (plan.archetypes if plan else None) or []
     chosen_ids = {a.get("id") for a in chosen_arch}
+    own_templates = (session.query(PackingTemplate)
+                     .filter(PackingTemplate.user_id == user_id)
+                     .order_by(PackingTemplate.name).all())
     included = [i for i in items if i.status in ("draft", "packed")]
     omitted = [i for i in items if i.status == "omitted"]
+    suggested = sorted((i for i in items if i.status == "suggested"),
+                       key=lambda i: (i.category, i.label.lower()))
     bag_labels = _bag_label_lookup(session, user)
     grouped: dict[str, list] = {}
     for i in included:
@@ -1798,8 +1814,15 @@ def _packing_context(session: Session, trip_id: str, user=None) -> dict:
         "packing_warnings": (plan.warnings if plan else None) or [],
         "packing_tasks": (plan.tasks if plan else None) or [],
         "packing_archetypes": chosen_arch,
-        "packing_archetype_options": [a for a in _all_arch
-                                      if a["id"] not in chosen_ids],
+        "packing_archetype_options": [{"id": t.id, "label": t.name} for t in own_templates
+                                      if t.id not in chosen_ids],
+        "packing_suggested": [_packing_item_view(i, bag_labels) for i in suggested],
+        # SPEC-5 §6.8: no saved questionnaire, no list; an older plan stays
+        # readable under the same message.
+        "packing_needs_profile": not profile_ready(
+            session, getattr(user, "traveler_id", None), owner=user is None),
+        "packing_profile_msg": PROFILE_REQUIRED, "packing_profile_url": PROFILE_URL,
+        "packing_for": _packing_for(session, user),
         "packing_manual": bool(plan and plan.manual_archetypes),
         "packing_when": plan.generated_at.strftime("%Y-%m-%d %H:%M")
         if plan and plan.generated_at else "",
@@ -1817,10 +1840,14 @@ def generate_packing_plan_route(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
+    from planning.runner import PackingProfileRequired
     uid, tid = _pack_identity(request)
-    generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
-                  user_id=uid, traveler_id=tid)
+    try:
+        generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                      geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
+                      user_id=uid, traveler_id=tid)
+    except PackingProfileRequired:
+        pass                        # the section says so, with the link (§6.8)
     return _redirect(f"/trips/{trip_id}")
 
 
@@ -1836,45 +1863,48 @@ def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
                                 ids: list[str]) -> HTMLResponse:
     from app.resolving import load_homes_for_user
     from planning.runner import generate_plan
+    from planning.runner import PackingProfileRequired
     uid, tid = _pack_identity(request)
-    generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
-                  manual_archetypes=ids, user_id=uid, traveler_id=tid)
+    try:
+        generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                      geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
+                      manual_archetypes=ids, user_id=uid, traveler_id=tid)
+    except PackingProfileRequired:
+        pass
     return templates.TemplateResponse(request, "_packing_section.html",
         {"request": request, "trip": {"id": trip.id},
          **_packing_context(session, trip.id, scope.user_of(request))})
 
 
-@router.post("/{trip_id}/pack/archetypes/add", response_class=HTMLResponse)
-def add_archetype_route(trip_id: str, request: Request, archetype_id: str = Form(""),
-                        session: Session = Depends(get_session)):
-    """Add a trip type to the packing plan and re-generate with the operator's
-    explicit set (auto-detection stays as the starting suggestion)."""
+@router.post("/{trip_id}/pack/templates/add", response_class=HTMLResponse)
+def add_pack_template_route(trip_id: str, request: Request, template_id: str = Form(""),
+                            session: Session = Depends(get_session)):
+    """Apply one of the person's templates to this trip's list and re-generate
+    with their explicit set (SPEC-5 §6.7.3; what the trip suggests is the
+    starting point). Only their own templates (§6.6)."""
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    valid = {a["id"] for a in _pack_all_archetypes()}
-    ids = _current_archetype_ids(session, trip_id, _pack_identity(request)[0])
-    if archetype_id in valid and archetype_id not in ids:
-        ids.append(archetype_id)
+    uid = _pack_identity(request)[0]
+    mine = {t for (t,) in session.query(PackingTemplate.id)
+            .filter(PackingTemplate.user_id == uid)}
+    ids = _current_archetype_ids(session, trip_id, uid)
+    if template_id in mine and template_id not in ids:
+        ids.append(template_id)
     return _regenerate_with_archetypes(request, session, trip, ids)
 
 
-@router.post("/{trip_id}/pack/archetypes/remove", response_class=HTMLResponse)
-def remove_archetype_route(trip_id: str, request: Request, archetype_id: str = Form(""),
-                           session: Session = Depends(get_session)):
-    """Remove a trip type and re-generate. Removing the last one resets to
-    auto-detection on the next generate."""
+@router.post("/{trip_id}/pack/templates/remove", response_class=HTMLResponse)
+def remove_pack_template_route(trip_id: str, request: Request, template_id: str = Form(""),
+                               session: Session = Depends(get_session)):
+    """Take a template off this trip's list and re-generate. Taking the last one
+    off goes back to what the trip suggests on the next generate."""
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    ids = [i for i in _current_archetype_ids(session, trip_id, _pack_identity(request)[0]) if i != archetype_id]
+    ids = [i for i in _current_archetype_ids(session, trip_id, _pack_identity(request)[0])
+           if i != template_id]
     return _regenerate_with_archetypes(request, session, trip, ids)
-
-
-def _pack_all_archetypes():
-    from planning.engine import all_archetypes
-    return all_archetypes()
 
 
 def _pack_count_oob(session: Session, trip_id: str, category: str, user_id=None) -> str:
@@ -1960,6 +1990,24 @@ def packing_item_label(trip_id: str, item_id: str, request: Request,
     return _pack_item_row(request, trip_id, session, i)
 
 
+def _own_suggestion(session: Session, i: PackingItem, uid) -> None:
+    """"Add to inventory" on a suggested line (SPEC-5 §6.7.4, D-231): the
+    person now owns it, so it joins their inventory and the line becomes an
+    ordinary one, keyed as the owned item so a re-generate finds it."""
+    from planning import catalog
+    type_key = i.item_key.split(":", 1)[1] if i.item_key.startswith("suggest:") else None
+    it = catalog.items(session).get(type_key or "") or {}
+    row = InventoryItem(user_id=uid, type_key=type_key, label=i.label,
+                        category=i.category, tags=list(it.get("tags") or []),
+                        quantity=max(1, i.quantity or 1))
+    session.add(row)
+    session.flush()
+    i.inventory_item_id = row.id
+    i.item_key = f"inv:{row.id}"
+    i.status = "draft"
+    i.source = "inventory"
+
+
 @router.post("/{trip_id}/pack-item/{item_id}/{action}", response_class=HTMLResponse)
 def packing_item_action(trip_id: str, item_id: str, action: str, request: Request,
                         session: Session = Depends(get_session)):
@@ -1978,12 +2026,14 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
         i.status = "removed"
     elif action in ("restore", "keep"):        # keep = bring back an omitted item
         i.status = "draft"
+    elif action == "own" and i.status == "suggested":
+        _own_suggestion(session, i, uid)
     else:
         return HTMLResponse("", status_code=400)
     category = i.category
     session.commit()
 
-    if action in ("keep", "restore"):
+    if action in ("keep", "restore", "own"):
         trip = scope.trip_or_none(session, request, trip_id)
         return templates.TemplateResponse(request, "_packing_section.html",
                                           {"request": request, "trip": trip,

@@ -607,10 +607,21 @@ def refresh_discover(session, user, trips) -> None:
                           home_profiles=homes, base_currencies=("GBP",), user_id=user.id)
 
 
+# The demo person's packing questionnaire (SPEC-5 §6.2): generic answers, so
+# the inventory it seeds is the catalogue's own vocabulary.
+DEMO_PACKING = {"style": "neutral", "footwear": "minimal",
+                "clothing": ["smart", "swim"], "care": ["sun", "eyewear"],
+                "tech": ["adapter", "headphones"],
+                "bags": {"carry_on": 1, "daypack": 1}, "gear": ["carry_on", "cubes", "daypack"]}
+
+
 def _seed_packing(session, user, trip):
     from app.trips.routes import _airport_resolver
-    from planning.runner import generate_plan
+    from planning.runner import answer_questionnaire, generate_plan
     try:
+        answer_questionnaire(session, user_id=user.id, traveler_id=user.traveler_id,
+                             answers=DEMO_PACKING)
+        session.commit()
         with offline_feeds():
             from app.resolving import load_home_profiles
             generate_plan(session, trip, resolve_airport=_airport_resolver(),
@@ -738,11 +749,22 @@ def _remove(session, user) -> None:
         session.query(model).filter(model.owner_id == user.id).delete(
             synchronize_session=False)
     _remove_captures(session, user)
+    # 5.0 packing: the demo person's inventory, bags and templates, and (below,
+    # with the people) their questionnaire.
+    tpls = [t.id for t in session.query(m.PackingTemplate).filter(
+        m.PackingTemplate.user_id == user.id)]
+    session.query(m.PackingTemplateItem).filter(
+        m.PackingTemplateItem.template_id.in_(tpls)).delete(synchronize_session=False)
+    for model in (m.PackingTemplate, m.InventoryItem, m.Bag):
+        session.query(model).filter(model.user_id == user.id).delete(
+            synchronize_session=False)
     session.query(m.Trip).filter(m.Trip.id.in_(tids)).delete(synchronize_session=False)
     # The seed's people and Jane's homes (a re-seed recreates them).
     people = [t.id for t in session.query(m.TravelerIdentity).filter(
         m.TravelerIdentity.display_name.in_(_PEOPLE_NAMES))]
     session.query(m.HomeProfile).filter(m.HomeProfile.traveler_id.in_(people)).delete(
+        synchronize_session=False)
+    session.query(m.PackingProfile).filter(m.PackingProfile.traveler_id.in_(people)).delete(
         synchronize_session=False)
     user.traveler_id = None
     session.query(m.TravelerIdentity).filter(m.TravelerIdentity.id.in_(people)).delete(
