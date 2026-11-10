@@ -294,13 +294,73 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
   color: var(--color-text); cursor: pointer; }
 .yn-check input { width: 16px; height: 16px; }
 .yn-help { font-weight: 400; color: var(--color-neutral-600); font-size: 12px; }
-.yn-musthave { margin-top: 6px; max-height: 240px; overflow-y: auto;
-  border: 1px solid var(--color-neutral-300); border-radius: var(--radius-md);
-  padding: 10px 12px; display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 16px; }
-.yn-musthave-group { display: flex; flex-direction: column; gap: 4px; }
-.yn-musthave-cat { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
-  color: var(--color-neutral-600); font-weight: 600; margin: 6px 0 2px; }
+/* 5.0 packing profile, inventory and templates (SPEC-5 §6.1). */
+.yn-question { border: 0; padding: 0; margin: 0 0 16px; }
+.yn-question legend { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.yn-check.yn-bag-count input { width: 4.5em; height: auto; }
+.yn-pack-hub { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px; margin-bottom: 16px; }
+.yn-pack-tile { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px;
+  text-decoration: none; color: var(--color-text); }
+.yn-pack-tile:hover, .yn-pack-tile:focus-visible { border-color: var(--color-accent, currentColor); }
+.yn-pack-tile-title { font-weight: 600; font-size: 16px; }
+.yn-pack-tile-count { font-size: 24px; font-weight: 600; }
+.yn-page-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.yn-page-done { margin: 4px 0 24px; }
+.yn-requestions summary { cursor: pointer; font-weight: 600; margin-bottom: 10px; }
+.yn-inv-cat { padding: 14px 16px; }
+/* Bags sit apart from what goes in them: accent edge and tint, then a
+   divider before the item categories. */
+.yn-inv-bags { border-left: 3px solid var(--color-accent); background: var(--color-accent-100); }
+.yn-inv-heading { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
+.yn-bag-wrap { container-type: inline-size; }
+.yn-bag-grid { display: grid; grid-template-columns: minmax(0, 1fr) 9em 6em auto auto;
+  gap: 6px 10px; align-items: center; margin-top: 8px; }
+.yn-bag-head, .yn-bag-row, .yn-bag-edit { display: contents; }
+.yn-bag-head span { font-size: 12px; font-weight: 600; color: var(--color-neutral-600); }
+.yn-bag-h-cap { grid-column: 3 / -1; }
+.yn-bag-grid .input { width: 100%; min-width: 0; }
+.yn-bag-new .yn-bag-save { grid-column: 4; }
+/* Narrow card: each bag takes two lines (name, then type, capacity and the
+   buttons), and the heading has the same two-line shape. */
+@container (max-width: 500px) {
+  .yn-bag-grid { grid-template-columns: minmax(0, 1fr) 6em auto auto; }
+  .yn-bag-h-name, .yn-bag-name { grid-column: 1 / -1; }
+  .yn-bag-h-cap { grid-column: 2; }
+  .yn-bag-row .yn-bag-name { margin-top: 8px; }
+  .yn-bag-new .yn-bag-save { grid-column: 3; }
+}
+/* Phone: too narrow for the buttons beside type and capacity, so they drop
+   below; type and capacity keep a line of their own. */
+@container (max-width: 360px) {
+  .yn-bag-grid { grid-template-columns: minmax(0, 1fr) 6em; }
+  .yn-bag-save, .yn-bag-remove { justify-self: start; }
+  .yn-bag-row .yn-bag-save { grid-column: 1; }
+  .yn-bag-remove { grid-column: 2; justify-self: end; }
+  .yn-bag-new .yn-bag-save { grid-column: 1; }
+}
+.yn-inv-divider { margin: 28px 0 0; padding-top: 14px;
+  border-top: 2px solid var(--color-divider); }
+.yn-inv-row { display: flex; align-items: center; gap: 6px 10px;
+  padding: 6px 0; border-bottom: 1px solid var(--color-divider); }
+.yn-inv-row > form:last-child { flex: none; }      /* Delete stays beside its row */
+.yn-inv-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  flex: 1 1 260px; min-width: 0; }
+.yn-inv-add { margin-top: 10px; flex: none; }   /* the card is a flex column */
+.yn-inv-label { flex: 1 1 120px; min-width: 0; }
+.yn-inv-edit > select.input { width: auto; flex: 0 0 auto; }   /* the template page's Add box */
+/* Save as you go: a quiet "Saved ✓" that fades, in a slot wide enough that
+   the row doesn't jump when it appears. */
+.yn-row-save { min-width: 4.5em; font-size: 12px; color: var(--color-neutral-600); }
+.yn-saved { animation: yn-saved-fade 3s ease-in forwards; }
+@keyframes yn-saved-fade { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .yn-saved { animation: none; } }
+.yn-inv-qty { width: 5em; flex: 0 0 auto; }
+.yn-inv-cap { width: 8em; flex: 0 0 auto; }
+.yn-tpl-list { margin: 6px 0 0; padding-left: 18px; }
+.yn-tpl-list li { margin: 4px 0; }
+.yn-tpl-row { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 3px 0; max-width: 520px; }
 
 /* ---- planning: packing list ---- */
 .yn-note-card { padding: 12px 16px; }

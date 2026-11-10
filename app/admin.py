@@ -3,7 +3,6 @@ config). Reached only via the internal Traefik router in production. The
 RuleSetting view is the D-25 per-rule management UI."""
 import rules as rules_module
 import wtforms
-from fastapi import HTTPException
 from sqladmin import Admin, ModelView
 
 from app import models
@@ -200,59 +199,10 @@ def mount_admin(app, engine) -> None:
                     "default": "carry_on"},
         }
 
-    class BagAdmin(ModelView, model=models.Bag):
-        name = "Bag"
-        name_plural = "Bag Inventory"
-        # The owner's actual bags (3 backpacks, a carry-on, a checked suitcase —
-        # with real capacities) — parallel to and independent from the packing
-        # catalog above (what goes IN a bag). Seeded empty on purpose (unlike the
-        # catalog, there's no universal default bag inventory). Once bags exist
-        # here, the per-trip packing item "bag" dropdown lists THESE instead of
-        # the generic carry-on/checked/backpack categories. Retire a bag you no
-        # longer own with `enabled` rather than deleting it — a PackingItem
-        # still pointing at a deleted (not just disabled) row falls back to
-        # showing the raw id, same as an orphaned PackingCatalogItem reference.
-        column_list = [models.Bag.label, models.Bag.kind, models.Bag.capacity,
-                       models.Bag.enabled]
-        column_searchable_list = [models.Bag.label, models.Bag.kind]
-        column_sortable_list = [models.Bag.kind, models.Bag.label]
-        column_default_sort = "kind"
-        page_size = 200
-        # `id` is a uuid on create (5.0: two people's "Carry-on" mustn't
-        # collide); SQLAdmin drops the PK from the create form.
-        form_columns = ["label", "kind", "capacity", "enabled"]
-
-        # 5.0 (SPEC-5 §6.6, D-124, D-211): bags now belong to people, and the
-        # admin shows no personal data, so this lists, opens, edits and deletes
-        # only ownerless (pre-5.0 or admin-made) bags. Edit and delete look rows
-        # up by id, past these queries, so the hooks below refuse them too.
-        def list_query(self, request):
-            return super().list_query(request).where(models.Bag.user_id.is_(None))
-
-        def count_query(self, request):
-            return super().count_query(request).where(models.Bag.user_id.is_(None))
-
-        def details_query(self, request):          # the default already selects by id
-            return super().details_query(request).where(models.Bag.user_id.is_(None))
-
-        def form_edit_query(self, request):
-            return super().form_edit_query(request).where(models.Bag.user_id.is_(None))
-
-        async def on_model_change(self, data, model, is_created, request):
-            if not is_created and model.user_id:
-                raise HTTPException(status_code=404)
-
-        async def on_model_delete(self, model, request):
-            if model.user_id:
-                raise HTTPException(status_code=404)
-        form_overrides = {"kind": wtforms.SelectField}
-        form_args = {
-            "kind": {"choices": [("backpack", "backpack"), ("suitcase", "suitcase"),
-                                 ("personal_item", "personal item")],
-                     "default": "backpack"},
-            "capacity": {"description": 'Freeform, e.g. "40L" or "22in carry-on".'},
-        }
-
+    # NB: Bag has NO SQLAdmin view since 5.0 (SPEC-5 §6.6): bags belong to
+    # people and are edited on their Inventory page (Packing profile →
+    # Inventory). Pre-5.0 ownerless bags show on an admin's own Inventory page
+    # (scope.own_filter), so nothing is stranded.
     # NB: PackingProfile has NO SQLAdmin view on purpose — it's edited through the
     # structured form at /trips/settings/packing-profile (Administer → Packing
     # profile), not a raw-JSON table (D-86).
@@ -332,6 +282,6 @@ def mount_admin(app, engine) -> None:
     # by CLI); it never shows the key itself, only client name + status.
     for view in (SourceRuleAdmin, ApiKeyAdmin, TravelerIdentityAdmin,
                  RuleSettingAdmin,
-                 PackingCatalogItemAdmin, BagAdmin, PhrasebookPhraseAdmin,
+                 PackingCatalogItemAdmin, PhrasebookPhraseAdmin,
                  RegionalLanguageAdmin):
         admin.add_view(view)

@@ -80,7 +80,6 @@ styled page.
 | Source rules | `/admin/source-rule/list` | metrics only | Off | G9 | ☐ |
 | API keys | `/admin/api-key/list` | metrics only | Off | G9 | ☐ |
 | Packing catalog | `/admin/packing-catalog-item/list` | metrics only | Off | G9, 89 small controls | ☐ |
-| Bags | `/admin/bag/list` | metrics only | Off | G9 | ☐ |
 | Phrasebook | `/admin/phrasebook-phrase/list` | metrics only | Off | G9, 110 small controls | ☐ |
 | Regional languages | `/admin/regional-language/list` | metrics only | Off | G9 | ☐ |
 

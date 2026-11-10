@@ -175,34 +175,29 @@ def test_new_bags_get_unique_ids_not_label_slugs(people):
         assert a.id != b.id and "carry_on" not in (a.id, b.id)
 
 
-def test_the_admin_bag_list_shows_only_ownerless_bags(people):
+def test_bags_have_no_admin_screen_and_ownerless_ones_reach_an_admin(people, auth_on):
+    """5.0: bags are edited on the person's Inventory page, so the admin has no
+    Bag view; a pre-5.0 ownerless bag shows on an admin's own Inventory instead
+    of being stranded, and never on anyone else's."""
     from fastapi import FastAPI
 
     from app.admin import mount_admin
-    me = people("me")
+    me, boss = people("me"), people("boss", admin=True)
     with SessionLocal() as s:
-        owned = Bag(user_id=me.id, label="Someone's own duffel", kind="backpack")
         legacy = Bag(label="Pre-5.0 duffel", kind="backpack")
-        s.add_all([owned, legacy])
+        s.add(legacy)
         s.commit()
-        owned_id, legacy_id = owned.id, legacy.id
+        legacy_id = legacy.id
     a = FastAPI()
     mount_admin(a, engine)
-    c = TestClient(a)
     try:
-        page = c.get("/admin/bag/list").text
-        assert "Pre-5.0 duffel" in page and "Someone&#39;s own duffel" not in page \
-            and "Someone's own duffel" not in page
-        assert c.get(f"/admin/bag/details/{owned_id}").status_code == 404
-        assert c.get(f"/admin/bag/edit/{owned_id}").status_code == 404
-        c.delete(f"/admin/bag/delete?pks={owned_id}")
-        c.delete(f"/admin/bag/delete?pks={legacy_id}")
+        assert TestClient(a).get("/admin/bag/list").status_code == 404
         with SessionLocal() as s:
-            assert s.get(Bag, owned_id) is not None   # refused
-            assert s.get(Bag, legacy_id) is None      # an ownerless one still goes
+            assert legacy_id in {b.id for b in s.query(Bag).filter(scope.own_filter(Bag, boss))}
+            assert s.query(Bag).filter(scope.own_filter(Bag, me)).count() == 0
     finally:
         with SessionLocal() as s:
-            s.query(Bag).filter(Bag.id.in_([owned_id, legacy_id])).delete()
+            s.query(Bag).filter(Bag.id == legacy_id).delete()
             s.commit()
 
 

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Packing templates{% endblock %}
+{% block content %}
+
+<div class="card blueprint bp-trip-header">
+  <div class="yn-page-actions">
+    <a class="btn btn-ghost bp-sm" href="{{ base }}">← Packing profile</a>
+    <a class="btn btn-secondary bp-sm" href="{{ base }}/inventory">Inventory</a>
+  </div>
+  <h1 class="bp-h1">Packing templates</h1>
+  <p class="bp-trip-notes">Your own kits for a kind of trip or activity, made from your
+    inventory: "my beach bag", "work trip". A trip that looks like one suggests it,
+    and every item in it goes on the list.</p>
+</div>
+
+{% if just_saved %}
+<div class="card blueprint yn-note-card yn-todo yn-profile-saved" role="status">
+  <p class="bp-trip-notes">Saved “{{ just_saved }}” ✓</p>
+</div>
+{% endif %}
+
+<section class="card blueprint">
+  <h2 class="bp-group-label">Yours <span class="bp-group-count">{{ mine|length }}</span></h2>
+  {% if not mine %}<p class="yn-help">No templates yet.</p>{% endif %}
+  <ul class="yn-tpl-list">
+    {% for t in mine %}
+    <li><a href="{{ base }}/templates/{{ t.id }}">{{ t.name }}</a>
+      <span class="yn-help">— {% if t.keyword %}keyword “{{ t.keyword }}”{% else %}{{ t.type }}{% endif %} · {{ t.count }} item{{ '' if t.count == 1 else 's' }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+
+<form method="get" action="{{ base }}/templates/new" class="card blueprint yn-profile-card">
+  <h2 class="bp-group-label">New template</h2>
+  <div class="yn-form-grid">
+    <div class="field"><label for="tpl-type">Type</label>
+      <select class="input" id="tpl-type" name="type">
+        {% for t in free_types %}<option value="{{ t.key }}">{{ t.label }}</option>{% endfor %}
+      </select></div>
+    {# Only for "Add your own": trips.js hides it for the other types (with
+       scripts off it simply stays). #}
+    <div class="field" id="tpl-keyword-field" data-show-for-type="custom"><label for="tpl-keyword">Keyword <span class="yn-help">— a word in a trip's title, notes or an activity that suggests this template</span></label>
+      <input class="input" id="tpl-keyword" name="keyword" maxlength="64" placeholder="e.g. conference"></div>
+  </div>
+  <p class="yn-help">One template of each type; “Add your own” can be used as often as you
+    like, each with its own keyword. Next you'll see your matching inventory ticked;
+    nothing is saved until you save it.</p>
+  <div class="dialog-actions">
+    <button type="submit" class="btn btn-secondary">Next</button>
+  </div>
+</form>
+
+<div class="dialog-actions yn-page-done">
+  <a class="btn btn-primary" href="{{ base }}">Done</a>
+</div>
+{% endblock %}
