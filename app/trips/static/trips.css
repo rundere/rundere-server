@@ -356,6 +356,8 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
 @keyframes yn-saved-fade { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .yn-saved { animation: none; } }
 .yn-inv-qty { width: 5em; flex: 0 0 auto; }
+.yn-inv-vol { display: inline-flex; align-items: center; gap: 4px; font-size: 13px;
+  color: var(--color-neutral-600); }
 .yn-inv-cap { width: 8em; flex: 0 0 auto; }
 .yn-tpl-list { margin: 6px 0 0; padding-left: 18px; }
 .yn-tpl-list li { margin: 4px 0; }
@@ -505,6 +507,10 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-arch-x:hover { color: var(--color-text); }
 .yn-arch-add { width: auto; min-height: 30px; padding: 3px 8px; font-size: 13px; }
 .yn-arch-note { font-size: 12px; margin-top: 2px; }
+/* Bags for this trip (5.0, D-232): the fill rides in the chip. */
+.yn-bag-fill { font-size: 12px; color: var(--color-neutral-600); margin-left: 2px; }
+.yn-arch-chip.yn-bag-over { border-color: var(--rd-danger); }
+.yn-bag-over .yn-bag-fill, .yn-bag-warn { color: var(--rd-danger); }
 
 /* Discovery running panel (3.2) */
 .yn-run-live { display: inline-flex; align-items: center; gap: 6px;

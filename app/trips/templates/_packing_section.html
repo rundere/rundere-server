@@ -33,6 +33,7 @@
     {% if packing_has %}This list was made before; it stays as it is until you generate again.{% endif %}</p>
 </div>
 {% endif %}
+{% if packing_bags and not packing_needs_profile %}{% include "_packing_bags.html" %}{% endif %}
 {% if packing_when or (packing_archetype_options and not packing_needs_profile) %}
 {# The person's templates on this list (SPEC-5 §6.7.3, D-230): the ones the
    trip suggests, or their own pick, kept across re-generates. #}
@@ -95,7 +96,7 @@
                min="1" max="99" value="1" title="Quantity">
         <select class="input yn-pack-add-bag" name="bag" title="Which bag">
           {% for o in packing_bag_options %}
-          <option value="{{ o.value }}" {% if o.value == 'checked' %}selected{% endif %}>{{ o.label }}</option>
+          <option value="{{ o.value }}" {% if o.value == packing_bag_default %}selected{% endif %}>{{ o.label }}</option>
           {% endfor %}
         </select>
         <button class="btn btn-ghost bp-sm" type="submit">Add</button>

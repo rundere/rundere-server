@@ -780,6 +780,10 @@ class PackingPlan(Base):
     # is confirmable/adjustable. NULL/empty = auto-detect; carried forward across
     # plain re-generates so the choice sticks.
     manual_archetypes: Mapped[list | None] = mapped_column(JsonCol)
+    # 5.0 (SPEC-5 §6.10, D-232): the Bag ids picked for this trip, carried
+    # forward like manual_archetypes. NULL/empty = none picked, so the list
+    # suggests one.
+    bag_ids: Mapped[list | None] = mapped_column(JsonCol)
     context: Mapped[dict | None] = mapped_column(JsonCol)      # derived inputs snapshot
     warnings: Mapped[list | None] = mapped_column(JsonCol)
     tasks: Mapped[list | None] = mapped_column(JsonCol)        # in-trip actions
@@ -865,6 +869,9 @@ class PackingCatalogItem(Base):
     styles: Mapped[list | None] = mapped_column(JsonCol)      # NULL = every style
     seed_qty: Mapped[int | None] = mapped_column(Integer)     # NULL = 1
     minimal: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # 5.0 (D-232): rough packed size in litres. NULL = the items.json estimate,
+    # else the category default (planning.bags.volume_for).
+    volume_l: Mapped[float | None] = mapped_column(Float)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
@@ -893,6 +900,9 @@ class InventoryItem(Base):
     tags: Mapped[list | None] = mapped_column(JsonCol, default=list)
     quantity: Mapped[int] = mapped_column(Integer, default=1)       # how many owned
     must_have: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # 5.0 (D-232): the person's own packed size in litres; NULL = the
+    # catalogue's estimate for its type_key, else the category default.
+    volume_l: Mapped[float | None] = mapped_column(Float)
     brand: Mapped[str | None] = mapped_column(String(64))
     notes: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")

@@ -10,7 +10,8 @@
   <h1 class="bp-h1">Inventory</h1>
   <p class="bp-trip-notes">Your bags, and the <span id="inv-total-intro">{{ total }} thing{{ '' if total == 1 else 's' }}</span> you own
     and might pack in them. Packing lists draw only from here. The quantity is how many you own; a must-have
-    goes on every trip's list. Changes save as you make them.</p>
+    goes on every trip's list. A bag's capacity in litres, and an item's size if the estimate is off,
+    show what fits. Changes save as you make them.</p>
 </div>
 
 {% if added or bags_added %}
@@ -59,7 +60,7 @@
         <select class="input yn-bag-kind" name="kind" aria-label="Type">
           {% for v, t in bag_kinds %}<option value="{{ v }}" {% if v == b.kind %}selected{% endif %}>{{ t }}</option>{% endfor %}
         </select>
-        <input class="input yn-bag-cap" name="capacity" value="{{ b.capacity or '' }}" maxlength="32" placeholder="e.g. 40L" aria-label="Capacity">
+        <input class="input yn-bag-cap" name="capacity" value="{{ b.capacity or '' }}" maxlength="32" placeholder="e.g. 40L" aria-label="Capacity in litres">
         <span class="yn-row-save yn-bag-save"><noscript><button type="submit" class="btn btn-ghost bp-sm">Save</button></noscript><span class="yn-row-status" role="status"></span></span>
       </form>
       <form method="post" action="{{ base }}/bags/{{ b.id }}/remove" class="yn-bag-remove"
@@ -94,6 +95,8 @@
           hx-target="find .yn-row-status" hx-swap="innerHTML">
       <input class="input yn-inv-label" name="label" value="{{ r.label }}" maxlength="128" aria-label="Name">
       <input class="input yn-inv-qty" type="number" name="quantity" value="{{ r.quantity }}" min="1" max="99" aria-label="How many you own">
+      {# D-232: packed size for the bag fit; blank = the estimate shown. #}
+      <span class="yn-inv-vol"><input class="input yn-inv-qty" type="number" name="volume_l" value="{{ '%g' % r.volume_l if r.volume_l else '' }}" min="0" max="50" step="0.1" placeholder="{{ estimates[r.id] }}" aria-label="Packed size of one, in litres (estimate {{ estimates[r.id] }})" title="Packed size of one, in litres"> L</span>
       <label class="yn-check"><input type="checkbox" name="must_have" value="1" {% if r.must_have %}checked{% endif %}> Must-have</label>
       <span class="yn-row-save"><noscript><button type="submit" class="btn btn-ghost bp-sm">Save</button></noscript><span class="yn-row-status" role="status"></span></span>
     </form>
