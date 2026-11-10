@@ -343,10 +343,22 @@ banner linking to the questionnaire.
 
 The API's packing list leaves out the "Suggested — not in your inventory"
 lines for now (today's apps know only `draft` and `packed`); they're on the
-web page. The apps need no change in 5.0. The "Packing list for <name>" label is optional
-polish. In 5.x the apps gain an "Open questionnaire" button that opens `url`,
-then the questionnaire and inventory screens. In 5.0 the questionnaire and
+web page. The apps need no change in 5.0. In 5.0 the questionnaire and
 inventory are web only.
+
+What the API gives the apps for their next builds (wave 4g):
+
+- The 409 is listed on `POST /api/v1/trips/{id}/packing/generate` in the
+  OpenAPI schema (`detail`, `code`, `url`), so the Android models and the iOS
+  DTOs can decode `code` and `url`. An app that sees `packing_profile_required`
+  shows `detail` with an **Open questionnaire** button that opens `url` on the
+  server in the browser.
+- `PackingOut.for_name` is the caller's traveller name (their username when
+  there's none), for the **"Packing list for <name>"** label. It's optional and
+  null when there's no list.
+
+The work items for both apps are RUNDEREIOS and RUNDEREAND items. In 5.x the
+apps gain the questionnaire and inventory screens.
 
 ### 6.9 Upgrading an existing install
 

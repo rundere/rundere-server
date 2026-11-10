@@ -188,6 +188,9 @@ class PackingItemOut(BaseModel):
 
 
 class PackingOut(BaseModel):
+    # Whose list this is, for the apps' "Packing list for <name>" label: lists
+    # are always the caller's own (D-123, SPEC-5 §6.7.8).
+    for_name: str | None = None
     generated_at: Instant = None
     archetypes: Any = None
     warnings: Any = None
@@ -634,7 +637,8 @@ def _packing_item_out(i: PackingItem) -> PackingItemOut:
                           status=i.status, reason=i.reason)
 
 
-def _packing_out(session: Session, trip_id: str, uid: str) -> "PackingOut | None":
+def _packing_out(session: Session, trip_id: str, user) -> "PackingOut | None":
+    uid = user.id
     plan = (session.query(PackingPlan)
             .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == uid)
             .order_by(PackingPlan.generated_at.desc()).first())
@@ -647,7 +651,9 @@ def _packing_out(session: Session, trip_id: str, uid: str) -> "PackingOut | None
     # line before ever generating a plan).
     if plan is None and not items:
         return None
-    return PackingOut(generated_at=plan.generated_at if plan else None,
+    from app.trips.routes import _packing_for
+    return PackingOut(for_name=_packing_for(session, user) or None,
+                      generated_at=plan.generated_at if plan else None,
                       archetypes=plan.archetypes if plan else None,
                       warnings=plan.warnings if plan else None,
                       tasks=plan.tasks if plan else None,
@@ -711,7 +717,7 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
     discovery_profile = my_discovery_profile(session, user)
 
     # packing — PER-USER (D-123)
-    packing = _packing_out(session, trip.id, user.id)
+    packing = _packing_out(session, trip.id, user)
 
     # linked captures (light) — visible because the user can see this trip
     from app.review.summary import headline as _headline, kind_label as _kind
@@ -1594,7 +1600,20 @@ def api_delete_activity(trip_id: str, activity_id: str,
     return None
 
 
-@router.post("/trips/{trip_id}/packing/generate", response_model=PackingOut)
+# SPEC-5 §6.8: before the questionnaire this is a 409 with `code` and `url`
+# beside the string `detail`; listed so the apps' schemas carry it.
+_PROFILE_REQUIRED_409 = {409: {"description": "No packing profile yet: send the person to `url`.",
+                               "content": {"application/json": {"schema": {
+                                   "type": "object",
+                                   "properties": {"detail": {"type": "string"},
+                                                  "code": {"type": "string",
+                                                           "enum": ["packing_profile_required"]},
+                                                  "url": {"type": "string"}},
+                                   "required": ["detail", "code", "url"]}}}}}
+
+
+@router.post("/trips/{trip_id}/packing/generate", response_model=PackingOut,
+             responses=_PROFILE_REQUIRED_409)
 def api_generate_packing(trip_id: str, user=Depends(authn.current_user),
                          session: Session = Depends(get_session)):
     """Generate/regenerate the CALLER's own packing plan (per-user, D-123)."""
@@ -1605,7 +1624,7 @@ def api_generate_packing(trip_id: str, user=Depends(authn.current_user),
     generate_plan(session, trip, resolve_airport=_airport_resolver(), geocoder=_photon(),
                   home_profiles=load_home_profiles(session, user.traveler_id),
                   user_id=user.id, traveler_id=user.traveler_id)
-    return _packing_out(session, trip.id, user.id) or PackingOut(items=[])
+    return _packing_out(session, trip.id, user) or PackingOut(items=[])
 
 
 @router.patch("/trips/{trip_id}/packing-items/{item_id}", response_model=PackingItemOut)
