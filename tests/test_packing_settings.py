@@ -345,6 +345,39 @@ def test_a_new_template_pre_ticks_and_saves_what_is_ticked(person):
     assert "Example dive mask" in _inventory(u.id)            # the inventory stays
 
 
+def test_the_template_add_box_has_its_own_button(person):
+    """Add puts a hand-typed thing in the inventory and redraws the template's
+    item list with it ticked, keeping the ticks and quantities so far; the
+    template isn't saved. A name already owned is ticked, not duplicated."""
+    u, h = person("tpl-add")
+    client.post(f"{BASE}/inventory/add", headers=h,
+                data={"category": "gear", "label": "Example headlamp", "quantity": "1"})
+    lamp = _inventory(u.id)["Example headlamp"].id
+    page = client.get(f"{BASE}/templates/new?type=hiking", headers=h).text
+    assert 'hx-post="/trips/settings/packing-profile/templates/add-item"' in page
+    r = client.post(f"{BASE}/templates/add-item", headers=h, data={
+        "type": "hiking", "name": "Hiking", "item": [lamp], f"qty:{lamp}": "2",
+        "add_label": "Example trekking poles", "add_category": "activity"})
+    poles = _inventory(u.id)["Example trekking poles"].id
+    assert r.status_code == 200 and '<div id="tpl-items">' in r.text and "<html" not in r.text
+    assert f'value="{poles}" checked' in r.text and f'value="{lamp}" checked' in r.text
+    assert f'name="qty:{lamp}" value="2"' in r.text
+    assert "Added Example trekking poles" in r.text
+    r = client.post(f"{BASE}/templates/add-item", headers=h, data={
+        "add_label": "example HEADLAMP", "add_category": "gear"})
+    assert "You already have Example headlamp" in r.text and f'value="{lamp}" checked' in r.text
+    assert len(_inventory(u.id)) == 2
+    with SessionLocal() as s:
+        assert s.query(PackingTemplate).filter_by(user_id=u.id).count() == 0
+    # Scripts off: the same button saves the template and stays on it.
+    r = client.post(f"{BASE}/templates", headers=h, follow_redirects=False, data={
+        "type": "hiking", "name": "Hiking", "item": [lamp], "then": "add",
+        "add_label": "Example gaiters", "add_category": "clothing"})
+    with SessionLocal() as s:
+        tid = s.query(PackingTemplate).filter_by(user_id=u.id).one().id
+    assert r.headers["location"].endswith(f"/templates/{tid}#tpl-items")
+
+
 def test_the_keyword_field_belongs_to_add_your_own(person):
     """The new-template form's Keyword is only for "Add your own"; trips.js
     shows it (and makes it required) for that type alone."""

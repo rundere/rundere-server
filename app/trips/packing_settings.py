@@ -22,6 +22,7 @@ from html import escape
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import scope
@@ -438,6 +439,46 @@ def _save_lines(request: Request, session: Session, tpl, form) -> None:
                                         quantity=_qty(raw) if raw else None))
 
 
+def _after_template_save(form, tpl) -> RedirectResponse:
+    """Saving goes back to the list. The Add button with scripts off saves too
+    (that's how its item gets in), but stays on the template."""
+    if form.get("then") == "add":
+        return _back(f"/templates/{tpl.id}", "tpl-items")
+    return _back(f"/templates?saved={tpl.id}")
+
+
+@router.post("/templates/add-item", response_class=HTMLResponse)
+async def template_add_item(request: Request, session: Session = Depends(get_session)):
+    """The template page's Add button (htmx): put a hand-typed thing in the
+    inventory, or find the one already there by name, and redraw the item
+    list with it ticked, keeping what's ticked so far. The template itself
+    isn't saved until Save template (YONDER-62 item 15)."""
+    form = await request.form()
+    user, uid = _owner(request)
+    ticked = set(form.getlist("item"))
+    qtys = {k[4:]: _qty(v) for k, v in form.items() if k.startswith("qty:") and v.strip()}
+    label = (form.get("add_label") or "").strip()[:128]
+    category = form.get("add_category") or ""
+    note = None
+    if not label or category not in PACK_CAT_LABELS:
+        note = "Type a name to add."
+    else:
+        row = (_own(session, InventoryItem, user)
+               .filter(InventoryItem.category == category,
+                       func.lower(InventoryItem.label) == label.lower()).first())
+        if row is None:
+            row = _add_item(session, uid, category, label)
+            session.commit()
+            note = f"Added {row.label} to your inventory and ticked it here."
+        else:
+            note = f"You already have {row.label}; it's ticked here."
+        ticked.add(row.id)
+    ctx = _template_ctx(request, session, ticked=ticked, qtys=qtys)
+    ctx["add_note"] = note
+    ctx["add_category"] = category if category in PACK_CAT_LABELS else "activity"
+    return templates.TemplateResponse(request, "_packing_template_items.html", ctx)
+
+
 @router.post("/templates")
 async def template_create(request: Request, session: Session = Depends(get_session)):
     form = await request.form()
@@ -457,7 +498,7 @@ async def template_create(request: Request, session: Session = Depends(get_sessi
     session.flush()
     _save_lines(request, session, tpl, form)
     session.commit()
-    return _back(f"/templates?saved={tpl.id}")
+    return _after_template_save(form, tpl)
 
 
 @router.get("/templates/{template_id}", response_class=HTMLResponse)
@@ -481,7 +522,7 @@ async def template_save(template_id: str, request: Request,
             tpl.keyword = keyword
     _save_lines(request, session, tpl, form)
     session.commit()
-    return _back(f"/templates?saved={tpl.id}")
+    return _after_template_save(form, tpl)
 
 
 @router.post("/templates/{template_id}/delete")
