@@ -638,9 +638,11 @@ def _packing_out(session: Session, trip_id: str, uid: str) -> "PackingOut | None
     plan = (session.query(PackingPlan)
             .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == uid)
             .order_by(PackingPlan.generated_at.desc()).first())
+    # 5.0 "suggested" lines (things the person doesn't own, SPEC-5 §6.7.4) are
+    # web-only for now: today's apps know draft and packed (§6.8).
     items = (session.query(PackingItem)
              .filter(PackingItem.trip_id == trip_id, PackingItem.user_id == uid,
-                     PackingItem.status != "removed").all())
+                     PackingItem.status.notin_(("removed", "suggested"))).all())
     # Surface packing when there's a plan OR any items (a user may add a custom
     # line before ever generating a plan).
     if plan is None and not items:

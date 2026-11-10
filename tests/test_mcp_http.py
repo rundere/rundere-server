@@ -70,8 +70,15 @@ if DEPS:
             synchronize_session=False)
         s.query(OAuthGrant).filter(OAuthGrant.user_id.in_(uids)).delete(synchronize_session=False)
         s.query(AccountEvent).filter(AccountEvent.user_id.in_(uids)).delete(synchronize_session=False)
+        from app.models import Bag, InventoryItem, PackingProfile
+        for model in (InventoryItem, Bag):
+            s.query(model).filter(model.user_id.in_(uids)).delete(synchronize_session=False)
         s.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
-        s.query(TravelerIdentity).filter(TravelerIdentity.display_name.like("MX %")).delete(
+        mx = [t.id for t in s.query(TravelerIdentity).filter(
+            TravelerIdentity.display_name.like("MX %"))]
+        s.query(PackingProfile).filter(PackingProfile.traveler_id.in_(mx)).delete(
+            synchronize_session=False)
+        s.query(TravelerIdentity).filter(TravelerIdentity.id.in_(mx)).delete(
             synchronize_session=False)
         s.commit()
 
@@ -292,8 +299,18 @@ if DEPS:
 
     def test_packing_tools(client, w):
         tok = _tok(w["alice"])
+        # 5.0: no packing questionnaire yet → the gate's sentence (SPEC-5 §6.8)
+        good, err = call(client, tok, "generate_packing", trip_id=w["shared"])
+        assert not good and "Set up your packing profile first" in err and "409" in err
+        from planning.runner import answer_questionnaire
+        with SessionLocal() as s:
+            u = s.get(User, w["alice"])
+            answer_questionnaire(s, user_id=u.id, traveler_id=u.traveler_id, answers={
+                "style": "neutral", "footwear": "minimal", "clothing": [], "care": [],
+                "tech": [], "gear": [], "bags": {}})
+            s.commit()
         plan = ok(client, tok, "generate_packing", trip_id=w["shared"])
-        assert "items" in plan
+        assert "items" in plan and any(i["label"] == "Passport" for i in plan["items"])
         item = ok(client, tok, "add_packing_item", trip_id=w["shared"], label="MX bear spray",
                   category="activity", quantity=2)
         assert item["quantity"] == 2 and item["status"] == "draft"

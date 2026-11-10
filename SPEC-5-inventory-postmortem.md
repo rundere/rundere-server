@@ -306,9 +306,14 @@ to **suggest** which template types fit a trip.
 3. **Templates:** each of the person's templates whose type the signals
    suggest, plus any the person ticked on the trip (this replaces
    `manual_archetypes`, and is kept across re-generates the same way), adds
-   **all** its items (`source = template`).
+   **all** its items (`source = template`). The pick is stored as template ids
+   in the same `manual_archetypes` column, so no migration; a 4.x archetype id
+   left there matches no template and drops out.
 4. **Needs:** the essentials and the active modifiers' items are needs. Each
-   resolves to the person's inventory by `type_key`, then by tag. Found → added
+   resolves to the person's inventory by `type_key`, then by name (the
+   catalogue label or one of its variants). Not by tag: the catalogue's tags
+   describe rather than identify (socks and underwear are both `launderable`),
+   so a tag match would pack the wrong item (amended in 4e). Found → added
    (`source = engine`). Not found → a **"Suggested — not in your inventory"**
    line with **Add to inventory**. It's shown, never hidden (D-83), and never
    added silently (D-231).
@@ -333,7 +338,9 @@ it, so today's builds handle the 409 unchanged. A test pins it. The web page
 shows the same sentence with a link. Plans made before 5.0 stay readable, with a
 banner linking to the questionnaire.
 
-The apps need no change in 5.0. The "Packing list for <name>" label is optional
+The API's packing list leaves out the "Suggested — not in your inventory"
+lines for now (today's apps know only `draft` and `packed`); they're on the
+web page. The apps need no change in 5.0. The "Packing list for <name>" label is optional
 polish. In 5.x the apps gain an "Open questionnaire" button that opens `url`,
 then the questionnaire and inventory screens. In 5.0 the questionnaire and
 inventory are web only.

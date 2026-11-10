@@ -1,9 +1,15 @@
 """Planning runner tests — real DB session, offline geocode, so plan persistence
 and the packed-survives-regenerate contract are covered without network.
+
+Since 5.0 a list draws from the person's inventory (SPEC-5 §6.7), so each test
+starts with the deployment owner (auth off) having answered a minimal
+questionnaire; tests/test_packing_engine_5.py covers the new rules themselves.
 """
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -12,8 +18,10 @@ try:
     from fastapi.testclient import TestClient
     from app.db import SessionLocal, engine
     from app.main import app
-    from app.models import (Base, Bag, PackingItem, PackingPlan, Trip, TripActivity)
-    from planning.runner import generate_plan
+    from app.models import (Base, Bag, InventoryItem, PackingItem, PackingPlan,
+                            PackingProfile, PackingTemplate, PackingTemplateItem, Trip,
+                            TripActivity)
+    from planning.runner import answer_questionnaire, generate_plan
     Base.metadata.create_all(engine)
     _client = TestClient(app)
     DEPS = True
@@ -34,6 +42,44 @@ class _NoGeo:
 
     def geocode_freeform(self, text):
         return None
+
+
+# A minimal questionnaire (no bags, so the bag dropdown tests start empty).
+ANSWERS = {"style": "neutral", "footwear": "minimal", "clothing": [], "care": [],
+           "tech": [], "gear": [], "bags": {}}
+
+
+def _reset_owner():
+    with SessionLocal() as s:
+        tpls = [t.id for t in s.query(PackingTemplate).filter(PackingTemplate.user_id.is_(None))]
+        s.query(PackingTemplateItem).filter(
+            PackingTemplateItem.template_id.in_(tpls)).delete(synchronize_session=False)
+        for m in (PackingTemplate, InventoryItem):
+            s.query(m).filter(m.user_id.is_(None)).delete(synchronize_session=False)
+        s.query(PackingProfile).filter(PackingProfile.traveler_id.is_(None)).delete()
+        s.commit()
+
+
+@pytest.fixture(autouse=True)
+def _answered():
+    """The owner (auth off) has taken the questionnaire."""
+    if not DEPS:
+        yield
+        return
+    _reset_owner()
+    with SessionLocal() as s:
+        answer_questionnaire(s, user_id=None, traveler_id=None, answers=ANSWERS)
+        s.commit()
+    yield
+    _reset_owner()
+
+
+def _line(tid, type_key="passport"):
+    """The trip's line for one owned catalogue item."""
+    with SessionLocal() as s:
+        inv = s.query(InventoryItem).filter(InventoryItem.user_id.is_(None),
+                                            InventoryItem.type_key == type_key).one()
+        return s.query(PackingItem).filter_by(trip_id=tid, inventory_item_id=inv.id).one().id
 
 
 def _trip():
@@ -57,57 +103,77 @@ def _gen(tid):
                              geocoder=_NoGeo()).id
 
 
-def test_manual_archetypes_persist_and_carry_forward():
+def _template(name="Example ski kit", type_key="cold_ski", item="hoodie"):
+    with SessionLocal() as s:
+        inv = s.query(InventoryItem).filter(InventoryItem.user_id.is_(None),
+                                            InventoryItem.type_key == item).one()
+        t = PackingTemplate(user_id=None, type_key=type_key, name=name)
+        s.add(t)
+        s.flush()
+        s.add(PackingTemplateItem(template_id=t.id, inventory_item_id=inv.id, quantity=2))
+        s.commit()
+        return t.id, inv.id
+
+
+def _latest(s, tid):
+    return (s.query(PackingPlan).filter_by(trip_id=tid)
+            .order_by(PackingPlan.generated_at.desc()).first())
+
+
+def test_picked_templates_persist_and_carry_forward():
+    """The person's own pick of templates for a trip replaces 4.x's manual
+    archetypes and sticks across a plain re-generate (SPEC-5 §6.7.3)."""
     if not DEPS:
         return
     tid = _trip()
+    tpl, hoodie = _template()
     with SessionLocal() as s:
         generate_plan(s, s.get(Trip, tid), resolve_airport=_airports,
-                      geocoder=_NoGeo(), manual_archetypes=["cold_ski"])
+                      geocoder=_NoGeo(), manual_archetypes=[tpl, "cold_ski"])
     with SessionLocal() as s:
-        plan = (s.query(PackingPlan).filter_by(trip_id=tid)
-                .order_by(PackingPlan.generated_at.desc()).first())
-        assert plan.manual_archetypes == ["cold_ski"]
-        assert [a["id"] for a in plan.archetypes] == ["cold_ski"]   # override won
-        keys = {i.item_key for i in s.query(PackingItem).filter_by(trip_id=tid).all()}
-        assert any("insulated_jacket" in k for k in keys)
-    # a plain re-generate keeps the choice
-    with SessionLocal() as s:
+        plan = _latest(s, tid)
+        assert plan.manual_archetypes == [tpl]          # a 4.x archetype id drops out
+        assert plan.archetypes == [{"id": tpl, "label": "Example ski kit",
+                                    "suggested": False}]
+        line = s.query(PackingItem).filter_by(trip_id=tid, inventory_item_id=hoodie).one()
+        assert "from your Example ski kit template" in line.reason
+        # The template asks for 2, the inventory has 1: capped, and said (§6.7.7).
+        assert line.quantity == 1 and f"2 × {line.label} needed, you have 1." in plan.warnings
+    with SessionLocal() as s:                            # a plain re-generate keeps it
         generate_plan(s, s.get(Trip, tid), resolve_airport=_airports, geocoder=_NoGeo())
     with SessionLocal() as s:
-        plan = (s.query(PackingPlan).filter_by(trip_id=tid)
-                .order_by(PackingPlan.generated_at.desc()).first())
-        assert plan.manual_archetypes == ["cold_ski"]
-    # an explicit empty set resets to auto-detection
-    with SessionLocal() as s:
+        assert _latest(s, tid).manual_archetypes == [tpl]
+    with SessionLocal() as s:                            # [] goes back to suggestions
         generate_plan(s, s.get(Trip, tid), resolve_airport=_airports,
                       geocoder=_NoGeo(), manual_archetypes=[])
     with SessionLocal() as s:
-        plan = (s.query(PackingPlan).filter_by(trip_id=tid)
-                .order_by(PackingPlan.generated_at.desc()).first())
-        assert plan.manual_archetypes is None
+        plan = _latest(s, tid)
+        assert plan.manual_archetypes is None and plan.archetypes == []
 
 
-def test_archetype_add_remove_routes(monkeypatch):
+def test_template_add_remove_routes(monkeypatch):
     if not DEPS:
         return
     import app.trips.routes as tr
     monkeypatch.setattr(tr, "_airport_resolver", lambda: _airports)
     monkeypatch.setattr(tr, "_photon", lambda: _NoGeo())
     tid = _trip()
-    with SessionLocal() as s:                        # seed an initial (auto) plan
-        generate_plan(s, s.get(Trip, tid), resolve_airport=_airports, geocoder=_NoGeo())
-    r = _client.post(f"/trips/{tid}/pack/archetypes/add", data={"archetype_id": "cold_ski"})
-    assert r.status_code == 200 and "Insulated jacket" in r.text
+    tpl, _ = _template()
+    _gen(tid)
+    page = _client.get(f"/trips/{tid}").text
+    assert f'<option value="{tpl}">Example ski kit</option>' in page
+    r = _client.post(f"/trips/{tid}/pack/templates/add", data={"template_id": tpl})
+    assert r.status_code == 200 and "from your Example ski kit template" in r.text
     with SessionLocal() as s:
-        plan = (s.query(PackingPlan).filter_by(trip_id=tid)
-                .order_by(PackingPlan.generated_at.desc()).first())
-        assert "cold_ski" in (plan.manual_archetypes or [])
-    r = _client.post(f"/trips/{tid}/pack/archetypes/remove", data={"archetype_id": "cold_ski"})
-    assert r.status_code == 200 and "Insulated jacket" not in r.text
+        assert tpl in (_latest(s, tid).manual_archetypes or [])
+    r = _client.post(f"/trips/{tid}/pack/templates/add", data={"template_id": "not-mine"})
+    with SessionLocal() as s:
+        assert _latest(s, tid).manual_archetypes == [tpl]
+    r = _client.post(f"/trips/{tid}/pack/templates/remove", data={"template_id": tpl})
+    assert r.status_code == 200 and "from your Example ski kit template" not in r.text
 
 
-def test_generate_persists_a_plan_with_essentials():
+def test_generate_persists_a_list_from_the_inventory():
     if not DEPS:
         return
     tid = _trip()
@@ -115,12 +181,12 @@ def test_generate_persists_a_plan_with_essentials():
     with SessionLocal() as s:
         plan = s.query(PackingPlan).filter_by(trip_id=tid).one()
         assert plan.status == "done"
-        assert plan.archetypes                       # something was chosen
         items = s.query(PackingItem).filter_by(trip_id=tid).all()
-        keys = {i.item_key for i in items}
-        assert "documents:passport" in keys
+        owned = {i.label for i in items if i.inventory_item_id}
+        assert "Passport" in owned
         # CH is international vs an empty home set → international essentials in
-        assert "documents:travel_insurance" in keys
+        assert "Travel insurance" in owned
+        assert all(i.item_key.startswith(("inv:", "suggest:")) for i in items)
         # no weather findings → a heads-up warning
         assert any("weather" in w.lower() for w in (plan.warnings or []))
 
@@ -130,18 +196,14 @@ def test_packed_item_survives_regenerate():
         return
     tid = _trip()
     _gen(tid)
+    pid = _line(tid)
     with SessionLocal() as s:
-        pi = s.query(PackingItem).filter_by(trip_id=tid,
-                                            item_key="documents:passport").one()
-        pi.status = "packed"
+        s.get(PackingItem, pid).status = "packed"
         s.commit()
-        pid = pi.id
     _gen(tid)                                        # re-generate
     with SessionLocal() as s:
         assert s.get(PackingItem, pid).status == "packed"   # not reset to draft
-        # exactly one passport row — upserted, not duplicated
-        assert s.query(PackingItem).filter_by(
-            trip_id=tid, item_key="documents:passport").count() == 1
+    assert _line(tid) == pid                         # upserted, not duplicated
 
 
 def test_trip_detail_renders_the_packing_plan():
@@ -166,9 +228,7 @@ def test_check_off_is_inline_not_a_reload():
         return
     tid = _trip()
     _gen(tid)
-    with SessionLocal() as s:
-        iid = s.query(PackingItem).filter_by(
-            trip_id=tid, item_key="documents:passport").one().id
+    iid = _line(tid)
     r = _client.post(f"/trips/{tid}/pack-item/{iid}/pack")
     assert r.status_code == 200
     assert "HX-Redirect" not in r.headers          # not a full-page navigation
@@ -186,9 +246,7 @@ def test_quantity_edit_is_inline_and_survives_regenerate():
         return
     tid = _trip()
     _gen(tid)
-    with SessionLocal() as s:
-        iid = s.query(PackingItem).filter_by(
-            trip_id=tid, item_key="documents:passport").one().id
+    iid = _line(tid)
     r = _client.post(f"/trips/{tid}/pack-item/{iid}/qty", data={"quantity": "3"})
     assert r.status_code == 200
     assert "<html" not in r.text.lower()
@@ -199,8 +257,7 @@ def test_quantity_edit_is_inline_and_survives_regenerate():
     with SessionLocal() as s:
         i = s.get(PackingItem, iid)
         assert i.quantity == 3                       # not reset by the engine
-        assert s.query(PackingItem).filter_by(
-            trip_id=tid, item_key="documents:passport").count() == 1  # not duped
+    assert _line(tid) == iid                         # upserted, not duped
 
 
 def test_quantity_edit_is_clamped():
@@ -208,9 +265,7 @@ def test_quantity_edit_is_clamped():
         return
     tid = _trip()
     _gen(tid)
-    with SessionLocal() as s:
-        iid = s.query(PackingItem).filter_by(
-            trip_id=tid, item_key="documents:passport").one().id
+    iid = _line(tid)
     _client.post(f"/trips/{tid}/pack-item/{iid}/qty", data={"quantity": "0"})
     with SessionLocal() as s:
         assert s.get(PackingItem, iid).quantity == 1  # clamped, not 0/negative
@@ -221,9 +276,7 @@ def test_bag_edit_accepts_backpack_and_rejects_junk():
         return
     tid = _trip()
     _gen(tid)
-    with SessionLocal() as s:
-        iid = s.query(PackingItem).filter_by(
-            trip_id=tid, item_key="documents:passport").one().id
+    iid = _line(tid)
     r = _client.post(f"/trips/{tid}/pack-item/{iid}/bag", data={"bag": "backpack"})
     assert r.status_code == 200
     with SessionLocal() as s:
@@ -245,9 +298,7 @@ def test_label_edit_renames_the_line_without_touching_the_catalog():
     catalog_label_before = catalog.seed_items()["passport"]["label"]
     tid = _trip()
     _gen(tid)
-    with SessionLocal() as s:
-        iid = s.query(PackingItem).filter_by(
-            trip_id=tid, item_key="documents:passport").one().id
+    iid = _line(tid)
     r = _client.post(f"/trips/{tid}/pack-item/{iid}/label",
                      data={"label": "Passport + photocopy"})
     assert r.status_code == 200
@@ -313,9 +364,7 @@ def test_bag_dropdown_falls_back_to_generic_with_no_inventory():
     _clear_bags()
     tid = _trip()
     _gen(tid)
-    with SessionLocal() as s:
-        iid = s.query(PackingItem).filter_by(
-            trip_id=tid, item_key="documents:passport").one().id
+    iid = _line(tid)
     r = _client.post(f"/trips/{tid}/pack-item/{iid}/qty", data={"quantity": "1"})
     assert 'value="backpack"' in r.text and 'value="carry_on"' in r.text
     assert 'value="checked"' in r.text
@@ -335,9 +384,7 @@ def test_bag_dropdown_lists_real_inventory_once_it_exists():
             s.commit()
         tid = _trip()
         _gen(tid)
-        with SessionLocal() as s:
-            iid = s.query(PackingItem).filter_by(
-                trip_id=tid, item_key="documents:passport").one().id
+        iid = _line(tid)
         r = _client.post(f"/trips/{tid}/pack-item/{iid}/qty", data={"quantity": "1"})
         assert "Osprey Farpoint 40" in r.text and "Away Carry-On" in r.text
         assert 'value="backpack"' not in r.text        # generic set replaced
@@ -376,9 +423,7 @@ def test_bag_label_survives_retiring_a_bag():
             bag_id = b.id
         tid = _trip()
         _gen(tid)
-        with SessionLocal() as s:
-            iid = s.query(PackingItem).filter_by(
-                trip_id=tid, item_key="documents:passport").one().id
+        iid = _line(tid)
         _client.post(f"/trips/{tid}/pack-item/{iid}/bag", data={"bag": bag_id})
         with SessionLocal() as s:
             s.query(Bag).filter_by(id=bag_id).update({"enabled": False})
