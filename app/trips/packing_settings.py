@@ -29,6 +29,7 @@ from app import scope
 from app.db import get_session
 from app.models import Bag, InventoryItem, PackingProfile, PackingTemplate, PackingTemplateItem
 from app.trips.routes import PACK_CAT_LABELS, PACK_CAT_ORDER, _profile_row, templates
+from planning import bags as bagfit
 from planning import catalog, inventory
 
 router = APIRouter(prefix="/trips/settings/packing-profile")
@@ -101,6 +102,16 @@ def _row_saved(request: Request, path: str, anchor: str, note: str = ""):
     if request.headers.get("hx-request") == "true":
         return HTMLResponse(f'<span class="yn-saved">{escape(note or "Saved ✓")}</span>')
     return _back(path, anchor)
+
+
+def _volume(raw) -> float | None:
+    """A packed size in litres from the inventory row (D-232); blank or
+    nonsense clears it, so the catalogue's estimate applies again."""
+    try:
+        v = round(float(str(raw).replace(",", ".")), 2)
+    except (TypeError, ValueError):
+        return None
+    return v if 0 < v <= 50 else None
 
 
 def _qty(raw, default: int = 1, low: int = 1) -> int:
@@ -256,10 +267,16 @@ def inventory_page(request: Request, added: int = 0,
     for c, extra in by_cat.items():
         cats.append({"key": c, "label": c.title(), "rows": extra})
     bags = _own(session, Bag, user).filter(Bag.enabled.is_(True)).order_by(Bag.label).all()
-    names = sorted({it.get("label", i) for i, it in catalog.items(session).items()})
+    items = catalog.items(session)
+    names = sorted({it.get("label", i) for i, it in items.items()})
+    # The estimate each row's size field shows until the person sets their own.
+    defaults = catalog.volume_defaults()
+    estimates = {r.id: f"{bagfit.volume_for(r.type_key, r.category, items, defaults):g}"
+                 for r in rows}
     return templates.TemplateResponse(request, "packing_inventory.html", {
         "request": request, "base": BASE, "cats": cats, "bags": bags,
         "bag_kinds": BAG_KINDS, "catalog_names": names, "total": len(rows),
+        "estimates": estimates,
         "taken": _taken(request, session),
         # Arriving from the questionnaire: say what it added (numbers only).
         "added": max(0, added), "bags_added": max(0, bags_added)})
@@ -287,13 +304,14 @@ def inventory_add(request: Request, category: str = Form(...), label: str = Form
 @router.post("/inventory/{item_id}")
 def inventory_save(item_id: str, request: Request, label: str = Form(""),
                    quantity: str = Form("1"), must_have: str = Form(""),
-                   session: Session = Depends(get_session)):
+                   volume_l: str = Form(""), session: Session = Depends(get_session)):
     row = scope.require_own(session, _owner(request)[0], InventoryItem, item_id)
     label = label.strip()[:128]
     if label:
         row.label = label
     row.quantity = _qty(quantity, row.quantity)
     row.must_have = bool(must_have)
+    row.volume_l = _volume(volume_l)
     session.commit()
     return _row_saved(request, "/inventory", f"cat-{row.category}",
                       "" if label else f"Saved ✓ (kept the name {row.label})")
@@ -331,8 +349,13 @@ def bag_save(bag_id: str, request: Request, label: str = Form(""),
         bag.kind = kind
     bag.capacity = capacity.strip()[:32] or None
     session.commit()
+    # Say what the fit will read from it (D-232), so "22in" isn't a surprise.
+    litres = bagfit.capacity_l(bag.capacity)
+    fit = (f" · {litres:g} L" if litres else
+           " · not in litres, so what fits can't be checked" if bag.capacity else "")
     return _row_saved(request, "/inventory", "bags",
-                      "" if label.strip() else f"Saved ✓ (kept the name {bag.label})")
+                      ("Saved ✓" if label.strip() else
+                       f"Saved ✓ (kept the name {bag.label})") + fit)
 
 
 @router.post("/bags/{bag_id}/remove")

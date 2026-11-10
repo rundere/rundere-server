@@ -1716,12 +1716,23 @@ def _bag_option_label(b: Bag) -> str:
     return f"{b.label} · {b.capacity}" if b.capacity else b.label
 
 
-def _bag_options(session: Session, user) -> list[dict]:
-    """The per-item bag dropdown's choices: the owner's real bag inventory
-    (Packing profile → Inventory) once they have one, else the generic carry-on /
-    checked / backpack categories — the zero-setup default, same DB-is-truth
-    -else-fallback pattern as the packing catalog (D-84)."""
+def _latest_plan(session: Session, trip_id: str, user_id=None) -> PackingPlan | None:
+    return (session.query(PackingPlan)
+            .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
+            .order_by(PackingPlan.generated_at.desc()).first())
+
+
+def _bag_options(session: Session, user, trip_id: str | None = None) -> list[dict]:
+    """The per-item bag dropdown's choices: the bags picked for this trip
+    (D-232), else the owner's real bag inventory (Packing profile → Inventory)
+    once they have one, else the generic carry-on / checked / backpack
+    categories — the zero-setup default, same DB-is-truth-else-fallback
+    pattern as the packing catalog (D-84)."""
     rows = _bag_inventory(session, user)
+    if rows and trip_id:
+        plan = _latest_plan(session, trip_id, user.id if user else None)
+        picked = set((plan.bag_ids if plan else None) or [])
+        rows = [b for b in rows if b.id in picked] or rows
     if rows:
         return [{"value": b.id, "label": _bag_option_label(b)} for b in rows]
     return [{"value": v, "label": t} for v, t in PACK_BAG_OPTS]
@@ -1771,6 +1782,52 @@ def _packing_for(session: Session, user) -> str:
     return t.display_name if t else ""
 
 
+def _litres(v: float) -> str:
+    return f"{v:.0f} L" if v >= 10 else f"{v:.1f} L".replace(".0 L", " L")
+
+
+def _packing_bags_context(session: Session, plan, items: list, user) -> dict:
+    """Bags for this trip and what fits (SPEC-5 §6.10, D-232): the picked
+    bags' fill, the bags to add, and with none picked, a suggestion."""
+    from planning import bags as bagfit
+    from planning.runner import bag_infos, fit_lines, load_profile, picked_bags
+    uid = user.id if user else None
+    mine = bag_infos(session, uid)
+    picked = picked_bags(session, plan, uid)
+    lines = fit_lines(session, items, uid)
+    rep = bagfit.fit(lines, picked)
+    fills = [{"id": f.bag.id, "label": f.bag.label,
+              "used": _litres(f.used), "over": f.over,
+              "capacity": _litres(f.bag.capacity) if f.bag.capacity else "",
+              "usable": _litres(bagfit.usable(f.bag)) if f.bag.capacity else ""}
+             for f in rep.fills]
+    suggestion = None
+    if not picked and lines and mine:
+        prof = load_profile(session, getattr(user, "traveler_id", None),
+                            owner=user is None)
+        found = bagfit.suggest(rep.total, mine,
+                               one_bag=prof.get("packing_style") == "one_bag")
+        if found:
+            suggestion = {"ids": ",".join(b.id for b in found),
+                          "label": " + ".join(
+                              f"{b.label} ({_litres(b.capacity)})" for b in found)}
+        elif any(b.capacity for b in mine):
+            suggestion = {"ids": "", "label": ""}      # none of them holds it
+    picked_ids = {b.id for b in picked}
+    return {
+        # A hand-added line goes where a checked-bag item would (§6.10.4).
+        "packing_bag_default": bagfit.assign("checked", picked) or "checked",
+        "packing_bags": mine,
+        "packing_bag_fills": fills,
+        "packing_bag_add": [{"id": b.id, "label": b.label} for b in mine
+                            if b.id not in picked_ids],
+        "packing_bag_total": _litres(rep.total) if lines else "",
+        "packing_bag_elsewhere": _litres(rep.elsewhere) if rep.elsewhere >= 0.5 else "",
+        "packing_bag_suggestion": suggestion,
+        "packing_bags_no_capacity": bool(mine) and not any(b.capacity for b in mine),
+    }
+
+
 def _packing_context(session: Session, trip_id: str, user=None) -> dict:
     user_id = user.id if user else None
     items = (session.query(PackingItem)
@@ -1809,7 +1866,8 @@ def _packing_context(session: Session, trip_id: str, user=None) -> dict:
     return {
         "packing_cats": cats,
         "packing_omitted": [_packing_item_view(i, bag_labels) for i in omitted],
-        "packing_bag_options": _bag_options(session, user),
+        "packing_bag_options": _bag_options(session, user, trip_id),
+        **_packing_bags_context(session, plan, items, user),
         "packing_has": bool(included),
         "packing_warnings": (plan.warnings if plan else None) or [],
         "packing_tasks": (plan.tasks if plan else None) or [],
@@ -1907,6 +1965,62 @@ def remove_pack_template_route(trip_id: str, request: Request, template_id: str 
     return _regenerate_with_archetypes(request, session, trip, ids)
 
 
+def _set_trip_bags(request: Request, session: Session, trip: Trip,
+                   ids: list[str]) -> HTMLResponse:
+    """Store the trip's picked bags and put the lines in them, without
+    re-generating (SPEC-5 §6.10.1). No list yet: generate one with them."""
+    from planning.runner import (PackingProfileRequired, bag_infos, generate_plan,
+                                 reassign_bags)
+    uid, tid = _pack_identity(request)
+    mine = {b.id for b in bag_infos(session, uid)}
+    ids = list(dict.fromkeys(i for i in ids if i in mine))
+    plan = _latest_plan(session, trip.id, uid)
+    if plan is None:
+        from app.resolving import load_homes_for_user
+        try:
+            generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                          geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
+                          bag_ids=ids, user_id=uid, traveler_id=tid)
+        except PackingProfileRequired:
+            pass
+    else:
+        plan.bag_ids = ids or None
+        reassign_bags(session, plan, uid, tid)
+        session.commit()
+    return templates.TemplateResponse(request, "_packing_section.html",
+        {"request": request, "trip": {"id": trip.id},
+         **_packing_context(session, trip.id, scope.user_of(request))})
+
+
+def _current_bag_ids(session: Session, trip_id: str, user_id=None) -> list[str]:
+    plan = _latest_plan(session, trip_id, user_id)
+    return list((plan.bag_ids if plan else None) or [])
+
+
+@router.post("/{trip_id}/pack/bags/add", response_class=HTMLResponse)
+def add_pack_bag_route(trip_id: str, request: Request, bag_id: str = Form(""),
+                       session: Session = Depends(get_session)):
+    """Pick one of the person's bags for this trip (D-232). `bag_id` may be
+    several, comma-separated: "Use it" on a suggested pair."""
+    trip = scope.trip_or_none(session, request, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    ids = _current_bag_ids(session, trip_id, _pack_identity(request)[0])
+    ids += [b.strip() for b in bag_id.split(",") if b.strip()]
+    return _set_trip_bags(request, session, trip, ids)
+
+
+@router.post("/{trip_id}/pack/bags/remove", response_class=HTMLResponse)
+def remove_pack_bag_route(trip_id: str, request: Request, bag_id: str = Form(""),
+                          session: Session = Depends(get_session)):
+    trip = scope.trip_or_none(session, request, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    ids = [i for i in _current_bag_ids(session, trip_id, _pack_identity(request)[0])
+           if i != bag_id]
+    return _set_trip_bags(request, session, trip, ids)
+
+
 def _pack_count_oob(session: Session, trip_id: str, category: str, user_id=None) -> str:
     """An out-of-band swap for a category's packed/total badge, so an inline
     row change keeps the header count honest without a page reload. Scoped to the
@@ -1921,13 +2035,25 @@ def _pack_count_oob(session: Session, trip_id: str, category: str, user_id=None)
             f'hx-swap-oob="true">{packed}/{len(rows)}</span>')
 
 
+def _pack_fit_oob(session: Session, trip_id: str, user) -> str:
+    """The bag fit, out-of-band, so a quantity or bag change on one row keeps
+    "About 31 L of your 40 L" honest without re-rendering the list (D-232)."""
+    uid = user.id if user else None
+    items = (session.query(PackingItem)
+             .filter(PackingItem.trip_id == trip_id, PackingItem.user_id == uid).all())
+    ctx = _packing_bags_context(session, _latest_plan(session, trip_id, uid), items, user)
+    return templates.env.get_template("_packing_bags.html").render(
+        trip={"id": trip_id}, oob=True, read_only=False, **ctx)
+
+
 def _pack_item_row(request: Request, trip_id: str, session: Session,
                    i: PackingItem) -> HTMLResponse:
     user = scope.user_of(request)
     row_html = templates.env.get_template("_packing_item.html").render(
         trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session, user)),
-        packing_bag_options=_bag_options(session, user))
-    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category, i.user_id))
+        packing_bag_options=_bag_options(session, user, trip_id))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category, i.user_id)
+                        + _pack_fit_oob(session, trip_id, user))
 
 
 # NB: these three (qty/bag/label) MUST be registered before the generic
@@ -2043,8 +2169,9 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
     row_html = "" if action == "remove" else templates.env.get_template(
         "_packing_item.html").render(
             trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session, user)),
-            packing_bag_options=_bag_options(session, user))
-    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category, uid))
+            packing_bag_options=_bag_options(session, user, trip_id))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category, uid)
+                        + _pack_fit_oob(session, trip_id, user))
 
 
 @router.post("/{trip_id}/pack-item/add", response_class=HTMLResponse)

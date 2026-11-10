@@ -14,12 +14,13 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import (DiscoveryExclusion, DiscoveryFinding, InventoryItem,
+from app.models import (Bag, DiscoveryExclusion, DiscoveryFinding, InventoryItem,
                         PackingItem, PackingPlan,
                         PackingProfile, PackingTemplate, PackingTemplateItem,
                         TripActivity)
 from discover.home_filter import home_country_set, is_home_place
 from discover.places import DerivedLocations, derive_locations
+from planning import bags as bagfit
 from planning import catalog, culture
 from planning.assemble import assemble
 from planning.context import derive_context
@@ -162,6 +163,83 @@ def _latest_manual_archetypes(session: Session, trip_id: str,
     return (prev.manual_archetypes if prev else None) or None
 
 
+def _latest_bag_ids(session: Session, trip_id: str, user_id: str | None) -> list | None:
+    prev = (session.query(PackingPlan)
+            .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
+            .order_by(PackingPlan.generated_at.desc()).first())
+    return (prev.bag_ids if prev else None) or None
+
+
+def bag_infos(session: Session, user_id: str | None) -> list[bagfit.BagInfo]:
+    """The person's own enabled bags, with capacity in litres (D-232)."""
+    return [bagfit.BagInfo(id=b.id, label=b.label, kind=b.kind,
+                           capacity=bagfit.capacity_l(b.capacity))
+            for b in session.query(Bag).filter(_own(Bag, user_id), Bag.enabled.is_(True))
+            .order_by(Bag.kind, Bag.label)]
+
+
+def picked_bags(session: Session, plan: PackingPlan | None,
+                user_id: str | None) -> list[bagfit.BagInfo]:
+    """The plan's picked bags that are still the person's and enabled, in
+    the order picked."""
+    mine = {b.id: b for b in bag_infos(session, user_id)}
+    return [mine[i] for i in ((plan.bag_ids if plan else None) or []) if i in mine]
+
+
+def generic_bag(row: PackingItem, items: dict, one_bag: bool,
+                inv: dict[str, InventoryItem]) -> str:
+    """The engine's generic guess for a line (carry_on | checked), recomputed
+    for a line already in a list: its own generic bag if it still has one,
+    else its catalogue type (the owned item's, or a 4.x "clothing:jeans" key),
+    else checked."""
+    if one_bag:
+        return "carry_on"
+    if row.bag in ("carry_on", "checked"):
+        return row.bag
+    if row.bag == "backpack":
+        return "carry_on"
+    own = inv.get(row.inventory_item_id or "")
+    key = own.type_key if own else (row.item_key or "").split(":", 1)[-1]
+    return (items.get(key or "") or {}).get("bag", "checked")
+
+
+def reassign_bags(session: Session, plan: PackingPlan, user_id: str | None,
+                  traveler_id: int | None = None) -> None:
+    """Put the list's lines in the plan's picked bags (SPEC-5 §6.10.4),
+    without re-generating. Lines moved by hand, ticked off or removed keep
+    their bag (D-63); with nothing picked, lines go back to the generic guess.
+    The caller commits."""
+    picked = picked_bags(session, plan, user_id)
+    items = catalog.items(session)
+    one_bag = load_profile(session, traveler_id,
+                           owner=user_id is None).get("packing_style") == "one_bag"
+    rows = (session.query(PackingItem)
+            .filter(PackingItem.trip_id == plan.trip_id, PackingItem.user_id == user_id,
+                    PackingItem.status == "draft", PackingItem.edited.is_(False)).all())
+    inv = {r.id: r for r in session.query(InventoryItem).filter(_own(InventoryItem, user_id))}
+    for row in rows:
+        guess = generic_bag(row, items, one_bag, inv)
+        row.bag = bagfit.assign(guess, picked) or guess
+
+
+def fit_lines(session: Session, rows: list[PackingItem],
+              user_id: str | None) -> list[bagfit.Line]:
+    """The fit's view of a list's draft and packed lines (§6.10.2)."""
+    items = catalog.items(session)
+    defaults = catalog.volume_defaults()
+    inv = {r.id: r for r in session.query(InventoryItem).filter(_own(InventoryItem, user_id))}
+    out = []
+    for row in rows:
+        if row.status not in ("draft", "packed"):
+            continue
+        own = inv.get(row.inventory_item_id or "")
+        out.append(bagfit.Line(
+            id=row.id, category=row.category, quantity=row.quantity or 1, bag=row.bag,
+            volume=bagfit.volume_for(own.type_key if own else None, row.category, items,
+                                     defaults, own.volume_l if own else None)))
+    return out
+
+
 def _packing_places(session: Session, trip, user_id, derived, profiles,
                     home_countries) -> DerivedLocations:
     """The places a list packs for: the ones Discover researches for this
@@ -178,7 +256,7 @@ def _packing_places(session: Session, trip, user_id, derived, profiles,
 
 def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
                   home_profiles: list = (), today: str | None = None,
-                  manual_archetypes: list | None = None,
+                  manual_archetypes: list | None = None, bag_ids: list | None = None,
                   user_id: str | None = None, traveler_id: int | None = None) -> PackingPlan:
     """Generate and persist ONE person's packing list for `trip`, owned by
     `user_id` (D-123: per-user; NULL = auth off), from their own inventory and
@@ -188,7 +266,8 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
     `manual_archetypes` is the person's explicit set of template ids for this
     trip. Pass it to force a set; pass None (a plain re-generate) and the last
     choice is carried forward. An explicit empty list goes back to the
-    templates the trip suggests."""
+    templates the trip suggests. `bag_ids`, the bags picked for the trip
+    (D-232), is carried forward the same way."""
     owner = user_id is None
     if not profile_ready(session, traveler_id, owner=owner):
         raise PackingProfileRequired()
@@ -197,8 +276,12 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
     templates = _templates(session, user_id)
     mine = {t["id"] for t in templates}
     override = [t for t in (manual_archetypes or []) if t in mine] or None
+    if bag_ids is None:
+        bag_ids = _latest_bag_ids(session, trip.id, user_id)
     plan = PackingPlan(trip_id=trip.id, user_id=user_id, status="running",
                        generated_at=_now(), manual_archetypes=override)
+    plan.bag_ids = [b.id for b in picked_bags(
+        session, PackingPlan(bag_ids=bag_ids), user_id)] or None
     session.add(plan)
     session.flush()
     try:
@@ -236,6 +319,11 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
                         "template_types": result.suggested_types}
         plan.warnings = result.warnings
         plan.tasks = result.tasks
+
+        # The picked bags take the lines (§6.10.4); none picked, the guess stays.
+        picked = picked_bags(session, plan, user_id)
+        for pi in result.lines:
+            pi.bag = bagfit.assign(pi.bag, picked) or pi.bag
 
         produced: set[str] = set()
         for pi in result.lines + result.suggestions:

@@ -1,0 +1,40 @@
+{# Bags for this trip, and what fits (SPEC-5 §6.10, D-232). Rendered in the
+   Packing section, and out-of-band after a row edit so the fill stays honest. #}
+<div id="pack-bags" class="yn-arch-row yn-pack-bags"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <span class="yn-arch-lbl">Bags for this trip:</span>
+  {% for f in packing_bag_fills %}
+  <span class="yn-arch-chip{% if f.over %} yn-bag-over{% endif %}">{{ f.label }}
+    <span class="yn-bag-fill">{% if f.capacity %}about {{ f.used }} of {{ f.capacity }}{% else %}about {{ f.used }} · capacity unknown{% endif %}</span>{% if not read_only %}<button class="yn-arch-x" title="Take {{ f.label }} off this trip"
+      hx-post="/trips/{{ trip.id }}/pack/bags/remove"
+      hx-vals='{"bag_id": "{{ f.id }}"}'
+      hx-target="#packing-section" hx-swap="outerHTML" hx-disabled-elt="this">×</button>{% endif %}</span>
+  {% else %}
+  <span class="yn-help">none picked{% if packing_bag_total %} · about {{ packing_bag_total }} in all{% endif %}</span>
+  {% endfor %}
+  {% if packing_bag_add and not read_only %}
+  <select class="input yn-arch-add" name="bag_id" aria-label="Add one of your bags"
+          hx-post="/trips/{{ trip.id }}/pack/bags/add"
+          hx-target="#packing-section" hx-swap="outerHTML" hx-trigger="change">
+    <option value="" disabled selected>+ Add a bag…</option>
+    {% for o in packing_bag_add %}<option value="{{ o.id }}">{{ o.label }}</option>{% endfor %}
+  </select>
+  {% endif %}
+</div>
+<div id="pack-bags-note"{% if oob %} hx-swap-oob="true"{% endif %}>
+{% set over = packing_bag_fills | selectattr('over') | list %}
+{% if over %}
+<p class="bp-trip-notes yn-arch-note yn-bag-warn" role="status">{% for f in over %}{{ f.label }} looks full: about {{ f.used }} for about {{ f.usable }} of usable space. {% endfor %}Take something off, or add a bag.</p>
+{% elif packing_bag_fills and packing_bag_elsewhere %}
+<p class="bp-trip-notes yn-arch-note">About {{ packing_bag_elsewhere }} is in bags not picked for this trip.</p>
+{% elif packing_bag_suggestion and packing_bag_suggestion.ids %}
+<p class="bp-trip-notes yn-arch-note">This list should fit in your {{ packing_bag_suggestion.label }}.
+  {% if not read_only %}<button class="btn btn-ghost bp-sm" hx-post="/trips/{{ trip.id }}/pack/bags/add"
+      hx-vals='{"bag_id": "{{ packing_bag_suggestion.ids }}"}'
+      hx-target="#packing-section" hx-swap="outerHTML" hx-disabled-elt="this">Use it</button>{% endif %}</p>
+{% elif packing_bag_suggestion %}
+<p class="bp-trip-notes yn-arch-note">None of your bags, alone or in pairs, looks big enough for about {{ packing_bag_total }}.</p>
+{% elif packing_bags_no_capacity and packing_bag_total %}
+<p class="bp-trip-notes yn-arch-note">Add your bags' capacity in litres (e.g. 40L) on the <a href="/trips/settings/packing-profile/inventory#bags">Inventory page</a> to see what fits.</p>
+{% endif %}
+{% if packing_bag_fills or packing_bag_suggestion %}<p class="yn-help yn-arch-note">Sizes are rough estimates: one pair of shoes is worn, and about 85% of a bag is usable.</p>{% endif %}
+</div>

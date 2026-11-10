@@ -308,11 +308,14 @@ def test_a_list_is_one_persons_and_says_whose(world, monkeypatch):
 @pytestmark_app
 def test_add_to_inventory_turns_a_suggestion_into_an_owned_line(world, monkeypatch):
     _answer(world, "a")
+    with SessionLocal() as s:                  # Ada has no passport, so it's suggested
+        s.query(InventoryItem).filter_by(user_id=world["a"], type_key="passport").delete()
+        s.commit()
     h = _h(world["a"])
     client.post(f"/trips/{world['trip']}/pack", headers=h)
     with SessionLocal() as s:
         sug = s.query(PackingItem).filter_by(trip_id=world["trip"], status="suggested").all()
-        assert sug                              # the minimal answers don't cover everything
+        assert sug
         target = sug[0]
         sid, key, label = target.id, target.item_key, target.label
     page = client.get(f"/trips/{world['trip']}", headers=h).text
@@ -412,3 +415,20 @@ def test_packing_leaves_out_home_and_excluded_places(world, monkeypatch):
     page = client.get(f"/trips/{world['trip']}", headers=h).text
     assert f'hx-get="/trips/{world["trip"]}/derived-locations"' in page
     assert "Refine places" in page
+
+
+def test_an_essential_the_questionnaire_said_no_to_isnt_suggested():
+    """Regular medication unticked: prescription meds isn't suggested on every
+    trip. A passport (seeded for everyone) still is, and before the
+    questionnaire is read nothing is declined (SPEC-5 §6.7.4)."""
+    def suggested(questionnaire):
+        prof = {"packing_style": "balanced", "laundry_comfort": "none"}
+        if questionnaire is not None:
+            prof["questionnaire"] = questionnaire
+        res = assemble(_ctx(profile=prof), catalog.seed_items(), inventory=[], templates=[])
+        return {s.item_id for s in res.suggestions}
+    no_meds = suggested({"style": "neutral", "care": []})
+    assert "prescription_meds" not in no_meds
+    assert {"passport", "tickets", "pain_relief"} <= no_meds
+    assert "prescription_meds" in suggested({"style": "neutral", "care": ["meds"]})
+    assert "prescription_meds" in suggested(None)

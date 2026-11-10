@@ -163,9 +163,11 @@ def mount_admin(app, engine) -> None:
         column_list = [models.PackingCatalogItem.id, models.PackingCatalogItem.label,
                        models.PackingCatalogItem.category, models.PackingCatalogItem.bag,
                        models.PackingCatalogItem.weight_g,
+                       models.PackingCatalogItem.volume_l,
                        models.PackingCatalogItem.enabled,
                        models.PackingCatalogItem.tags]
-        column_labels = {"id": "Item id", "weight_g": "Weight (g)"}
+        column_labels = {"id": "Item id", "weight_g": "Weight (g)",
+                         "volume_l": "Size (L)"}
         column_searchable_list = [models.PackingCatalogItem.id,
                                   models.PackingCatalogItem.label,
                                   models.PackingCatalogItem.category]
@@ -178,12 +180,15 @@ def mount_admin(app, engine) -> None:
         # the PK from the create form, so listing it here would just insert NULL.
         # `variants`/`updated_at` stay off the form. The seed fields (5.0,
         # SPEC-5 §6.3) say which questionnaire answers put it in a new inventory.
-        form_columns = ["label", "category", "bag", "weight_g", "tags", "seed",
+        form_columns = ["label", "category", "bag", "weight_g", "volume_l", "tags", "seed",
                         "styles", "seed_qty", "minimal", "enabled"]
         form_overrides = {"tags": LinesField, "seed": LinesField, "styles": LinesField,
                           "category": wtforms.SelectField, "bag": wtforms.SelectField}
         form_args = {
             "tags": {"description": "One tag per line (e.g. modest, warm, formal)."},
+            # D-232: blank = the shipped estimate, else the category default.
+            "volume_l": {"description": "Rough packed size of one, in litres, for the "
+                                        "bag fit. Blank: the shipped estimate."},
             "seed": {"description": "Questionnaire answers that seed it, one per line "
                                     "(e.g. basics, care:hair, tech:camera). "
                                     "Empty: never seeded, only suggested."},

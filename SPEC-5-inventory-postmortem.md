@@ -2,7 +2,7 @@
 
 **Status: 5.0 (inventory, questionnaire, templates) being built on `next`;**
 **5.x (consumption, reorder, post-mortem) planned.** D-127 is accepted
-(2026-11-07) and D-229–D-231 record the 5.0 design (§6). D-128–D-130 are still
+(2026-11-07) and D-229–D-232 record the 5.0 design (§6). D-128–D-130 are still
 proposed: they wait for 5.x, after the inventory has been used. §§1–5 are the
 original plan, kept for the 5.x parts; where they differ, §6 wins.
 
@@ -316,7 +316,10 @@ to **suggest** which template types fit a trip.
    so a tag match would pack the wrong item (amended in 4e). Found → added
    (`source = engine`). Not found → a **"Suggested — not in your inventory"**
    line with **Add to inventory**. It's shown, never hidden (D-83), and never
-   added silently (D-231).
+   added silently (D-231). An essential the questionnaire already answered "no" to
+   (every answer that seeds it left unticked, such as Regular medication for
+   prescription meds) isn't suggested; things everyone gets, like a passport,
+   always are (amended 2026-11-10).
 5. **Must-haves:** every inventory item marked must-have is added.
 6. **De-dupe** by `inventory_item_id`: one line per owned item, the largest
    quantity, the reasons merged.
@@ -353,7 +356,47 @@ inventory are web only.
 - Each person takes the questionnaire once before they can generate again.
 - The upgrade note in the release says so.
 
-## Decisions (D-127–D-130, D-229–D-231)
+### 6.10 Bags for a trip, and what fits (built in 4f, D-232)
+
+Agreed with the owner on 2026-11-10.
+
+1. **Pick the bags.** The top of a trip's Packing section has **Bags for this
+   trip**: chips for the bags picked, each with ×, and "+ Add a bag…" offering
+   the person's other enabled bags (own-only, §6.6). The pick is stored as bag
+   ids in `packing_plans.bag_ids` and carried across re-generates, like the
+   template pick (§6.7.3). Picking or dropping a bag doesn't re-generate the
+   list: it re-assigns the lines in place.
+2. **Volumes.** Every line has a rough packed size in litres:
+   - the inventory item's own `volume_l`, if the person set one;
+   - else the catalogue's `volume_l` (owner-editable in the admin, D-84);
+   - else the shipped estimate in items.json;
+   - else a per-category default (items.json `_meta.volume_defaults`), which
+     is what hand-typed lines and hand-made items get.
+   One pair of shoes is worn on the way, so the bulkiest footwear line counts
+   one pair fewer.
+3. **Capacity** comes from what the person typed on the bag: "40L", "40 l",
+   "40 litres", "35–40L" (the larger number); a bare number is read as
+   litres. Inches, a word or a blank is unknown, and the page says so rather
+   than guessing.
+4. **Lines go in the picked bags.** The engine's generic guess places each
+   line: `carry_on` lines in the smallest picked bag, `checked` lines in the
+   largest; with one bag picked, everything goes in it. A line someone moved
+   by hand keeps its bag (D-63). The per-line bag dropdown offers only the
+   picked bags.
+5. **The fit.** For each picked bag the section shows "About 31 L of your
+   40 L" (volume × quantity of the draft and packed lines in it, against
+   **85 %** of the capacity, since no bag packs solid) and warns when a bag is
+   over. These are estimates, and the page says so.
+6. **No bag picked:** the list still generates. The section shows the
+   list's total and suggests the smallest of the person's bags that fits it,
+   else the smallest pair; **Use it** picks the suggestion. With
+   `one_bag`, it suggests one bag plus, if needed, a personal item. If none of
+   their bags has a capacity, it says to add one on the Inventory page.
+7. **Data:** `packing_catalog_items.volume_l`, `inventory_items.volume_l`
+   (both nullable floats) and `packing_plans.bag_ids` (JSON), migration 0051.
+   The API is unchanged: a line's `bag` could already be a bag id.
+
+## Decisions (D-127–D-130, D-229–D-232)
 - **D-127 — Inventory is per-user; no shared master list.** The per-user
   `InventoryItem` set is the master list; the shared `PackingCatalogItem` becomes
   seed data + the archetype engine's generic type vocabulary, not a user-facing
@@ -386,3 +429,10 @@ inventory are web only.
   to inventory, never added silently (D-83). The owned quantity caps the
   formula. Without a saved questionnaire, generation answers 409 with a string
   `detail` and `code: packing_profile_required` (§6.8). (accepted 2026-11-07)
+- **D-232 — A trip's bags are picked, and fit is estimated in litres.** Each
+  line has a rough volume (the person's own figure, else the catalogue's, else
+  a category default); a picked bag's fill is the sum against 85 % of its
+  stated litres. With no bag picked, the list suggests the smallest of the
+  person's bags (or pair) that fits; `one_bag` limits that to one bag plus a
+  personal item. Capacity that isn't in litres is unknown, never guessed
+  (§6.10). (accepted 2026-11-10)

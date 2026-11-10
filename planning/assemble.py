@@ -101,6 +101,16 @@ def _fits_style(it: dict, variant: str) -> bool:
     return variant == "neutral" or not styles or variant in styles
 
 
+def _declined(it: dict, answered: set[str] | None) -> bool:
+    """An essential the questionnaire already answered "no" to: every answer
+    that would have put it in the inventory was left unticked (Regular
+    medication for prescription meds). Not suggested again (SPEC-5 §6.7.4).
+    Items everyone gets (seeded by `essential`, basics, toiletries, phone) and
+    items no answer seeds are never declined."""
+    seed = set(it.get("seed") or [])
+    return answered is not None and bool(seed) and not seed & answered
+
+
 def assemble(ctx: PlanningContext, items: dict, *, inventory: list[dict],
              templates: list[dict], chosen: list[str] | None = None) -> Assembly:
     """Build one person's list. `inventory` rows are dicts with id, type_key,
@@ -116,6 +126,8 @@ def assemble(ctx: PlanningContext, items: dict, *, inventory: list[dict],
     types = suggested_types(ctx, {a["id"] for a in res.archetypes}, set(res.modifiers))
     res.suggested_types = sorted(types)
     q, res.tasks, notes = _quantities(ctx)
+    qa = prof.get("questionnaire")
+    answered = catalog.answer_tags(qa) if isinstance(qa, dict) else None
     formulas = _formulas()
     owned = {r["id"]: r for r in inventory}
 
@@ -173,7 +185,8 @@ def assemble(ctx: PlanningContext, items: dict, *, inventory: list[dict],
         row = _resolve(iid, items, inventory)
         if row is not None:
             add(row, qty, why)
-        elif iid in items and _fits_style(items[iid], variant):
+        elif (iid in items and _fits_style(items[iid], variant)
+              and not (n["source"] == "essential" and _declined(items[iid], answered))):
             it = items[iid]
             res.suggestions.append(PlanItem(
                 item_id=iid, label=catalog.label_for(iid, variant) if it else iid,

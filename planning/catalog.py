@@ -131,11 +131,16 @@ def items(session=None) -> dict:
         PackingCatalogItem.enabled.is_(True)).all()
     if not rows:
         return seed_items()
+    shipped = seed_items()
+    # volume_l (D-232): the owner's figure, else the shipped estimate; None
+    # leaves it to the category default (planning.bags.volume_for).
     return {r.id: {"label": r.label, "category": r.category, "bag": r.bag,
                    "weight_g": r.weight_g or 0, "tags": r.tags or [],
                    "variants": r.variants or {}, "seed": r.seed or [],
                    "styles": r.styles or [], "seed_qty": r.seed_qty or 1,
-                   "minimal": bool(r.minimal)} for r in rows}
+                   "minimal": bool(r.minimal),
+                   "volume_l": r.volume_l if r.volume_l is not None
+                   else (shipped.get(r.id) or {}).get("volume_l")} for r in rows}
 
 
 def item(item_id: str, session=None) -> dict | None:
@@ -144,6 +149,11 @@ def item(item_id: str, session=None) -> dict | None:
 
 def categories() -> list[str]:
     return _items_doc()["_meta"]["categories"]
+
+
+def volume_defaults() -> dict[str, float]:
+    """Litres per category for an item with no estimate of its own (D-232)."""
+    return _items_doc()["_meta"]["volume_defaults"]
 
 
 def archetypes() -> list[dict]:
@@ -250,6 +260,13 @@ def validate() -> list[str]:
         for k in (it.get("variants") or {}):
             if k not in STYLES:
                 problems.append(f"item:{iid}: unknown variant '{k}'")
+        v = it.get("volume_l")
+        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))
+                              or not 0 < v <= 50):
+            problems.append(f"item:{iid}: bad volume_l {v!r}")
+
+    for c in cats - set(volume_defaults()):
+        problems.append(f"category '{c}' has no volume default")
 
     # Every seed tag an answer can select seeds at least one item.
     used = {t for it in seed_items().values() for t in it.get("seed") or []}
