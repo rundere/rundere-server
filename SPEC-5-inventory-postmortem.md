@@ -316,7 +316,10 @@ to **suggest** which template types fit a trip.
    so a tag match would pack the wrong item (amended in 4e). Found → added
    (`source = engine`). Not found → a **"Suggested — not in your inventory"**
    line with **Add to inventory**. It's shown, never hidden (D-83), and never
-   added silently (D-231).
+   added silently (D-231). An essential the questionnaire already answered "no" to
+   (every answer that seeds it left unticked, such as Regular medication for
+   prescription meds) isn't suggested; things everyone gets, like a passport,
+   always are (amended 2026-11-10).
 5. **Must-haves:** every inventory item marked must-have is added.
 6. **De-dupe** by `inventory_item_id`: one line per owned item, the largest
    quantity, the reasons merged.

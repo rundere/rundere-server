@@ -113,7 +113,7 @@
       <span class="bp-group-count">{{ packing_suggested | length }}</span></summary>
     <div class="card blueprint bp-daycard yn-findings">
       {% for i in packing_suggested %}
-      <div class="yn-pack-row yn-omitted">
+      <div class="yn-pack-row yn-suggested">
         <div class="yn-pack-main">
           <div class="yn-pack-label">{{ i.label }}{% if i.quantity and i.quantity > 1 %} × {{ i.quantity }}{% endif %}</div>
           <div class="yn-pack-reason">{{ i.reason }}</div>

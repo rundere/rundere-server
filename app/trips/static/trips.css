@@ -411,6 +411,9 @@ span.yn-pack-check:hover { border-color: var(--color-neutral-400); }
   padding: 4px 6px; }
 .yn-pack-row.yn-omitted { opacity: .7; }
 .yn-pack-row.yn-omitted .yn-pack-label { text-decoration: line-through; }
+/* 5.0 (D-231): a suggestion is an offer, not something left out, so it reads
+   plainly; the dashed edge says it isn't yours yet. */
+.yn-pack-row.yn-suggested { border-left: 2px dashed var(--color-divider); }
 .yn-pack-add { display: flex; align-items: center; gap: 8px; padding: 10px 16px;
   border-top: 1px dashed var(--color-neutral-300); }
 .yn-pack-add input[type="hidden"] { display: none; }   /* not a flex item / no gap */
