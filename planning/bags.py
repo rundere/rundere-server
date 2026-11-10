@@ -7,16 +7,40 @@ reported as such, never guessed.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 # No bag packs solid: corners, the frame and the zip take their share.
 USABLE = 0.85
 
-# A match may only start where a number starts (the lookbehind), so a long
-# run of digits is scanned once, not once per digit (CodeQL: polynomial regex).
-_LITRES = re.compile(r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:l|lt|ltr|litres?|liters?)\b", re.I)
-_BARE = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s*$")
+_UNITS = ("liters", "litres", "liter", "litre", "ltr", "lt", "l")
+
+
+def _numbers(text: str) -> list[tuple[float, str]]:
+    """Each number in `text` with the word after it, in one pass. Hand-rolled
+    rather than a regex: a regex scan restarts at every digit, which is
+    polynomial on a long run of them (CodeQL py/polynomial-redos)."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        if not text[i].isdigit():
+            i += 1
+            continue
+        j = i
+        while j < n and text[j].isdigit():
+            j += 1
+        if j + 1 < n and text[j] in ".," and text[j + 1].isdigit():
+            j += 1
+            while j < n and text[j].isdigit():
+                j += 1
+        value = float(text[i:j].replace(",", "."))
+        k = j
+        while k < n and text[k] == " ":
+            k += 1
+        w = k
+        while w < n and text[w].isalpha():
+            w += 1
+        out.append((value, text[k:w].lower()))
+        i = j
+    return out
 
 
 def capacity_l(text: str | None) -> float | None:
@@ -26,10 +50,11 @@ def capacity_l(text: str | None) -> float | None:
     if not text:
         return None
     text = text[:64]                # the column holds 32; never scan more
-    found = [float(m.group(1).replace(",", ".")) for m in _LITRES.finditer(text)]
-    if not found:
-        m = _BARE.match(text)
-        found = [float(m.group(1).replace(",", "."))] if m else []
+    nums = _numbers(text)
+    found = [v for v, unit in nums if unit in _UNITS]
+    bare = text.strip()
+    if not found and len(nums) == 1 and all(c.isdigit() or c in ".," for c in bare):
+        found = [nums[0][0]]
     best = max(found, default=0)
     return best if 1 <= best <= 300 else None
 
