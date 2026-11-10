@@ -33,6 +33,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from app.trips import types as activity_types
+from resolve.geocode import is_placeholder
 
 log = logging.getLogger("yonder.trips.geo")
 
@@ -100,7 +101,8 @@ def _queries(atype: str, role: str, tried: tuple[str, ...], values: dict) -> lis
             if q and q not in out:
                 out.append(q)
         return out
-    found = [values[k].strip() for k in tried if (values.get(k) or "").strip()]
+    found = [values[k].strip() for k in tried
+             if (values.get(k) or "").strip() and not is_placeholder(values[k])]
     if not found and atype == "drive" and role in ("from", "to"):
         ends = _route_ends(values.get("route") or "")
         if ends:
@@ -245,7 +247,9 @@ def locate_activity(atype: str, values: dict, *, old_geo: dict | None = None,
     if not spec:
         return None
     key = fingerprint(atype, values)
-    if old_geo and old_geo.get("key") == key and old_geo.get("complete"):
+    if (old_geo and old_geo.get("key") == key and old_geo.get("complete")
+            # A point once geocoded from "Unknown" or "TBD" is redone (to none).
+            and not any(is_placeholder(p.get("label")) for p in old_geo.get("points") or [])):
         return old_geo
     loc = locator or Locator.default()
     try:

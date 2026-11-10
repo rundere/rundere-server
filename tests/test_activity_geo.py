@@ -337,3 +337,22 @@ def test_backfill_second_pass_uses_the_trips_own_places(monkeypatch):
             s.query(TripActivity).filter(TripActivity.trip_id == tid).delete()
             s.delete(s.get(Trip, tid))
             s.commit()
+
+
+def test_a_placeholder_venue_is_never_geocoded():
+    """"Unknown" is a village in Madhya Pradesh to Photon (a DC trip's event
+    got pinned there). A placeholder names no place: it isn't looked up, and a
+    point made from one before is redone rather than kept."""
+    if not DEPS:
+        return
+    loc = _loc({"Unknown": (24.65, 79.02)})
+    g = geo.locate_activity("event", {"name": "Example happy hour", "venue": "Unknown"},
+                            locator=loc)
+    assert g is None or g["points"] == []
+    assert "Unknown" not in loc.geocoder.asked        # the event's name may be tried
+    vals = {"name": "Example happy hour", "venue": "Unknown"}
+    old = {"points": [{"role": "place", "label": "Unknown", "lat": 24.65, "lon": 79.02,
+                       "source": "photon"}],
+           "key": geo.fingerprint("event", vals), "complete": True}
+    g = geo.locate_activity("event", vals, old_geo=old, locator=loc)
+    assert g is not old and not (g or {}).get("points")

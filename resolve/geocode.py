@@ -51,6 +51,23 @@ def _looks_like_address(s: str | None) -> bool:
     return "," in s and any(ch.isdigit() for ch in s)
 
 
+# What people type when they don't know the place yet. Geocoded, "Unknown" is
+# a village in Madhya Pradesh: a DC trip's event got an Indian venue, which
+# then showed in Refine Discovery and put India's customs in its packing notes.
+_PLACEHOLDERS = {"unknown", "tbd", "tba", "tbc", "na", "n a", "none", "null", "nil",
+                 "not sure", "unsure", "to be confirmed", "to be determined",
+                 "to be announced", "various", "somewhere", "anywhere", "online",
+                 "virtual", "home"}
+
+
+def is_placeholder(s: str | None) -> bool:
+    """True for a place field that names no place: "Unknown", "TBD", "N/A",
+    "?", "-". Never geocode one."""
+    import re
+    words = " ".join(re.sub(r"[^\w]+", " ", (s or "").casefold()).split())
+    return not words or words in _PLACEHOLDERS
+
+
 def _norm(s: str | None) -> str:
     """Fold case AND diacritics before comparing: a document says "Zurich"
     while OSM says "Zürich", and a naive comparison rejects the correct hit."""

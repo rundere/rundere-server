@@ -28,6 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
 
+from resolve.geocode import is_placeholder
+
 
 @dataclass(frozen=True)
 class PlaceRef:
@@ -128,7 +130,7 @@ def _extract(activity) -> list[PlaceRef]:
     def add(fname: str, kind: str, raw, geo: dict | None = None,
             freeform: str | None = None) -> None:
         raw = (raw or "").strip()
-        if raw:
+        if raw and not is_placeholder(raw):
             refs.append(PlaceRef(activity.id, t, fname, kind, raw, geo or {},
                                  (freeform or "").strip()))
 
