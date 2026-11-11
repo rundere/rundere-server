@@ -25,7 +25,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -892,3 +892,28 @@ def about(request: Request, session: Session = Depends(get_session)):
         "contact": app_links.server_contact(),
         "repo_url": "https://github.com/rundere/rundere-server",
     })
+
+
+@router.get("/about/release-notes", response_class=HTMLResponse)
+def about_release_notes(request: Request):
+    """Every version's notes from the bundled file (SPEC-8 §14, D-234), admin items
+    to admins only. Signed-in only: the auth gate covers it, unlike /about."""
+    from app import release_notes, scope
+    return templates.TemplateResponse(request, "release_notes.html", {
+        "notes": release_notes.for_person(release_notes.released(), scope.user_of(request)),
+        "version": settings.app_version,
+        "repo_url": "https://github.com/rundere/rundere-server",
+    })
+
+
+@router.post("/whats-new/seen", status_code=204)
+def whats_new_seen(request: Request, session: Session = Depends(get_session)):
+    """The What's new dialog was closed (D-234): record the running version. The
+    dialog's script calls this in the background. Without script the form posts
+    here, and a 204 leaves the browser on the page it was on, so there is no
+    redirect target to trust."""
+    from app import release_notes, scope
+    user = scope.user_of(request)
+    if user is not None:
+        release_notes.mark_seen(session, user)
+    return Response(status_code=204)

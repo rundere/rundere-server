@@ -19,9 +19,19 @@ Every change to `main` goes through a PR, releases included (D-207). Rules on
    `pyproject.toml`, `app/config.py`, the project's version in `uv.lock`, and the
    version line in `README.md` and `docs/howto.md`. It pushes that branch, never
    `main`.
-3. **Open the PR** from the link in the run summary. CI runs on it like any other
+3. **Write the release notes** on the `release/vX.Y.Z` branch before opening
+   the PR (SPEC-8 §14, D-234). Add a `## X.Y.Z — YYYY-MM-DD` section to the top
+   of `app/release_notes.md`, or date the one that's already waiting there. Write
+   `### For everyone` in plain words, saying what people will notice rather than
+   listing PR titles, and add `### For admins` for setup steps such as settings,
+   migrations or one-time commands. A patch with nothing to say writes "Fixes and
+   small improvements." The suite fails if the new version has no section. These
+   notes are what each person sees once after the upgrade, and what the About
+   page and the apps show. The GitHub release keeps its auto-generated notes for
+   developers.
+4. **Open the PR** from the link in the run summary. CI runs on it like any other
    PR. Merge it with a merge commit.
-4. The merge changes the version on `main`, so `tag-release.yml` tags the merge
+5. The merge changes the version on `main`, so `tag-release.yml` tags the merge
    commit `vX.Y.Z` and calls `release.yml` for that tag:
    - runs the test suite;
    - builds and pushes `ghcr.io/rundere/rundere-server:{X.Y.Z, X.Y, latest}`.

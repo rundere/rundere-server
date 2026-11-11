@@ -69,8 +69,12 @@
       <dt>Help</dt><dd><a href="https://rundere.app/support" target="_blank" rel="noopener">rundere.app/support</a></dd>
       {# AGPL-3.0 §13: anyone using this server over the network can get its source. #}
       <dt>Source code</dt><dd><a href="{{ repo_url }}" target="_blank" rel="noopener">{{ repo_url }}</a></dd>
+      {# Public, like the source: the developer notes for every release on GitHub. #}
+      <dt>GitHub releases</dt><dd><a href="{{ repo_url }}/releases" target="_blank" rel="noopener">{{ repo_url }}/releases</a></dd>
       <dt>License</dt><dd>GNU Affero General Public License v3.0</dd>
-      {% if signed_in %}<dt>Version</dt><dd class="mono">{{ version }}</dd>{% endif %}
+      {% if signed_in %}<dt>Version</dt><dd class="mono">{{ version }}</dd>
+      {# D-234: every version's notes, from the file that ships in the image. #}
+      <dt>Release notes</dt><dd><a href="/about/release-notes">What changed in each version</a></dd>{% endif %}
     </dl>
   </section>
 
