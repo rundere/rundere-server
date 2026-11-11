@@ -5,10 +5,15 @@ web trip page and the iOS app hand out the identical document.
 The content is the trip page's own timeline (`timeline_day_groups`), so the PDF
 never drifts from what the owner sees. Internal-only data is left out: source
 document links (they point at this server) and the edit affordances.
+
+What else goes in is the downloader's choice (`Sections`, SPEC-8 §13, D-233):
+times, addresses, maps and booking details by default, and optionally their own
+packing list and Discover research, topic by topic. Nothing is looked up to make it.
 """
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -18,6 +23,87 @@ from app.trips import routes as trip_routes
 
 # Fields that only make sense inside Yonder.
 _OMIT_KEYS = {"sourceLink", "mapLink"}
+
+# What each section flag covers (D-233). Address fields are street-level
+# places; a drive's or taxi's ends are addresses too, a flight's or train's
+# are airports and stations, which are the itinerary.
+_ADDRESS_KEYS = {"address", "location", "pickupLocation", "dropoffLocation"}
+_STREET_ENDS = {"drive", "taxi"}
+# The itinerary itself, always printed. Any other field (confirmation codes,
+# seats, notes, a field added later) counts as a booking detail, so a new
+# field is left out of a "no details" handout rather than leaked into it.
+_ITINERARY_KEYS = {"airline", "flightNumber", "from", "to", "operator", "trainNumber",
+                   "route", "company", "name", "type", "duration", "provider", "venue",
+                   "vessel", "departurePort", "arrivalPort", "title", "text"}
+# Discover topics the PDF can carry, as the boxes under "My Discover research"
+# offers them (D-233): every topic but packing, which is its own section. The
+# language box covers all three language topics.
+_BRIEFING_GROUPS = (("weather", ("weather",)), ("currency", ("currency",)),
+                    ("plugs", ("plugs",)), ("visa", ("visa",)), ("safety", ("safety",)),
+                    ("events", ("events",)), ("food", ("food",)),
+                    ("language", ("language", "language_regional", "language_local")),
+                    ("research", ("research",)))
+_BRIEFING_TOPICS = tuple(t for _, ts in _BRIEFING_GROUPS for t in ts)
+# Point roles for found addresses on two-ended trips worth a found address:
+# the station, airport or port, not a street (those are typed).
+_FOUND_ENDS = {"flight", "train", "cruise"}
+
+
+@dataclass(frozen=True)
+class Sections:
+    """What goes in the PDF. The defaults are the PDF before D-233, so a link
+    or an app build that passes no flags gets exactly what it got before."""
+    times: bool = True
+    addresses: bool = True
+    maps: bool = True
+    details: bool = True
+    packing: bool = False
+    discover: bool = False
+    # Which Discover topics (`_BRIEFING_GROUPS` keys); None = all of them.
+    topics: frozenset[str] | None = None
+
+
+_TRUE = {"1", "true", "on", "yes"}
+
+
+def sections_from_query(params) -> Sections:
+    """Sections from the trip page's Export form or a link. The form sends
+    `pick=1` with only the ticked boxes, so there an absent flag is off; a
+    link without `pick` keeps each default. Discover topics come as repeated
+    `topic=` values; a link that names none gets them all."""
+    explicit = "pick" in params
+    vals = {}
+    for name, default in vars(Sections()).items():
+        if not isinstance(default, bool):
+            continue
+        raw = params.get(name)
+        vals[name] = (default if not explicit else False) if raw is None \
+            else raw.strip().lower() in _TRUE
+    picked = params.getlist("topic") if hasattr(params, "getlist") else []
+    return Sections(**vals, topics=pick_topics(picked, explicit=explicit))
+
+
+def pick_topics(picked, *, explicit: bool = True) -> frozenset[str] | None:
+    """The known topic boxes among `picked`; None (all) when nothing was picked
+    and the caller didn't say it was choosing."""
+    if not picked and not explicit:
+        return None
+    known = {k for k, _ in _BRIEFING_GROUPS}
+    return frozenset(t for t in picked if t in known)
+
+
+def _kind(atype: str, key: str, kind: str | None) -> str:
+    if kind == "datetime-local":
+        return "time"
+    if key in _ADDRESS_KEYS or (key in ("from", "to") and atype in _STREET_ENDS):
+        return "address"
+    return "itinerary" if key in _ITINERARY_KEYS else "detail"
+
+
+def _wanted(atype: str, f: dict, sec: Sections) -> bool:
+    k = _kind(atype, f.get("key") or "", f.get("kind"))
+    return {"time": sec.times, "address": sec.addresses,
+            "detail": sec.details}.get(k, True)
 
 
 def _field_rows(fields: list[dict], shown: set[str] = frozenset()) -> list[dict]:
@@ -155,26 +241,134 @@ def _drive_map(a: dict, colour: str):
                            width=560, height=190)
 
 
-def timeline_context(session: Session, trip: Trip) -> dict:
+def _found_rows(a: dict) -> list[dict]:
+    """Addresses Run·dere already holds for an item's map pins (D-233): the
+    street address Photon gave when it was located, or an airport's name and
+    city from the bundled table. Only where nothing typed says the same."""
+    typed = {f["key"] for f in a["fields"] if f.get("key") in _ADDRESS_KEYS}
+    rows = []
+    for p in (a.get("geo") or {}).get("points") or []:
+        addr = (p.get("address") or "").strip()
+        if not addr:
+            continue
+        role = p.get("role")
+        if role == "place" and not typed:
+            label = "Address (from the map)"
+        elif role in ("from", "to") and a["type"] in _FOUND_ENDS:
+            label = ("From" if role == "from" else "To") + " address"
+            if p.get("source") != "airport":
+                label += " (from the map)"
+        else:
+            continue
+        rows.append({"label": label, "value": addr, "long": False})
+    return rows
+
+
+def _activity(a: dict, sec: Sections) -> dict:
+    """One timeline item as the PDF prints it, with what `sec` leaves out
+    gone: fields, the subtitle built from them, the time and the map link."""
+    t = trip_routes.activity_types.get_type(a["type"])
+    fields = [f for f in a["fields"] if _wanted(a["type"], f, sec)]
+    subtitle = a["subtitle"]
+    if len(fields) != len(a["fields"]):
+        subtitle = t.subtitle({f["key"]: f["value"] for f in fields})
+    out = {**a, "fields": fields, "subtitle": subtitle}
+    if not sec.times:
+        out["time_label"] = ""
+    if not sec.addresses:
+        out["map_url"] = None
+    out["rows"] = ((_start_row(out) if sec.times else [])
+                   + _field_rows(fields, {out["title"], subtitle})
+                   + (_found_rows(out) if sec.addresses else []))
+    return out
+
+
+def _packing(session: Session, trip: Trip, user) -> list[dict] | None:
+    """The downloader's own packing list, by bag (D-123): packed and to-pack
+    lines, without "Suggested" or "Not needed". None when they have none."""
+    from app.models import PackingItem
+    uid = user.id if user is not None else None
+    items = (session.query(PackingItem)
+             .filter(PackingItem.trip_id == trip.id, PackingItem.user_id == uid,
+                     PackingItem.status.in_(("draft", "packed"))).all())
+    if not items:
+        return None
+    labels = trip_routes._bag_label_lookup(session, user)
+    bags: dict[str, list] = {}
+    for i in sorted(items, key=lambda i: (i.category or "", (i.label or "").lower())):
+        bags.setdefault(labels.get(i.bag or "", "") or "No bag yet", []).append(
+            {"label": i.label, "quantity": i.quantity or 1, "packed": i.status == "packed"})
+    return [{"bag": k, "items": v} for k, v in bags.items()]
+
+
+def _place(key: str | None) -> str:
+    """A finding's place key as words: "FR:Nice" -> "Nice, FR"."""
+    country, _, city = (key or "").partition(":")
+    return f"{city}, {country}" if city else country
+
+
+def _findings(session: Session, trip_id: str, user, topics) -> list:
+    from app.models import DiscoveryFinding
+    uid = user.id if user is not None else None
+    return (session.query(DiscoveryFinding)
+            .filter(DiscoveryFinding.trip_id == trip_id, DiscoveryFinding.user_id == uid,
+                    DiscoveryFinding.topic.in_(topics),
+                    DiscoveryFinding.status != "rejected").all())
+
+
+def briefing_topics(session: Session, trip_id: str, user) -> list[dict]:
+    """The topic boxes the Export form offers: the downloader's own topics on
+    this trip that have something to print, in Discover's order."""
+    have = {f.topic for f in _findings(session, trip_id, user, _BRIEFING_TOPICS)
+            if (f.body_md or "").strip()}
+    return [{"key": k, "label": trip_routes.TOPIC_LABELS.get(k, k)}
+            for k, ts in _BRIEFING_GROUPS if have.intersection(ts)]
+
+
+def _briefing(session: Session, trip: Trip, user,
+              topics: frozenset[str] | None = None) -> list[dict] | None:
+    """The downloader's own Discover research (4.1, per person): one section
+    per topic they kept ticked, rejected findings left out."""
+    wanted = [t for k, ts in _BRIEFING_GROUPS if topics is None or k in topics for t in ts]
+    found = _findings(session, trip.id, user, wanted)
+    out = []
+    for topic in wanted:
+        fs = sorted((f for f in found if f.topic == topic and (f.body_md or "").strip()),
+                    key=lambda f: f.place_key or "")
+        if fs:
+            out.append({"label": trip_routes.TOPIC_LABELS.get(topic, topic),
+                        "findings": [{"place": _place(f.place_key), "multi": len(fs) > 1,
+                                      "body": trip_routes._render_md(f.body_md)}
+                                     for f in fs]})
+    return out or None
+
+
+def timeline_context(session: Session, trip: Trip, sections: Sections | None = None,
+                     user=None) -> dict:
+    sec = sections or Sections()
     groups = trip_routes.timeline_day_groups(session, trip)
     days = []
     for g in groups:
         days.append({
             "heading": _day_heading(g["day"], g["label"]) if g["day"] else g["label"],
-            "activities": [{**a, "rows": _start_row(a) + _field_rows(
-                               a["fields"], {a["title"], a["subtitle"]})}
-                           for a in g["activities"]],
+            "activities": [_activity(a, sec) for a in g["activities"]],
         })
     travellers = trip_routes._travelers_context(session, trip.id)["travelers"]
     today = date.today().isoformat()
-    try:
-        map_ctx = _add_maps(days)
-    except Exception:                    # a map problem never costs the PDF
-        import logging
-        logging.getLogger("yonder.trips.pdf").warning("trip maps failed", exc_info=True)
-        map_ctx = {"trip_map": None, "flight_map": None, "map_attribution": "", "legend": []}
+    map_ctx = {"trip_map": None, "flight_map": None, "map_attribution": "", "legend": []}
+    if sec.maps:
+        try:
+            map_ctx = _add_maps(days)
+        except Exception:                # a map problem never costs the PDF
+            import logging
+            logging.getLogger("yonder.trips.pdf").warning("trip maps failed", exc_info=True)
+    # Packing and Discover are personal: a viewer (D-199) gets neither.
+    from app import scope
+    personal = scope.can_edit_trip(session, user, trip)
     return {
         **map_ctx,
+        "packing": _packing(session, trip, user) if sec.packing and personal else None,
+        "briefing": _briefing(session, trip, user, sec.topics) if sec.discover and personal else None,
         "trip": {
             "name": trip.name,
             "dates": " – ".join(x for x in (trip_routes.fmt_date(trip.start_date),
@@ -192,15 +386,18 @@ def _legend_colour(a: dict) -> str:
     return KIND_COLOURS.get(a.get("type"), DEFAULT_COLOUR)
 
 
-def render_timeline_html(session: Session, trip: Trip) -> str:
+def render_timeline_html(session: Session, trip: Trip, sections: Sections | None = None,
+                         user=None) -> str:
     tpl = trip_routes.templates.env.get_template("timeline_pdf.html")
-    return tpl.render(legend_colour=_legend_colour, **timeline_context(session, trip))
+    return tpl.render(legend_colour=_legend_colour,
+                      **timeline_context(session, trip, sections, user))
 
 
-def render_timeline_pdf(session: Session, trip: Trip) -> bytes:
+def render_timeline_pdf(session: Session, trip: Trip, sections: Sections | None = None,
+                        user=None) -> bytes:
     from weasyprint import HTML          # heavy import; only on export
 
-    return HTML(string=render_timeline_html(session, trip)).write_pdf()
+    return HTML(string=render_timeline_html(session, trip, sections, user)).write_pdf()
 
 
 def pdf_filename(trip: Trip) -> str:
@@ -209,14 +406,15 @@ def pdf_filename(trip: Trip) -> str:
     return f"{slug}-timeline.pdf"
 
 
-def pdf_response(session: Session, trip: Trip, download: bool = False):
+def pdf_response(session: Session, trip: Trip, download: bool = False,
+                 sections: Sections | None = None, user=None):
     """The PDF as an HTTP response. Inline by default so a browser previews it
     (and can save/share from there); `download=True` forces a save."""
     from fastapi.responses import Response
 
     disposition = "attachment" if download else "inline"
     return Response(
-        render_timeline_pdf(session, trip), media_type="application/pdf",
+        render_timeline_pdf(session, trip, sections, user), media_type="application/pdf",
         headers={"Content-Disposition":
                  f'{disposition}; filename="{pdf_filename(trip)}"',
                  "Cache-Control": "no-store"})

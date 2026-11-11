@@ -136,7 +136,7 @@ class Locator:
         self.known: dict[str, tuple[float, float]] = known or {}
         # None = the configured router chain; a string pins one OSRM ("" = off)
         self.route_url = route_url
-        self._cache: dict[str, tuple[float, float, str] | None] = {}
+        self._cache: dict[str, tuple[float, float, str, str | None] | None] = {}
         self.links: dict[str, tuple[list[dict], object]] = {}
 
     @classmethod
@@ -193,7 +193,7 @@ class Locator:
         return None
 
     def first(self, queries: list[str], *, airport: bool = False
-              ) -> tuple[float, float, str] | None:
+              ) -> tuple[float, float, str, str | None] | None:
         """The first query that locates."""
         for q in queries:
             hit = self.text(q, airport=airport)
@@ -201,8 +201,12 @@ class Locator:
                 return hit
         return None
 
-    def text(self, text: str, *, airport: bool = False) -> tuple[float, float, str] | None:
-        """(lat, lon, source) for place text, or None."""
+    def text(self, text: str, *, airport: bool = False
+             ) -> tuple[float, float, str, str | None] | None:
+        """(lat, lon, source, address) for place text, or None. The address is
+        what the lookup already gave (Photon's street and city, the airport
+        table's name and city), kept for the trip PDF (SPEC-8 §13, D-233);
+        None when it gave none."""
         key = f"{'A' if airport else 'T'}:{text.strip().lower()}"
         if key in self._cache:
             return self._cache[key]
@@ -210,12 +214,12 @@ class Locator:
         if not airport:
             k = self._known(text)
             if k:
-                hit = (k[0], k[1], "trip")
+                hit = (k[0], k[1], "trip", None)
         code = text.strip().upper()
         if airport and code.isalpha() and len(code) in (3, 4):
             ap = self.airport(code)
             if ap is not None and getattr(ap, "lat", None) is not None:
-                hit = (float(ap.lat), float(ap.lon), "airport")
+                hit = (float(ap.lat), float(ap.lon), "airport", _airport_address(ap))
         if hit is None and self.geocoder is not None:
             from resolve.routing import locate
             q = f"{text} airport" if airport and code.isalpha() and len(code) in (3, 4) else text
@@ -223,14 +227,42 @@ class Locator:
             # anything else takes the top hit for exactly what the person wrote.
             place = locate({"raw": q, "name": q}, self.geocoder)
             if place.get("lat") is not None:
-                hit = (float(place["lat"]), float(place["lon"]), "photon")
+                hit = (float(place["lat"]), float(place["lon"]), "photon",
+                       _found_address(place))
         self._cache[key] = hit
         return hit
 
 
-def _point(role: str, label: str | None, lat, lon, source: str) -> dict:
-    return {"role": role, "label": label or "", "lat": round(float(lat), 6),
-            "lon": round(float(lon), 6), "source": source}
+def _found_address(place: dict) -> str | None:
+    """Photon's street line and city for a located place. A city alone isn't
+    an address, so a hit without a street gives None."""
+    street = (place.get("address") or "").strip()
+    if not street:
+        return None
+    parts = [street, (place.get("city") or "").strip(), (place.get("country") or "").strip()]
+    return ", ".join(p for p in parts if p)
+
+
+def _airport_address(ap) -> str | None:
+    """'Toronto Pearson International Airport, Toronto, CA' from the bundled
+    table (D-147)."""
+    parts = [getattr(ap, "name", None), getattr(ap, "municipality", None),
+             getattr(ap, "country", None)]
+    return ", ".join(p for p in parts if p) or None
+
+
+# Sources whose lookup returns an address; a point from one of them always
+# carries the `address` key (None = looked up, none found).
+_ADDRESSED = {"photon", "airport"}
+
+
+def _point(role: str, label: str | None, lat, lon, source: str,
+           address: str | None = None) -> dict:
+    p = {"role": role, "label": label or "", "lat": round(float(lat), 6),
+         "lon": round(float(lon), 6), "source": source}
+    if source in _ADDRESSED:
+        p["address"] = address
+    return p
 
 
 def _now() -> str:
@@ -238,10 +270,15 @@ def _now() -> str:
 
 
 def _reusable(geo: dict | None, key: str) -> bool:
-    """A stored geo still stands: same location values, complete, and not
-    once geocoded from a placeholder like "Unknown" (redone, to nothing)."""
+    """A stored geo still stands: same location values, complete, not once
+    geocoded from a placeholder like "Unknown" (redone, to nothing), and not a
+    pin from before addresses were kept (D-233), which is redone once to get
+    one."""
+    points = (geo or {}).get("points") or []
     return bool(geo and geo.get("key") == key and geo.get("complete")
-                and not any(is_placeholder(p.get("label")) for p in geo.get("points") or []))
+                and not any(is_placeholder(p.get("label")) for p in points)
+                and not any(p.get("source") in _ADDRESSED and "address" not in p
+                            for p in points))
 
 
 def locate_activity(atype: str, values: dict, *, old_geo: dict | None = None,
@@ -279,7 +316,8 @@ def _locate(atype, values, spec, key, loc: Locator) -> dict:
                 continue
             role = "from" if i == 0 else "to" if i == len(stops) - 1 else "via"
             src = "photon" if p.get("geocode_source") == "photon" else "link"
-            points.append(_point(role, routing.stop_label(p), p["lat"], p["lon"], src))
+            points.append(_point(role, routing.stop_label(p), p["lat"], p["lon"], src,
+                                 _found_address(p)))
         expected = len(stops)
     else:
         pin = routing.link_point(link) if link and len(spec) == 1 else None
@@ -293,7 +331,7 @@ def _locate(atype, values, spec, key, loc: Locator) -> dict:
             hit = loc.first(_queries(atype, role, tried, values),
                             airport=atype in _AIRPORT_TYPES)
             if hit:
-                points.append(_point(role, q, hit[0], hit[1], hit[2]))
+                points.append(_point(role, q, hit[0], hit[1], hit[2], hit[3]))
         expected = sum(1 for role, tried in spec
                        if pin is not None or _query(atype, role, tried, values))
         est = None

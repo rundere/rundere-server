@@ -98,8 +98,36 @@
     {% if has_activities %}
     <button class="btn btn-ghost bp-sm" data-action="group-open" data-group="timeline">Expand all</button>
     <button class="btn btn-ghost bp-sm" data-action="group-close" data-group="timeline">Collapse all</button>
-    <a class="btn btn-secondary bp-sm" href="/trips/{{ trip.id }}/timeline.pdf" target="_blank"
-       rel="noopener" title="A printable itinerary to share with anyone">Export PDF</a>
+    {# D-233: the person picks what the handout carries. A plain GET form, so
+       no script; `pick` tells the server an unticked box means "leave out". #}
+    <details class="yn-menu">
+      <summary class="btn btn-secondary bp-sm" title="A printable itinerary to share with anyone">Export PDF</summary>
+      <form class="yn-menu-list yn-pdf-form" method="get" action="/trips/{{ trip.id }}/timeline.pdf"
+            target="_blank" rel="noopener">
+        <input type="hidden" name="pick" value="1">
+        <fieldset>
+          <legend>Include</legend>
+          <label><input type="checkbox" name="times" value="1" checked> Times</label>
+          <label><input type="checkbox" name="addresses" value="1" checked> Addresses</label>
+          <label><input type="checkbox" name="maps" value="1" checked> Maps</label>
+          <label><input type="checkbox" name="details" value="1" checked> Booking details (codes, seats, notes)</label>
+          {% if not read_only %}
+          <label><input type="checkbox" name="packing" value="1"> My packing list</label>
+          {% if pdf_topics %}
+          <label><input type="checkbox" name="discover" value="1"> My Discover research</label>
+          {# Shown once Discover is ticked (CSS :has), all on; untick any to leave it out. #}
+          <div class="yn-pdf-topics">
+            {% for t in pdf_topics %}
+            <label><input type="checkbox" name="topic" value="{{ t.key }}" checked> {{ t.label }}</label>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% endif %}
+        </fieldset>
+        <p class="yn-pdf-hint">Handing it to someone else? Leaving out times and addresses keeps where you'll be, and when, to yourself.</p>
+        <button class="btn btn-primary bp-sm" type="submit">Make PDF</button>
+      </form>
+    </details>
     {% endif %}
     {% if not read_only %}
     <button class="btn btn-primary"
