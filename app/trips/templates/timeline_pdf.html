@@ -76,10 +76,17 @@
                     border: 0.75pt solid #6a6a6f; border-radius: 1pt;
                     margin-right: 4pt; vertical-align: -0.5pt; }
   .bag li.packed::before { background: #365f86; border-color: #365f86; }
+  /* One Discover topic: a dotted rule between topics (lighter than the solid
+     section rule, never a page break) and a heading in the accent colour, so
+     it stands apart from the place names and the research's own headings. */
+  .topic { padding-top: 7pt; margin-top: 9pt; border-top: 1pt dotted #8fb3d9; }
+  .topic:first-of-type { padding-top: 0; margin-top: 0; border-top: none; }
+  .topic h3 { font-size: 11pt; color: #365f86; margin: 2pt 0 5pt; }
   .finding { font-size: 8.8pt; color: #2a2a2d; margin: 0 0 6pt; }
-  .finding h3, .finding h4 { font-size: 9pt; margin: 4pt 0 2pt; }
+  .finding h3, .finding h4 { font-size: 8.8pt; color: #3d3d42; margin: 4pt 0 2pt; }
   .finding blockquote { margin: 3pt 0; padding-left: 6pt; border-left: 2pt solid #a9c9ec; }
-  .place { font-size: 8pt; color: #6a6a6f; text-transform: uppercase; letter-spacing: 0.4pt; }
+  .place { font-size: 7.5pt; font-weight: normal; color: #6a6a6f; text-transform: uppercase;
+           letter-spacing: 0.4pt; margin: 4pt 0 1pt; }
 
   .empty { color: #6a6a6f; font-style: italic; }
   footer { margin-top: 16pt; font-size: 7.5pt; color: #9a9aa0; }
@@ -156,10 +163,12 @@
 <section class="extra">
   <h2>Discover</h2>
   {% for t in briefing %}
-  <h3>{{ t.label }}</h3>
-  {% for f in t.findings %}
-  <div class="finding">{% if f.multi %}<div class="place">{{ f.place }}</div>{% endif %}{{ f.body }}</div>
-  {% endfor %}
+  <div class="topic">
+    <h3>{{ t.label }}</h3>
+    {% for f in t.findings %}
+    <div class="finding">{% if f.multi %}<div class="place">{{ f.place }}</div>{% endif %}{{ f.body }}</div>
+    {% endfor %}
+  </div>
   {% endfor %}
 </section>
 {% endif %}
