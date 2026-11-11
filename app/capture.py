@@ -25,7 +25,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -892,3 +892,35 @@ def about(request: Request, session: Session = Depends(get_session)):
         "contact": app_links.server_contact(),
         "repo_url": "https://github.com/rundere/rundere-server",
     })
+
+
+@router.get("/about/release-notes", response_class=HTMLResponse)
+def about_release_notes(request: Request):
+    """Every version's notes from the bundled file (SPEC-8 §14, D-234), admin items
+    to admins only. Signed-in only: the auth gate covers it, unlike /about."""
+    from app import release_notes, scope
+    return templates.TemplateResponse(request, "release_notes.html", {
+        "notes": release_notes.for_person(release_notes.released(), scope.user_of(request)),
+        "version": settings.app_version,
+        "repo_url": "https://github.com/rundere/rundere-server",
+    })
+
+
+@router.post("/whats-new/seen")
+def whats_new_seen(request: Request, next: str = Form("/"),
+                   session: Session = Depends(get_session)):
+    """The What's new dialog was closed (D-234): record the running version. The
+    dialog's script calls this in the background; without script the form posts
+    here and comes back to the page."""
+    from urllib.parse import urlsplit
+    from app import release_notes, scope
+    user = scope.user_of(request)
+    if user is not None:
+        release_notes.mark_seen(session, user)
+    # Back to the page it was opened on; only a local path (no open redirect).
+    parts = urlsplit(next or "/")
+    dest = next if (not parts.scheme and not parts.netloc and next.startswith("/")
+                    and not next.startswith("//")) else "/"
+    if request.headers.get("x-requested-with") == "fetch":
+        return Response(status_code=204)
+    return RedirectResponse(dest, status_code=303)

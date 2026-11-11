@@ -529,6 +529,45 @@ person chooses what goes in. Agreed with the owner on 2026-11-10.
   again. If it fails it runs at the next start. The PDF never fills a missing
   address in itself; it prints what the pins hold.
 
+## 14. What's new after an upgrade (D-234)
+
+When the server is upgraded, each person sees once what changed for them
+(YONDER-367). Agreed with the owner on 2026-11-11.
+
+- **The notes are hand-written and ship in the image.** `app/release_notes.md`
+  has one section per version, newest first, in plain language for the people
+  using Run·dere: what they'll notice, not the PR list. Each section has
+  `### For everyone` and, when needed, `### For admins` (setup steps such as an
+  environment variable or a one-time command). The release PR writes the section
+  (RELEASING.md). A test fails if the version in `app/config.py` has no section,
+  so no release ships without notes; a patch with nothing to say writes "Fixes
+  and small improvements". Nothing is fetched at run time (D-146). The
+  auto-generated GitHub release notes stay, for developers.
+- **Who has seen what.** `users.seen_version` is the last version whose notes
+  the person closed. It's set to the running version when an account is created,
+  so a new person isn't shown history. An existing account with none yet (the
+  first upgrade with this feature) is shown only the running version's notes.
+- **When it shows.** On the first full page load of the web app after the
+  version changes, even in a session from before the upgrade (sessions last
+  weeks, so waiting for a sign-in could mean never). It's a dialog over the page
+  listing every version newer than `seen_version` up to the running one, newest
+  first, at most five, then "See all release notes". **Got it**, Esc or the close
+  button records the running version as seen. If those versions have nothing to
+  show this person (admin-only notes for a non-admin), it records them silently.
+  Not on the demo server (D-198), and not on htmx partials.
+- **Admins see more.** `For admins` items show only to admins (`users.is_admin`),
+  in the same dialog, under their own heading.
+- **About links to all of it.** The About page gets a **Release notes** link to
+  `/about/release-notes` (every version from the bundled file, admin items to
+  admins only) and to the repository's GitHub releases.
+- **The apps.** `GET /api/v1/release-notes` returns the versions the caller
+  hasn't seen (`?all=1` for every version), and `POST /api/v1/release-notes/seen`
+  records the running version. `seen_version` is the same column, so someone who
+  reads the notes on the web isn't shown them again in the app, or the other way
+  round. Each version comes as `{version, date, everyone: [...], admins: [...]}`;
+  `admins` is empty for a non-admin. Items are short Markdown strings (bold,
+  links, code). The iOS and Android apps show them in their 5.0 updates.
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.
@@ -933,3 +972,9 @@ person chooses what goes in. Agreed with the owner on 2026-11-10.
   item was located (kept on the pin and labelled "from the map"), or the bundled
   airport table. Making the PDF looks nothing up; instead the server fills the
   addresses of older pins once after upgrading. See §13.
+- **D-234 — Each person sees what changed after an upgrade (YONDER-367; owner,
+  2026-11-11).** Hand-written notes ship in the image (`app/release_notes.md`),
+  everyone's and admins' apart. They're shown once, on the first page load after
+  the version changes, for every version since the person last closed them
+  (`users.seen_version`), and on the About page. The apps read and dismiss the
+  same notes through the API. See §14.

@@ -378,3 +378,36 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
   .pl-row-meta{justify-content:flex-start}
   .pl-todo{white-space:normal}
 }
+
+/* What's new after an upgrade (D-234): a modal over the page, scrolling inside. */
+.yn-whats-new{width:min(560px,calc(100vw - 32px));max-height:min(80vh,720px);padding:0;
+  border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface);
+  color:var(--ink);box-shadow:0 18px 48px rgba(0,0,0,.35)}
+.yn-whats-new:not([open]){display:none}
+.yn-whats-new::backdrop{background:rgba(0,0,0,.5)}
+.yn-whats-new[open]:not(:modal){position:relative;margin:12px auto;z-index:30}
+.yn-whats-new[open]{display:flex;flex-direction:column;overflow:hidden}
+.yn-wn-form{display:flex;flex-direction:column;flex:1;min-height:0;margin:0}
+.yn-wn-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 18px 10px;border-bottom:1px solid var(--line)}
+.yn-wn-head h2{font-family:var(--display);font-size:20px;font-weight:400}
+.yn-wn-x{background:none;border:0;color:var(--ink-3);font-size:22px;line-height:1;
+  cursor:pointer;padding:4px 8px;border-radius:var(--r)}
+.yn-wn-x:hover{color:var(--ink);background:var(--surface-sunk)}
+.yn-wn-body{overflow-y:auto;flex:1;min-height:0;padding:6px 18px 10px}
+.yn-wn-version{padding:10px 0;border-bottom:1px dotted var(--line)}
+.yn-wn-version:last-child{border-bottom:0}
+.yn-wn-version h3{font-size:15px;color:var(--accent);margin:0 0 6px}
+.yn-wn-date{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--ink-3);margin-left:6px}
+.yn-wn-version h4{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
+  font-weight:600;margin:10px 0 4px}
+.yn-wn-version ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.yn-wn-version li{color:var(--ink-2);line-height:1.5}
+.yn-wn-version li strong{color:var(--ink)}
+.yn-wn-version code{font-family:var(--mono);font-size:.92em;background:var(--surface-sunk);
+  padding:0 4px;border-radius:4px}
+.yn-wn-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 18px;border-top:1px solid var(--line)}
+.yn-wn-page{padding:20px 22px;max-width:760px}
+.yn-wn-lead{font-size:15px;color:var(--ink-2);margin:0 0 12px}
+.yn-wn-page .yn-wn-version{scroll-margin-top:16px}

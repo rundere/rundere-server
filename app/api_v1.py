@@ -17,7 +17,7 @@ from typing import Annotated, Any
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query, Request, Response,
                      UploadFile)
-from pydantic import AfterValidator, BaseModel
+from pydantic import AfterValidator, BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import (authn, expenses as expenses_svc, journal as journal_svc,
@@ -799,6 +799,50 @@ def api_docs(user=Depends(authn.current_user)):
     your web session)."""
     from fastapi.openapi.docs import get_swagger_ui_html
     return get_swagger_ui_html(openapi_url="/api/v1/openapi.json", title="Run·dere API")
+
+
+# --------------------------------------------------------------------------- release notes
+class ReleaseNotesVersionOut(BaseModel):
+    version: str
+    date: str | None = Field(None, description="YYYY-MM-DD; none for a version not out yet.")
+    everyone: list[str] = Field(description="Short Markdown items: **bold**, `code` and "
+                                            "[links](https://…) only.")
+    admins: list[str] = Field(description="Setup notes for admins; always empty for "
+                                          "anyone else.")
+
+
+class ReleaseNotesOut(BaseModel):
+    running_version: str
+    seen_version: str | None = Field(None, description="The last version whose notes the "
+                                                       "caller closed, on any device.")
+    versions: list[ReleaseNotesVersionOut]
+
+
+@router.get("/release-notes", response_model=ReleaseNotesOut)
+def api_release_notes(all: Annotated[bool, Query(
+                          description="Every released version, newest first, instead of "
+                                      "only the ones the caller hasn't seen.")] = False,
+                      user=Depends(authn.current_user)):
+    """What changed in each version (SPEC-8 §14, D-234). By default only what the
+    caller hasn't seen yet, newest first and at most five, the same as the web's
+    What's new dialog: show it, then POST /release-notes/seen. `seen_version` is
+    shared with the web, so nobody is shown the same notes twice."""
+    from app import release_notes
+    from app.config import settings
+    vs = (release_notes.for_person(release_notes.released(), user) if all
+          else release_notes.unseen(user))
+    return {"running_version": settings.app_version,
+            "seen_version": getattr(user, "seen_version", None), "versions": vs}
+
+
+@router.post("/release-notes/seen", status_code=204)
+def api_release_notes_seen(user=Depends(authn.current_user),
+                           session: Session = Depends(get_session)):
+    """The caller has seen the notes up to the running version (D-234)."""
+    from app import release_notes
+    if user is not None and getattr(user, "id", None) is not None:
+        release_notes.mark_seen(session, user)
+    return Response(status_code=204)
 
 
 # --------------------------------------------------------------------------- read

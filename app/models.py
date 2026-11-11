@@ -22,6 +22,11 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+def _running_version() -> str:
+    from app.config import settings
+    return settings.app_version
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -226,6 +231,10 @@ class User(Base):
     document_quota_mb: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # D-234: the last version whose release notes this person closed. A new account
+    # starts at the running version, so it isn't shown history; NULL (accounts from
+    # before 5.0) is shown only the running version's notes.
+    seen_version: Mapped[str | None] = mapped_column(String(32), default=_running_version)
 
 
 class UserIntegration(Base):
