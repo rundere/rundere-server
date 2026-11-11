@@ -221,7 +221,12 @@ def test_nothing_for_this_person_is_recorded_silently(people, sample, monkeypatc
 def test_about_links_to_every_version(people):
     h = _h(people["new"])
     about = client.get("/about", headers=h).text
-    assert 'href="/about/release-notes"' in about and "/releases" in about
+    assert 'href="/about/release-notes"' in about
+    assert 'href="https://github.com/rundere/rundere-server/releases"' in about
+    # Signed out, the GitHub releases link is there too (it's public); ours isn't.
+    public = TestClient(app).get("/about").text
+    assert 'href="https://github.com/rundere/rundere-server/releases"' in public
+    assert 'href="/about/release-notes"' not in public
     page = client.get("/about/release-notes", headers=h).text
     assert ">1.2.0" in page and f">{settings.app_version}" in page
     # Signed out it's behind sign-in, unlike /about itself.

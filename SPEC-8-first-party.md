@@ -559,7 +559,8 @@ When the server is upgraded, each person sees once what changed for them
   in the same dialog, under their own heading.
 - **About links to all of it.** The About page gets a **Release notes** link to
   `/about/release-notes` (every version from the bundled file, admin items to
-  admins only) and to the repository's GitHub releases.
+  admins only; signed in only), and a **GitHub releases** row, next to Source
+  code, that every visitor sees.
 - **The apps.** `GET /api/v1/release-notes` returns the versions the caller
   hasn't seen (`?all=1` for every version), and `POST /api/v1/release-notes/seen`
   records the running version. `seen_version` is the same column, so someone who
