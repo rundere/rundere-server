@@ -187,21 +187,18 @@ def test_the_dialog_shows_once_and_closing_it_records_it(people):
     assert 'id="whats-new"' in page and f">{settings.app_version}" in page
     assert "whats_new.js" in page
     # htmx partials never carry it; only full pages with the app header do.
-    r = client.post("/whats-new/seen", headers={**h, "X-Requested-With": "fetch"},
-                    data={"next": "/trips"})
+    r = client.post("/whats-new/seen", headers={**h, "X-Requested-With": "fetch"})
     assert r.status_code == 204 and _seen(people["old"]) == settings.app_version
     assert 'id="whats-new"' not in client.get("/trips", headers=h).text
 
 
-def test_the_no_script_form_comes_back_to_a_local_page_only(people):
-    h = _h(people["old"])
-    r = client.post("/whats-new/seen", headers=h, data={"next": "/places?lens=map"},
-                    follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/places?lens=map"
-    for evil in ("https://evil.example.test/", "//evil.example.test/x", "javascript:x"):
-        r = client.post("/whats-new/seen", headers=h, data={"next": evil},
-                        follow_redirects=False)
-        assert r.headers["location"] == "/"
+def test_the_no_script_form_stays_on_the_page(people):
+    """No redirect at all: a 204 leaves the browser where it was, so nothing the
+    browser sends decides where it goes."""
+    r = client.post("/whats-new/seen", headers=_h(people["old"]),
+                    data={"next": "https://evil.example.test/"}, follow_redirects=False)
+    assert r.status_code == 204 and "location" not in r.headers
+    assert _seen(people["old"]) == settings.app_version
 
 
 def test_admins_see_their_items_others_dont(people, sample, monkeypatch):

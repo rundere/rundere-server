@@ -906,21 +906,14 @@ def about_release_notes(request: Request):
     })
 
 
-@router.post("/whats-new/seen")
-def whats_new_seen(request: Request, next: str = Form("/"),
-                   session: Session = Depends(get_session)):
+@router.post("/whats-new/seen", status_code=204)
+def whats_new_seen(request: Request, session: Session = Depends(get_session)):
     """The What's new dialog was closed (D-234): record the running version. The
-    dialog's script calls this in the background; without script the form posts
-    here and comes back to the page."""
-    from urllib.parse import urlsplit
+    dialog's script calls this in the background. Without script the form posts
+    here, and a 204 leaves the browser on the page it was on, so there is no
+    redirect target to trust."""
     from app import release_notes, scope
     user = scope.user_of(request)
     if user is not None:
         release_notes.mark_seen(session, user)
-    # Back to the page it was opened on; only a local path (no open redirect).
-    parts = urlsplit(next or "/")
-    dest = next if (not parts.scheme and not parts.netloc and next.startswith("/")
-                    and not next.startswith("//")) else "/"
-    if request.headers.get("x-requested-with") == "fetch":
-        return Response(status_code=204)
-    return RedirectResponse(dest, status_code=303)
+    return Response(status_code=204)

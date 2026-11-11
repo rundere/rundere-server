@@ -1,13 +1,13 @@
 {# What's new after an upgrade (SPEC-8 §14, D-234): shown once, on the first full
    page load after the version changes, over every page that has the app header.
    whats_new.js opens it as a modal and records it as seen when it closes. Without
-   script it shows in place, and Got it posts the form. The admin's SQLAdmin pages
+   script it shows in place, and Got it posts the form, which answers 204 so the
+   page stays. The admin's SQLAdmin pages
    share this header without the helper, so they never show it. #}
 {% set wn = whats_new(request) if whats_new is defined and request else [] %}
 {% if wn %}
 <dialog class="yn-whats-new" id="whats-new" aria-labelledby="whats-new-title" open>
   <form method="post" action="/whats-new/seen" class="yn-wn-form">
-    <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
     <header class="yn-wn-head">
       <h2 id="whats-new-title">What's new in Run·dere</h2>
       <button class="yn-wn-x" type="submit" aria-label="Close">×</button>
