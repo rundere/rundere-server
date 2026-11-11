@@ -33,7 +33,9 @@
   }
 
   // htmx swaps the lens area, so #pl-map comes and goes: build, keep or drop the map to
-  // match what is on the page now.
+  // match what is on the page now. Leaflet draws into a child of #pl-map, not #pl-map
+  // itself: when a swap brings a new #pl-map, htmx's settle step resets that element's
+  // classes and would strip Leaflet's (YONDER-368).
   function init() {
     var el = document.getElementById('pl-map');
     if (!el) { if (map) destroy(); return; }
@@ -42,7 +44,10 @@
     if (!window.L || !L.markerClusterGroup) { setStatus('The map could not load.'); return; }
 
     mapEl = el;
-    map = L.map(el, {
+    var canvas = document.createElement('div');
+    canvas.className = 'pl-map-canvas';
+    el.appendChild(canvas);
+    map = L.map(canvas, {
       minZoom: 1, maxZoom: 19, worldCopyJump: false,
       maxBounds: [[-85, -180], [85, 180]], maxBoundsViscosity: 1
     });
@@ -58,10 +63,36 @@
     map.on('moveend', function () {
       var c = map.getCenter();
       lastView = { center: [c.lat, c.lng], zoom: map.getZoom() };
+      if (el.dataset.q) return;          // a search draws all its matches once
       clearTimeout(timer);
       timer = setTimeout(refresh, 250);
     });
-    refresh();
+    if (el.dataset.q) search(el.dataset.q); else refresh();
+  }
+
+  // YONDER-368: a search made on the Map narrows the pins rather than leaving the map.
+  // Every match comes at once (the server caps it), clustered here, and the map fits them.
+  function search(text) {
+    var thisMap = map;
+    var mine = controller = new AbortController();
+    fetch(mapEl.dataset.data + '?q=' + encodeURIComponent(text), {
+      credentials: 'same-origin', headers: { 'Accept': 'application/json' }, signal: mine.signal
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (data) {
+      if (mine !== controller || map !== thisMap) return;
+      data = data || {};
+      setStatus((data.places || []).length ? '' : 'No matching places on the map.');
+      draw({ places: data.places || [] });
+      var b = data.bounds;
+      if (b && finite(b[0][0], b[0][1]) && finite(b[1][0], b[1][1])) {
+        map.fitBounds(b, { padding: [30, 30], maxZoom: 15 });
+      }
+    }).catch(function (err) {
+      if (err && err.name === 'AbortError') return;
+      setStatus('The places could not be loaded. Try the search again.');
+    });
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -139,4 +170,7 @@
 
   document.addEventListener('DOMContentLoaded', init);
   document.body.addEventListener('htmx:afterSwap', init);
+  // A search swaps the whole lens area (outerHTML), whose afterSwap fires on the old,
+  // detached element; htmx:load fires on the new content (YONDER-368).
+  document.body.addEventListener('htmx:load', init);
 })();

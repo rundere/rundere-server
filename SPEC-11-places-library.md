@@ -133,6 +133,10 @@ Everything is own-only, with no admin view (D-166).
     The browser never talks to a tile server, and tiles are cached.
   - With no `map_tile_url` the Map lens isn't shown, and the other lenses work as before.
   - At low zoom the server sends geohash clusters, never thousands of pins.
+  - A search made on the Map stays on the Map (YONDER-368, owner, 2026-11-10). It narrows the
+    pins to the matches, words and chips alike (`list:`, `kind:`, `must`, …), and the map fits
+    them. It's the same search as the result list, capped at 1,000 places. On every other lens a
+    search still shows the result list. Clearing the search shows every place again.
 - **D-219 — The library is Discover's first source (proposed).**
   - Saved places near a trip's destinations appear in Discover as the person's own items,
     marked "You saved this". They are sorted into Discover's topics through the topic and kind

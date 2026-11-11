@@ -3,7 +3,8 @@
 Two small routes under `/places/map`:
 
 - `GET /places/map/data`: what the visible map area shows, from `places.clusters`
-  (geohash clusters at low zoom, single pins once zoomed in). Own-only: the service
+  (geohash clusters at low zoom, single pins once zoomed in); with `q`, every place
+  the search box matches instead, with their bounds (YONDER-368). Own-only: the service
   scopes it through `places.visible`, so another person's places never appear (D-166).
 - `GET /places/map/tiles/{z}/{x}/{y}.png`: one map tile. The browser never talks to a
   tile server (D-218): it asks this route, which uses the same `map_tile_url` and disk
@@ -48,10 +49,17 @@ def _num(raw: str | None, name: str, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
+def _pin(p) -> dict:
+    return {"id": p.id, "name": p.name, "lat": p.lat, "lon": p.lon,
+            "activity_type": p.activity_type}
+
+
 @router.get("/data")
 def map_data(request: Request, s: str | None = None, w: str | None = None,
              n: str | None = None, e: str | None = None, zoom: str | None = None,
-             session: Session = Depends(get_session)):
+             q: str | None = None, session: Session = Depends(get_session)):
+    if (q or "").strip():
+        return _search_data(request, session, q.strip())
     south, north = _num(s, "s", -90, 90), _num(n, "n", -90, 90)
     west, east = _num(w, "w", -180, 180), _num(e, "e", -180, 180)
     z = int(_num(zoom, "zoom", 0, 22))
@@ -62,11 +70,27 @@ def map_data(request: Request, s: str | None = None, w: str | None = None,
     found = places_svc.clusters(session, scope.user_of(request),
                                 bbox=(south, west, north, east), zoom=z)
     if "places" in found:
-        return JSONResponse({"places": [
-            {"id": p.id, "name": p.name, "lat": p.lat, "lon": p.lon,
-             "activity_type": p.activity_type}
-            for p in found["places"][:_MAX_PLACES]]}, headers=_NO_STORE)
+        return JSONResponse({"places": [_pin(p) for p in found["places"][:_MAX_PLACES]]},
+                            headers=_NO_STORE)
     return JSONResponse(found, headers=_NO_STORE)
+
+
+def _search_data(request: Request, session: Session, q: str) -> JSONResponse:
+    """A search on the Map (YONDER-368): every matching place with a pin, wherever
+    it is, and their bounds so the map can fit them. The same search as the list
+    (`places_web.search_filters` → `places.search`), so both always agree; own-only
+    like the rest (D-166). The browser clusters them itself."""
+    from app.places_web import search_filters
+    user = scope.user_of(request)
+    f, notice = search_filters(session, user, q)
+    found = [] if notice else [p for p in places_svc.search(session, user, limit=_MAX_PLACES, **f)
+                               if p.lat is not None and p.lon is not None]
+    bounds = None
+    if found:
+        bounds = [[min(p.lat for p in found), min(p.lon for p in found)],
+                  [max(p.lat for p in found), max(p.lon for p in found)]]
+    return JSONResponse({"places": [_pin(p) for p in found], "bounds": bounds},
+                        headers=_NO_STORE)
 
 
 @router.get("/tiles/{z}/{x}/{y}.png")

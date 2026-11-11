@@ -16,7 +16,7 @@
       </div>
     </div>
 
-    <form class="pl-search" role="search" action="/places" method="get"
+    <form id="pl-search" class="pl-search" role="search" action="/places" method="get"
           hx-get="/places" hx-target="#pl-body" hx-swap="outerHTML" hx-push-url="true"
           hx-trigger="input changed delay:300ms from:#pl-q, submit">
       <label class="sr-only" for="pl-q">Search your places</label>
