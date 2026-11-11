@@ -166,3 +166,17 @@ def test_the_page_carries_the_combobox_and_the_kind_chips(world):
     assert "/review/static/places_suggest.js" in page
     assert 'data-kind="restaurant"\n              aria-pressed="true"' in page
     assert 'data-kind="tour"\n              aria-pressed="false"' in page
+
+
+def test_tokens_are_scanned_in_linear_time():
+    """CodeQL py/polynomial-redos: the tokenizer is a one-pass scanner, so a long
+    run of one character from the search box can't make it crawl."""
+    import time
+    t = time.perf_counter()
+    for text in ("!" * 200_000, "a" * 200_000 + ":", '"' + "x" * 200_000):
+        places_svc.search_tokens(text)
+        places_svc.parse_query(text)
+    assert time.perf_counter() - t < 2
+    assert [tok for _, _, tok in places_svc.search_tokens(
+        'kind:re list:"Date night" "old town" a"b c city:"New')] == [
+        "kind:re", 'list:"Date night"', '"old town"', 'a"b', "c", 'city:"New']

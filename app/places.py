@@ -958,12 +958,32 @@ def guess_type(name: str | None) -> str | None:
 
 # A search token: a chip with a quoted value (`list:"Date night"`), a quoted
 # phrase, or a run of non-spaces. A quote still being typed runs to the end.
-_TOKEN = re.compile(r'[^\s:"]+:"[^"]*"?|"[^"]*"?|\S+')
-
-
-def search_tokens(q: str | None) -> list[re.Match]:
-    """The search box split into tokens, with their spans (D-235)."""
-    return list(_TOKEN.finditer(q or ""))
+# Scanned by hand in one pass, not with a regex: the search box is user input,
+# and an alternation tried from every position goes quadratic on a long run of
+# one character (CodeQL py/polynomial-redos).
+def search_tokens(q: str | None) -> list[tuple[int, int, str]]:
+    """The search box split into tokens, as `(start, end, text)` (D-235)."""
+    text = q or ""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        if text[i].isspace():
+            i += 1
+            continue
+        start = i
+        if text[i] == '"':                             # a quoted phrase
+            close = text.find('"', i + 1)
+            i = n if close < 0 else close + 1
+        else:
+            while i < n and not text[i].isspace() and text[i] not in ':"':
+                i += 1
+            if i < n and text[i] == ':' and i + 1 < n and text[i + 1] == '"' and i > start:
+                close = text.find('"', i + 2)          # key:"quoted value"
+                i = n if close < 0 else close + 1
+            else:
+                while i < n and not text[i].isspace():
+                    i += 1
+        out.append((start, i, text[start:i]))
+    return out
 
 
 _CHIP_KEYS = ("kind", "list", "city", "country")
@@ -986,8 +1006,7 @@ def parse_query(q: str | None) -> dict:
     `search()` keyword arguments, with `list_name` for the caller to resolve."""
     out: dict = {"q": None}
     words = []
-    for m in search_tokens(q):
-        tok = m.group(0)
+    for _, _, tok in search_tokens(q):
         low = tok.lower()
         key, _, raw = tok.partition(":")
         key = key.lower()
@@ -1050,9 +1069,9 @@ def suggest(session: Session, user, text: str | None, cursor: int | None = None,
     text = text or ""
     cursor = len(text) if cursor is None else max(0, min(int(cursor), len(text)))
     start = end = cursor
-    for m in search_tokens(text):
-        if m.start() <= cursor <= m.end():
-            start, end = m.start(), m.end()
+    for t_start, t_end, _ in search_tokens(text):
+        if t_start <= cursor <= t_end:
+            start, end = t_start, t_end
             break
     tok = text[start:cursor]
     key, colon, raw = tok.partition(":")
