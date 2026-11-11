@@ -144,6 +144,23 @@ Everything is own-only, with no admin view (D-166).
   - A Discover item can be saved to the library.
   - The MCP `get_trip` reports the saved places nearby, and the research kits start from them.
 
+- **D-235 — The search box helps you write it (YONDER-369; owner, 2026-11-11).**
+  - As you type, a list under the box completes the word under the caret: the chips
+    before a colon (all of them in an empty box), the place kinds after `kind:`, your own
+    lists after `list:`, and the cities and countries you've saved after `city:` and
+    `country:`, each with a count. ↑/↓ move, Enter or Tab picks, Esc closes, and a click
+    picks too. It's a combobox and listbox for screen readers.
+  - A value with spaces is quoted: `list:"Date night"`, `city:"New York"`. Picking one
+    writes the quotes. A chip with no value yet (`kind:` while typing) isn't searched as a
+    word.
+  - A row of chips under the box, one per place kind, toggles `kind:<kind>`. A kind is
+    written as a word people use: `kind:restaurant`, not `dining`.
+  - One service, `places.suggest`, answers `GET /places/suggest` for the page and
+    `GET /api/v1/places/suggest` for the apps: `{start, end, items}`, where each item is
+    `{kind, label, insert, count, complete}` and replaces `q[start:end]`. It's own-only
+    like the rest of the library (D-166): another person's lists, cities and counts never
+    appear.
+
 ## Phases
 
 0. Shared Maps links that never reached Saved Places (a fix; SPEC-9 §9 note).

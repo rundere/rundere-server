@@ -21,16 +21,29 @@
           hx-trigger="input changed delay:300ms from:#pl-q, submit">
       <label class="sr-only" for="pl-q">Search your places</label>
       <span class="pl-search-ico" aria-hidden="true">{{ icon('search', 18) }}</span>
+      {# D-235: a combobox. places_suggest.js fills the listbox from /places/suggest
+         as you type, and the chips below toggle kind:<kind>. Without script it's
+         the plain search box it always was. #}
       <input id="pl-q" name="q" type="search" value="{{ q }}" autocomplete="off"
-             placeholder="Search places, or try must, kind:restaurant, list:Want, city:Lisbon"
-             aria-describedby="pl-q-hint">
+             placeholder="Search places, or type kind:, list:, city: or must"
+             aria-describedby="pl-q-hint" role="combobox" aria-autocomplete="list"
+             aria-expanded="false" aria-controls="pl-suggest" spellcheck="false">
       <span id="pl-q-hint" class="pl-kbd" title="Press / to search">/</span>
+      <ul id="pl-suggest" class="pl-suggest" role="listbox" aria-label="Suggestions" hidden></ul>
+      <p id="pl-suggest-status" class="sr-only" aria-live="polite"></p>
     </form>
+    <div class="pl-kinds" role="group" aria-label="Show one kind of place">
+      {% for k in kind_chips %}
+      <button type="button" class="pl-kind" data-kind="{{ k.word }}"
+              aria-pressed="{{ 'true' if k.word == active_kind else 'false' }}">{{ k.label }}</button>
+      {% endfor %}
+    </div>
 
     {% include "places/_body.html" %}
   </div>
 </div>
 <div id="pl-sheet"></div>
+<script src="{{ asset('/review/static/places_suggest.js') }}" defer></script>
 {% if map_enabled %}
 {# SPEC-11 D-218: Leaflet is vendored (no CDN). Loaded here, not with the Map lens, so
    the lens can be swapped in by htmx without racing script loads. #}
