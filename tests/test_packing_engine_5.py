@@ -352,6 +352,30 @@ def test_the_api_list_leaves_suggestions_out(world):
 
 
 @pytestmark_app
+def test_the_api_says_whose_list_it_is(world):
+    """The apps' "Packing list for <name>" label (SPEC-5 §6.8): always the
+    caller's own name, never the trip companion's."""
+    _answer(world, "a")
+    _answer(world, "b")
+    from app import api_v1
+    with SessionLocal() as s:
+        out_a = api_v1.api_generate_packing(world["trip"], user=s.get(User, world["a"]), session=s)
+        out_b = api_v1.api_generate_packing(world["trip"], user=s.get(User, world["b"]), session=s)
+    assert out_a.for_name == world["ada"]
+    assert out_b.for_name == world["ada"].replace("Ada", "Ben")
+
+
+def test_the_openapi_schema_lists_the_409():
+    """So the Android models and iOS DTOs can decode `code` and `url` (§6.8)."""
+    from app.main import app
+    op = app.openapi()["paths"]["/api/v1/trips/{trip_id}/packing/generate"]["post"]
+    body = op["responses"]["409"]["content"]["application/json"]["schema"]
+    assert body["required"] == ["detail", "code", "url"]
+    assert body["properties"]["code"]["enum"] == ["packing_profile_required"]
+    assert "for_name" in app.openapi()["components"]["schemas"]["PackingOut"]["properties"]
+
+
+@pytestmark_app
 def test_someone_elses_template_cant_be_put_on_my_list(world, monkeypatch):
     _answer(world, "a")
     _answer(world, "b")
