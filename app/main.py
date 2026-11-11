@@ -536,6 +536,12 @@ def startup() -> None:
         monitor.start()
     except Exception:                       # pragma: no cover
         log.exception("health monitor failed to start; admins get no alerts until it does")
+    try:
+        # One-time data steps after an upgrade, e.g. map-pin addresses (D-233).
+        from app import upgrade
+        upgrade.start(SessionLocal)
+    except Exception:                       # pragma: no cover
+        log.exception("upgrade steps failed to start; they run at the next start")
     _mount_admin()
 
 

@@ -108,12 +108,20 @@
         <fieldset>
           <legend>Include</legend>
           <label><input type="checkbox" name="times" value="1" checked> Times</label>
-          <label><input type="checkbox" name="addresses" value="1" checked> Addresses, airports included</label>
+          <label><input type="checkbox" name="addresses" value="1" checked> Addresses</label>
           <label><input type="checkbox" name="maps" value="1" checked> Maps</label>
           <label><input type="checkbox" name="details" value="1" checked> Booking details (codes, seats, notes)</label>
           {% if not read_only %}
           <label><input type="checkbox" name="packing" value="1"> My packing list</label>
-          <label><input type="checkbox" name="discover" value="1"> My Discover briefing</label>
+          {% if pdf_topics %}
+          <label><input type="checkbox" name="discover" value="1"> My Discover research</label>
+          {# Shown once Discover is ticked (CSS :has), all on; untick any to leave it out. #}
+          <div class="yn-pdf-topics">
+            {% for t in pdf_topics %}
+            <label><input type="checkbox" name="topic" value="{{ t.key }}" checked> {{ t.label }}</label>
+            {% endfor %}
+          </div>
+          {% endif %}
           {% endif %}
         </fieldset>
         <p class="yn-pdf-hint">Handing it to someone else? Leaving out times and addresses keeps where you'll be, and when, to yourself.</p>

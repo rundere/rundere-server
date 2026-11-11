@@ -116,9 +116,18 @@ def test_a_link_without_flags_keeps_the_old_pdf():
 
 
 def test_the_form_sends_only_ticked_boxes():
-    got = sections_from_query({"pick": "1", "maps": "1", "packing": "1"})
+    from starlette.datastructures import QueryParams
+    got = sections_from_query(QueryParams("pick=1&maps=1&packing=1"))
     assert got == Sections(times=False, addresses=False, maps=True, details=False,
-                           packing=True, discover=False)
+                           packing=True, discover=False, topics=frozenset())
+
+
+def test_discover_topics_come_as_ticked_boxes():
+    from starlette.datastructures import QueryParams
+    got = sections_from_query(QueryParams("pick=1&discover=1&topic=plugs&topic=food&topic=nope"))
+    assert got.discover and got.topics == frozenset({"plugs", "food"})
+    # A link that names no topic gets them all.
+    assert sections_from_query(QueryParams("discover=1")).topics is None
 
 
 # ------------------------------------------------------------------ what each one leaves out
@@ -213,10 +222,18 @@ def test_briefing_is_the_downloaders_own_research(trip):
         ])
         s.commit()
     html = _html(trip, Sections(discover=True))
-    assert "Briefing" in html and "Example plugs: type A and B" in html
+    assert "<h2>Discover</h2>" in html and "Example plugs: type A and B" in html
+    assert "Example food write-up" in html               # every topic, unless unticked
     assert "Example rejected visa note" not in html
-    assert "Example food write-up" not in html           # planning, not a briefing
     assert "safety note" not in html
+    only = _html(trip, Sections(discover=True, topics=frozenset({"plugs"})))
+    assert "Example plugs" in only and "Example food write-up" not in only
+    assert "<h2>Discover</h2>" not in _html(trip, Sections(discover=True,
+                                                          topics=frozenset()))
+    # The form offers a box per topic Ada has something in; not Ben's, not rejected.
+    with SessionLocal() as s:
+        offered = [t["key"] for t in pdf.briefing_topics(s, trip["trip"], s.get(User, trip["a"]))]
+    assert offered == ["plugs", "food"]
 
 
 def test_briefing_places_read_as_words():
@@ -274,5 +291,44 @@ def test_the_api_lists_the_flags():
     from app.main import app
     op = app.openapi()["paths"]["/api/v1/trips/{trip_id}/timeline.pdf"]["get"]
     names = {p["name"] for p in op["parameters"]}
-    assert {"times", "addresses", "maps", "details", "packing", "discover"} <= names
+    assert {"times", "addresses", "maps", "details", "packing", "discover", "topic"} <= names
     assert pdf.Sections().packing is False
+
+
+# ------------------------------------------------------------------ the upgrade step
+
+def test_upgrade_locates_old_pins_once(monkeypatch):
+    from app import upgrade
+    from app.models import ServerSetting
+    calls = []
+    monkeypatch.setattr(upgrade, "STEPS", (("test-step", lambda s: calls.append(1) or "ok"),))
+    with SessionLocal() as s:
+        s.query(ServerSetting).filter(ServerSetting.key == "upgrade:test-step").delete()
+        s.commit()
+        assert upgrade.pending(s) == ["test-step"]
+    assert upgrade.run(SessionLocal) == {"test-step": "ok"}
+    assert upgrade.run(SessionLocal) == {} and calls == [1]       # done means done
+    with SessionLocal() as s:
+        assert upgrade.pending(s) == []
+
+
+def test_a_failed_upgrade_step_runs_again(monkeypatch):
+    from app import upgrade
+    from app.models import ServerSetting
+
+    def boom(session):
+        raise RuntimeError("example failure")
+    monkeypatch.setattr(upgrade, "STEPS", (("test-boom", boom),))
+    with SessionLocal() as s:
+        s.query(ServerSetting).filter(ServerSetting.key == "upgrade:test-boom").delete()
+        s.commit()
+    assert upgrade.run(SessionLocal) == {"test-boom": "failed (RuntimeError)"}
+    with SessionLocal() as s:
+        assert upgrade.pending(s) == ["test-boom"]
+
+
+def test_the_address_step_is_the_locate_backfill(monkeypatch):
+    from app import upgrade
+    from app.trips import geo as geo_mod
+    monkeypatch.setattr(geo_mod, "backfill", lambda session: {"located": 2, "skipped": 5})
+    assert dict(upgrade.STEPS)["locate-addresses"](None) == "located=2, skipped=5"

@@ -869,17 +869,19 @@ def api_trip_snapshot(trip_id: str, user=Depends(authn.current_user),
 def api_trip_timeline_pdf(trip_id: str, download: bool = False, times: bool = True,
                           addresses: bool = True, maps: bool = True, details: bool = True,
                           packing: bool = False, discover: bool = False,
+                          topic: list[str] | None = Query(None),
                           user=Depends(authn.current_user),
                           session: Session = Depends(get_session)):
     """The trip timeline as a shareable PDF itinerary — identical to the web
     export (server-rendered). The flags choose what goes in (SPEC-8 §13,
     D-233); left out, each keeps the PDF older app builds already get.
-    `packing` and `discover` add the caller's own list and briefing, never for
-    a viewer."""
+    `packing` and `discover` add the caller's own list and Discover research,
+    never for a viewer; repeat `topic` to keep only those Discover topics."""
     trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
     from app.trips import pdf
     sections = pdf.Sections(times=times, addresses=addresses, maps=maps, details=details,
-                            packing=packing, discover=discover)
+                            packing=packing, discover=discover,
+                            topics=pdf.pick_topics(topic or [], explicit=topic is not None))
     return pdf.pdf_response(session, trip, download=download, sections=sections, user=user)
 
 

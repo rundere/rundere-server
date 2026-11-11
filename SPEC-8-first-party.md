@@ -510,7 +510,7 @@ person chooses what goes in. Agreed with the owner on 2026-11-10.
   | `maps` | on | The trip map, the per-drive route maps and the "Getting there" flight map. They're the bulk of the file. |
   | `details` | on | The rest of each item's fields: confirmation codes, phone numbers, seats, notes. |
   | `packing` | off | The downloader's **own** packing list (D-123), grouped by bag, without "Suggested" or "Not needed" lines. |
-  | `discover` | off | The downloader's own Discover briefing (D-123, 4.1): one short section per researched topic. |
+  | `discover` | off | The downloader's own Discover research (D-123, 4.1): a section per topic. Under it the form offers a box for each topic the person has research in (weather, currency, plugs, visa, safety, events, food, language, AI research; packing is its own section), all ticked; unticking one leaves it out. The form and the API send them as repeated `topic=` values; a request that names none gets every topic. |
 
   The timeline itself (the days, each item's title, and who it's for) is always
   in. A viewer (D-199) gets neither packing nor Discover, whatever they ask.
@@ -523,8 +523,11 @@ person chooses what goes in. Agreed with the owner on 2026-11-10.
 - A found address is labelled **Address (from the map)**, so nobody mistakes it
   for one the booking gave.
 - **Upgrading:** pins made before this keep no address until they're located
-  again. Run `locate-activities` once after upgrading; it redoes pins that lack
-  an address.
+  again. The server does that once by itself after upgrading (`app/upgrade.py`):
+  two minutes after start it runs `locate-activities`, which redoes only the pins
+  that lack an address, and records it in `server_settings` so it doesn't run
+  again. If it fails it runs at the next start. The PDF never fills a missing
+  address in itself; it prints what the pins hold.
 
 ## Build order
 
@@ -925,7 +928,8 @@ person chooses what goes in. Agreed with the owner on 2026-11-10.
 - **D-233 — The trip PDF's sections are the downloader's choice (YONDER-311;
   owner, 2026-11-10).** Times, addresses, maps and booking details are on by
   default and each can be left out; the person's own packing list and Discover
-  briefing can be added. An unset flag keeps today's PDF. Addresses are only
+  research can be added, topic by topic. An unset flag keeps today's PDF. Addresses are only
   what Run·dere already holds: typed, the street address Photon gave when the
   item was located (kept on the pin and labelled "from the map"), or the bundled
-  airport table. Making the PDF looks nothing up. See §13.
+  airport table. Making the PDF looks nothing up; instead the server fills the
+  addresses of older pins once after upgrading. See §13.

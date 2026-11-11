@@ -8,7 +8,7 @@ document links (they point at this server) and the edit affordances.
 
 What else goes in is the downloader's choice (`Sections`, SPEC-8 §13, D-233):
 times, addresses, maps and booking details by default, and optionally their own
-packing list and Discover briefing. Nothing is looked up to make it.
+packing list and Discover research, topic by topic. Nothing is looked up to make it.
 """
 from __future__ import annotations
 
@@ -35,10 +35,15 @@ _STREET_ENDS = {"drive", "taxi"}
 _ITINERARY_KEYS = {"airline", "flightNumber", "from", "to", "operator", "trainNumber",
                    "route", "company", "name", "type", "duration", "provider", "venue",
                    "vessel", "departurePort", "arrivalPort", "title", "text"}
-# Discover topics that make a pre-trip briefing; events, food and saved
-# research are planning material, not something to carry.
-_BRIEFING_TOPICS = ("weather", "currency", "plugs", "visa", "safety", "language",
-                    "language_regional", "language_local")
+# Discover topics the PDF can carry, as the boxes under "My Discover research"
+# offers them (D-233): every topic but packing, which is its own section. The
+# language box covers all three language topics.
+_BRIEFING_GROUPS = (("weather", ("weather",)), ("currency", ("currency",)),
+                    ("plugs", ("plugs",)), ("visa", ("visa",)), ("safety", ("safety",)),
+                    ("events", ("events",)), ("food", ("food",)),
+                    ("language", ("language", "language_regional", "language_local")),
+                    ("research", ("research",)))
+_BRIEFING_TOPICS = tuple(t for _, ts in _BRIEFING_GROUPS for t in ts)
 # Point roles for found addresses on two-ended trips worth a found address:
 # the station, airport or port, not a street (those are typed).
 _FOUND_ENDS = {"flight", "train", "cruise"}
@@ -54,6 +59,8 @@ class Sections:
     details: bool = True
     packing: bool = False
     discover: bool = False
+    # Which Discover topics (`_BRIEFING_GROUPS` keys); None = all of them.
+    topics: frozenset[str] | None = None
 
 
 _TRUE = {"1", "true", "on", "yes"}
@@ -62,14 +69,27 @@ _TRUE = {"1", "true", "on", "yes"}
 def sections_from_query(params) -> Sections:
     """Sections from the trip page's Export form or a link. The form sends
     `pick=1` with only the ticked boxes, so there an absent flag is off; a
-    link without `pick` keeps each default."""
+    link without `pick` keeps each default. Discover topics come as repeated
+    `topic=` values; a link that names none gets them all."""
     explicit = "pick" in params
     vals = {}
     for name, default in vars(Sections()).items():
+        if not isinstance(default, bool):
+            continue
         raw = params.get(name)
         vals[name] = (default if not explicit else False) if raw is None \
             else raw.strip().lower() in _TRUE
-    return Sections(**vals)
+    picked = params.getlist("topic") if hasattr(params, "getlist") else []
+    return Sections(**vals, topics=pick_topics(picked, explicit=explicit))
+
+
+def pick_topics(picked, *, explicit: bool = True) -> frozenset[str] | None:
+    """The known topic boxes among `picked`; None (all) when nothing was picked
+    and the caller didn't say it was choosing."""
+    if not picked and not explicit:
+        return None
+    known = {k for k, _ in _BRIEFING_GROUPS}
+    return frozenset(t for t in picked if t in known)
 
 
 def _kind(atype: str, key: str, kind: str | None) -> str:
@@ -287,17 +307,32 @@ def _place(key: str | None) -> str:
     return f"{city}, {country}" if city else country
 
 
-def _briefing(session: Session, trip: Trip, user) -> list[dict] | None:
-    """The downloader's own Discover briefing (4.1, per person): one section
-    per briefing topic, rejected findings left out."""
+def _findings(session: Session, trip_id: str, user, topics) -> list:
     from app.models import DiscoveryFinding
     uid = user.id if user is not None else None
-    found = (session.query(DiscoveryFinding)
-             .filter(DiscoveryFinding.trip_id == trip.id, DiscoveryFinding.user_id == uid,
-                     DiscoveryFinding.topic.in_(_BRIEFING_TOPICS),
-                     DiscoveryFinding.status != "rejected").all())
+    return (session.query(DiscoveryFinding)
+            .filter(DiscoveryFinding.trip_id == trip_id, DiscoveryFinding.user_id == uid,
+                    DiscoveryFinding.topic.in_(topics),
+                    DiscoveryFinding.status != "rejected").all())
+
+
+def briefing_topics(session: Session, trip_id: str, user) -> list[dict]:
+    """The topic boxes the Export form offers: the downloader's own topics on
+    this trip that have something to print, in Discover's order."""
+    have = {f.topic for f in _findings(session, trip_id, user, _BRIEFING_TOPICS)
+            if (f.body_md or "").strip()}
+    return [{"key": k, "label": trip_routes.TOPIC_LABELS.get(k, k)}
+            for k, ts in _BRIEFING_GROUPS if have.intersection(ts)]
+
+
+def _briefing(session: Session, trip: Trip, user,
+              topics: frozenset[str] | None = None) -> list[dict] | None:
+    """The downloader's own Discover research (4.1, per person): one section
+    per topic they kept ticked, rejected findings left out."""
+    wanted = [t for k, ts in _BRIEFING_GROUPS if topics is None or k in topics for t in ts]
+    found = _findings(session, trip.id, user, wanted)
     out = []
-    for topic in _BRIEFING_TOPICS:
+    for topic in wanted:
         fs = sorted((f for f in found if f.topic == topic and (f.body_md or "").strip()),
                     key=lambda f: f.place_key or "")
         if fs:
@@ -333,7 +368,7 @@ def timeline_context(session: Session, trip: Trip, sections: Sections | None = N
     return {
         **map_ctx,
         "packing": _packing(session, trip, user) if sec.packing and personal else None,
-        "briefing": _briefing(session, trip, user) if sec.discover and personal else None,
+        "briefing": _briefing(session, trip, user, sec.topics) if sec.discover and personal else None,
         "trip": {
             "name": trip.name,
             "dates": " – ".join(x for x in (trip_routes.fmt_date(trip.start_date),

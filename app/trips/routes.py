@@ -396,7 +396,17 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         **_sharing_context(session, trip, user),
         **_costs_context(session, trip, user),
         "journal": _journal_context(session, trip, user),
+        "pdf_topics": _pdf_topics(session, trip, user),
     }
+
+
+def _pdf_topics(session: Session, trip: Trip, user) -> list[dict]:
+    """The Discover topic boxes under Export PDF (D-233): the person's own,
+    so none for a viewer, who gets no Discover section anyway."""
+    if not scope.can_edit_trip(session, user, trip):
+        return []
+    from app.trips import pdf               # pdf imports this module
+    return pdf.briefing_topics(session, trip.id, user)
 
 
 def _inbox_waiting(session: Session, trip: Trip, user) -> int:
