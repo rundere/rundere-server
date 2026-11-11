@@ -2290,6 +2290,38 @@ def fileable_trips(session: Session, user) -> list:
     return session.query(Trip).filter(scope.filing_trip_filter(session, user)).all()
 
 
+class PlaceSuggestionOut(BaseModel):
+    kind: str = Field(description="chip, kind, list, city or country.")
+    label: str = Field(description="What to show, e.g. \"Restaurant\" or \"Lisbon, Portugal\".")
+    insert: str = Field(description="The text that replaces q[start:end], e.g. "
+                                    "`list:\"Date night\"`.")
+    count: int | None = Field(None, description="How many of the caller's places it "
+                                                "matches; none for a chip.")
+    complete: bool = Field(description="Add a space after it; false for a chip that "
+                                       "still wants its value, like `kind:`.")
+
+
+class PlaceSuggestOut(BaseModel):
+    start: int
+    end: int
+    items: list[PlaceSuggestionOut]
+
+
+@router.get("/places/suggest", response_model=PlaceSuggestOut)
+def api_place_suggest(q: Annotated[str, Query(max_length=500,
+                                              description="The search box as typed.")] = "",
+                      cursor: Annotated[int | None, Query(
+                          ge=0, description="Where the caret is in q; the end when omitted.")] = None,
+                      user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Suggestions for the Places search box as the person types (SPEC-11, D-235):
+    the place kinds after `kind:`, the caller's own lists after `list:`, the
+    cities and countries they've saved after `city:` and `country:`, and the
+    chips themselves before a colon. Replace `q[start:end]` with an item's
+    `insert`, then a space when it's `complete`. Own-only (D-166)."""
+    return places_svc.suggest(session, user, q, cursor)
+
+
 @router.get("/places", response_model=list[SavedPlaceOut])
 def api_place_list(user=Depends(authn.current_user),
                    session: Session = Depends(get_session)):

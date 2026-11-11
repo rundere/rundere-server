@@ -114,7 +114,11 @@ def _body_ctx(request: Request, session: Session) -> dict:
     unsorted = places_svc.unsorted(session, user)
     ctx = {"request": request, "q": q, "lens": lens, "unsorted_count": len(unsorted),
            "map_enabled": map_enabled(), "map_attribution": settings.map_tile_attribution,
-           "kinds": places_svc.place_type_options(), "err": qp.get("err", "")}
+           "kinds": places_svc.place_type_options(), "err": qp.get("err", ""),
+           # D-235: the kind chips under the search box, and which one the search holds.
+           "kind_chips": [{"word": places_svc.kind_word(o["value"]), "label": o["label"]}
+                          for o in places_svc.place_type_options()],
+           "active_kind": places_svc.kind_word(places_svc.parse_query(q).get("kind") or "")}
     if q:
         f, notice = search_filters(session, user, q)
         if lens == "map" and ctx["map_enabled"]:
@@ -190,6 +194,18 @@ def _sheet(request: Request, session: Session, place_id: str, notice: dict | Non
            "where": where, "can_lookup": place_lookup._default_geocoder() is not None}
     return templates.TemplateResponse(request, "places/_place_sheet.html", ctx,
                                       headers=headers or {})
+
+
+@router.get("/suggest")
+def places_suggest(request: Request, q: str = "", cursor: int | None = None,
+                   session: Session = Depends(get_session)):
+    """Suggestions for the search box (D-235), for places_suggest.js. The same
+    service as GET /api/v1/places/suggest; declared before the /{place_id}
+    catch-all. JSON, drawn with textContent, so no name is ever treated as HTML."""
+    from fastapi.responses import JSONResponse
+    found = places_svc.suggest(session, scope.user_of(request), q[:500],
+                               None if cursor is None else max(0, cursor))
+    return JSONResponse(found, headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/{place_id}", response_class=HTMLResponse)

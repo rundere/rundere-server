@@ -26,6 +26,7 @@ Bad input raises ValueError (the API maps it to 400); a row that isn't yours
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
 
 from sqlalchemy import false, true
@@ -955,35 +956,164 @@ def guess_type(name: str | None) -> str | None:
     return None
 
 
+# A search token: a chip with a quoted value (`list:"Date night"`), a quoted
+# phrase, or a run of non-spaces. A quote still being typed runs to the end.
+_TOKEN = re.compile(r'[^\s:"]+:"[^"]*"?|"[^"]*"?|\S+')
+
+
+def search_tokens(q: str | None) -> list[re.Match]:
+    """The search box split into tokens, with their spans (D-235)."""
+    return list(_TOKEN.finditer(q or ""))
+
+
+_CHIP_KEYS = ("kind", "list", "city", "country")
+
+
+def colon_only(key: str, raw: str) -> bool:
+    """A chip with no value yet (`kind:`, `list:"`), as while it's being typed."""
+    return key in _CHIP_KEYS and not _unquote(raw).strip()
+
+
+def _unquote(v: str) -> str:
+    return v[1:-1] if len(v) >= 2 and v[0] == v[-1] == '"' else v.lstrip('"')
+
+
 def parse_query(q: str | None) -> dict:
     """Split a library search into words and chips (D-216):
     `must`, `someday`, `visited`, `unvisited`, `kind:<type>`, `list:<name>`,
-    `country:<code>`, `city:<name>`. Anything else is a search word. Returns the
+    `country:<code>`, `city:<name>`. A value with spaces is quoted:
+    `list:"Date night"` (D-235). Anything else is a search word. Returns the
     `search()` keyword arguments, with `list_name` for the caller to resolve."""
     out: dict = {"q": None}
     words = []
-    for tok in (q or "").split():
+    for m in search_tokens(q):
+        tok = m.group(0)
         low = tok.lower()
-        key, _, val = low.partition(":")
+        key, _, raw = tok.partition(":")
+        key = key.lower()
+        val = _unquote(raw).strip()
+        lval = val.lower()
         if low in ("must", "someday"):
             out["priority"] = low
         elif low in ("visited", "unvisited"):
             out["visited"] = low == "visited"
         elif val and key == "kind":
             match = next((o["value"] for o in place_type_options()
-                          if val in (o["value"].lower(), places_geo.fold(o["label"]))
-                          or places_geo.fold(o["label"]).startswith(val)), None)
-            out["kind"] = match or val
+                          if lval in (o["value"].lower(), places_geo.fold(o["label"]))
+                          or places_geo.fold(o["label"]).startswith(lval)), None)
+            out["kind"] = match or lval
         elif val and key == "country":
             out["country"] = val.upper()
         elif val and key == "city":
-            out["city"] = tok.split(":", 1)[1]
+            out["city"] = val
         elif val and key == "list":
-            out["list_name"] = tok.split(":", 1)[1]
+            out["list_name"] = val
+        elif colon_only(key, raw):
+            continue                       # `kind:` still being typed: not a word yet
         else:
-            words.append(tok)
-    out["q"] = " ".join(words) or None
+            words.append(_unquote(tok))
+    out["q"] = " ".join(w for w in words if w) or None
     return out
+
+
+# Search suggestions (D-235). The chips the box understands, in the order offered
+# before any colon, and the word each kind is written as.
+SUGGEST_CHIPS = (("must", "Must go"), ("someday", "Someday"), ("visited", "Been there"),
+                 ("unvisited", "Not been yet"), ("kind:", "Kind of place"),
+                 ("list:", "One of your lists"), ("city:", "A city"),
+                 ("country:", "A country"))
+_KIND_WORD = {"dining": "restaurant"}
+
+
+def kind_word(value: str) -> str:
+    """How a kind is written in the search box: `kind:restaurant`, not `dining`."""
+    return _KIND_WORD.get(value, value)
+
+
+def _quoted(value: str) -> str:
+    return f'"{value}"' if any(c.isspace() for c in value) or '"' in value else value
+
+
+def suggest(session: Session, user, text: str | None, cursor: int | None = None,
+            limit: int = 8) -> dict:
+    """What to offer for the search token under `cursor` (D-235):
+    `{start, end, items}`, where the client replaces `text[start:end]` with an
+    item's `insert`, adding a space after it when `complete`.
+
+    - `kind:` offers the place kinds, `list:` the caller's own lists, `city:` and
+      `country:` the places the caller has saved; each with a count, matched on
+      what's typed after the colon (accent- and case-blind).
+    - Before any colon, the chips themselves; in an empty box, all of them.
+    Own-only like the rest of the library (D-166): another person's lists, cities
+    and counts never appear."""
+    from sqlalchemy import func
+    text = text or ""
+    cursor = len(text) if cursor is None else max(0, min(int(cursor), len(text)))
+    start = end = cursor
+    for m in search_tokens(text):
+        if m.start() <= cursor <= m.end():
+            start, end = m.start(), m.end()
+            break
+    tok = text[start:cursor]
+    key, colon, raw = tok.partition(":")
+    key = key.lower()
+    want = places_geo.fold(raw.lstrip('"'))
+    items: list[dict] = []
+    if not colon:
+        if not tok and text.strip():
+            return {"start": start, "end": end, "items": []}
+        low = tok.lower()
+        for chip, label in SUGGEST_CHIPS:
+            if chip.startswith(low) and chip != low:
+                items.append({"kind": "chip", "label": label, "insert": chip,
+                              "count": None, "complete": not chip.endswith(":")})
+        return {"start": start, "end": end, "items": items[:limit]}
+    _heal(session, user)
+    base = session.query(SavedPlace).filter(visible(user), _live())
+    if key == "kind":
+        counts = dict(base.with_entities(SavedPlace.activity_type, func.count(SavedPlace.id))
+                      .group_by(SavedPlace.activity_type).all())
+        for o in place_type_options():
+            word = kind_word(o["value"])
+            if word.startswith(want) or places_geo.fold(o["label"]).startswith(want):
+                items.append({"kind": "kind", "label": o["label"], "insert": f"kind:{word}",
+                              "count": counts.get(o["value"], 0), "complete": True})
+    elif key == "list":
+        for lst, n in lists(session, user):
+            if places_geo.fold(lst.name).startswith(want) or want in places_geo.fold(lst.name):
+                items.append({"kind": "list", "label": lst.name,
+                              "insert": f"list:{_quoted(lst.name)}", "count": n,
+                              "complete": True})
+    elif key == "city":
+        rows = (base.with_entities(SavedPlace.locality, SavedPlace.country_code,
+                                   func.count(SavedPlace.id))
+                .filter(SavedPlace.locality.isnot(None))
+                .group_by(SavedPlace.locality, SavedPlace.country_code).all())
+        seen: dict[str, dict] = {}
+        for city, cc, n in rows:
+            k = places_geo.fold(city)
+            if not k or not k.startswith(want):
+                continue
+            item = seen.setdefault(k, {"kind": "city", "label": city,
+                                       "insert": f"city:{_quoted(city)}", "count": 0,
+                                       "complete": True, "country": cc})
+            item["count"] += n
+        items = sorted(seen.values(), key=lambda i: (-i["count"], i["label"]))
+        for i in items:
+            name = places_geo.country_name(i.pop("country"))
+            if name:
+                i["label"] = f"{i['label']}, {name}"
+    elif key == "country":
+        rows = (base.with_entities(SavedPlace.country_code, func.count(SavedPlace.id))
+                .filter(SavedPlace.country_code.isnot(None))
+                .group_by(SavedPlace.country_code).all())
+        for cc, n in sorted(rows, key=lambda r: -r[1]):
+            name = places_geo.country_name(cc) or cc
+            if cc.lower().startswith(want) or places_geo.fold(name).startswith(want):
+                items.append({"kind": "country", "label": name,
+                              "insert": f"country:{cc.lower()}", "count": n,
+                              "complete": True})
+    return {"start": start, "end": end, "items": items[:limit]}
 
 
 def unsorted(session: Session, user) -> list[SavedPlace]:
