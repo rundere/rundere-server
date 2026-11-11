@@ -28,6 +28,9 @@
     {% endif %}
 
   {% elif lens == 'map' %}
+    {# YONDER-368: the search box (outside this area) carries the lens, so a search
+       made on the Map stays on the Map. `form=` ties the field to that form. #}
+    <input type="hidden" name="lens" value="map" form="pl-search">
     {% include "places/_map.html" %}
 
   {% elif lens == 'atlas' %}{% set a = atlas %}

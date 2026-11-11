@@ -92,6 +92,19 @@ def _atlas_ctx(session: Session, user, continent: str, country: str, city: str) 
             "boards": places_svc.atlas(session, user)}
 
 
+def search_filters(session: Session, user, q: str) -> tuple[dict, str | None]:
+    """`places.search` arguments for a search box query, with a `list:` chip
+    resolved to the person's own list; a notice instead when there's no such list."""
+    f = places_svc.parse_query(q)
+    name = f.pop("list_name", None)
+    if name:
+        lst = places_svc.list_by_name(session, user, name)
+        if lst is None:
+            return f, f"You have no list called “{name}”."
+        f["list_id"] = lst.id
+    return f, None
+
+
 def _body_ctx(request: Request, session: Session) -> dict:
     """Everything the lens area shows, from the URL alone."""
     user = scope.user_of(request)
@@ -102,15 +115,16 @@ def _body_ctx(request: Request, session: Session) -> dict:
     ctx = {"request": request, "q": q, "lens": lens, "unsorted_count": len(unsorted),
            "map_enabled": map_enabled(), "map_attribution": settings.map_tile_attribution,
            "kinds": places_svc.place_type_options(), "err": qp.get("err", "")}
-    if q:                                           # a search overrides the lens
-        f = places_svc.parse_query(q)
-        name = f.pop("list_name", None)
-        if name:
-            lst = places_svc.list_by_name(session, user, name)
-            f["list_id"] = lst.id if lst else None
-            if lst is None:
-                return {**ctx, "lens": "search", "rows": [],
-                        "notice": f"You have no list called “{name}”."}
+    if q:
+        f, notice = search_filters(session, user, q)
+        if lens == "map" and ctx["map_enabled"]:
+            # YONDER-368: on the Map a search narrows the pins and stays on the map;
+            # the browser draws the matches from /places/map/data?q=….
+            found = [] if notice else places_svc.search(session, user, limit=1000, **f)
+            return {**ctx, "notice": notice, "match_count": len(found),
+                    "pinless_count": sum(p.lat is None for p in found)}
+        if notice:                                  # elsewhere a search overrides the lens
+            return {**ctx, "lens": "search", "rows": [], "notice": notice}
         found = places_svc.search(session, user, limit=200, **f)
         return {**ctx, "lens": "search", "rows": _rows(session, user, found)}
     lists = places_svc.lists(session, user)
