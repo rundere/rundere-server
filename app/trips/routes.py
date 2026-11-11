@@ -717,7 +717,9 @@ def timeline_pdf(trip_id: str, request: Request, download: bool = False,
         return HTMLResponse("<p class='bp-empty'>That trip no longer exists.</p>",
                             status_code=404)
     from app.trips import pdf
-    return pdf.pdf_response(session, trip, download=download)
+    return pdf.pdf_response(session, trip, download=download,
+                            sections=pdf.sections_from_query(request.query_params),
+                            user=scope.user_of(request))
 
 
 @router.post("/{trip_id}/share", response_class=HTMLResponse)

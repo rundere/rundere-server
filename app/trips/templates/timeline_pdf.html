@@ -64,6 +64,23 @@
   .route-map { margin-top: 5pt; width: 100%; border: 0.75pt solid #d9d9de;
                border-radius: 3pt; }
 
+  .extra { page-break-before: always; }
+  .extra h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.6pt;
+              color: #365f86; margin: 0 0 5pt; padding-bottom: 3pt;
+              border-bottom: 1px solid #d9d9de; }
+  .extra h3 { font-size: 9.5pt; margin: 8pt 0 3pt; page-break-after: avoid; }
+  .bag { margin: 0 0 8pt; page-break-inside: avoid; }
+  .bag ul { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 10mm; }
+  .bag li { font-size: 8.8pt; padding: 1pt 0; }
+  .bag li::before { content: ""; display: inline-block; width: 7pt; height: 7pt;
+                    border: 0.75pt solid #6a6a6f; border-radius: 1pt;
+                    margin-right: 4pt; vertical-align: -0.5pt; }
+  .bag li.packed::before { background: #365f86; border-color: #365f86; }
+  .finding { font-size: 8.8pt; color: #2a2a2d; margin: 0 0 6pt; }
+  .finding h3, .finding h4 { font-size: 9pt; margin: 4pt 0 2pt; }
+  .finding blockquote { margin: 3pt 0; padding-left: 6pt; border-left: 2pt solid #a9c9ec; }
+  .place { font-size: 8pt; color: #6a6a6f; text-transform: uppercase; letter-spacing: 0.4pt; }
+
   .empty { color: #6a6a6f; font-style: italic; }
   footer { margin-top: 16pt; font-size: 7.5pt; color: #9a9aa0; }
 </style>
@@ -121,6 +138,31 @@
 {% else %}
 <p class="empty">No activities on this trip yet.</p>
 {% endfor %}
+
+{% if packing %}
+{# D-233: the downloader's own list, never anyone else's (D-123). #}
+<section class="extra">
+  <h2>My packing list</h2>
+  {% for b in packing %}
+  <div class="bag">
+    <h3>{{ b.bag }}</h3>
+    <ul>{% for i in b["items"] %}<li{% if i.packed %} class="packed"{% endif %}>{% if i.quantity > 1 %}{{ i.quantity }} × {% endif %}{{ i.label }}</li>{% endfor %}</ul>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if briefing %}
+<section class="extra">
+  <h2>Briefing</h2>
+  {% for t in briefing %}
+  <h3>{{ t.label }}</h3>
+  {% for f in t.findings %}
+  <div class="finding">{% if f.multi %}<div class="place">{{ f.place }}</div>{% endif %}{{ f.body }}</div>
+  {% endfor %}
+  {% endfor %}
+</section>
+{% endif %}
 
 <footer>Shared from Run·dere · generated {{ generated }}</footer>
 

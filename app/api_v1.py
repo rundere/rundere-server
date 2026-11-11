@@ -866,14 +866,21 @@ def api_trip_snapshot(trip_id: str, user=Depends(authn.current_user),
 
 @router.get("/trips/{trip_id}/timeline.pdf",
             responses={200: {"content": {"application/pdf": {}}}})
-def api_trip_timeline_pdf(trip_id: str, download: bool = False,
+def api_trip_timeline_pdf(trip_id: str, download: bool = False, times: bool = True,
+                          addresses: bool = True, maps: bool = True, details: bool = True,
+                          packing: bool = False, discover: bool = False,
                           user=Depends(authn.current_user),
                           session: Session = Depends(get_session)):
     """The trip timeline as a shareable PDF itinerary — identical to the web
-    export (server-rendered)."""
+    export (server-rendered). The flags choose what goes in (SPEC-8 §13,
+    D-233); left out, each keeps the PDF older app builds already get.
+    `packing` and `discover` add the caller's own list and briefing, never for
+    a viewer."""
     trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
     from app.trips import pdf
-    return pdf.pdf_response(session, trip, download=download)
+    sections = pdf.Sections(times=times, addresses=addresses, maps=maps, details=details,
+                            packing=packing, discover=discover)
+    return pdf.pdf_response(session, trip, download=download, sections=sections, user=user)
 
 
 @router.get("/review", response_model=ReviewListOut)

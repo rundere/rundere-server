@@ -492,6 +492,40 @@ Since D-146 that no longer holds.
   trip beyond today's **Date not set** group (YONDER-207, and scheduling hints in
   YONDER-208). That comes in a later release.
 
+## 13. The trip PDF: sections and addresses (D-233)
+
+The trip PDF is a printable backup for before and during a trip, and it's often
+handed to someone else: a house-sitter, a driver, family (YONDER-311). So the
+person chooses what goes in. Agreed with the owner on 2026-11-10.
+
+- **Choices**, made under the Export PDF button on the trip page and passed as
+  query flags on `GET /trips/{id}/timeline.pdf` and
+  `GET /api/v1/trips/{id}/timeline.pdf`. A flag left out keeps today's PDF, so
+  older app builds get exactly what they got before.
+
+  | Flag | Default | What it controls |
+  |---|---|---|
+  | `times` | on | Clock times: the time column, "Check-in"/"Check-out" rows and every date-time field. Off prints the days and what happens on each, but not *when*. Knowing when someone is out is the risky part of a handout. |
+  | `addresses` | on | Every address: typed ones (a stay's or restaurant's address, a tour's location, a venue, a car-rental desk), the address found on the map (below), airport addresses, and "Open map" links. |
+  | `maps` | on | The trip map, the per-drive route maps and the "Getting there" flight map. They're the bulk of the file. |
+  | `details` | on | The rest of each item's fields: confirmation codes, phone numbers, seats, notes. |
+  | `packing` | off | The downloader's **own** packing list (D-123), grouped by bag, without "Suggested" or "Not needed" lines. |
+  | `discover` | off | The downloader's own Discover briefing (D-123, 4.1): one short section per researched topic. |
+
+  The timeline itself (the days, each item's title, and who it's for) is always
+  in. A viewer (D-199) gets neither packing nor Discover, whatever they ask.
+- **Addresses come from what's already stored.** Typed addresses print as they
+  are. When an item was located by name only (a restaurant, a tour), locating
+  keeps the street address Photon returned on its map pin, as Run·dere-owned
+  data (rule 5). Making the PDF never looks anything up. An airport's address is
+  its name, city and country from the bundled table (D-147). A pin dropped from a
+  map link has no address unless one was typed.
+- A found address is labelled **Address (from the map)**, so nobody mistakes it
+  for one the booking gave.
+- **Upgrading:** pins made before this keep no address until they're located
+  again. Run `locate-activities` once after upgrading; it redoes pins that lack
+  an address.
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.
@@ -888,3 +922,10 @@ Since D-146 that no longer holds.
   date, and they are skipped at commit until one is set. An undated item's
   identity uses its stops or place and its capture, not a date. Display and
   management beyond **Date not set** is later (YONDER-207). See §12.
+- **D-233 — The trip PDF's sections are the downloader's choice (YONDER-311;
+  owner, 2026-11-10).** Times, addresses, maps and booking details are on by
+  default and each can be left out; the person's own packing list and Discover
+  briefing can be added. An unset flag keeps today's PDF. Addresses are only
+  what Run·dere already holds: typed, the street address Photon gave when the
+  item was located (kept on the pin and labelled "from the map"), or the bundled
+  airport table. Making the PDF looks nothing up. See §13.
