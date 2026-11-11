@@ -26,6 +26,7 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 - **Choose what the trip PDF carries.** Export PDF asks first: times, addresses, maps and booking details, plus your own packing list and Discover research, topic by topic. Leave out times and addresses when you hand it to someone else.
 - **The PDF prints addresses** for places found on the map and for airports, labelled "from the map".
 - **Search on the Places map.** A search made on the Map tab narrows the pins and zooms to them instead of leaving the map.
+- **The Places search helps you write it.** As you type, it suggests the kinds after `kind:`, your own lists after `list:`, and your cities and countries after `city:` and `country:`, with counts. Chips under the box filter by kind, and list names with spaces work: `list:"Date night"`.
 - **What's new.** After an upgrade, Run·dere shows you once what changed, like this. The About page lists every version.
 - **Typing in a capture by hand.** When a capture can't be read automatically, review shows the original email, page or file next to the form so you can fill it in.
 
