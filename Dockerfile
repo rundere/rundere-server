@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # No .pyc writes (the code is read-only to the app user) and unbuffered logs.
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
