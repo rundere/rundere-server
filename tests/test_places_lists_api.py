@@ -11,7 +11,7 @@ import pytest
 
 try:
     from fastapi.testclient import TestClient
-    from app import authn, places as places_svc
+    from app import authn, mcp_server, places as places_svc
     from app.db import SessionLocal, engine
     from app.main import app
     from app.models import Base, PlaceList, PlaceListMember, SavedPlace, User
@@ -63,7 +63,8 @@ def world():
         bens = places_svc.create_list(s, ben, name="Bens hidden list")
         ids = {"tasca": tasca.id, "view": view.id, "want": want.id, "food": food.id,
                "bens": bens.id}
-    yield {"ada": _headers(ada), "ben": _headers(ben), **ids}
+    yield {"ada": _headers(ada), "ben": _headers(ben), "ada_id": ada.id, "ben_id": ben.id,
+           **ids}
     _clear()
 
 
@@ -197,3 +198,64 @@ def test_a_batch_sorts_each_saved_place_but_not_on_a_dry_run(world):
     bad = client.post("/api/v1/places/batch", headers=h, json={"places": [
         {"name": "Sample Pier", "lat": 38.69, "lon": -9.16, "list_ids": [world["bens"]]}]})
     assert bad.status_code == 404
+
+
+# ------------------------------------------------------------------ MCP: the same, for agents
+
+class _As:
+    """Call MCP tools as one person."""
+    def __init__(self, user_id):
+        self.user_id = user_id
+
+    def __enter__(self):
+        self.token = mcp_server._caller_id.set(self.user_id)
+        return mcp_server
+
+    def __exit__(self, *exc):
+        mcp_server._caller_id.reset(self.token)
+
+
+def test_an_agent_reads_makes_and_sorts_into_lists(world):
+    with _As(world["ada_id"]) as m:
+        assert [(l["name"], l["count"]) for l in m.list_place_lists()] == [
+            ("Want to go", 0), ("Date night", 1)]
+        ramen = m.create_place_list(name="Ramen to try", emoji="🍜")
+        assert ramen["position"] == 2
+        assert m.update_place_list(ramen["id"], name="Noodles", position=-1)["name"] == "Noodles"
+        placed = m.set_saved_place_lists(world["view"], [ramen["id"], world["want"]])
+        assert sorted(placed["list_ids"]) == sorted([ramen["id"], world["want"]])
+        listed = {p["id"]: p for p in m.list_saved_places()["places"]}
+        assert sorted(listed[world["view"]]["list_ids"]) == sorted([ramen["id"], world["want"]])
+        assert m.delete_place_list(ramen["id"])["ok"] is True
+        assert [l["name"] for l in m.list_place_lists()] == ["Want to go", "Date night"]
+        assert world["view"] in {p["id"] for p in m.list_saved_places()["places"]}
+
+
+def test_save_places_honours_kind_and_lists(world):
+    """The MCP tool takes the same SavedPlaceIn as the API, so it must sort too."""
+    from app import api_v1
+    with _As(world["ada_id"]) as m:
+        out = m.save_places([api_v1.SavedPlaceIn(
+            name="Example Noodle Bar", lat=38.70, lon=-9.15, activity_type="dining",
+            list_ids=[world["food"]])])
+        assert out["results"][0]["outcome"] == "created"
+        new = {p["id"]: p for p in m.list_saved_places()["places"]}[out["results"][0]["id"]]
+        assert (new["activity_type"], new["list_ids"]) == ("dining", [world["food"]])
+        with pytest.raises(mcp_server.ToolError, match="404"):
+            m.save_places([api_v1.SavedPlaceIn(name="Example Hidden Cafe", lat=38.6,
+                                               lon=-9.2, list_ids=[world["bens"]])])
+        assert "Example Hidden Cafe" not in [p["name"] for p in m.list_saved_places()["places"]]
+
+
+def test_an_agent_never_reaches_anyone_elses_lists(world):
+    with _As(world["ada_id"]) as m:
+        assert world["bens"] not in [l["id"] for l in m.list_place_lists()]
+        for call in (lambda: m.update_place_list(world["bens"], name="Mine now"),
+                     lambda: m.delete_place_list(world["bens"]),
+                     lambda: m.set_saved_place_lists(world["tasca"], [world["bens"]])):
+            with pytest.raises(mcp_server.ToolError, match="404"):
+                call()
+    with _As(world["ben_id"]) as m:
+        with pytest.raises(mcp_server.ToolError, match="404"):
+            m.set_saved_place_lists(world["tasca"], [world["bens"]])     # not Ben's place
+        assert [l["name"] for l in m.list_place_lists()] == ["Bens hidden list"]

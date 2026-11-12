@@ -2308,12 +2308,18 @@ def api_place_batch(body: SavedPlaceBatchIn, user=Depends(authn.current_user),
     """Save many places in one call. Each item is judged and committed on its own:
     a bad item is reported, not fatal, and sending the same list again adds
     nothing. Use `dry_run` first to see what would happen."""
+    return save_batch(session, user, body, source="api")
+
+
+def save_batch(session: Session, user, body: SavedPlaceBatchIn, *, source: str) -> dict:
+    """Save a batch and sort each saved place by its `activity_type` and `list_ids`
+    (D-236). Shared by the API and MCP so both honour every field they accept."""
     _check_sorting(session, user, body.places)
     try:
         out = places_svc.save_many(
             session, user, [p.model_dump() for p in body.places], dry_run=body.dry_run,
             enrich=body.enrich, revive=body.revive,
-            allow_near_duplicates=body.allow_near_duplicates, source="api")
+            allow_near_duplicates=body.allow_near_duplicates, source=source)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     if not body.dry_run:

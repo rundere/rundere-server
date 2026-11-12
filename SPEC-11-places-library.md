@@ -176,6 +176,10 @@ Everything is own-only, with no admin view (D-166).
     added to, never replaced.
   - Own-only: a list or place that isn't the caller's 404s, checked before anything is
     written, so a bad id leaves nothing half-done.
+  - Agents get the same through MCP: `list_place_lists`, `create_place_list`,
+    `update_place_list`, `delete_place_list` and `set_saved_place_lists`, and
+    `save_places` honours `activity_type` and `list_ids` like `/places/batch` (one shared
+    `api_v1.save_batch`).
 
 ## Phases
 
