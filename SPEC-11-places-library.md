@@ -161,6 +161,22 @@ Everything is own-only, with no admin view (D-166).
     like the rest of the library (D-166): another person's lists, cities and counts never
     appear.
 
+- **D-236 — The apps read lists and sort places into them (YONDER-370; owner, 2026-11-12).**
+  - `GET /api/v1/places/lists` gives the caller's lists in order,
+    `{id, name, emoji, description, position, count}`, so a place's `list_ids` can be
+    shown and searched. `POST`, `PATCH` and `DELETE /api/v1/places/lists[/{id}]` create,
+    rename, move and delete them; deleting a list keeps its places (D-213).
+  - Sorting a place is `PUT /api/v1/places/{id}/lists` with every list it should be in;
+    `[]` makes it Unsorted again. The app works out Unsorted itself: a place with no
+    `list_ids` and no `trip_ids`.
+  - A save (`POST /places`, each item of `/places/batch`) can carry `activity_type` and
+    `list_ids`, so a place shared from the phone lands sorted in one call. The app maps
+    its own categories to a kind. The kind applies only to a place the save added or
+    brought back, so it never replaces one the person chose (YONDER-314); lists are
+    added to, never replaced.
+  - Own-only: a list or place that isn't the caller's 404s, checked before anything is
+    written, so a bad id leaves nothing half-done.
+
 ## Phases
 
 0. Shared Maps links that never reached Saved Places (a fix; SPEC-9 §9 note).
@@ -171,8 +187,8 @@ Everything is own-only, with no admin view (D-166).
 3. The Map lens (D-218) (built).
 4. Takeout import (D-217).
 5. Trip and Discover integration (D-219).
-6. The mobile API and MCP surface: filters, lists, Atlas, clusters, import, and
-   `updated_since` sync for the app's offline cache.
+6. The mobile API and MCP surface: filters, lists (D-236, built), Atlas, clusters, import,
+   and `updated_since` sync for the app's offline cache.
 
 ## Out of scope
 

@@ -2187,6 +2187,10 @@ class SavedPlaceIn(BaseModel):
     country_code: str | None = None
     # Re-add a place the person removed earlier.
     revive: bool = False
+    # Sorting it as it's saved (D-236), so a place shared from the phone lands
+    # where it belongs in one call. The app maps its own categories to a kind.
+    activity_type: str | None = None       # a new or revived place only; never replaces one
+    list_ids: list[str] | None = None      # the caller's lists to put it in, as well as any it's in
 
 
 class SavedPlaceBatchIn(BaseModel):
@@ -2251,7 +2255,9 @@ def api_place_save(body: SavedPlaceIn, response: Response, user=Depends(authn.cu
                    session: Session = Depends(get_session)):
     """Save a place for the caller. Safe to repeat or retry (an offline outbox, a
     double tap): 201 when it was added, 200 when it was already there or had been
-    filed or removed, with `outcome` saying which."""
+    filed or removed, with `outcome` saying which. `activity_type` and `list_ids`
+    sort it as it's saved (D-236)."""
+    _check_sorting(session, user, [body])
     try:
         place, outcome = places_svc.save(
             session, user, url=body.url, name=body.name, lat=body.lat, lon=body.lon,
@@ -2263,9 +2269,37 @@ def api_place_save(body: SavedPlaceIn, response: Response, user=Depends(authn.cu
         raise HTTPException(400, str(exc))
     if outcome not in (places_svc.CREATED, places_svc.REVIVED):
         response.status_code = 200
+    if place.status != places_svc.DISMISSED:
+        _sort_saved(session, user, place.id, outcome, body)
+        session.refresh(place)
     suggested = (places_svc.suggest_trip(session, fileable_trips(session, user), place)
                  if place.status != places_svc.DISMISSED else None)
     return _place_out(place, suggested, outcome, session=session)
+
+
+def _check_sorting(session: Session, user, items: list[SavedPlaceIn]) -> None:
+    """Refuse a save that names a list that isn't the caller's, or a kind that
+    doesn't exist, before anything is saved (D-236)."""
+    from app.trips import types as activity_types
+    for item in items:
+        for list_id in item.list_ids or []:
+            places_svc.require_list(session, user, list_id)
+        if item.activity_type and activity_types.get_type(item.activity_type).key \
+                != item.activity_type:
+            raise HTTPException(400, f"unknown activity_type: {item.activity_type}")
+
+
+def _sort_saved(session: Session, user, place_id: str, outcome: str,
+                item: SavedPlaceIn) -> None:
+    """Apply a save's `activity_type` and `list_ids` (D-236). The kind is set only
+    on a place this save added or brought back: one already saved keeps the kind
+    the person may have chosen (YONDER-314). Lists are added to, never replaced,
+    so saving a place again into another list keeps it in the first."""
+    if item.activity_type and outcome in (places_svc.CREATED, places_svc.REVIVED):
+        places_svc.update_place(session, user, place_id, activity_type=item.activity_type)
+    if item.list_ids:
+        on = places_svc.lists_for(session, [place_id]).get(place_id, [])
+        places_svc.set_lists(session, user, place_id, on + item.list_ids)
 
 
 @router.post("/places/batch", response_model=SavedPlaceBatchOut)
@@ -2274,6 +2308,7 @@ def api_place_batch(body: SavedPlaceBatchIn, user=Depends(authn.current_user),
     """Save many places in one call. Each item is judged and committed on its own:
     a bad item is reported, not fatal, and sending the same list again adds
     nothing. Use `dry_run` first to see what would happen."""
+    _check_sorting(session, user, body.places)
     try:
         out = places_svc.save_many(
             session, user, [p.model_dump() for p in body.places], dry_run=body.dry_run,
@@ -2281,7 +2316,15 @@ def api_place_batch(body: SavedPlaceBatchIn, user=Depends(authn.current_user),
             allow_near_duplicates=body.allow_near_duplicates, source="api")
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    if not body.dry_run:
+        for r in out["results"]:
+            if r.get("id") and r["outcome"] in _SORTABLE:
+                _sort_saved(session, user, r["id"], r["outcome"], body.places[r["index"]])
     return out
+
+
+# A batch item that ended up as a live place in the library; the rest weren't saved.
+_SORTABLE = ("created", "revived", "duplicate", "near_duplicate")
 
 
 def fileable_trips(session: Session, user) -> list:
@@ -2359,6 +2402,104 @@ def api_place_delete(place_id: str, user=Depends(authn.current_user),
                      session: Session = Depends(get_session)):
     places_svc.delete_place(session, user, place_id)
     return None
+
+
+class PlaceListOut(BaseModel):
+    """One of the caller's lists (D-213)."""
+    id: str
+    name: str
+    emoji: str | None = None
+    description: str | None = None
+    position: int = 0
+    count: int = Field(0, description="How many library places it holds.")
+    created_at: Instant = None
+    updated_at: Instant = None
+
+
+class PlaceListIn(BaseModel):
+    name: str
+    emoji: str | None = None
+    description: str | None = None
+
+
+class PlaceListPatch(BaseModel):
+    """Only the fields sent change. Lists are shown by `position`, then age."""
+    name: str | None = None
+    emoji: str | None = None
+    description: str | None = None
+    position: int | None = None
+
+
+class PlaceListsIn(BaseModel):
+    list_ids: list[str] = Field(description="Every list the place should be in; "
+                                            "[] takes it out of them all.")
+
+
+def _list_out(lst, count: int) -> PlaceListOut:
+    return PlaceListOut(id=lst.id, name=lst.name, emoji=lst.emoji,
+                        description=lst.description, position=lst.position or 0,
+                        count=count, created_at=lst.created_at, updated_at=lst.updated_at)
+
+
+def _one_list_out(session: Session, user, list_id: str) -> PlaceListOut:
+    for lst, n in places_svc.lists(session, user):
+        if lst.id == list_id:
+            return _list_out(lst, n)
+    raise HTTPException(404, "list not found")
+
+
+@router.get("/places/lists", response_model=list[PlaceListOut])
+def api_place_lists(user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """The caller's lists in their order, each with how many places it holds. A
+    place's `list_ids` point here. Own-only (D-166, D-213): nobody else's lists
+    ever appear, admins' included."""
+    return [_list_out(lst, n) for lst, n in places_svc.lists(session, user)]
+
+
+@router.post("/places/lists", response_model=PlaceListOut, status_code=201)
+def api_place_list_create(body: PlaceListIn, user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """A new list, at the end of the caller's lists."""
+    try:
+        lst = places_svc.create_list(session, user, name=body.name, emoji=body.emoji,
+                                     description=body.description)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return _one_list_out(session, user, lst.id)
+
+
+@router.patch("/places/lists/{list_id}", response_model=PlaceListOut)
+def api_place_list_update(list_id: str, body: PlaceListPatch,
+                          user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """Rename a list, change its emoji or description, or move it (`position`)."""
+    try:
+        places_svc.update_list(session, user, list_id, **body.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return _one_list_out(session, user, list_id)
+
+
+@router.delete("/places/lists/{list_id}", status_code=204)
+def api_place_list_delete(list_id: str, user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """Delete a list. Its places stay in the library (D-213)."""
+    places_svc.delete_list(session, user, list_id)
+    return None
+
+
+@router.put("/places/{place_id}/lists", response_model=SavedPlaceOut)
+def api_place_set_lists(place_id: str, body: PlaceListsIn,
+                        user=Depends(authn.current_user),
+                        session: Session = Depends(get_session)):
+    """Sort a place: make the lists it's in exactly `list_ids` (D-236). Safe to
+    repeat. Every list must be the caller's; one that isn't 404s and nothing
+    changes. A place in no list and on no trip is Unsorted."""
+    places_svc.set_lists(session, user, place_id, body.list_ids)
+    p = places_svc.require_place(session, user, place_id)
+    return _place_out(p, places_svc.suggest_trip(session, fileable_trips(session, user), p),
+                      session=session)
 
 
 def file_place(session: Session, user, place_id: str, trip_id: str,
