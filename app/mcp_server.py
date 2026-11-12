@@ -498,8 +498,8 @@ def list_saved_places(
         limit: Annotated[int, Field(ge=1, le=500)] = 100) -> dict[str, Any]:
     """The user's Places Library: Google/Apple Maps places they kept, with what to do
     there (`todo`), `priority`, where it is (`locality`, `country_code`), the trips
-    it is already on (`trip_ids`) and a `suggested_trip_id` (a hint, never a
-    decision). Every filter is optional; with none, newest first. Removed places
+    it is already on (`trip_ids`), the lists it is in (`list_ids`, named by
+    list_place_lists) and a `suggested_trip_id` (a hint, never a decision). Every filter is optional; with none, newest first. Removed places
     are not listed."""
     def _list(session, user):
         trips = api_v1.fileable_trips(session, user)
@@ -537,13 +537,74 @@ def save_places(places: Annotated[list[api_v1.SavedPlaceIn], Field(
     read from a Takeout export, after choosing the ones worth keeping. Safe to run
     twice: each place is saved at most once, a place already saved or removed is
     skipped and reported, and one bad entry never stops the rest. Each place may
-    carry `todo` (what to do there) and `priority` (someday or must). Returns
+    carry `todo` (what to do there), `priority` (someday or must), `activity_type`
+    (a kind from list_activity_types, set only on a place this call adds) and
+    `list_ids` (lists from list_place_lists to put it in, D-236); a list that
+    isn't the user's refuses the whole call before anything is saved. Returns
     `counts` and one `results` row per place, in order, with an `outcome`:
     created, revived, duplicate, near_duplicate, removed_earlier or error (with a
     reason)."""
-    return _run(lambda session, user: places_svc.save_many(
-        session, user, [p.model_dump() for p in places], dry_run=dry_run, enrich=enrich,
-        revive=revive, allow_near_duplicates=allow_near_duplicates, source="mcp"))
+    return _run(lambda session, user: api_v1.save_batch(
+        session, user, api_v1.SavedPlaceBatchIn(
+            places=places, dry_run=dry_run, enrich=enrich, revive=revive,
+            allow_near_duplicates=allow_near_duplicates), source="mcp"))
+
+
+# Lists (D-213, D-236): own-only like the rest of the library.
+ListId = Annotated[str, Field(description="List id (from list_place_lists)")]
+
+
+@mcp.tool()
+def list_place_lists() -> list[dict[str, Any]]:
+    """The user's own lists of saved places ("Want to go", "Ramen to try"), in their
+    order, with how many places each holds. A place's `list_ids` point here."""
+    return _run(api_v1.api_place_lists)
+
+
+@mcp.tool()
+def create_place_list(name: str, emoji: str | None = None,
+                      description: str | None = None) -> dict[str, Any]:
+    """Make a new list at the end of the user's lists. Check list_place_lists first:
+    a list with the same name is not merged with this one."""
+    return _run(api_v1.api_place_list_create,
+                body=api_v1.PlaceListIn(name=name, emoji=emoji, description=description))
+
+
+@mcp.tool()
+def update_place_list(list_id: ListId, name: str | None = None, emoji: str | None = None,
+                      description: str | None = None,
+                      position: Annotated[int | None, Field(
+                          description="Where it sorts among the lists; lower comes first")] = None,
+                      ) -> dict[str, Any]:
+    """Rename a list, change its emoji or description, or move it. Only the fields
+    you pass change."""
+    fields = {k: v for k, v in (("name", name), ("emoji", emoji), ("description", description),
+                                ("position", position)) if v is not None}
+    return _run(api_v1.api_place_list_update, list_id=list_id,
+                body=api_v1.PlaceListPatch(**fields))
+
+
+@mcp.tool()
+def delete_place_list(list_id: ListId) -> dict[str, Any]:
+    """Delete one of the user's lists. Its places stay saved; they only leave the list.
+    Confirm with the user first."""
+    def _rm(session, user):
+        places_svc.delete_list(session, user, list_id)
+        return {"ok": True, "list_id": list_id}
+    return _run(_rm)
+
+
+@mcp.tool()
+def set_saved_place_lists(place_id: Annotated[str, Field(description="Saved place id")],
+                          list_ids: Annotated[list[str], Field(
+                              description="Every list it should be in (from "
+                                          "list_place_lists); [] takes it out of all of them")],
+                          ) -> dict[str, Any]:
+    """Sort a saved place into the user's lists: afterwards it is in exactly
+    `list_ids` (D-236). To add one list, pass the place's current `list_ids` plus
+    the new one. A place in no list and on no trip is Unsorted."""
+    return _run(api_v1.api_place_set_lists, place_id=place_id,
+                body=api_v1.PlaceListsIn(list_ids=list_ids))
 
 
 @mcp.tool()

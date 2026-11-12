@@ -905,6 +905,33 @@ def remove_from_list(session: Session, user, list_id: str, place_id: str) -> Non
     session.commit()
 
 
+def set_lists(session: Session, user, place_id: str, list_ids: list[str]) -> list[str]:
+    """Make the lists one of the caller's places is in exactly `list_ids` (D-236):
+    it leaves the others and joins the new ones at their end. Every list must be
+    the caller's, checked before anything changes, so a bad id 404s and writes
+    nothing. Returns the lists it's now in."""
+    place = require_place(session, user, place_id)
+    wanted = [require_list(session, user, i).id for i in dict.fromkeys(list_ids)]
+    current = {m.list_id: m for m in session.query(PlaceListMember)
+               .filter(PlaceListMember.place_id == place.id)}
+    for list_id, m in current.items():
+        if list_id not in wanted:
+            session.delete(m)
+    for list_id in wanted:
+        if list_id in current:
+            continue
+        last = (session.query(PlaceListMember.position)
+                .filter(PlaceListMember.list_id == list_id)
+                .order_by(PlaceListMember.position.desc()).first())
+        session.add(PlaceListMember(owner_id=place.owner_id, list_id=list_id,
+                                    place_id=place.id, position=(last[0] + 1) if last else 0))
+    try:
+        session.commit()
+    except IntegrityError:                    # the same set, twice at once: the other won
+        session.rollback()
+    return wanted
+
+
 def lists_for(session: Session, place_ids: list[str]) -> dict[str, list[str]]:
     """{place_id: [list_id, …]} — which lists each place is in."""
     out: dict[str, list[str]] = {}
