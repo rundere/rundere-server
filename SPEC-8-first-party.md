@@ -648,7 +648,7 @@ once they exist.
 Desert pairs sand and umber with an agave-turquoise accent; Coast, dry sand and
 deep sea with an ocean-blue accent and driftwood secondary text; Forest, lichen
 and forest floor with a pine accent, with success moved to teal; Metro,
-concrete and asphalt with a neon-rose accent, with danger moved toward
+concrete and asphalt with a neon-rose accent (owner, 2026-11-13), with danger moved toward
 orange-red; Winter, snow and blue-hour indigo with a periwinkle accent (kept
 more violet than Base's Beacon blue) and a berry-red danger.
 
@@ -729,8 +729,7 @@ pass the guardrails: no migration and no app release.
 
 ## Open questions
 
-- **Metro's accent** (D-237): neon rose as proposed, or a transit colour. Either
-  must stay distinguishable from danger.
+- ~~**Metro's accent**~~: neon rose (owner, 2026-11-13; D-237).
 - **A server default theme** (D-237): should an admin be able to set the theme
   new accounts start with? Today it is `base` for everyone.
 - ~~**Base URL scope**~~ — per user, with an admin allowlist for LAN hosts (D-186).
