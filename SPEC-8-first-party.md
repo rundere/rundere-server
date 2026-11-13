@@ -569,6 +569,152 @@ When the server is upgraded, each person sees once what changed for them
   `admins` is empty for a non-admin. Items are short Markdown strings (bold,
   links, code). The iOS and Android apps show them in their 5.0 updates.
 
+## 15. Travel themes and scenery (D-237–D-240)
+
+Five travel themes ship in 5.0 on top of Base: **Desert, Coast, Forest, Metro
+and Winter**, each with a light and a dark mode, and each with a landscape
+"scenery floor". Agreed with the owner on 2026-11-12 (Winter added 2026-11-13).
+The design source is the Run·dere design system's Travel themes proposal; this
+section is what the code has to do.
+
+### What a theme is (D-237)
+
+- **Colours only.** A theme overrides the 15 semantic `rd-*` colours,
+  `rd-shadow-raised` and a new glow colour, for one light and one dark mode.
+  Type, spacing, radius, motion, components and what highlight, success and
+  danger mean don't change. The web already reads only semantic tokens (D-161),
+  so a theme is one CSS block per mode.
+- **Two axes.** The **theme** is per account (`users.ui_theme`, default `base`)
+  and follows the person to every device. The **mode** (dark, light, match
+  device) stays per device (`tx-theme` on the web, D-201; app storage on iOS and
+  Android). Signed-out pages (auth card, About) and the trip PDF stay Base.
+- **Themes are packages, not an enum.** Each is a folder, `design/themes/<id>/`:
+  `theme.json` (id, name, description, version, `light` and `dark` palettes, the
+  scene colours, and `tags` such as `desert`, `coast`, `forest`, `urban`,
+  `snow`) plus `scene.svg`. Base stays in `design/tokens/tokens.json`.
+- **One generator.** `scripts/build_tokens.py` writes `tokens.css`,
+  `RundereTheme.swift`, `RundereTheme.kt`, the fixed-colour scene exports and a
+  `themes.json` manifest from the packages. CI fails when the outputs are stale
+  (like `uv lock --check`). This replaces editing the four mirrors by hand.
+- **Guardrails, checked in CI for every theme and mode:**
+  1. text, text-secondary, text-muted, accent, highlight, success and danger are
+     at least 4.5:1 on bg, surface and surface-raised; on-accent is at least
+     4.5:1 on accent and accent-hover;
+  2. accent, highlight, success and danger differ by lightness or hue family;
+  3. one accent, and highlight stays an amber/gold signal in every theme, so
+     "next up" reads the same everywhere.
+- **Web.** `tokens.css` gains `:root[data-travel="<id>"][data-theme="dark|light"]`
+  blocks. The base templates render `data-travel` server-side, so there is no
+  flash and no CSP change; `theme.js` still handles only the mode. Two fixes
+  come with it: the Places map cluster's `color:#fff` becomes `--rd-on-accent`,
+  and the hard-coded Beacon-blue focus glow and `--rd-glow` read a per-theme
+  `--rd-glow-color`.
+- **API.** `GET /api/v1/me` returns `ui_theme`, `resolved_theme` and `scenery`;
+  `PATCH /api/v1/me` sets `ui_theme` and `scenery`. `ui_theme` is a string
+  checked against the manifest; an unknown or removed theme falls back to
+  `base`. It is the person's own preference: only they read or write it. The
+  same fields go into `contracts/ios` and `contracts/android`.
+- **Apps.** iOS replaces the `static let` colours with an `RDPalette` looked up
+  by theme id and injected through the SwiftUI environment; Android's
+  `RundereTheme()` takes a theme id as well as `darkTheme`. Neither hard-codes
+  a closed list of themes. Both cache the last theme for the first frame and
+  refresh it from `/me`. On Android, dynamic colour stays opt-in and wins over
+  a travel theme when on.
+- **Accessibility.** When the OS asks for forced colours or high contrast, Base
+  applies. Each release gets a screenshot pass of Trips, Review, Places and
+  Account in all ten theme and mode combinations.
+
+Starting values (light / dark). The theme packages become the source of truth
+once they exist.
+
+| Role | Desert | Coast | Forest | Metro | Winter |
+|---|---|---|---|---|---|
+| `rd-bg` | `#F5EEE3` / `#1E150E` | `#F3EEE4` / `#071C28` | `#F1F3EC` / `#0E1711` | `#F2F2F0` / `#121316` | `#EEF3F9` / `#11142A` |
+| `rd-surface` | `#FFFBF5` / `#2A1E15` | `#FFFDF8` / `#0C2836` | `#FBFCF8` / `#15221A` | `#FFFFFF` / `#1B1C20` | `#FAFCFF` / `#181C37` |
+| `rd-surface-raised` | `#FFFFFF` / `#36281C` | `#FFFFFF` / `#133647` | `#FFFFFF` / `#1D2E23` | `#FFFFFF` / `#25262B` | `#FFFFFF` / `#212645` |
+| `rd-border` | `#DCCBB3` / `#4E3A29` | `#D8CCB8` / `#1F4A5E` | `#CBD3C2` / `#2E4636` | `#CFCFCB` / `#3A3C43` | `#C5D2E3` / `#353B62` |
+| `rd-border-subtle` | `rgba(74,50,30,0.12)` / `rgba(230,210,180,0.14)` | `rgba(18,50,74,0.10)` / `rgba(200,225,235,0.14)` | `rgba(23,38,28,0.10)` / `rgba(200,220,200,0.14)` | `rgba(30,30,32,0.10)` / `rgba(220,220,225,0.14)` | `rgba(20,36,64,0.10)` / `rgba(210,215,245,0.14)` |
+| `rd-text` | `#3A2A1C` / `#F2E6D6` | `#12324A` / `#F1E9DC` | `#1A2A1F` / `#E7EEE4` | `#1C1D20` / `#ECECEE` | `#15233D` / `#ECEEFA` |
+| `rd-text-secondary` | `#5E4835` / `#D2BFA6` | `#5A4632` / `#D4C2A6` | `#435446` / `#B8C6B6` | `#45474D` / `#BDBEC4` | `#3D4F6E` / `#BCC1DE` |
+| `rd-text-muted` | `#735C49` / `#B09B82` | `#6B5743` / `#B4A388` | `#56655A` / `#93A493` | `#5C5E65` / `#9A9CA3` | `#526382` / `#9CA2C4` |
+| `rd-accent` | `#0F6464` / `#5CC8C0` | `#0B5E8E` / `#5EC2E6` | `#2F6A43` / `#86CF94` | `#AD2766` / `#FF7AB6` | `#4A50B5` / `#AAB2FF` |
+| `rd-accent-hover` | `#147A7A` / `#8ADBD4` | `#1471A6` / `#8FD6EF` | `#3A7F52` / `#A8DEB1` | `#C3347A` / `#FFA3CB` | `#5A61C7` / `#C6CBFF` |
+| `rd-on-accent` | `#FFFFFF` / `#1E150E` | `#FFFFFF` / `#071C28` | `#FFFFFF` / `#0E1711` | `#FFFFFF` / `#121316` | `#FFFFFF` / `#11142A` |
+| `rd-highlight` | `#8A5508` / `#E9B04A` | `#8A5C08` / `#F2B544` | `#875307` / `#E9B04A` | `#855A08` / `#F5C542` | `#855A08` / `#F2B544` |
+| `rd-success` | `#2B7A4B` / `#5CC48A` | `#1B7449` / `#4CC38A` | `#16756A` / `#4CC3B0` | `#1C774C` / `#4CC38A` | `#1C774C` / `#4CC38A` |
+| `rd-danger` | `#B5382A` / `#F27A66` | `#C23B30` / `#F2766B` | `#B0373F` / `#F2786E` | `#B3341C` / `#FF7F5C` | `#B5303F` / `#F57A82` |
+| `rd-focus-ring` | `#147A7A` / `#8ADBD4` | `#1471A6` / `#8FD6EF` | `#3A7F52` / `#A8DEB1` | `#C3347A` / `#FFA3CB` | `#5A61C7` / `#C6CBFF` |
+
+Desert pairs sand and umber with an agave-turquoise accent; Coast, dry sand and
+deep sea with an ocean-blue accent and driftwood secondary text; Forest, lichen
+and forest floor with a pine accent, with success moved to teal; Metro,
+concrete and asphalt with a neon-rose accent (owner, 2026-11-13), with danger moved toward
+orange-red; Winter, snow and blue-hour indigo with a periwinkle accent (kept
+more violet than Base's Beacon blue) and a berry-red danger.
+
+### The mark (D-238)
+
+In a travel theme the mark and wordmark ink in `rd-text`, so they sit on the
+theme's grounds. This amends the design README's "Silver 100 on dark, Night 800
+on light", which still holds for Base. The mark never takes the accent, and the
+glow stays dark-grounds-only.
+
+### The scenery floor (D-239)
+
+- **One landscape per theme**, drawn as flat shapes: Desert has mesas, dunes and
+  saguaro; Coast, sea and sand with a headland lighthouse and a palm; Forest,
+  hills and two rows of pines; Metro, a skyline whose windows and street lamps
+  light up at night; Winter, snowy peaks and pines, a ski chalet with lit
+  windows and a snowman.
+- **It's the floor, never the wallpaper.** On the web it's the last element of
+  the page, full width, 150px tall (96px under 600px), cropped to the middle of
+  the scene on narrow screens (`xMidYMax slice`). It's never `position: fixed`
+  and never behind text. The page shell becomes a full-height column so the
+  floor sits at the window's foot on short pages.
+- **Token-coloured.** The scene is one inline SVG whose fills use nine
+  `rd-scene-*` colours (far, mid, near, feature, detail, sun, light, star,
+  foam), so the same file draws day and night. CI checks that far, mid and near
+  stay under 2.5:1 against `rd-bg` and feature stays at about 3:1 or less; sun
+  and the lit points are exempt.
+- **Apps.** Fixed-colour exports per mode: vector image sets with Any/Dark
+  appearances on iOS, VectorDrawables with `drawable-night` on Android. They
+  show under Today's content, in empty states and at the end of a trip's
+  timeline: never behind list rows, the tab or navigation bar, or the Capture
+  button, and hidden in compact-height landscape.
+- **The person controls it.** `users.scenery` (default on) is a switch in
+  Account › Appearance. Base themes have no scenery, and it's off in print and
+  with forced colours.
+- **Not in 5.0:** motion (a later, Reduce-Motion-aware option), photos and
+  per-destination scenes.
+
+### Selection modes and new themes (D-240)
+
+5.0 ships fixed themes only, but builds the two things that let the server
+choose later without a client change:
+
+- **`resolved_theme`.** The server turns `ui_theme` into a concrete theme on
+  every request; pages render `data-travel="{{ resolved_theme }}"` and the apps
+  draw `resolved_theme`. In 5.0 it equals `ui_theme`.
+- **`GET /api/v1/themes`** returns the manifest (id, name, version, palettes,
+  scene colours and scene files per mode), so the apps can fetch a theme newer
+  than their build. An app that can't draw part of a newer theme uses its
+  palette without scenery (D-146).
+
+After 5.0, `ui_theme` may also hold a mode:
+
+- `random` (**Surprise me**): one travel theme per person per day, seeded by
+  user and date, so pages don't change between loads.
+- `next-trip` (**Match my next trip**): the current or next trip's own
+  `trips.theme` if the person set one, otherwise a suggestion from the trip's
+  destination: first the theme `tags` against what Run·dere already knows about
+  the place (Photon's place class, the bundled airport and city data), then the
+  configured LLM when AI is on (D-228). With neither, the person's fallback
+  theme applies. Suggestions come from places only, never from the people on
+  the trip, and the person can always change them.
+
+New themes after 5.0 (Jungle, Savanna, a sci-fi Orbit, …) are new packages that
+pass the guardrails: no migration and no app release.
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.
@@ -583,6 +729,9 @@ When the server is upgraded, each person sees once what changed for them
 
 ## Open questions
 
+- ~~**Metro's accent**~~: neon rose (owner, 2026-11-13; D-237).
+- **A server default theme** (D-237): should an admin be able to set the theme
+  new accounts start with? Today it is `base` for everyone.
 - ~~**Base URL scope**~~ — per user, with an admin allowlist for LAN hosts (D-186).
 - ~~**Airport dataset**~~ — mwgg/Airports, refreshed each release (D-186).
 - **Thumbnails for photo references:** about 20 KB each. Leaning no for v1
@@ -979,3 +1128,23 @@ When the server is upgraded, each person sees once what changed for them
   the version changes, for every version since the person last closed them
   (`users.seen_version`), and on the About page. The apps read and dismiss the
   same notes through the API. See §14.
+- **D-237 — Travel themes (owner, 2026-11-12; Winter added 2026-11-13).** A
+  theme is a set of semantic-colour values with a light and a dark mode,
+  shipped as a package (`design/themes/<id>/`) and generated into every
+  platform, so new themes need no code change. The theme is per account
+  (`users.ui_theme`, a manifest-checked string, default `base`); the mode stays
+  per device (D-201). Base stays the default; 5.0 ships Desert, Coast, Forest,
+  Metro and Winter. Every theme passes the contrast guardrails in CI. See §15.
+- **D-238 — The mark inks in `rd-text` in travel themes (owner, 2026-11-12).**
+  Amends the logo colour rule for travel themes only; Base is unchanged. See
+  §15.
+- **D-239 — Each travel theme has a scenery floor (owner, 2026-11-12).** One
+  token-coloured landscape at the foot of web pages and at the end of Today,
+  empty states and the trip timeline in the apps. Never behind content, not
+  animated in 5.0, and switchable per account (`users.scenery`, default on).
+  See §15.
+- **D-240 — The server resolves the theme (owner, 2026-11-12).** `/me` returns
+  `resolved_theme` and `/api/v1/themes` serves the manifest from 5.0. After
+  5.0, `ui_theme` may be `random` (Surprise me: one theme per person per day)
+  or `next-trip` (Match my next trip: the trip's own theme, else a suggestion
+  from its destination, never from its people). See §15.

@@ -47,6 +47,7 @@ for dark grounds) and `-night` (#0F2135, for light grounds).
 - Glow (`filter: drop-shadow(0 0 14px rgba(169,204,255,.55))`) only on dark grounds, only on the mark.
 - Colours: Silver 100 on dark, Night 800 on light. Beacon 300 is allowed for the iOS dark
   app icon only. Never Runway or status colours.
+  In a travel theme (5.0) the mark inks in that theme's `rd-text` instead (SPEC-8 D-238).
 - Clear space = 2× fuselage width on every side. Minimum sizes: 16px (use `-16`), lockup 96px wide.
 - Switch files by size (don't just scale down the full mark): ≥ 64px full · 24–63px `-32` · 16px `-16`.
 - Don't typeset the wordmark: use the outlined SVG. Never swap the dot for a hyphen or period.
