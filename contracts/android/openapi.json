@@ -3993,6 +3993,17 @@
                     "archetypes": {
                         "title": "Archetypes"
                     },
+                    "for_name": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "For Name"
+                    },
                     "generated_at": {
                         "anyOf": [
                             {
@@ -4099,6 +4110,185 @@
                 "title": "PhrasesIn",
                 "type": "object"
             },
+            "PlaceListIn": {
+                "properties": {
+                    "description": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Description"
+                    },
+                    "emoji": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Emoji"
+                    },
+                    "name": {
+                        "title": "Name",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "name"
+                ],
+                "title": "PlaceListIn",
+                "type": "object"
+            },
+            "PlaceListOut": {
+                "description": "One of the caller's lists (D-213).",
+                "properties": {
+                    "count": {
+                        "default": 0,
+                        "description": "How many library places it holds.",
+                        "title": "Count",
+                        "type": "integer"
+                    },
+                    "created_at": {
+                        "anyOf": [
+                            {
+                                "format": "date-time",
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Created At"
+                    },
+                    "description": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Description"
+                    },
+                    "emoji": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Emoji"
+                    },
+                    "id": {
+                        "title": "Id",
+                        "type": "string"
+                    },
+                    "name": {
+                        "title": "Name",
+                        "type": "string"
+                    },
+                    "position": {
+                        "default": 0,
+                        "title": "Position",
+                        "type": "integer"
+                    },
+                    "updated_at": {
+                        "anyOf": [
+                            {
+                                "format": "date-time",
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Updated At"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name"
+                ],
+                "title": "PlaceListOut",
+                "type": "object"
+            },
+            "PlaceListPatch": {
+                "description": "Only the fields sent change. Lists are shown by `position`, then age.",
+                "properties": {
+                    "description": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Description"
+                    },
+                    "emoji": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Emoji"
+                    },
+                    "name": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Name"
+                    },
+                    "position": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Position"
+                    }
+                },
+                "title": "PlaceListPatch",
+                "type": "object"
+            },
+            "PlaceListsIn": {
+                "properties": {
+                    "list_ids": {
+                        "description": "Every list the place should be in; [] takes it out of them all.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "List Ids",
+                        "type": "array"
+                    }
+                },
+                "required": [
+                    "list_ids"
+                ],
+                "title": "PlaceListsIn",
+                "type": "object"
+            },
             "PlaceOut": {
                 "properties": {
                     "city": {
@@ -4169,6 +4359,76 @@
                     }
                 },
                 "title": "PlaceOut",
+                "type": "object"
+            },
+            "PlaceSuggestOut": {
+                "properties": {
+                    "end": {
+                        "title": "End",
+                        "type": "integer"
+                    },
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/PlaceSuggestionOut"
+                        },
+                        "title": "Items",
+                        "type": "array"
+                    },
+                    "start": {
+                        "title": "Start",
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "start",
+                    "end",
+                    "items"
+                ],
+                "title": "PlaceSuggestOut",
+                "type": "object"
+            },
+            "PlaceSuggestionOut": {
+                "properties": {
+                    "complete": {
+                        "description": "Add a space after it; false for a chip that still wants its value, like `kind:`.",
+                        "title": "Complete",
+                        "type": "boolean"
+                    },
+                    "count": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "How many of the caller's places it matches; none for a chip.",
+                        "title": "Count"
+                    },
+                    "insert": {
+                        "description": "The text that replaces q[start:end], e.g. `list:\"Date night\"`.",
+                        "title": "Insert",
+                        "type": "string"
+                    },
+                    "kind": {
+                        "description": "chip, kind, list, city or country.",
+                        "title": "Kind",
+                        "type": "string"
+                    },
+                    "label": {
+                        "description": "What to show, e.g. \"Restaurant\" or \"Lisbon, Portugal\".",
+                        "title": "Label",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "kind",
+                    "label",
+                    "insert",
+                    "complete"
+                ],
+                "title": "PlaceSuggestionOut",
                 "type": "object"
             },
             "PlanOut": {
@@ -4274,6 +4534,82 @@
                     "refresh"
                 ],
                 "title": "RefreshBody",
+                "type": "object"
+            },
+            "ReleaseNotesOut": {
+                "properties": {
+                    "running_version": {
+                        "title": "Running Version",
+                        "type": "string"
+                    },
+                    "seen_version": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "The last version whose notes the caller closed, on any device.",
+                        "title": "Seen Version"
+                    },
+                    "versions": {
+                        "items": {
+                            "$ref": "#/components/schemas/ReleaseNotesVersionOut"
+                        },
+                        "title": "Versions",
+                        "type": "array"
+                    }
+                },
+                "required": [
+                    "running_version",
+                    "versions"
+                ],
+                "title": "ReleaseNotesOut",
+                "type": "object"
+            },
+            "ReleaseNotesVersionOut": {
+                "properties": {
+                    "admins": {
+                        "description": "Setup notes for admins; always empty for anyone else.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Admins",
+                        "type": "array"
+                    },
+                    "date": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "YYYY-MM-DD; none for a version not out yet.",
+                        "title": "Date"
+                    },
+                    "everyone": {
+                        "description": "Short Markdown items: **bold**, `code` and [links](https://\u2026) only.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Everyone",
+                        "type": "array"
+                    },
+                    "version": {
+                        "title": "Version",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "version",
+                    "everyone",
+                    "admins"
+                ],
+                "title": "ReleaseNotesVersionOut",
                 "type": "object"
             },
             "ReviewActionOut": {
@@ -5056,6 +5392,17 @@
             "SavedPlaceIn": {
                 "description": "Save a place. Either a Google/Apple Maps `url` for the server to parse, or\nthe details the app already resolved on the phone (MapKit, D-166); anything\nsupplied alongside a url overrides what the url yielded.",
                 "properties": {
+                    "activity_type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Activity Type"
+                    },
                     "address": {
                         "anyOf": [
                             {
@@ -5099,6 +5446,20 @@
                             }
                         ],
                         "title": "Lat"
+                    },
+                    "list_ids": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "List Ids"
                     },
                     "locality": {
                         "anyOf": [
@@ -6388,7 +6749,7 @@
     "info": {
         "description": "Every route needs a bearer token (or a web session); all data is scoped to the signed-in user.",
         "title": "Run\u00b7dere API",
-        "version": "4.13.5"
+        "version": "4.13.6"
     },
     "openapi": "3.1.0",
     "paths": {
@@ -7292,7 +7653,7 @@
                 "summary": "Api Place List"
             },
             "post": {
-                "description": "Save a place for the caller. Safe to repeat or retry (an offline outbox, a\ndouble tap): 201 when it was added, 200 when it was already there or had been\nfiled or removed, with `outcome` saying which.",
+                "description": "Save a place for the caller. Safe to repeat or retry (an offline outbox, a\ndouble tap): 201 when it was added, 200 when it was already there or had been\nfiled or removed, with `outcome` saying which. `activity_type` and `list_ids`\nsort it as it's saved (D-236).",
                 "operationId": "api_place_save_api_v1_places_post",
                 "requestBody": {
                     "content": {
@@ -7366,6 +7727,210 @@
                     }
                 },
                 "summary": "Api Place Batch"
+            }
+        },
+        "/api/v1/places/lists": {
+            "get": {
+                "description": "The caller's lists in their order, each with how many places it holds. A\nplace's `list_ids` point here. Own-only (D-166, D-213): nobody else's lists\never appear, admins' included.",
+                "operationId": "api_place_lists_api_v1_places_lists_get",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/PlaceListOut"
+                                    },
+                                    "title": "Response Api Place Lists Api V1 Places Lists Get",
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "Successful Response"
+                    }
+                },
+                "summary": "Api Place Lists"
+            },
+            "post": {
+                "description": "A new list, at the end of the caller's lists.",
+                "operationId": "api_place_list_create_api_v1_places_lists_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PlaceListIn"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PlaceListOut"
+                                }
+                            }
+                        },
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        },
+                        "description": "Validation Error"
+                    }
+                },
+                "summary": "Api Place List Create"
+            }
+        },
+        "/api/v1/places/lists/{list_id}": {
+            "delete": {
+                "description": "Delete a list. Its places stay in the library (D-213).",
+                "operationId": "api_place_list_delete_api_v1_places_lists__list_id__delete",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "list_id",
+                        "required": true,
+                        "schema": {
+                            "title": "List Id",
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        },
+                        "description": "Validation Error"
+                    }
+                },
+                "summary": "Api Place List Delete"
+            },
+            "patch": {
+                "description": "Rename a list, change its emoji or description, or move it (`position`).",
+                "operationId": "api_place_list_update_api_v1_places_lists__list_id__patch",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "list_id",
+                        "required": true,
+                        "schema": {
+                            "title": "List Id",
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PlaceListPatch"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PlaceListOut"
+                                }
+                            }
+                        },
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        },
+                        "description": "Validation Error"
+                    }
+                },
+                "summary": "Api Place List Update"
+            }
+        },
+        "/api/v1/places/suggest": {
+            "get": {
+                "description": "Suggestions for the Places search box as the person types (SPEC-11, D-235):\nthe place kinds after `kind:`, the caller's own lists after `list:`, the\ncities and countries they've saved after `city:` and `country:`, and the\nchips themselves before a colon. Replace `q[start:end]` with an item's\n`insert`, then a space when it's `complete`. Own-only (D-166).",
+                "operationId": "api_place_suggest_api_v1_places_suggest_get",
+                "parameters": [
+                    {
+                        "description": "The search box as typed.",
+                        "in": "query",
+                        "name": "q",
+                        "required": false,
+                        "schema": {
+                            "default": "",
+                            "description": "The search box as typed.",
+                            "maxLength": 500,
+                            "title": "Q",
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Where the caret is in q; the end when omitted.",
+                        "in": "query",
+                        "name": "cursor",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "description": "Where the caret is in q; the end when omitted.",
+                            "title": "Cursor"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PlaceSuggestOut"
+                                }
+                            }
+                        },
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        },
+                        "description": "Validation Error"
+                    }
+                },
+                "summary": "Api Place Suggest"
             }
         },
         "/api/v1/places/{place_id}": {
@@ -7505,6 +8070,111 @@
                     }
                 },
                 "summary": "Api Place File"
+            }
+        },
+        "/api/v1/places/{place_id}/lists": {
+            "put": {
+                "description": "Sort a place: make the lists it's in exactly `list_ids` (D-236). Safe to\nrepeat. Every list must be the caller's; one that isn't 404s and nothing\nchanges. A place in no list and on no trip is Unsorted.",
+                "operationId": "api_place_set_lists_api_v1_places__place_id__lists_put",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "place_id",
+                        "required": true,
+                        "schema": {
+                            "title": "Place Id",
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PlaceListsIn"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SavedPlaceOut"
+                                }
+                            }
+                        },
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        },
+                        "description": "Validation Error"
+                    }
+                },
+                "summary": "Api Place Set Lists"
+            }
+        },
+        "/api/v1/release-notes": {
+            "get": {
+                "description": "What changed in each version (SPEC-8 \u00a714, D-234). By default only what the\ncaller hasn't seen yet, newest first and at most five, the same as the web's\nWhat's new dialog: show it, then POST /release-notes/seen. `seen_version` is\nshared with the web, so nobody is shown the same notes twice.",
+                "operationId": "api_release_notes_api_v1_release_notes_get",
+                "parameters": [
+                    {
+                        "description": "Every released version, newest first, instead of only the ones the caller hasn't seen.",
+                        "in": "query",
+                        "name": "all",
+                        "required": false,
+                        "schema": {
+                            "default": false,
+                            "description": "Every released version, newest first, instead of only the ones the caller hasn't seen.",
+                            "title": "All",
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReleaseNotesOut"
+                                }
+                            }
+                        },
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        },
+                        "description": "Validation Error"
+                    }
+                },
+                "summary": "Api Release Notes"
+            }
+        },
+        "/api/v1/release-notes/seen": {
+            "post": {
+                "description": "The caller has seen the notes up to the running version (D-234).",
+                "operationId": "api_release_notes_seen_api_v1_release_notes_seen_post",
+                "responses": {
+                    "204": {
+                        "description": "Successful Response"
+                    }
+                },
+                "summary": "Api Release Notes Seen"
             }
         },
         "/api/v1/research-kits": {
@@ -9184,6 +9854,35 @@
                         },
                         "description": "Successful Response"
                     },
+                    "409": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "code": {
+                                            "enum": [
+                                                "packing_profile_required"
+                                            ],
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "url": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "detail",
+                                        "code",
+                                        "url"
+                                    ],
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "No packing profile yet: send the person to `url`."
+                    },
                     "422": {
                         "content": {
                             "application/json": {
@@ -9315,7 +10014,7 @@
         },
         "/api/v1/trips/{trip_id}/timeline.pdf": {
             "get": {
-                "description": "The trip timeline as a shareable PDF itinerary \u2014 identical to the web\nexport (server-rendered).",
+                "description": "The trip timeline as a shareable PDF itinerary \u2014 identical to the web\nexport (server-rendered). The flags choose what goes in (SPEC-8 \u00a713,\nD-233); left out, each keeps the PDF older app builds already get.\n`packing` and `discover` add the caller's own list and Discover research,\nnever for a viewer; repeat `topic` to keep only those Discover topics.",
                 "operationId": "api_trip_timeline_pdf_api_v1_trips__trip_id__timeline_pdf_get",
                 "parameters": [
                     {
@@ -9335,6 +10034,85 @@
                             "default": false,
                             "title": "Download",
                             "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "times",
+                        "required": false,
+                        "schema": {
+                            "default": true,
+                            "title": "Times",
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "addresses",
+                        "required": false,
+                        "schema": {
+                            "default": true,
+                            "title": "Addresses",
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "maps",
+                        "required": false,
+                        "schema": {
+                            "default": true,
+                            "title": "Maps",
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "details",
+                        "required": false,
+                        "schema": {
+                            "default": true,
+                            "title": "Details",
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "packing",
+                        "required": false,
+                        "schema": {
+                            "default": false,
+                            "title": "Packing",
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "discover",
+                        "required": false,
+                        "schema": {
+                            "default": false,
+                            "title": "Discover",
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "topic",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "type": "array"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Topic"
                         }
                     }
                 ],
