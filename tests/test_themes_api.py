@@ -19,11 +19,11 @@ except ImportError:
     DEPS = False
 
 if DEPS:
-    from app import authn, themes
+    from app import authn, oauth, themes
     from app.config import settings
     from app.db import SessionLocal, engine
     from app.main import app
-    from app.models import Base, User
+    from app.models import Base, OAuthGrant, User
 
     Base.metadata.create_all(engine)
     settings.auth_cookie_secure = False
@@ -116,6 +116,38 @@ if DEPS:
     def test_appearance_requires_auth():
         assert client.patch("/api/v1/auth/me", json={"ui_theme": "desert"}).status_code == 401
         assert client.get("/api/v1/themes").status_code == 401
+
+    def test_connected_apps_and_api_tokens_cannot_change_theme():
+        """First-party only, like the sharing setter: a personal API token or a
+        connected app may read the theme but not change it."""
+        u = _mk_user("theme-thirdparty")
+        client.patch("/api/v1/auth/me", headers=_auth(u), json={"ui_theme": "coast"})
+        with SessionLocal() as s:
+            row = s.get(User, u.id)
+            pat = oauth.create_pat(s, row, "laptop")[1]
+            cl, _ = oauth.register_client(s, name="Example Agent",
+                                          redirect_uris=["https://agent.example.test/cb"])
+            g = OAuthGrant(client_id=cl.id, user_id=u.id, token_version=row.token_version,
+                           expires_at=oauth._now() + oauth.timedelta(days=1))
+            s.add(g)
+            s.commit()
+            agent = oauth.issue_access(row, g, "http://testserver/mcp")
+        for tok in (pat, agent):
+            h = {"Authorization": f"Bearer {tok}"}
+            me = client.get("/api/v1/auth/me", headers=h)
+            assert me.status_code == 200 and me.json()["ui_theme"] == "coast"   # can read
+            r = client.patch("/api/v1/auth/me", headers=h,
+                             json={"ui_theme": "metro", "scenery": False})
+            assert r.status_code == 403 and "connected apps" in r.json()["detail"]
+        assert _stored(u.id) == ("coast", True)
+
+    def test_web_session_can_change_theme():
+        _mk_user("theme-web")
+        web = TestClient(app)
+        assert web.post("/login", data={"username": "theme-web", "password": "pw-theme-test",
+                                        "next": "/"}, follow_redirects=False).status_code == 303
+        r = web.patch("/api/v1/auth/me", json={"ui_theme": "forest"})
+        assert r.status_code == 200 and r.json()["resolved_theme"] == "forest"
 
     def test_token_response_carries_theme():
         u = _mk_user("theme-login")

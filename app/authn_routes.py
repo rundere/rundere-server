@@ -324,12 +324,15 @@ class AppearanceBody(BaseModel):
 
 
 @router.patch("/api/v1/auth/me", response_model=UserOut)
-def api_set_appearance(body: AppearanceBody, user: User = Depends(authn.current_user),
+def api_set_appearance(body: AppearanceBody, user: User = Depends(authn.first_party_user),
                        session: Session = Depends(get_session)):
     """Set your own theme and scenery switch (SPEC-8 §15, D-237, D-239). The
     theme is checked against the manifest, never a fixed list, so a new theme
     package is selectable without a release (D-240). Only ever the caller's own
-    row: there is no user id to name. No admin default (Q-T1)."""
+    row: there is no user id to name. No admin default (Q-T1). First-party only,
+    like the sharing and email setters: the theme shows on the person's own
+    surfaces (the web and the apps), so only those change it, never a
+    connected app or an API token, which may still read it."""
     from app import themes
     user = session.get(User, user.id)
     if body.ui_theme is not None:

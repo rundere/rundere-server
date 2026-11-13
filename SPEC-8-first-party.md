@@ -611,7 +611,8 @@ section is what the code has to do.
   `--rd-glow-color`.
 - **API.** `GET /api/v1/auth/me` (and the `user` of every token response)
   returns `ui_theme`, `resolved_theme` and `scenery`; `PATCH /api/v1/auth/me`
-  sets `ui_theme` and `scenery`, and rejects an unknown id with 422. `ui_theme` is a string
+  sets `ui_theme` and `scenery` (first-party only: the web and the apps, not
+  connected apps or API tokens), and rejects an unknown id with 422. `ui_theme` is a string
   checked against the manifest; an unknown or removed theme falls back to
   `base`. It is the person's own preference: only they read or write it. The
   same fields go into `contracts/ios` and `contracts/android`.
