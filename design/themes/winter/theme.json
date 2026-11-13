@@ -1,0 +1,86 @@
+{
+  "id": "winter",
+  "name": "Winter",
+  "description": "Snow and blue-hour grounds, a periwinkle accent and a lantern-amber signal.",
+  "version": 1,
+  "tags": [
+    "snow",
+    "ski",
+    "alpine",
+    "arctic"
+  ],
+  "scene": {
+    "file": "scene.svg",
+    "title": "Winter floor: snowy peaks, pines, a lit ski chalet and a snowman"
+  },
+  "modes": {
+    "light": {
+      "color": {
+        "bg": "#EEF3F9",
+        "surface": "#FAFCFF",
+        "surface-raised": "#FFFFFF",
+        "border": "#C5D2E3",
+        "border-subtle": "rgba(20,36,64,0.10)",
+        "text": "#15233D",
+        "text-secondary": "#3D4F6E",
+        "text-muted": "#526382",
+        "accent": "#4A50B5",
+        "accent-hover": "#5A61C7",
+        "on-accent": "#FFFFFF",
+        "highlight": "#855A08",
+        "success": "#1C774C",
+        "danger": "#B5303F",
+        "focus-ring": "#5A61C7"
+      },
+      "effect": {
+        "shadow-raised": "0 4px 16px rgba(21, 35, 61, 0.10), inset 0 0 0 1px rgba(21, 35, 61, 0.08)",
+        "glow-color": "rgba(90, 97, 199, 0.35)"
+      },
+      "scene": {
+        "far": "#D6DFEC",
+        "mid": "#DEE6F0",
+        "near": "#CCD7E6",
+        "feature": "#7F91A6",
+        "detail": "#9D8A7F",
+        "sun": "#CEC5B1",
+        "light": "#F1C471",
+        "star": "#FFFFFF",
+        "foam": "#FFFFFF"
+      }
+    },
+    "dark": {
+      "color": {
+        "bg": "#11142A",
+        "surface": "#181C37",
+        "surface-raised": "#212645",
+        "border": "#353B62",
+        "border-subtle": "rgba(210,215,245,0.14)",
+        "text": "#ECEEFA",
+        "text-secondary": "#BCC1DE",
+        "text-muted": "#9CA2C4",
+        "accent": "#AAB2FF",
+        "accent-hover": "#C6CBFF",
+        "on-accent": "#11142A",
+        "highlight": "#F2B544",
+        "success": "#4CC38A",
+        "danger": "#F57A82",
+        "focus-ring": "#C6CBFF"
+      },
+      "effect": {
+        "shadow-raised": "0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(236, 238, 250, 0.08)",
+        "glow-color": "rgba(198, 203, 255, 0.45)"
+      },
+      "scene": {
+        "far": "#282D50",
+        "mid": "#343A64",
+        "near": "#404777",
+        "feature": "#29335D",
+        "detail": "#4F382C",
+        "sun": "#AFB1C0",
+        "light": "#D7A241",
+        "star": "#898C9C",
+        "foam": "#C0C2D0"
+      }
+    }
+  }
+}

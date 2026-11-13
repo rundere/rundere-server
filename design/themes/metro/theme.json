@@ -1,0 +1,84 @@
+{
+  "id": "metro",
+  "name": "Metro",
+  "description": "Concrete and asphalt grounds, a neon-rose accent and a taxi-yellow signal.",
+  "version": 1,
+  "tags": [
+    "urban",
+    "city"
+  ],
+  "scene": {
+    "file": "scene.svg",
+    "title": "Metro floor: skyline with lit windows and street lamps"
+  },
+  "modes": {
+    "light": {
+      "color": {
+        "bg": "#F2F2F0",
+        "surface": "#FFFFFF",
+        "surface-raised": "#FFFFFF",
+        "border": "#CFCFCB",
+        "border-subtle": "rgba(30,30,32,0.10)",
+        "text": "#1C1D20",
+        "text-secondary": "#45474D",
+        "text-muted": "#5C5E65",
+        "accent": "#AD2766",
+        "accent-hover": "#C3347A",
+        "on-accent": "#FFFFFF",
+        "highlight": "#855A08",
+        "success": "#1C774C",
+        "danger": "#B3341C",
+        "focus-ring": "#C3347A"
+      },
+      "effect": {
+        "shadow-raised": "0 4px 16px rgba(28, 29, 32, 0.10), inset 0 0 0 1px rgba(28, 29, 32, 0.08)",
+        "glow-color": "rgba(195, 52, 122, 0.35)"
+      },
+      "scene": {
+        "far": "#DDDDDE",
+        "mid": "#CECED0",
+        "near": "#BDBEC2",
+        "feature": "#9D9FA4",
+        "detail": "#AAACB1",
+        "sun": "#D1C4AA",
+        "light": "#FCFCFC",
+        "star": "#F2F2F0",
+        "foam": "#C9CACD"
+      }
+    },
+    "dark": {
+      "color": {
+        "bg": "#121316",
+        "surface": "#1B1C20",
+        "surface-raised": "#25262B",
+        "border": "#3A3C43",
+        "border-subtle": "rgba(220,220,225,0.14)",
+        "text": "#ECECEE",
+        "text-secondary": "#BDBEC4",
+        "text-muted": "#9A9CA3",
+        "accent": "#FF7AB6",
+        "accent-hover": "#FFA3CB",
+        "on-accent": "#121316",
+        "highlight": "#F5C542",
+        "success": "#4CC38A",
+        "danger": "#FF7F5C",
+        "focus-ring": "#FFA3CB"
+      },
+      "effect": {
+        "shadow-raised": "0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(236, 236, 238, 0.08)",
+        "glow-color": "rgba(255, 163, 203, 0.45)"
+      },
+      "scene": {
+        "far": "#232429",
+        "mid": "#2E3036",
+        "near": "#3A3C43",
+        "feature": "#4F515A",
+        "detail": "#474952",
+        "sun": "#AFAFB2",
+        "light": "#D3AA3B",
+        "star": "#8A8A8D",
+        "foam": "#7E8086"
+      }
+    }
+  }
+}
