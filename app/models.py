@@ -235,6 +235,12 @@ class User(Base):
     # starts at the running version, so it isn't shown history; NULL (accounts from
     # before 5.0) is shown only the running version's notes.
     seen_version: Mapped[str | None] = mapped_column(String(32), default=_running_version)
+    # D-237: the travel theme follows the account to every device (the light/dark
+    # mode stays per device, D-201). A string checked against the theme manifest,
+    # not an enum, so new packages need no migration (D-240). D-239: the scenery
+    # floor, on by default.
+    ui_theme: Mapped[str] = mapped_column(String(32), default="base", server_default="base")
+    scenery: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
 
 class UserIntegration(Base):

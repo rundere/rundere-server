@@ -609,8 +609,9 @@ section is what the code has to do.
   come with it: the Places map cluster's `color:#fff` becomes `--rd-on-accent`,
   and the hard-coded Beacon-blue focus glow and `--rd-glow` read a per-theme
   `--rd-glow-color`.
-- **API.** `GET /api/v1/me` returns `ui_theme`, `resolved_theme` and `scenery`;
-  `PATCH /api/v1/me` sets `ui_theme` and `scenery`. `ui_theme` is a string
+- **API.** `GET /api/v1/auth/me` (and the `user` of every token response)
+  returns `ui_theme`, `resolved_theme` and `scenery`; `PATCH /api/v1/auth/me`
+  sets `ui_theme` and `scenery`, and rejects an unknown id with 422. `ui_theme` is a string
   checked against the manifest; an unknown or removed theme falls back to
   `base`. It is the person's own preference: only they read or write it. The
   same fields go into `contracts/ios` and `contracts/android`.
