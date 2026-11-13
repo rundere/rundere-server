@@ -603,7 +603,7 @@ Checked against the stores' own pages on 2026-11-13 (Q-A2):
   signed in to, give the path (`/account/delete`), say to contact that
   server's operator if they can't sign in, and state what is kept (§1.9). It
   belongs to wave 10 with the privacy page. Whether a Play reviewer accepts a
-  page that points to someone else's server is the residual risk (§5).
+  page that points to someone else's server is the residual risk (§5, point 8).
 
 App contract changes (wave 9c): the two fixed paths, and the sign-in
 response's `deletion_pending`.
@@ -699,10 +699,10 @@ what they miss:
    runs against Postgres before the wave merges, in CI if a service container
    is added, else by hand on the NEXT server with the result noted in the PR.
 
-## 5. Open points for the owner
+## 5. Points settled with the owner
 
-Decisions this spec made that the 2026-11-13 answers didn't cover. Each has
-the choice made here; say which to change.
+Decisions this spec made that the first 2026-11-13 answers didn't cover. The
+owner accepted all eight as written (2026-11-13).
 
 1. **Expense comments** by a deleted account are deleted, on surviving trips
    too. The alternative is to keep the words with no author.
