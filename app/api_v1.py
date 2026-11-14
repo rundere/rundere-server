@@ -801,6 +801,43 @@ def api_docs(user=Depends(authn.current_user)):
     return get_swagger_ui_html(openapi_url="/api/v1/openapi.json", title="Run·dere API")
 
 
+# --------------------------------------------------------------------------- themes
+class ThemeSceneOut(BaseModel):
+    title: str = ""
+    light_url: str = Field(description="Fixed-colour scenery floor for light mode (SVG).")
+    dark_url: str = Field(description="Fixed-colour scenery floor for dark mode (SVG).")
+
+
+class ThemeOut(BaseModel):
+    id: str
+    name: str
+    kind: str = Field(description="base or travel.")
+    version: int = Field(description="Bumped when the theme's values change; refresh "
+                                     "a cached copy when it differs.")
+    description: str = ""
+    tags: list[str] = []
+    modes: dict = Field(default_factory=dict,
+                        description="light and dark: color, effect and scene colours, "
+                                    "by semantic role.")
+    scene: ThemeSceneOut | None = Field(None, description="None for Base (no scenery).")
+
+
+class ThemesOut(BaseModel):
+    version: int
+    themes: list[ThemeOut]
+
+
+@router.get("/themes", response_model=ThemesOut)
+def api_themes(request: Request, user=Depends(authn.current_user)):
+    """Every theme the server offers, from the generated manifest (SPEC-8 §15,
+    D-240): palettes per mode, scene colours and the fixed-colour scene files.
+    The apps draw a theme newer than their build from this; one they can't fully
+    draw is used without scenery (D-146). Set yours with PATCH /auth/me."""
+    from app import themes
+    from app.config import settings
+    return themes.manifest(settings.public_base_url or str(request.base_url))
+
+
 # --------------------------------------------------------------------------- release notes
 class ReleaseNotesVersionOut(BaseModel):
     version: str

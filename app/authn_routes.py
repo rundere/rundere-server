@@ -17,7 +17,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import authn
@@ -81,6 +81,12 @@ class UserOut(BaseModel):
     # their "now" runs on (D-187).
     base_currency: str | None = None
     timezone: str | None = None
+    # Appearance (SPEC-8 §15). The theme is per account (D-237): the stored id,
+    # the theme to draw (D-240: the server resolves; unknown ids fall back to
+    # base) and whether the scenery floor shows (D-239). Own payload only.
+    ui_theme: str = "base"
+    resolved_theme: str = "base"
+    scenery: bool = True
 
 
 class TokenOut(BaseModel):
@@ -123,7 +129,17 @@ def _user_public(u: User) -> dict:
             "reset_note": reset_note(u),
             # The web asks for it at every visit; the app should too (SPEC-4.2 §3.3).
             "email_required": authn.needs_email(u),
-            "support_until": _support_until(u)}
+            "support_until": _support_until(u),
+            **_appearance(u)}
+
+
+def _appearance(u: User) -> dict:
+    """The person's theme fields (D-237, D-239, D-240)."""
+    from app import themes
+    stored = getattr(u, "ui_theme", None) or themes.BASE
+    scenery = getattr(u, "scenery", None)
+    return {"ui_theme": stored, "resolved_theme": themes.resolve(stored),
+            "scenery": True if scenery is None else bool(scenery)}
 
 
 # --------------------------------------------------------------------------- web
@@ -296,6 +312,38 @@ def api_logout(body: RefreshBody, session: Session = Depends(get_session)):
 
 @router.get("/api/v1/auth/me", response_model=UserOut)
 def api_me(user: User = Depends(authn.current_user)):
+    return _user_public(user)
+
+
+class AppearanceBody(BaseModel):
+    """Both optional: send only what changes."""
+    ui_theme: str | None = Field(None, max_length=32, description=(
+        "A theme id from GET /api/v1/themes (e.g. base, desert). Unknown ids are "
+        "rejected with 422."))
+    scenery: bool | None = Field(None, description="Show the scenery floor (D-239).")
+
+
+@router.patch("/api/v1/auth/me", response_model=UserOut)
+def api_set_appearance(body: AppearanceBody, user: User = Depends(authn.first_party_user),
+                       session: Session = Depends(get_session)):
+    """Set your own theme and scenery switch (SPEC-8 §15, D-237, D-239). The
+    theme is checked against the manifest, never a fixed list, so a new theme
+    package is selectable without a release (D-240). Only ever the caller's own
+    row: there is no user id to name. No admin default (Q-T1). First-party only,
+    like the sharing and email setters: the theme shows on the person's own
+    surfaces (the web and the apps), so only those change it, never a
+    connected app or an API token, which may still read it."""
+    from app import themes
+    user = session.get(User, user.id)
+    if body.ui_theme is not None:
+        if not themes.is_known(body.ui_theme):
+            return JSONResponse({"detail": f"unknown theme {body.ui_theme!r}; see "
+                                 "GET /api/v1/themes"}, status_code=422)
+        user.ui_theme = body.ui_theme
+    if body.scenery is not None:
+        user.scenery = body.scenery
+    session.commit()
+    session.refresh(user)
     return _user_public(user)
 
 

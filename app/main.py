@@ -390,7 +390,8 @@ async def _revalidate_static(request, call_next):
     """Static files revalidate (ETag) on every load instead of living on heuristic
     freshness, so a deploy reaches browsers even where a page links an unversioned URL."""
     resp = await call_next(request)
-    if request.url.path.startswith(("/review/static/", "/trips/static/", "/brand/tokens/", "/brand/fonts/")):
+    if request.url.path.startswith(("/review/static/", "/trips/static/", "/brand/tokens/", "/brand/fonts/",
+                                    "/brand/themes/")):
         resp.headers["Cache-Control"] = "no-cache"
     return resp
 
@@ -405,6 +406,8 @@ if (_DESIGN / "tokens").is_dir():     # D-161: the design tokens are the palette
     app.mount("/brand/tokens", StaticFiles(directory=str(_DESIGN / "tokens")), name="brand-tokens")
 if (_DESIGN / "fonts").is_dir():      # self-hosted brand fonts (no third-party CDN)
     app.mount("/brand/fonts", StaticFiles(directory=str(_DESIGN / "fonts")), name="brand-fonts")
+if (_DESIGN / "themes").is_dir():     # D-239: travel themes' scene SVGs, for the apps
+    app.mount("/brand/themes", StaticFiles(directory=str(_DESIGN / "themes")), name="brand-themes")
 if (_DESIGN / "audio").is_dir():
     app.mount("/brand/audio", StaticFiles(directory=str(_DESIGN / "audio")), name="brand-audio")
 
