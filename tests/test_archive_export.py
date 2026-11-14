@@ -849,6 +849,14 @@ if DEPS:
         with SessionLocal() as s:
             assert s.query(m.User).filter(m.User.username.like("arx-%")).count() == 1
 
+    def test_the_account_file_carries_the_theme_and_scenery_choice(env):
+        """D-237, D-239: the values as stored, not just the keys."""
+        account = _json(_zip_for(_user("sam")), "profile/account.json")
+        assert (account["theme"], account["scenery"]) == ("base", True)
+        account = _json(_zip_for(_user("ben", ui_theme="coast", scenery=False)),
+                        "profile/account.json")
+        assert (account["theme"], account["scenery"]) == ("coast", False)
+
     def test_the_confirm_page_never_shows_text_from_the_address_bar(env):
         """Only a known code becomes a message; anything else in `error` is
         dropped, so a crafted link can't put words on this page."""

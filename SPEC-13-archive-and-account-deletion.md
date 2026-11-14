@@ -44,7 +44,7 @@ server, are left for 5.x (owner, 2026-11-13).
 - **A server with sign-in off has no accounts** (`TX_AUTH_REQUIRED=false`,
   D-203), so it offers neither the export nor deletion. Its operator has the
   database.
-- **The map becomes a registry in code** (wave 8b, `app/ownership.py`). A test
+- **The map is also a registry in code** (`app/ownership.py`, wave 8b). A test
   fails when a table in `Base.metadata` isn't in the registry, and when a
   column named like a person link (the list above) isn't declared. A migration
   that adds a table can't merge until someone has decided what export and
@@ -270,9 +270,8 @@ documents/<sha256>.<pdf|ics|eml>
   A new column is not exported until it is added to the writer and the
   schema. No writer serialises a model row wholesale.
 
-The schema files land with the exporter (wave 8b), written from the field
-lists in §2.4 and checked against real output there. Writing them now, with no
-exporter to validate, would be guessing.
+The schema files landed with the exporter (wave 8b), written from the field
+lists in §2.4 and checked against real output there.
 
 ### 2.4 What each section holds
 
@@ -760,7 +759,7 @@ owner accepted all eight as written (2026-11-13).
 
 ## 6. Build order
 
-1. **8b, the exporter:** the registry and its tests, the section writers and
+1. **8b, the exporter (built):** the registry and its tests, the section writers and
    schemas, the `archive_exports` table, the background build, the fresh
    confirmation helper, the Account page, the retention step.
 2. **9b, the purge:** the deletion record and the lock, `account_purge.py`,
