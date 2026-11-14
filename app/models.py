@@ -1486,3 +1486,27 @@ class AiCall(Base):
     prompt_tokens: Mapped[int | None] = mapped_column(Integer)
     out_tokens: Mapped[int | None] = mapped_column(Integer)
     user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
+
+class ArchiveExport(Base):
+    """One build of a person's Run·dere archive (SPEC-13 §2.5, D-241). A
+    durable row, like a DiscoveryRun: the build runs in the background and a
+    restart mustn't lose track of it. Own-only: only `user_id` ever sees the
+    row or its file, at `<TX_EXPORT_DIR>/<user_id>/<id>.zip`; the id is random.
+    Not itself exported, and deleted with the account (app/ownership.py).
+
+    `status`: building | ready | failed | replaced (a newer build took its
+    place) | expired (the retention job removed the file after 7 days).
+    `error` is an exception's class name only, never its message."""
+    __tablename__ = "archive_exports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    status: Mapped[str] = mapped_column(String(12), default="building", index=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    size_bytes: Mapped[int | None] = mapped_column(Integer)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    format_version: Mapped[int] = mapped_column(Integer, default=1)
+    error: Mapped[str | None] = mapped_column(String(64))
