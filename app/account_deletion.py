@@ -361,8 +361,15 @@ def remove_orphan_folders(session_factory) -> int:
     empty, which would mean the database isn't the one these folders belong to."""
     import shutil
     from app import archive_jobs, documents
+    from app.models import ArchiveExport, Document
+    if not available():
+        return 0
     with session_factory() as session:
         ids = {i for (i,) in session.query(User.id)}
+        # A folder that a row still names is not left over, whatever became
+        # of its user: it is never removed here.
+        ids |= {i for (i,) in session.query(Document.owner_id).distinct()}
+        ids |= {i for (i,) in session.query(ArchiveExport.user_id).distinct()}
     if not ids:
         return 0
     removed = 0

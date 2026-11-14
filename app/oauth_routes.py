@@ -143,17 +143,17 @@ _PARAMS = ("response_type", "client_id", "redirect_uri", "code_challenge",
 @router.get("/oauth/authorize", response_class=HTMLResponse)
 def authorize_page(request: Request, session: Session = Depends(get_session)):
     p = {k: request.query_params.get(k) for k in _PARAMS}
+    user = authn.resolve_user(session, request)
+    if user is not None and authn.deletion_pending(user):
+        # D-242: a locked account gets no code, whatever was asked for. The
+        # browser the app opened lands on the one page it can use.
+        return RedirectResponse("/account/delete", status_code=303)
     client, bad = _validate_request(session, request, p)
     if bad is not None:
         return bad
     here = request.url.path + ("?" + request.url.query if request.url.query else "")
-    user = authn.resolve_user(session, request)
     if user is None:
         return RedirectResponse(f"/login?next={quote(here, safe='')}", status_code=303)
-    if authn.deletion_pending(user):
-        # D-242: a locked account gets no code. The browser the app opened
-        # lands on the one page it can use.
-        return RedirectResponse("/account/delete", status_code=303)
     if authn.needs_email(user):                                  # D-220
         return RedirectResponse(f"/account/email-required?next={quote(here, safe='')}",
                                 status_code=303)

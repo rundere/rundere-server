@@ -212,7 +212,7 @@ def purge(session: Session, user_id: str, *, choices: dict | None = None,
     _captures(session, uid, res)
     _traveller(session, tid, doomed_guests, res)
     _sign_in(session, uid, res)
-    _unlink(session, uid, res)
+    _unlink(session, uid, res, by_admin)
 
     # One row stays, tied to no user: an account was deleted, when, and
     # whether by the person or by which admin (SPEC-13 §3.5).
@@ -439,7 +439,7 @@ def _sign_in(session: Session, uid: str, res: Result) -> None:
 
 
 # --- rows that stay, without the person (§1.2, §1.8) ---------------------------------
-def _unlink(session: Session, uid: str, res: Result) -> None:
+def _unlink(session: Session, uid: str, res: Result, by_admin: bool = False) -> None:
     session.query(AccountEvent).filter(AccountEvent.user_id == uid).update(
         {"user_id": None, "detail": None}, synchronize_session=False)
     session.query(AccountEvent).filter(AccountEvent.actor_id == uid).update(
@@ -460,6 +460,7 @@ def _unlink(session: Session, uid: str, res: Result) -> None:
     # Deletion records. The leaver's own stay without them, so the mailbox
     # step can be retried; in other people's, an admin who asked or an heir
     # who was named is cleared (the purge decides again anyway, §3.4).
+    recorded = False
     for rec in session.query(AccountDeletion).filter(
             AccountDeletion.user_id == uid).all():
         pending = rec.status == "pending"
@@ -467,6 +468,14 @@ def _unlink(session: Session, uid: str, res: Result) -> None:
         if pending:
             rec.status, rec.finished_at = "done", _now()
             rec.mail_ids = list(res.mail_ids) or None
+            recorded = True
+    if res.mail_ids and not recorded:
+        # Deleted with no request on record (the command line's --now): the
+        # Message-IDs still need somewhere to wait for the mailbox step.
+        now = _now()
+        session.add(AccountDeletion(user_id=None, requested_by=None, by_admin=by_admin,
+                                    status="done", requested_at=now, due_at=now,
+                                    finished_at=now, mail_ids=list(res.mail_ids)))
     session.query(AccountDeletion).filter(AccountDeletion.requested_by == uid).update(
         {"requested_by": None}, synchronize_session=False)
     session.flush()

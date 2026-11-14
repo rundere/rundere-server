@@ -270,7 +270,7 @@ if DEPS:
                                                    "guest", "solo", "handed", "doomed",
                                                    "unchosen", "guest_on", "viewed")}
             w.tid = w.leaver.traveler_id
-            w.email = w.leaver.email
+            w.email, w.username = w.leaver.email, w.leaver.username
             w.mine_ids = {k: sa.inspect(v).identity[0] for k, v in w.mine.items()}
             s.expunge_all()
         return w
@@ -358,8 +358,13 @@ if DEPS:
         after = _snapshot()
 
         gone_trips = {w.ids["solo"], w.ids["doomed"]}
+        # Only where the registry says the person's rows are DELETED may a row
+        # go because it carries the leaver's id. Expenses, shared planned
+        # costs, rates, audit rows, AI calls and server rows carry it too, and
+        # must stay.
         user_links = {t: [l.column for l in e.links if l.holds == ownership.USER]
-                      for t, e in ownership.REGISTRY.items()}
+                      for t, e in ownership.REGISTRY.items()
+                      if e.deletion == ownership.DELETE}
         acts = {pk[0] for pk, r in before["trip_activities"].items()
                 if json.loads(r["trip_id"]) in gone_trips}
         exps = {pk[0] for pk, r in before["trip_expenses"].items()
@@ -401,6 +406,8 @@ if DEPS:
                 "commit_attempts": val("item_id") in my_items,
                 "packing_template_items": val("template_id") in my_templates,
                 "artifacts": pk[0] == w.mine_ids["art"],
+                # The leaver's keys, except the one a survivor's batch points at.
+                "api_keys": val("user_id") == L and pk[0] != w.mine_ids["key"],
                 "traveler_identities": pk[0] == str(w.ids["guest"]),
                 "alert_states": pk[0].startswith(f"integration:{L}:"),
                 # The viewer became the owner of the trip nobody chose for.
@@ -470,6 +477,19 @@ if DEPS:
                         problems.append(f"{table} {pk} appeared")
         assert problems == [], "\n".join(problems[:40])
 
+        # Rows that carry the leaver's id and must stay did stay.
+        for table, col in (("trip_expenses", "owner_id"), ("trip_rates", "fetched_by"),
+                           ("account_events", "user_id"), ("ai_calls", "user_id"),
+                           ("server_settings", "updated_by"),
+                           ("notification_targets", "created_by"),
+                           ("oauth_clients", "created_by")):
+            kept = [pk for pk, r in before[table].items() if json.loads(r[col]) == L
+                    and json.loads(r.get("trip_id", "null")) not in gone_trips]
+            assert kept and all(pk in after[table] for pk in kept), table
+        shared_plans = [pk for pk, r in before["trip_budget_items"].items()
+                        if json.loads(r["owner_id"]) == L and pk[0] not in plans]
+        assert shared_plans and all(pk in after["trip_budget_items"] for pk in shared_plans)
+
         # And the listed changes did happen.
         with SessionLocal() as s:
             assert s.get(m.User, L) is None
@@ -511,6 +531,7 @@ if DEPS:
                 text = json.dumps(row)
                 assert L not in text, f"{table} {pk} still holds the leaver's id"
                 assert w.email not in text, f"{table} {pk} still holds the leaver's email"
+                assert w.username not in text, f"{table} {pk} still holds the username"
         for root in (Path(settings.documents_dir), Path(settings.export_dir)):
             assert L not in {p.name for p in root.rglob("*")}
             assert (root / w.ids["survivor"]).is_dir()         # the survivor's folders stay
@@ -673,8 +694,31 @@ if DEPS:
         assert c.get("/account/delete").status_code == 200
         assert c.get("/account/export").status_code == 200
         assert c.get("/account/confirm?next=/account/export").status_code == 200
+        # The apps' sign-in: no code, the browser lands on the page. And a
+        # consent posted from a page opened earlier gets the same.
         r = c.get("/oauth/authorize?client_id=x&response_type=code")
-        assert r.status_code != 200 or "Allow" not in r.text
+        assert (r.status_code, r.headers["location"]) == (303, "/account/delete")
+        r = c.post("/oauth/authorize", data={"req": "x", "decision": "allow"})
+        assert (r.status_code, r.headers["location"]) == (303, "/account/delete")
+        # The account's own settings API is under a prefix the gate leaves
+        # public: the locked web session must not reach it (support access
+        # can't be switched back on, nor the email changed).
+        for method, path, body in (("get", "/api/v1/auth/me", None),
+                                   ("put", "/api/v1/auth/me/sharing", {"share": True}),
+                                   ("put", "/api/v1/auth/me/email", {"email": "x@example.test"}),
+                                   ("patch", "/api/v1/auth/me", {"scenery": False})):
+            r = c.request(method.upper(), path, json=body)
+            assert r.status_code == 403 and r.json()["deletion_pending"] is True, path
+        with SessionLocal() as s:
+            assert s.get(m.User, L).share_with_admins is False
+        # Every link the locked page shows is either open to it or leads back.
+        import re
+        page = c.get("/account/delete").text
+        assert "hx-trigger=\"load" not in page
+        for href in set(re.findall(r'(?:href|src|hx-get)="(/[^"#?]*)', page)):
+            r = c.get(href)
+            assert r.status_code == 200 or (
+                r.status_code == 303 and r.headers["location"] == "/account/delete"), href
         # Ingest keys are refused.
         import time
         body, ts = b"{}", str(int(time.time()))
@@ -682,16 +726,41 @@ if DEPS:
             "X-Api-Key": raw_key, "X-Timestamp": ts,
             "X-Signature": auth.sign(raw_key, ts, body)})
         assert r.status_code == 403, r.text
-        # Mail to the forward address is dropped with its own outcome.
-        domain = "inbox.example.test"
-        raw = (f"Delivered-To: trips+{mine}@{domain}\r\nSubject: A booking\r\n"
-               f"Message-ID: <{uuid.uuid4().hex}@example.test>\r\n\r\nhello").encode()
+        assert token and mine
+
+    def test_the_apps_refresh_is_told_why(env):
+        """The apps sign in through the server's own OAuth: their refresh is
+        how they learn the account is locked (SPEC-13 §3.3)."""
+        w = _world(env)
+        L = w.ids["leaver"]
         with SessionLocal() as s:
-            if inbox.recipient_tokens(__import__("email").message_from_bytes(raw)):
-                out = inbox.handle_message(s, raw)
-                assert [h.outcome for h in out] == [inbox.ACCOUNT_LOCKED]
-                assert s.query(m.IngestBatch).filter_by(user_id=L).count() == 1   # no new capture
-        assert token
+            client = _mk(s, m.OAuthClient, redirect_uris=["app://cb"], first_party=True)
+            tokens = {}
+            for uid in (L, w.ids["survivor"]):
+                g = _mk(s, m.OAuthGrant, client_id=client.id, user_id=uid,
+                        prev_refresh_hashes=[],
+                        token_version=s.get(m.User, uid).token_version,
+                        expires_at=datetime.now(timezone.utc) + timedelta(days=5))
+                tokens[uid] = f"yrt_{g.id}_{uuid.uuid4().hex}"
+                g.refresh_hash = oauth._hash(tokens[uid])
+            s.commit()
+            cid = client.id
+        _request(w)
+        with SessionLocal() as s:
+            client = s.get(m.OAuthClient, cid)
+            for _ in range(2):                   # the second time the grant is revoked
+                with pytest.raises(oauth.OAuthError) as why:
+                    oauth.refresh(s, client=client, refresh_token=tokens[L], default_aud="x")
+                assert why.value.deletion_pending is True
+                assert why.value.error == "invalid_grant"
+            # Someone merely signed out is told nothing of the kind.
+            other = s.get(m.User, w.ids["survivor"])
+            authn.end_sessions(s, other)
+            s.commit()
+            with pytest.raises(oauth.OAuthError) as why:
+                oauth.refresh(s, client=client, refresh_token=tokens[w.ids["survivor"]],
+                              default_aud="x")
+            assert why.value.deletion_pending is False
 
     def test_inbox_routing_drops_mail_for_a_locked_account(env, monkeypatch):
         w = _world(env)
@@ -927,7 +996,16 @@ if DEPS:
             (root / gone).mkdir(parents=True)
             (root / gone / "left").write_bytes(b"x")
             (root / "not-a-user-id").mkdir()
+        named = str(uuid.uuid4())                # no such user, but a row names the folder
+        with SessionLocal() as s:
+            _mk(s, m.Document, owner_id=named)
+            s.commit()
+        (docs / named).mkdir()
+        settings.auth_required = False
+        assert deletion.remove_orphan_folders(SessionLocal) == 0
+        settings.auth_required = True
         assert deletion.remove_orphan_folders(SessionLocal) == 2
+        assert (docs / named).is_dir()
         for root in (docs, exports):
             assert not (root / gone).exists()
             assert (root / "not-a-user-id").is_dir()           # only user-id-shaped names
@@ -1064,6 +1142,12 @@ if DEPS:
             assert s.get(m.Trip, w.ids["doomed"]).owner_id == w.ids["survivor"]
         assert not documents.path_for(w.mine["doc"]).exists()
         assert cli.main(["delete-account", "del-nobody"]) == 1
+        # Deleted with no request on record: the Captured mail still has a
+        # record to wait on for the mailbox step.
+        with SessionLocal() as s:
+            rec = s.query(m.AccountDeletion).filter_by(status="done").one()
+            # No mailbox is set up here, so there was nothing left to move.
+            assert (rec.user_id, rec.by_admin, rec.mail_ids) == (None, True, None)
 
     def test_the_account_page_links_to_deletion(env):
         w = _world(env)

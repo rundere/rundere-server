@@ -15,6 +15,7 @@ from app.config import settings
 from app.db import SessionLocal, engine
 from app.ingest import router as ingest_router
 from app.models import RuleSetting
+from app import authn as _authn  # noqa: E402
 
 log = logging.getLogger("yonder")
 
@@ -105,13 +106,13 @@ _PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
 _PUBLIC_PREFIX = ("/ingest", "/review/static", "/trips/static", "/brand/",
                   "/api/v1/auth/", "/reset/", "/oidc/", "/oauth/", "/.well-known/")
 _ADMIN_PREFIX = ("/admin", "/users")
-# D-242: all a locked account can open (SPEC-13 §3.3).
-_LOCKED_PREFIX = ("/account/delete", "/account/export", "/account/confirm", "/logout")
 
 
-def authn_deletion_pending(user) -> bool:
-    from app import authn
-    return authn.deletion_pending(user)
+@app.exception_handler(_authn.DeletionPending)
+async def _deletion_pending(request, exc):
+    """D-242: a locked account's 403 carries the flag the apps read."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": exc.detail, "deletion_pending": True}, status_code=403)
 
 
 def _is_public(path: str) -> bool:
@@ -173,13 +174,12 @@ async def auth_gate(request, call_next):
     # D-242: an account waiting to be deleted is locked. On the web it reaches one
     # page (the due date, cancel, and the export); everything else leads there.
     # Before the email and sharing questions, which a leaving account isn't asked.
-    if authn_deletion_pending(user):
-        if path.startswith(_LOCKED_PREFIX):
+    if _authn.deletion_pending(user):
+        if not _authn.locked_out(user, path):
             request.state.user = user
             return await call_next(request)
         if is_api:
-            from app import oauth
-            return JSONResponse({"detail": oauth.DELETION_PENDING, "deletion_pending": True},
+            return JSONResponse({"detail": _authn.DELETION_PENDING, "deletion_pending": True},
                                 status_code=403)
         if request.headers.get("hx-request"):
             return HTMLResponse("", status_code=403, headers={"HX-Redirect": "/account/delete"})

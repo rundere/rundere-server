@@ -64,8 +64,7 @@ class OAuthError(Exception):
 
 
 # What a locked account is told wherever it asks for a token (D-242).
-DELETION_PENDING = ("this account is waiting to be deleted; sign in on the web to "
-                    "cancel or to export your data")
+from app.authn import DELETION_PENDING  # noqa: E402
 
 
 def _now() -> datetime:
@@ -354,6 +353,13 @@ def exchange_code(session, *, client: OAuthClient, code: str | None,
     return _token_response(user, grant, refresh, row.resource or default_aud)
 
 
+def _locked(session, grant: OAuthGrant) -> bool:
+    """Does this grant belong to an account waiting to be deleted (D-242)?
+    Only someone holding the grant's refresh token gets to ask."""
+    user = session.get(User, grant.user_id)
+    return user is not None and user.is_active and user.deletion_due_at is not None
+
+
 def _grant_from_refresh(session, opaque: str | None) -> OAuthGrant | None:
     if not opaque or not opaque.startswith("yrt_"):
         return None
@@ -366,6 +372,9 @@ def refresh(session, *, client: OAuthClient, refresh_token: str | None,
     grant = _grant_from_refresh(session, refresh_token)
     if grant is None or grant.client_id != client.id:
         raise OAuthError("invalid_grant", "unknown refresh token")
+    if grant.revoked_at is not None and _locked(session, grant):
+        # D-242: asked again after the first refusal revoked the grant.
+        raise OAuthError("invalid_grant", DELETION_PENDING, deletion_pending=True)
     if grant.revoked_at is not None:
         raise OAuthError("invalid_grant", "grant revoked")
     h = _hash(refresh_token)
@@ -379,6 +388,9 @@ def refresh(session, *, client: OAuthClient, refresh_token: str | None,
     user = session.get(User, grant.user_id)
     if not _user_ok(user, grant):
         revoke_grant(session, grant, action="oauth_revoked_signout")
+        if user is not None and user.is_active and user.deletion_due_at is not None:
+            # D-242: this is how the apps learn why they were signed out.
+            raise OAuthError("invalid_grant", DELETION_PENDING, deletion_pending=True)
         raise OAuthError("invalid_grant", "user signed out or deactivated")
     new = _new_refresh(grant)
     grant.last_used_at = _now()
