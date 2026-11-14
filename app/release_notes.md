@@ -27,6 +27,7 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 - **The PDF prints addresses** for places found on the map and for airports, labelled "from the map".
 - **Search on the Places map.** A search made on the Map tab narrows the pins and zooms to them instead of leaving the map.
 - **The Places search helps you write it.** As you type, it suggests the kinds after `kind:`, your own lists after `list:`, and your cities and countries after `city:` and `country:`, with counts. Chips under the box filter by kind, and list names with spaces work: `list:"Date night"`.
+- **Import places from a file.** Places → Import a file takes a CSV from a spreadsheet or another app, with a template to start from. Preview it first; nothing is saved until you press Import, a `list` column sorts places into your lists, and importing the same file again adds nothing.
 - **Lists in the apps.** The iPhone and Android apps can show your Places lists, make and edit them, and put a place in the right list as you save it.
 - **What's new.** After an upgrade, Run·dere shows you once what changed, like this. The About page lists every version.
 - **Export your data.** Account → Export my data builds a zip of your own data as JSON files, with the files you uploaded: trips, places, journal, profiles. It is kept for 7 days, and downloading it asks you to confirm it's you. Passwords, tokens and other people's data are never in it.

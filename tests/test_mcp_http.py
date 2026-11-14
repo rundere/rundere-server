@@ -43,7 +43,7 @@ if DEPS:
                  "assign_review_item_to_trip", "save_research", "save_city_guide",
                  "save_phrases", "add_item_to_timeline", "get_discovery_profile",
                  "save_safety", "list_saved_places", "save_places", "update_saved_place",
-                 "file_saved_place", "remove_saved_place",
+                 "file_saved_place", "remove_saved_place", "import_places_csv",   # D-243
                  "list_place_lists", "create_place_list", "update_place_list",   # D-236
                  "delete_place_list", "set_saved_place_lists",
                  "list_expenses", "add_expense",

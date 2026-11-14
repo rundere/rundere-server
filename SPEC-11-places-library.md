@@ -127,6 +127,9 @@ Everything is own-only, with no admin view (D-166).
   - Repeating the import is safe (D-169 identity), and `dry_run` previews it.
   - A shared Google list link is not supported: the page is drawn in the browser and carries
     no data. The UI points to Takeout instead.
+  - *Narrowed by D-243 (2026-11-14):* the Run·dere CSV comes first. The Google parts wait
+    until their real files are checked: the "Saved" product's list CSVs, and
+    `Saved Places.json`, whose unknown places are `[0,0]` with a placeholder `Comment`.
 - **D-218 — The map is optional (owner, 2026-10-29; D-146).**
   - Leaflet and markercluster are vendored into the static folder, like htmx. No CDN.
   - Tiles go through the server, from the same `map_tile_url` and tile cache the PDF maps use.
@@ -181,6 +184,37 @@ Everything is own-only, with no admin view (D-166).
     `save_places` honours `activity_type` and `list_ids` like `/places/batch` (one shared
     `api_v1.save_batch`).
 
+- **D-243 — Places come in from a Run·dere CSV file (YONDER-374, wave 7a; owner, 2026-11-14).**
+  A real Takeout (2026-11-13) showed that "Maps (your places)" carries only starred places,
+  with no lists. So wave 7a first gives the library its own file format, which anyone can
+  fill from a spreadsheet or another app. It narrows D-217 and doesn't replace it: the Google
+  "Saved" lists and `Saved Places.json` are still imported once their real files are checked.
+  - *The format.* UTF-8 CSV (a byte-order mark is fine) with a header row. Headers are matched
+    case-blind, in any order: `name`, `url`, `address`, `lat`, `lon`, `list`, `kind`, `notes`,
+    `todo`, `priority`, `country`. A row needs a `name` or a Maps `url`. An unknown column is
+    reported and ignored. The header map has room for other spellings, so Google's own CSV
+    columns can be added from a real file.
+  - *Rows.* `url` must be a full Google or Apple Maps place link. A short link is refused,
+    because a file is never expanded over the network. `lat`/`lon` are a pair, and blank,
+    half or `0,0` means no pin (Takeout writes `0,0` for "unknown"). A pinless place waits in
+    "Needs a pin" (D-217), and nothing is geocoded. `kind` is a place kind (`restaurant`,
+    `tour`, …). `priority` is `must` or `someday`. `country` is a two-letter code.
+  - *Lists.* `list` names one list. To put a place in two lists, repeat the row. A name that
+    matches one of your lists (D-235 folding) goes into that list. Otherwise the list is made,
+    with `source = csv:<name>`, so importing again finds it rather than making a second one.
+    Lists are added to, never replaced, and the kind applies only to a place the import added
+    or brought back (D-236).
+  - *Safe and reviewable (D-169, D-170).* Each row is judged and committed on its own, with
+    the batch outcomes. Importing the same file again changes nothing. A preview (`dry_run`)
+    writes nothing, not even a list, and judges the whole file at once, so a row repeated
+    further down shows as a duplicate.
+  - *Limits.* One file of up to 2 MB and 5,000 rows. It's parsed in memory and never stored
+    (D-153). No lookups are made (D-146), so an import works on a server with no Photon.
+  - *Where.* The Places page has an Import page with a template to download, and Preview and
+    Import buttons. `POST /api/v1/places/import` takes the file, and the MCP tool
+    `import_places_csv` takes the text. All three share `places_import.run`, and all are
+    own-only (D-166).
+
 ## Phases
 
 0. Shared Maps links that never reached Saved Places (a fix; SPEC-9 §9 note).
@@ -189,7 +223,7 @@ Everything is own-only, with no admin view (D-166).
 2. The library web page: Search, Unsorted, Atlas, Lists and the place panel, with the type
    picker and Atlas map thumbnails (built).
 3. The Map lens (D-218) (built).
-4. Takeout import (D-217).
+4. File import: the Run·dere CSV (D-243), then Google Takeout (D-217).
 5. Trip and Discover integration (D-219).
 6. The mobile API and MCP surface: filters, lists (D-236, built), Atlas, clusters, import,
    and `updated_since` sync for the app's offline cache.

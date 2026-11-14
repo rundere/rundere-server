@@ -287,18 +287,20 @@ def save(session: Session, user, *, url: str | None = None, name: str | None = N
 
 def save_many(session: Session, user, items: list[dict], *, dry_run: bool = False,
               enrich: bool = False, revive: bool = False,
-              allow_near_duplicates: bool = False, source: str = "mcp") -> dict:
+              allow_near_duplicates: bool = False, source: str = "mcp",
+              max_items: int = MAX_BATCH) -> dict:
     """Save a list of places (a Google list, a Takeout export) safely to repeat.
     Each item is judged on its own and committed on its own, so one bad item or a
     lost race never costs the rest, and re-sending the same list changes nothing.
     `dry_run` reports what each item would do and writes nothing, so the list can
     be reviewed first. Items are dicts with the single-save fields. Returns
-    `{dry_run, counts, results}`, one result per item, in order."""
+    `{dry_run, counts, results}`, one result per item, in order. `max_items` is
+    raised only by the file import (D-243), so its dry run sees the whole file."""
     from fastapi import HTTPException
     if not items:
         raise ValueError("no places to save")
-    if len(items) > MAX_BATCH:
-        raise ValueError(f"at most {MAX_BATCH} places per call; send the rest in another call")
+    if len(items) > max_items:
+        raise ValueError(f"at most {max_items} places per call; send the rest in another call")
     if enrich and len(items) > MAX_ENRICH:
         raise ValueError(f"address lookups are limited to {MAX_ENRICH} places per call; "
                          "send the details with each place, or use smaller batches")

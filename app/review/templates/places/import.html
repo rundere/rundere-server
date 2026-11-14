@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Import places{% endblock %}
+{% block content %}
+{# SPEC-11 D-243: places from a CSV file. One form with Preview and Import; only
+   #pl-import-result is swapped, so the chosen file stays chosen for Import. #}
+<div class="app">
+  <div class="dash pl-page">
+    <div class="dash-hero">
+      <div>
+        <h1>Import places</h1>
+        <p>Bring in places from a spreadsheet or another app, as a CSV file. Preview it first:
+          nothing is saved until you press Import, and importing the same file again adds nothing.</p>
+      </div>
+      <div class="dash-hero-actions">
+        <a class="act tiny" href="/places">Back to Places</a>
+      </div>
+    </div>
+
+    {% if demo_mode() %}
+    <div class="cap-msg err">This is a read-only demo, so importing is turned off.</div>
+    {% else %}
+    <form id="pl-import-form" class="cap-file" action="/places/import" method="post"
+          enctype="multipart/form-data" hx-post="/places/import" hx-encoding="multipart/form-data"
+          hx-target="#pl-import-result" hx-swap="innerHTML" hx-disabled-elt="button[type=submit]">
+      <label class="cap-lbl" for="pl-import-file">A CSV file, up to {{ max_mb }} MB and {{ '{:,}'.format(max_rows) }} places</label>
+      <input id="pl-import-file" name="file" type="file" required accept=".csv,text/csv">
+      <div class="cap-actions">
+        <button class="act" type="submit" name="action" value="preview">Preview</button>
+        <button class="act primary" type="submit" name="action" value="import">Import</button>
+        <a class="cap-go" href="/places/import/template.csv" download>Download a template</a>
+      </div>
+    </form>
+    <div id="pl-import-result" aria-live="polite"></div>
+    {% endif %}
+
+    <h2 class="pl-h">The file</h2>
+    <p class="pl-lead">The first row names the columns, in any order:
+      {% for c in columns %}<code>{{ c }}</code>{{ ", " if not loop.last }}{% endfor %}.
+      Each row needs a <code>name</code> or a Maps <code>url</code>; the rest is optional.</p>
+    <ul class="pl-lead">
+      <li><code>url</code> is a full Google or Apple Maps place link. Short links (maps.app.goo.gl)
+        can't be read from a file.</li>
+      <li><code>lat</code> and <code>lon</code> place the pin. Without them a place waits in
+        Unsorted, under “Needs a pin”.</li>
+      <li><code>list</code> puts the place in one of your lists, or makes the list. To put a place in
+        two lists, repeat its row.</li>
+      <li><code>kind</code> is restaurant, tour, lodging, event or note. <code>priority</code> is
+        must or someday. <code>country</code> is a two-letter code, like GB.</li>
+    </ul>
+    <p class="pl-lead">Save it from your spreadsheet as “CSV UTF-8”. The file is read once and
+      not kept.</p>
+  </div>
+</div>
+{% endblock %}

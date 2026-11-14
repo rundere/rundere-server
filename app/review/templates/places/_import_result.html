@@ -1,0 +1,31 @@
+{# SPEC-11 D-243: what a Preview or an Import of a CSV file did, row by row. #}
+{% set labels = {"created": "New", "revived": "Brought back", "duplicate": "Already saved",
+                 "near_duplicate": "Probably already saved", "already_filed": "Already on a trip",
+                 "removed_earlier": "You removed it earlier", "error": "Not imported"} %}
+{% if error %}
+<div class="cap-msg err">{{ error }}</div>
+{% else %}
+{% set c = out.counts %}
+<div class="cap-msg {{ 'ok' if not c.get('error') else 'err' }}">
+  {% if dry_run %}Preview of {{ out.rows }} row{{ 's' if out.rows != 1 }}: nothing has been saved yet.
+  {% else %}Imported {{ out.rows }} row{{ 's' if out.rows != 1 }}.{% endif %}
+  {% for key, label in labels.items() if c.get(key) %}{{ label }}: {{ c[key] }}{{ " · " if not loop.last }}{% endfor %}
+</div>
+{% for w in out.warnings %}<div class="cap-msg err">{{ w[:1]|upper }}{{ w[1:] }}.</div>{% endfor %}
+{% if out.lists %}
+<p class="pl-lead">Lists:
+  {% for l in out.lists %}{{ l.name }} ({{ {"created": "made", "would_create": "will be made", "existing": "yours already"}[l.outcome] }}){{ ", " if not loop.last }}{% endfor %}</p>
+{% endif %}
+{% if dry_run %}<p class="pl-lead">If this looks right, press Import.</p>
+{% else %}<p class="pl-lead"><a href="/places?lens=unsorted">See them in Places</a></p>{% endif %}
+<table class="pl-import-rows">
+  <thead><tr><th scope="col">Line</th><th scope="col">Place</th><th scope="col">List</th><th scope="col">Result</th></tr></thead>
+  <tbody>
+  {% for r in out.results %}
+    <tr><td>{{ r.line }}</td><td>{{ r.name or "—" }}</td><td>{{ r.list or "" }}</td>
+      <td><span class="pill {{ 'warn' if r.outcome == 'error' else ('ok' if r.outcome in ('created', 'revived') else '') }}">{{ labels.get(r.outcome, r.outcome) }}</span>
+        {% if r.error %}<span class="age">{{ r.error }}</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

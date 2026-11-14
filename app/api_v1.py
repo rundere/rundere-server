@@ -2348,6 +2348,49 @@ def api_place_batch(body: SavedPlaceBatchIn, user=Depends(authn.current_user),
     return save_batch(session, user, body, source="api")
 
 
+class PlaceImportRow(BaseModel):
+    line: int = Field(description="The row's line in the file (the header is line 1).")
+    outcome: str = Field(description="created, revived, duplicate, near_duplicate, "
+                                     "already_filed, removed_earlier or error.")
+    id: str | None = None
+    name: str | None = None
+    list: str | None = Field(None, description="The list it joins (or would join).")
+    existing_status: str | None = None
+    error: str | None = None
+
+
+class PlaceImportList(BaseModel):
+    name: str
+    id: str | None = Field(None, description="None on a dry run for a list it would make.")
+    outcome: str = Field(description="created, would_create or existing.")
+
+
+class PlaceImportOut(BaseModel):
+    dry_run: bool
+    rows: int
+    counts: dict[str, int]
+    results: list[PlaceImportRow]
+    lists: list[PlaceImportList]
+    warnings: list[str]
+
+
+@router.post("/places/import", response_model=PlaceImportOut)
+def api_place_import(file: UploadFile = File(..., description="A Run·dere places CSV (D-243)."),
+                     dry_run: bool = Form(False), user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """Import places from a CSV file: a header row naming the columns (`name`,
+    `url`, `address`, `lat`, `lon`, `list`, `kind`, `notes`, `todo`, `priority`,
+    `country`), then one place per row (SPEC-11 D-243). Up to 2 MB and 5,000
+    rows. Each row is judged on its own, importing the same file again adds
+    nothing, and `dry_run` writes nothing, not even a list. The file isn't kept."""
+    from app import places_import
+    data = file.file.read(places_import.MAX_BYTES + 1)
+    try:
+        return places_import.run(session, user, data, dry_run=dry_run)
+    except places_import.UnreadableFile as exc:
+        raise HTTPException(400, str(exc))
+
+
 def save_batch(session: Session, user, body: SavedPlaceBatchIn, *, source: str) -> dict:
     """Save a batch and sort each saved place by its `activity_type` and `list_ids`
     (D-236). Shared by the API and MCP so both honour every field they accept."""

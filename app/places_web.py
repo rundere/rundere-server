@@ -208,6 +208,55 @@ def places_suggest(request: Request, q: str = "", cursor: int | None = None,
     return JSONResponse(found, headers={"Cache-Control": "private, no-store"})
 
 
+# --------------------------------------------------------------------------- import a file (D-243)
+@router.get("/import", response_class=HTMLResponse)
+def import_page(request: Request):
+    """The Import page: a template to download, and one form with Preview and
+    Import. Declared before the /{place_id} catch-all."""
+    from app import places_import
+    return templates.TemplateResponse(request, "places/import.html", {
+        "max_mb": places_import.MAX_BYTES // (1024 * 1024), "max_rows": places_import.MAX_ROWS,
+        "columns": list(places_import.COLUMNS)})
+
+
+@router.get("/import/template.csv")
+def import_template():
+    """A CSV with the header row and a few invented places, to fill in."""
+    from app import places_import
+    return Response(places_import.TEMPLATE, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="rundere-places.csv"'})
+
+
+@router.post("/import", response_class=HTMLResponse)
+async def import_file(request: Request, session: Session = Depends(get_session)):
+    """Preview (`dry_run`) or import the chosen file, and show what each row did.
+    Only the result area is swapped, so the same file stays chosen for Import
+    after a Preview; nothing is kept between the two (D-153)."""
+    from fastapi.concurrency import run_in_threadpool
+
+    from app import places_import
+    form = await request.form()
+    upload = form.get("file")
+    dry_run = form.get("action") != "import"
+
+    def work():
+        ctx = {"dry_run": dry_run}
+        if upload is None or not getattr(upload, "filename", ""):
+            return templates.TemplateResponse(request, "places/_import_result.html",
+                                              {**ctx, "error": "Choose a CSV file first."})
+        data = upload.file.read(places_import.MAX_BYTES + 1)
+        try:
+            out = places_import.run(session, scope.user_of(request), data, dry_run=dry_run)
+        except places_import.UnreadableFile as exc:
+            msg = str(exc)
+            return templates.TemplateResponse(request, "places/_import_result.html",
+                                              {**ctx, "error": msg[:1].upper() + msg[1:] + "."})
+        return templates.TemplateResponse(
+            request, "places/_import_result.html", {**ctx, "out": out},
+            headers={} if dry_run else _CHANGED)
+    return await run_in_threadpool(work)
+
+
 @router.get("/{place_id}", response_class=HTMLResponse)
 def place_sheet(place_id: str, request: Request, session: Session = Depends(get_session)):
     return _sheet(request, session, place_id)
