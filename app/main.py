@@ -52,6 +52,14 @@ app.include_router(settings_router)
 app.include_router(oidc_router)
 app.include_router(oauth_router)
 
+# SPEC-13 (D-241): Account › Export my data, and the fresh confirmation its
+# download needs. Web only: neither has an /api/v1 or MCP counterpart.
+from app.archive_routes import router as archive_router  # noqa: E402
+from app.confirm import router as confirm_router  # noqa: E402
+
+app.include_router(confirm_router)
+app.include_router(archive_router)
+
 # The JSON API (Phase 3). Every /api/v1/* route (except /api/v1/auth/*) requires
 # a bearer access token via Depends(authn.current_user) — always authenticated,
 # independent of TX_AUTH_REQUIRED — and is user-scoped through app/scope.py.

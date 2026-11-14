@@ -43,7 +43,9 @@ _WRITE_ALLOWED = {"/login", "/logout", "/api/v1/auth/login", "/api/v1/auth/refre
 _CLOSED_EXACT = {"/mcp", "/setup", "/register", "/forgot"}
 _CLOSED_PREFIX = ("/oauth/", "/oidc/", "/.well-known/oauth", "/ingest", "/reset/",
                   "/admin", "/users", "/settings/integrations", "/settings/mail",
-                  "/settings/notifications", "/account/tokens", "/account/connected-apps")
+                  "/settings/notifications", "/account/tokens", "/account/connected-apps",
+                  # D-241: no export on a demo server, nor the confirmation it needs.
+                  "/account/export", "/account/confirm")
 _READ_METHODS = ("GET", "HEAD", "OPTIONS")
 
 

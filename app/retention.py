@@ -11,7 +11,9 @@ archived and deleted after a while". `TX_RETENTION_MONTHS` sets the 12.
    tombstone stays: the sha256 content address, when it arrived, its owner,
    subject, sender and Message-ID. Captures still waiting in review are never
    purged — only ones that were logged or ignored.
-3. **The mailbox** (when the email inbox is configured): Rundere touches only
+3. **Archives** (SPEC-13 §2.5, D-241): a person's exported archive is deleted
+   7 days after it was built; its row stays, marked expired.
+4. **The mailbox** (when the email inbox is configured): Rundere touches only
    its own two folders, and moves mail to Trash, never expunging it.
    - `Rundere/Captured`: moved to Trash on the day Rundere drops its own copy,
      found again by Message-ID.
@@ -49,6 +51,7 @@ class Report:
     mail_trashed: int = 0
     dropped_trashed: int = 0
     ai_calls_purged: int = 0             # the AI call log keeps 90 days (SPEC-12 §6)
+    exports_expired: int = 0             # archives are kept 7 days (SPEC-13 §2.5)
     mail_skipped: str | None = None      # why the mailbox step didn't run
     due_mail: list[str] = field(default_factory=list, repr=False)
 
@@ -263,6 +266,14 @@ def run(session_factory, *, today: date | None = None, dry_run: bool = False,
                 report.ai_calls_purged = ai.purge_calls(session)
         except Exception:
             log.exception("retention: the AI call-log step failed; retried tomorrow")
+    # D-241: a person's archive is deleted 7 days after it was built, and its
+    # row marked expired. Counts only, as everywhere in this job.
+    try:
+        from app import archive_jobs
+        with session_factory() as session:
+            report.exports_expired = archive_jobs.expire_due(session, dry_run=dry_run)
+    except Exception:
+        log.exception("retention: the archive step failed; retried tomorrow")
     if mailbox:
         try:
             handled = trash_mail(report, today, dry_run=dry_run, connect=connect)

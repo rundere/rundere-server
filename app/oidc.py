@@ -105,7 +105,11 @@ def new_pkce() -> tuple[str, str]:
     return verifier, challenge
 
 
-def build_auth_url(redirect_uri: str, state: str, nonce: str, challenge: str) -> str | None:
+def build_auth_url(redirect_uri: str, state: str, nonce: str, challenge: str,
+                   extra: dict | None = None) -> str | None:
+    """`extra` adds request parameters: the fresh confirmation asks the
+    provider to sign the person in again with `prompt=login`, `max_age=0`
+    (SPEC-13 §3.2, app/confirm.py)."""
     doc = discovery()
     if not doc or not doc.get("authorization_endpoint"):
         return None
@@ -119,6 +123,7 @@ def build_auth_url(redirect_uri: str, state: str, nonce: str, challenge: str) ->
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     }
+    params.update(extra or {})
     return doc["authorization_endpoint"] + "?" + urllib.parse.urlencode(params)
 
 
