@@ -777,7 +777,9 @@ if DEPS:
 
     def test_confirming_only_ever_returns_to_an_account_page(env):
         c = _web(_user("ana"))
-        for bad in ("https://evil.example.test/", "//evil.example.test", "/trips", "/\\evil"):
+        for bad in ("https://evil.example.test/", "//evil.example.test", "/trips", "/\\evil",
+                    "/account/export/../../trips", "/account/export?x=//evil.example.test",
+                    "/account/tokens"):
             r = c.post("/account/confirm", data={"password": PW, "next": bad})
             assert r.headers["location"] == "/account", bad
         assert confirm.safe_next("/account/export") == "/account/export"

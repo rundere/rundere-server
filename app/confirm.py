@@ -102,11 +102,19 @@ def is_fresh(request, user) -> bool:
     return claims.get("sub") == user.id and claims.get("ver") == user.token_version
 
 
+# The only pages a confirmation leads back to. Wave 9b adds /account/delete.
+_DESTINATIONS = ("/account", "/account/export")
+
+
 def safe_next(nxt: str | None) -> str:
-    """Where to go after confirming: an Account page of ours, nothing else."""
-    from app.authn_routes import _safe_next
-    dest = _safe_next((nxt or "").strip())
-    return dest if dest.startswith("/account/") else "/account"
+    """Where to go after confirming: one of our own Account pages, by name.
+    The value returned is always one of the constants above, never the text
+    that came in, so nothing a request carries can steer a redirect."""
+    wanted = (nxt or "").strip()
+    for dest in _DESTINATIONS:
+        if wanted == dest:
+            return dest
+    return "/account"
 
 
 def page_url(nxt: str) -> str:
