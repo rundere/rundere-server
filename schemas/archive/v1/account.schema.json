@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "profile/account.json",
+  "description": "Run·dere archive, format 1 (SPEC-13 §2, D-241). Strict: adding a field means editing this schema in the same change (§2.3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "username",
+    "email",
+    "sign_in",
+    "created_at",
+    "is_admin",
+    "support_access",
+    "account_log"
+  ],
+  "properties": {
+    "username": {
+      "type": "string"
+    },
+    "email": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sign_in": {
+      "enum": [
+        "local",
+        "sso",
+        "proxy"
+      ]
+    },
+    "created_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "is_admin": {
+      "type": "boolean"
+    },
+    "support_access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "on",
+        "until"
+      ],
+      "properties": {
+        "on": {
+          "type": "boolean"
+        },
+        "until": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        }
+      }
+    },
+    "account_log": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "at",
+          "by"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+          },
+          "by": {
+            "enum": [
+              "you",
+              "an admin",
+              "the server"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

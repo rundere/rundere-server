@@ -143,6 +143,13 @@
       <button class="act" type="submit" style="margin-top:12px">Create token</button>
     </form>
 
+    {% if export_available %}
+    <h3 style="margin-top:28px" id="export">Export my data</h3>
+    <p class="why">Download a copy of your own data: your trips, places, journal, profiles
+      and uploaded files, as a zip of JSON files.</p>
+    <p><a class="act" href="/account/export">Export my data</a></p>
+    {% endif %}
+
     {% if u.auth_source == "local" %}
     <h3 style="margin-top:28px">Password</h3>
     <p class="why">Changing it signs you out everywhere else.</p>

@@ -244,6 +244,10 @@ class Settings(BaseSettings):
     # Dropped folder is moved to Trash after inbox_dropped_days. "" trash folder =
     # the mailbox's own (\Trash special-use) folder.
     retention_months: int = 12
+    # SPEC-13 §2.5 (D-241): where a person's Run·dere archive is written while it
+    # waits to be downloaded (7 days). Empty = <artifacts_dir>/exports. Never
+    # under a web root, and best kept out of backups (docs/self-hosting.md).
+    export_dir: str = ""
     inbox_dropped_days: int = 30
     inbox_trash_folder: str = ""
     # Absolute base (e.g. https://rundere.example.com) for links in emails. Empty

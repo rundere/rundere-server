@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Export my data{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <span class="pagetitle">Export my data</span>
+    <a class="act" href="/account">Back to my account</a>
+  </div></div>
+
+  {% if msg %}<div class="saved-note">{{ msg }}</div>{% endif %}
+  {% if err %}<div class="violations">{{ err }}</div>{% endif %}
+
+  <div style="padding:16px;max-width:640px">
+    <p class="why">Download a copy of your own data as a Run·dere archive: a zip of JSON
+      files in a documented format, with the files you uploaded.</p>
+
+    <h3 style="margin-top:20px">What it holds</h3>
+    <ul class="why">
+      <li>Your account details and its log, your traveller profile and homes.</li>
+      <li>Your Discovery and packing preferences, your inventory, templates and bags.</li>
+      <li>Every trip you own, in full: timeline, costs you can see, your Discover and packing.</li>
+      <li>For trips shared with you: only what you added to them.</li>
+      <li>Your saved places and lists, your journal, and the files you uploaded.</li>
+    </ul>
+
+    <h3 style="margin-top:20px">What it never holds</h3>
+    <ul class="why">
+      {% for item in not_included %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+
+    <h3 style="margin-top:20px">Your archive</h3>
+    {% include "_export_status.html" %}
+
+    <p class="why" style="margin-top:16px">An archive is built in the background and kept for
+      {{ keep_days }} days, then deleted. You can build up to {{ max_per_day }} a day. The file has
+      no password, so keep it somewhere safe once you've downloaded it.</p>
+  </div>
+</div>
+{% endblock %}

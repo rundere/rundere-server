@@ -29,6 +29,7 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 - **The Places search helps you write it.** As you type, it suggests the kinds after `kind:`, your own lists after `list:`, and your cities and countries after `city:` and `country:`, with counts. Chips under the box filter by kind, and list names with spaces work: `list:"Date night"`.
 - **Lists in the apps.** The iPhone and Android apps can show your Places lists, make and edit them, and put a place in the right list as you save it.
 - **What's new.** After an upgrade, Run·dere shows you once what changed, like this. The About page lists every version.
+- **Export your data.** Account → Export my data builds a zip of your own data as JSON files, with the files you uploaded: trips, places, journal, profiles. It is kept for 7 days, and downloading it asks you to confirm it's you. Passwords, tokens and other people's data are never in it.
 - **Typing in a capture by hand.** When a capture can't be read automatically, review shows the original email, page or file next to the form so you can fill it in.
 
 ### For admins
@@ -36,6 +37,7 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 - **Settings → AI** shows what AI is used for, any configuration problems, a connection test and a log of calls (never their content).
 - **Tell everyone to retake the packing questionnaire** (Settings → Packing profile). Packing lists can't be generated until they do.
 - **Database migrations run on start.** Back up first as usual.
+- **Keep the export folder out of backups.** People's archives wait in `TX_EXPORT_DIR` (default: `exports/` in the artifacts folder) for 7 days. Each is a person's whole record with no password; see the self-hosting guide.
 - **Nothing to run by hand for addresses:** about two minutes after the first start, the server fills in the addresses of older map pins once by itself.
 - **A stricter Content Security Policy:** pages now load only the server's own scripts. A reverse proxy that injects scripts into pages will find them blocked.
 
