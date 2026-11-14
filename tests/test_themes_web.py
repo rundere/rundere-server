@@ -182,3 +182,14 @@ if DEPS:
         travel = _web("tw-csp-travel").get("/account").headers.get("content-security-policy")
         assert base and base == travel
         assert "script-src 'self'" in travel and "unsafe-eval" not in travel
+
+    def test_floor_keeps_the_scene_shape():
+        """A fixed-height floor sliced the top off the art on wide windows; the
+        floor's aspect ratio must match every scene's viewBox (D-239)."""
+        css = (ROOT / "app" / "review" / "static" / "theme.css").read_text()
+        m = re.search(r"\.rd-floor\{[^}]*aspect-ratio:(\d+)/(\d+)", css)
+        assert m, "the floor has no aspect-ratio"
+        for tid in TRAVEL:
+            svg = (ROOT / "design" / "themes" / tid / "scene.svg").read_text()
+            w, h = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).groups())
+            assert w / h == int(m.group(1)) / int(m.group(2)), tid

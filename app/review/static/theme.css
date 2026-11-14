@@ -440,10 +440,13 @@ summary{cursor:pointer;padding-block:4px;box-sizing:border-box}
    own xMidYMax slice). Never position:fixed, never behind text. */
 body.rd-page.has-scenery{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 body.rd-page.has-scenery>.rd-shell{flex:1 0 auto}
-.rd-floor{flex:none;display:block;width:100%;height:150px;overflow:hidden;
-  line-height:0;pointer-events:none;user-select:none}
+/* The floor keeps the scene's 6:1 shape (1440x240) so a wide window shows the
+   whole landscape instead of slicing its top off. 96px is the floor on phones,
+   where xMidYMax slice crops the sides to the middle; 320px caps it on very wide
+   windows, where only empty sky above the art is trimmed (D-239). */
+.rd-floor{flex:none;display:block;width:100%;aspect-ratio:6/1;min-height:96px;max-height:320px;
+  overflow:hidden;line-height:0;pointer-events:none;user-select:none}
 .rd-floor-art{display:block;width:100%;height:100%}
-@media (max-width:600px){.rd-floor{height:96px}}
 @media print{.rd-floor{display:none}}
 @media (forced-colors:active){.rd-floor{display:none}}
 
