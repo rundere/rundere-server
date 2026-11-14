@@ -78,7 +78,8 @@ def load_base() -> dict:
         sem = data["semantic"][mode]
         modes[mode] = {"color": {r: _resolve(sem[r]["$value"], data["color"]) for r in ROLES}}
     return {
-        "id": "base", "name": "Base", "kind": "base", "version": 1, "tags": [],
+        # 2: Base Dark text-muted lifted to #8A99AB, 4.5:1 on surface-raised (5.0).
+        "id": "base", "name": "Base", "kind": "base", "version": 2, "tags": [],
         "description": "Night sky, silver and one beacon. The default for everyone.",
         "modes": modes,
     }

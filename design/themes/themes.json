@@ -6,7 +6,7 @@
       "id": "base",
       "name": "Base",
       "kind": "base",
-      "version": 1,
+      "version": 2,
       "description": "Night sky, silver and one beacon. The default for everyone.",
       "tags": [],
       "modes": {
@@ -38,7 +38,7 @@
             "border-subtle": "rgba(170,182,196,0.14)",
             "text": "#E6EAF0",
             "text-secondary": "#AAB6C4",
-            "text-muted": "#8594A6",
+            "text-muted": "#8A99AB",
             "accent": "#7FB2FF",
             "accent-hover": "#A9CCFF",
             "on-accent": "#0A1624",
