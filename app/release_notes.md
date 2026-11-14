@@ -31,6 +31,7 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 - **Lists in the apps.** The iPhone and Android apps can show your Places lists, make and edit them, and put a place in the right list as you save it.
 - **What's new.** After an upgrade, Run·dere shows you once what changed, like this. The About page lists every version.
 - **Export your data.** Account → Export my data builds a zip of your own data as JSON files, with the files you uploaded: trips, places, journal, profiles. It is kept for 7 days, and downloading it asks you to confirm it's you. Passwords, tokens and other people's data are never in it.
+- **Delete your account.** Account → Delete my account locks your account at once and deletes it, with your data, 7 days later. Until then you can sign in on the web and cancel, or take an export. For each trip of yours that other people are on, you choose who it passes to, or that it is deleted. Your name stays on other people's trips as a guest.
 - **Typing in a capture by hand.** When a capture can't be read automatically, review shows the original email, page or file next to the form so you can fill it in.
 
 ### For admins
@@ -39,6 +40,8 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 - **Tell everyone to retake the packing questionnaire** (Settings → Packing profile). Packing lists can't be generated until they do.
 - **Database migrations run on start.** Back up first as usual.
 - **Keep the export folder out of backups.** People's archives wait in `TX_EXPORT_DIR` (default: `exports/` in the artifacts folder) for 7 days. Each is a person's whole record with no password; see the self-hosting guide.
+- **Deleting accounts.** People can delete their own account, and you can delete someone else's from Users → Delete account…, by typing its username. Either way it is locked at once and deleted after 7 days; the web can't shorten that. `python -m app.cli delete-account <username>` does the same from a shell, with `--dry-run`, `--now` and `--cancel`. The last active admin can't be deleted.
+- **Deleted accounts and your backups.** A deletion can't reach your database backups, server logs or the single sign-on provider; see the self-hosting guide.
 - **Nothing to run by hand for addresses:** about two minutes after the first start, the server fills in the addresses of older map pins once by itself.
 - **A stricter Content Security Policy:** pages now load only the server's own scripts. A reverse proxy that injects scripts into pages will find them blocked.
 
