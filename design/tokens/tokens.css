@@ -15,7 +15,7 @@
   --rd-night-700: #16304A; --rd-night-600: #22405F; --rd-night-500: #35557A;
   --rd-night-400: #4F6F94;
   --rd-silver-50: #F4F6F9; --rd-silver-100: #E6EAF0; --rd-silver-200: #CBD3DD;
-  --rd-silver-300: #AAB6C4; --rd-silver-400: #8594A6; --rd-silver-500: #5E6E82;
+  --rd-silver-300: #AAB6C4; --rd-silver-400: #8A99AB; --rd-silver-500: #5E6E82;
   --rd-silver-600: #44536A;
   --rd-beacon-100: #E3EEFF; --rd-beacon-200: #C7DDFF; --rd-beacon-300: #A9CCFF;
   --rd-beacon-400: #7FB2FF; --rd-beacon-500: #4F8FEA; --rd-beacon-600: #2F6FD6;
@@ -65,6 +65,8 @@
   --rd-danger: var(--rd-danger-400);
   --rd-focus-ring: var(--rd-beacon-300);
   --rd-shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(230, 234, 240, 0.08);
+  /* D-237: the focus glow's colour; travel themes set their own. */
+  --rd-glow-color: rgba(127, 178, 255, 0.45);
   --rd-glow: drop-shadow(0 0 14px rgba(169, 204, 255, 0.55));
 }
 
@@ -115,7 +117,7 @@
 /* Focus: the mark's glow, made functional. */
 :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--rd-surface), 0 0 0 4px var(--rd-focus-ring), 0 0 16px 4px rgba(127, 178, 255, 0.45);
+  box-shadow: 0 0 0 2px var(--rd-surface), 0 0 0 4px var(--rd-focus-ring), 0 0 16px 4px var(--rd-glow-color);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -69,3 +69,6 @@ def install(templates) -> None:
     from app import release_notes
     templates.env.globals["whats_new"] = release_notes.dialog_notes   # D-234: the dialog
     templates.env.globals["render_note"] = release_notes.render
+    from app import themes
+    templates.env.globals["travel"] = themes.for_request     # D-237: data-travel
+    templates.env.globals["travel_scene"] = themes.scene     # D-239: the floor

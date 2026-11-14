@@ -1,5 +1,8 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+{# D-237: the travel theme is per account and rendered server-side, so there is
+   no flash and no CSP change; theme.js still owns only the mode (D-201). #}
+{% set tv = travel(request) %}
+<html lang="en" data-theme="dark" data-travel="{{ tv.id }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -24,7 +27,7 @@
 <link rel="stylesheet" href="{{ asset('/trips/static/trips.css') }}">
 <script src="{{ asset('/review/static/theme.js') }}"></script>{# no defer: before first paint #}
 </head>
-<body class="trips-body">
+<body class="trips-body rd-page{% if tv.scenery %} has-scenery{% endif %}"><div class="rd-shell">
 {% include "_appheader.html" %}
 {% import "_settings_menu.html" as settings_menu with context %}
 {% if settings_menu.in_settings %}
@@ -33,5 +36,6 @@
 {% else %}<main class="bp-wrap">{{ self.content() }}</main>{% endif %}
 {# Modals swap into this slot; /trips/close empties it. #}
 <div id="modal-root"></div>
+</div>{% include "_scenery.html" %}
 </body>
 </html>

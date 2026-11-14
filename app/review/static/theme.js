@@ -8,6 +8,12 @@
   var t;
   try { t = localStorage.getItem("tx-theme"); } catch (e) {}
   document.documentElement.setAttribute("data-theme", t || "dark");
+  // D-237: when the OS asks for forced colours or more contrast, Base applies.
+  // The server renders data-travel; this only takes it away, before first paint.
+  try {
+    if (window.matchMedia("(forced-colors: active), (prefers-contrast: more)").matches)
+      document.documentElement.setAttribute("data-travel", "base");
+  } catch (e) {}
 
   function toggle() {
     var r = document.documentElement, c = r.getAttribute("data-theme");
