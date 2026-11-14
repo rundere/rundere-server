@@ -319,3 +319,11 @@ def test_maps_links_are_read_offline_and_an_unreadable_one_never_costs_a_named_r
     assert placed["Sample Website Bar"].source_url is None             # only Maps links are kept
     again = _import(world["ada_id"], _csv(_row(url=GOOGLE_PLACE, list="Coffee")))
     assert again["counts"] == {"duplicate": 1}                          # same feature id, same place
+
+
+def test_a_broken_csv_line_is_refused_without_the_parsers_own_message(world):
+    data = b"name,notes\nExample Kiosk," + b"x" * 200_000 + b"\n"   # over csv's field limit
+    r = client.post("/api/v1/places/import", files={"file": ("p.csv", data, "text/csv")},
+                    headers=world["ada"])
+    assert r.status_code == 400
+    assert r.json()["detail"] == "line 2 can't be read as CSV; check its quotes"

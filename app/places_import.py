@@ -91,8 +91,10 @@ def parse(data: bytes) -> tuple[list[tuple[int, dict]], list[dict], list[str]]:
     reader = csv.reader(io.StringIO(text, newline=""), delimiter=_dialect(text))
     try:
         header = next(reader)
-    except csv.Error as exc:
-        raise UnreadableFile(f"the header row can't be read as CSV ({exc})") from None
+    except csv.Error:
+        # The parser's own message stays out of what the person (or an API caller)
+        # sees: it is internal detail, not something they can act on (CodeQL).
+        raise UnreadableFile("the header row can't be read as CSV") from None
     cols: dict[int, str] = {}
     warnings: list[str] = []
     for i, raw in enumerate(header):
@@ -122,8 +124,9 @@ def parse(data: bytes) -> tuple[list[tuple[int, dict]], list[dict], list[str]]:
                                "error": "the row has no name and no url"})
                 continue
             rows.append((line, fields))
-    except csv.Error as exc:
-        raise UnreadableFile(f"line {reader.line_num} can't be read as CSV ({exc})") from None
+    except csv.Error:
+        raise UnreadableFile(f"line {reader.line_num} can't be read as CSV; check its "
+                             "quotes") from None
     if not rows and not errors:
         raise UnreadableFile("the file has a header row but no places")
     return rows, errors, warnings
