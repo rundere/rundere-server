@@ -64,7 +64,8 @@ research_* prompts are step-by-step research kits for these. Dates are
 ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items).
 Saved places are the user's Places Library: Maps places they kept, with what to
 do there. capture_url saves one from a link, save_places pushes a whole list (try
-dry_run first; it is safe to repeat), list_saved_places searches them (by words,
+dry_run first; it is safe to repeat), import_places_csv imports a Run·dere CSV
+file the user gives you (a dry run by default), list_saved_places searches them (by words,
 country, city or priority) and file_saved_place puts one on a trip, undated if
 the user hasn't decided when. A place stays in the library after filing and can
 go on other trips too.
@@ -548,6 +549,27 @@ def save_places(places: Annotated[list[api_v1.SavedPlaceIn], Field(
         session, user, api_v1.SavedPlaceBatchIn(
             places=places, dry_run=dry_run, enrich=enrich, revive=revive,
             allow_near_duplicates=allow_near_duplicates), source="mcp"))
+
+
+@mcp.tool()
+def import_places_csv(csv_text: Annotated[str, Field(
+                          description="The whole CSV file as text, header row first. Columns, "
+                                      "any order: name, url, address, lat, lon, list, kind, "
+                                      "notes, todo, priority, country. Each row needs a name or "
+                                      "a full Maps url; repeat a row to put it in two lists.")],
+                      dry_run: Annotated[bool, Field(
+                          description="Report what each row would do and write nothing, not "
+                                      "even a list. Use it first.")] = True) -> dict[str, Any]:
+    """Import the user's places from a Run·dere CSV (SPEC-11 D-243), up to 5,000
+    rows: the same import as the web page's Import button. Lists named in the
+    `list` column are matched to the user's own lists by name, or made. Nothing is
+    looked up, so a row without lat/lon comes in without a pin. Safe to run twice.
+    Defaults to a dry run; call again with dry_run false once the user agrees.
+    Returns `counts`, one `results` row per file line, the `lists` it used or
+    makes, and `warnings` about the file."""
+    from app import places_import
+    return _run(lambda session, user: places_import.run(
+        session, user, csv_text.encode("utf-8"), dry_run=dry_run))
 
 
 # Lists (D-213, D-236): own-only like the rest of the library.

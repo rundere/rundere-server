@@ -471,3 +471,8 @@ body.rd-page.has-scenery>.rd-shell{flex:1 0 auto}
 .ap-name .ap-on{color:var(--accent);font-weight:500;font-size:12px;margin-left:4px}
 .ap-desc{font-size:12.5px;color:var(--ink-3);line-height:1.35}
 .ap-scenery{display:flex;align-items:center;gap:8px;margin-top:14px}
+/* SPEC-11 D-243: the Import page's row-by-row result. */
+.pl-import-rows{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+.pl-import-rows th,.pl-import-rows td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.pl-import-rows .age{display:block;margin-top:2px}
+@media (max-width:560px){.pl-import-rows th:nth-child(3),.pl-import-rows td:nth-child(3){display:none}}
