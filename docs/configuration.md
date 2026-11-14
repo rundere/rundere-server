@@ -93,6 +93,7 @@ keep Run·dere fully local.
 | `TX_DOCUMENT_MAX_MB` | `25` | Largest file accepted |
 | `TX_DOCUMENT_QUOTA_MB` | `1024` | Each person's file storage; an admin can raise one person's in Administer → Users. Full = new files refused, nothing deleted |
 | `TX_RETENTION_MONTHS` | `12` | Stored files and raw captures are removed this long after their trip ends (after they arrived, with no trip); what was extracted stays (SPEC-8 D-196) |
+| `TX_EXPORT_DIR` | `<TX_ARTIFACTS_DIR>/exports` | Where a person's Run·dere archive (Account → Export my data) waits to be downloaded: `<dir>/<user id>/<export id>.zip`, readable by the server's user only, deleted after 7 days. Each file is one person's whole record with no password, so keep this folder out of backups and off any web root. A build is refused when the folder lacks room for the person's stored files plus 100 MB (SPEC-13 D-241) |
 | `TX_INBOX_DROPPED_DAYS`, `TX_INBOX_TRASH_FOLDER` | `30`, auto | Email forward: mail in the dropped folder goes to Trash after this many days; the Trash folder is found automatically unless named |
 | `TX_OAUTH_ACCESS_TTL_SECONDS` | `3600` | OAuth access-token lifetime (Claude connector) |
 | `TX_OAUTH_REFRESH_IDLE_TTL_SECONDS` | `7776000` | A connected app's grant expires after this long unused (90 days) |

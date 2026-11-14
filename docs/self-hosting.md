@@ -89,6 +89,15 @@ Back up these, and test a restore:
    uploaded PDFs, .ics and .eml files are stored there, not in the database.
 4. **`TX_SECRETS_KEY`,** kept apart from the database backup.
 
+**Leave the export folder out.** Account → Export my data writes each person's
+archive to `TX_EXPORT_DIR` (by default `exports/` inside the artifacts folder,
+so exclude that subfolder from the artifacts backup). An archive is one
+person's whole record in a single zip with no password. Run·dere deletes it
+after 7 days; a backup that copied it would keep it for as long as the backup
+lives. Nothing is lost by skipping it: a person can build a new one at any
+time. The folder is readable by the server's user only; don't serve it from a
+web server or share it.
+
 ## 7. Upgrades
 
 1. Read the release notes for migrations and new settings.

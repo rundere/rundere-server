@@ -316,7 +316,15 @@ def _account_ctx(session: Session, user: User, **extra) -> dict:
             "support_on": scope.support_live(user), "support_until": support.until(user),
             "support_views": support.recent_views(session, user),
             "apps": oauth.connected_apps(session, user),
-            "pats": oauth.list_pats(session, user), "msg": "", "err": "", **extra}
+            "pats": oauth.list_pats(session, user),
+            # D-241: no export without accounts (sign-in off) or on a demo server.
+            "export_available": _export_available(),
+            "msg": "", "err": "", **extra}
+
+
+def _export_available() -> bool:
+    from app import demo
+    return settings.auth_required and not demo.enabled()
 
 
 @router.get("/account", response_class=HTMLResponse)

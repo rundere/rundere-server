@@ -1,0 +1,28 @@
+{# The export's status panel (SPEC-13 §2.5). Polls itself while a build runs. #}
+<div id="export-status"{% if building %} hx-get="/account/export/status" hx-trigger="every 4s" hx-swap="outerHTML"{% endif %}>
+{% if building %}
+  <p class="why" role="status"><b>Building your archive…</b> This page updates by itself.
+    You can leave it and come back{% if will_email %}; you'll get an email when it's ready{% endif %}.</p>
+{% elif ready %}
+  <p class="why"><b>Your archive is ready</b>{% if size %} ({{ size }}){% endif %}.
+    It will be deleted on {{ expires_at.strftime("%Y-%m-%d") }}.</p>
+  {% if confirmed %}
+    <p><a class="act" href="/account/export/{{ export.id }}/download">Download my archive</a></p>
+  {% else %}
+    <p class="why">To download it, first confirm it's you.</p>
+    <p><a class="act" href="/account/confirm?next=/account/export">Confirm it's me</a></p>
+  {% endif %}
+{% elif export and export.status == "failed" %}
+  <p class="violations">The last build didn't finish. Nothing was kept from it; you can build again.</p>
+{% elif export and export.status == "expired" %}
+  <p class="why">Your last archive was deleted after {{ keep_days }} days. Build a new one to download it again.</p>
+{% else %}
+  <p class="why">You haven't built an archive yet.</p>
+{% endif %}
+{% if not building %}
+  <form method="post" action="/account/export/build">
+    <button class="act" type="submit" style="margin-top:8px">{% if ready %}Build a new archive{% else %}Build my archive{% endif %}</button>
+  </form>
+  {% if ready %}<p class="why">A new archive replaces this one.</p>{% endif %}
+{% endif %}
+</div>

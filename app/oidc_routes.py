@@ -89,6 +89,12 @@ def oidc_callback(request: Request, code: str = "", state: str = "", error: str 
     if bad:
         return _fail(bad)
 
+    # A fresh-confirmation round trip (SPEC-13 §3.2) ends here: it confirms the
+    # person already signed in and never provisions or signs anyone in.
+    from app import confirm
+    if confirm.is_confirm_handshake(saved):
+        return confirm.finish_sso(request, saved, claims)
+
     fields = oidc.user_fields(claims)
     if not fields.get("sub") or not fields.get("username"):
         return _fail("missing subject")

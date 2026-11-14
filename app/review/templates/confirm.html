@@ -1,0 +1,39 @@
+{% extends "authcard.html" %}
+{% block title %}Confirm it's you{% endblock %}
+{% block body %}
+<div class="card">
+  <div class="brand"><h1><span class="rd-lockup-stacked" role="img" aria-label="Run·dere"></span></h1><span>confirm it's you</span></div>
+  <p class="sub">You're signed in as <b>{{ u.username }}</b>. This step asks you to confirm
+    that again, and lasts {{ minutes }} minutes.</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  {% if how == "password" %}
+  <form method="post" action="/account/confirm">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="password">Your password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+    <button type="submit">Confirm</button>
+  </form>
+  {% elif how == "sso" %}
+    {% if sso_available %}
+    <p class="sub">You sign in with {{ sso_name }}, so it will ask you to sign in again.</p>
+    <form method="get" action="/account/confirm/sso">
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit">Continue with {{ sso_name }}</button>
+    </form>
+    {% else %}
+    <p class="sub">You sign in with {{ sso_name }}, which isn't available on this address.
+      Open Run·dere on the address you sign in with and try again.</p>
+    {% endif %}
+  {% else %}
+  <p class="sub">This server trusts the sign-in in front of it, so Run·dere can't ask for a
+    password here: that sign-in is what protects this step. Type your username to go on.</p>
+  <form method="post" action="/account/confirm">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="username">Your username</label>
+    <input id="username" name="username" autocomplete="off" autofocus required>
+    <button type="submit">Confirm</button>
+  </form>
+  {% endif %}
+  <div class="links"><a href="{{ next }}">Cancel</a></div>
+</div>
+{% endblock %}
