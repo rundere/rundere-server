@@ -56,9 +56,16 @@ _LAST_USED_EVERY = timedelta(minutes=5)       # throttle last_used_at writes
 class OAuthError(Exception):
     """An RFC 6749 error: `error` is the wire code, `description` the text."""
 
-    def __init__(self, error: str, description: str = "", status: int = 400):
+    def __init__(self, error: str, description: str = "", status: int = 400,
+                 deletion_pending: bool = False):
         super().__init__(description or error)
         self.error, self.description, self.status = error, description, status
+        self.deletion_pending = deletion_pending
+
+
+# What a locked account is told wherever it asks for a token (D-242).
+DELETION_PENDING = ("this account is waiting to be deleted; sign in on the web to "
+                    "cancel or to export your data")
 
 
 def _now() -> datetime:
@@ -299,6 +306,7 @@ def revoke_grant(session, grant: OAuthGrant, *, action: str = "oauth_revoked",
 
 def _user_ok(user: User | None, grant: OAuthGrant) -> bool:
     return (user is not None and user.is_active
+            and user.deletion_due_at is None                     # locked: D-242
             and user.token_version == grant.token_version)
 
 
@@ -331,6 +339,10 @@ def exchange_code(session, *, client: OAuthClient, code: str | None,
     user = session.get(User, row.user_id)
     if user is None or not user.is_active:
         raise OAuthError("invalid_grant", "user is not active")
+    if user.deletion_due_at is not None:
+        # D-242: no tokens for a locked account. The app reads the flag and
+        # links to the web page (SPEC-13 §3.3).
+        raise OAuthError("invalid_grant", DELETION_PENDING, deletion_pending=True)
     grant = OAuthGrant(client_id=client.id, user_id=user.id, scope=row.scope,
                        resource=row.resource, token_version=user.token_version,
                        last_used_at=_now(), expires_at=_now())
@@ -454,6 +466,8 @@ def pat_user(session, opaque: str) -> User | None:
         return None
     user = session.get(User, row.user_id)
     if user is None or not user.is_active or user.token_version != row.token_version:
+        return None
+    if user.deletion_due_at is not None:                         # locked: D-242
         return None
     last = _aware(row.last_used_at)
     if last is None or _now() - last > _LAST_USED_EVERY:

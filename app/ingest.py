@@ -72,6 +72,12 @@ def _ingest(session: Session, headers, body: bytes):
     key_row = auth.lookup_key(session, presented) if presented else None
     if key_row is None:
         return _reject(401, "unknown or revoked api key")
+    if key_row.user_id:
+        # D-242: an account waiting to be deleted takes no captures (SPEC-13 §3.3).
+        from app.models import User
+        owner = session.get(User, key_row.user_id)
+        if owner is not None and owner.deletion_due_at is not None:
+            return _reject(403, "this account is waiting to be deleted")
     ts_error = auth.check_timestamp(timestamp)
     if ts_error:
         return _reject(401, ts_error)

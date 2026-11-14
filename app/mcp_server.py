@@ -90,7 +90,7 @@ def _run(fn, /, **kwargs) -> Any:
         raise ToolError("not signed in")
     with SessionLocal() as session:
         user = session.get(User, uid)
-        if user is None or not user.is_active:
+        if user is None or not user.is_active or user.deletion_due_at is not None:
             raise ToolError("this Run·dere account is not active")
         try:
             return jsonable_encoder(fn(session=session, user=user, **kwargs))

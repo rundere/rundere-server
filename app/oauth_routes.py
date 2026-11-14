@@ -52,6 +52,8 @@ def _oauth_error(e: oauth.OAuthError) -> JSONResponse:
     body = {"error": e.error}
     if e.description:
         body["error_description"] = e.description
+    if e.deletion_pending:                    # D-242: the apps say why, and link to the page
+        body["deletion_pending"] = True
     headers = dict(_NO_STORE)
     if e.status == 401:
         headers["WWW-Authenticate"] = 'Basic realm="yonder"'
@@ -148,6 +150,10 @@ def authorize_page(request: Request, session: Session = Depends(get_session)):
     user = authn.resolve_user(session, request)
     if user is None:
         return RedirectResponse(f"/login?next={quote(here, safe='')}", status_code=303)
+    if authn.deletion_pending(user):
+        # D-242: a locked account gets no code. The browser the app opened
+        # lands on the one page it can use.
+        return RedirectResponse("/account/delete", status_code=303)
     if authn.needs_email(user):                                  # D-220
         return RedirectResponse(f"/account/email-required?next={quote(here, safe='')}",
                                 status_code=303)
@@ -174,6 +180,8 @@ def authorize_page(request: Request, session: Session = Depends(get_session)):
 def authorize_decide(request: Request, req: str = Form(""), decision: str = Form(""),
                      session: Session = Depends(get_session)):
     user = authn.resolve_user(session, request)
+    if user is not None and authn.deletion_pending(user):        # locked: D-242
+        return RedirectResponse("/account/delete", status_code=303)
     claims = authn.jwt_decode(req)
     if user is None or not claims or claims.get("typ") != "oauth_consent" \
             or claims.get("uid") != user.id:

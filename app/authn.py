@@ -133,6 +133,11 @@ def issue_web_token(user: User) -> str:
     return _token(user, "web", settings.jwt_web_ttl_seconds)
 
 
+def deletion_pending(user) -> bool:
+    """Is this account locked, waiting to be deleted (D-242)?"""
+    return getattr(user, "deletion_due_at", None) is not None
+
+
 def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "web"),
                     audiences: set[str] | None = None) -> User | None:
     """Resolve a Yonder JWT to its user. An `oauth` token (YONDER-107) must also
@@ -144,6 +149,10 @@ def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "we
     if user is None or not user.is_active:
         return None
     if claims.get("ver") != user.token_version:   # revoked via "sign out everywhere"
+        return None
+    # D-242: an account waiting to be deleted is locked. Only the web session
+    # still resolves, and the web gate lets it reach one page (SPEC-13 §3.3).
+    if deletion_pending(user) and claims.get("typ") != "web":
         return None
     if claims.get("typ") == "oauth":
         from app import oauth
@@ -203,11 +212,19 @@ def consume_refresh_token(session, opaque: str) -> User | None:
     if _now() > _as_aware(row.expires_at):
         return None
     user = session.get(User, row.user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or deletion_pending(user):   # locked: D-242
         return None
     row.revoked_at = _now()
     session.commit()
     return user
+
+
+def refresh_owner_pending(session, opaque: str) -> bool:
+    """Does this refresh token, live or revoked, belong to an account that is
+    waiting to be deleted (D-242)? Only someone holding the token can ask."""
+    row = session.query(RefreshToken).filter_by(token_hash=_hash_opaque(opaque)).one_or_none()
+    user = session.get(User, row.user_id) if row is not None else None
+    return user is not None and user.is_active and deletion_pending(user)
 
 
 def end_sessions(session, user: User) -> None:

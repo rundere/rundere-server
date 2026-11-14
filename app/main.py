@@ -55,10 +55,12 @@ app.include_router(oauth_router)
 # SPEC-13 (D-241): Account › Export my data, and the fresh confirmation its
 # download needs. Web only: neither has an /api/v1 or MCP counterpart.
 from app.archive_routes import router as archive_router  # noqa: E402
+from app.deletion_routes import router as deletion_router  # noqa: E402
 from app.confirm import router as confirm_router  # noqa: E402
 
 app.include_router(confirm_router)
 app.include_router(archive_router)
+app.include_router(deletion_router)
 
 # The JSON API (Phase 3). Every /api/v1/* route (except /api/v1/auth/*) requires
 # a bearer access token via Depends(authn.current_user) — always authenticated,
@@ -103,6 +105,13 @@ _PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
 _PUBLIC_PREFIX = ("/ingest", "/review/static", "/trips/static", "/brand/",
                   "/api/v1/auth/", "/reset/", "/oidc/", "/oauth/", "/.well-known/")
 _ADMIN_PREFIX = ("/admin", "/users")
+# D-242: all a locked account can open (SPEC-13 §3.3).
+_LOCKED_PREFIX = ("/account/delete", "/account/export", "/account/confirm", "/logout")
+
+
+def authn_deletion_pending(user) -> bool:
+    from app import authn
+    return authn.deletion_pending(user)
 
 
 def _is_public(path: str) -> bool:
@@ -161,6 +170,20 @@ async def auth_gate(request, call_next):
         msg = "admin only"
         return (JSONResponse({"detail": msg}, status_code=403) if is_api
                 else HTMLResponse(f"<h1>403 — {msg}</h1>", status_code=403))
+    # D-242: an account waiting to be deleted is locked. On the web it reaches one
+    # page (the due date, cancel, and the export); everything else leads there.
+    # Before the email and sharing questions, which a leaving account isn't asked.
+    if authn_deletion_pending(user):
+        if path.startswith(_LOCKED_PREFIX):
+            request.state.user = user
+            return await call_next(request)
+        if is_api:
+            from app import oauth
+            return JSONResponse({"detail": oauth.DELETION_PENDING, "deletion_pending": True},
+                                status_code=403)
+        if request.headers.get("hx-request"):
+            return HTMLResponse("", status_code=403, headers={"HX-Redirect": "/account/delete"})
+        return RedirectResponse("/account/delete", status_code=303)
     # D-220: a local account without an email adds one first, at every visit
     # until it has. Browser only, like the sharing question below.
     from app.authn import needs_email

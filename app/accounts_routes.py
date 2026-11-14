@@ -34,6 +34,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app import account_deletion as deletion
 from app import authn
 from app.auth import RateLimiter, client_ip
 from app.config import settings
@@ -563,6 +564,11 @@ def users_page(request: Request, msg: str = "", err: str = "", link: str = "",
         "me": admin, "registration_open": settings.auth_registration_open,
         "smtp": email_configured(), "smtp_summary": smtp_summary(),
         "msg": msg, "err": err, "link": link, "link_for": link_for,
+        # D-242: counts only; an admin can't see the trips (D-211).
+        "deletion_available": deletion.available(), "grace_days": deletion.GRACE_DAYS,
+        "deletion_preview": ({u.id: deletion.preview(session, u) for u in users
+                              if u.deletion_due_at is None}
+                             if deletion.available() else {}),
         "default_quota_mb": settings.document_quota_mb})
 
 
@@ -714,7 +720,9 @@ def users_toggle_admin(user_id: str, admin: User = Depends(authn.require_admin),
         return RedirectResponse("/users?err=No+such+user", status_code=303)
     if user.id == admin.id:
         return RedirectResponse("/users?err=You+can%27t+change+your+own+admin+role", status_code=303)
-    if user.is_admin and session.query(User).filter_by(is_admin=True).count() <= 1:
+    # An admin who is deactivated or waiting to be deleted (D-242) doesn't count:
+    # the server must keep one who can act.
+    if user.is_admin and deletion.usable_admins(session, without=user.id) == 0:
         return RedirectResponse("/users?err=Can%27t+remove+the+last+admin", status_code=303)
     user.is_admin = not user.is_admin
     _audit(session, user, admin, "admin_on" if user.is_admin else "admin_off")
@@ -731,6 +739,9 @@ def users_toggle_active(user_id: str, admin: User = Depends(authn.require_admin)
         return RedirectResponse("/users?err=No+such+user", status_code=303)
     if user.id == admin.id:
         return RedirectResponse("/users?err=You+can%27t+deactivate+yourself", status_code=303)
+    if user.is_active and deletion.last_admin(session, user):
+        return RedirectResponse("/users?err=Can%27t+deactivate+the+last+active+admin",
+                                status_code=303)
     user.is_active = not user.is_active
     authn.end_sessions(session, user)          # kick out any live sessions on deactivate
     _audit(session, user, admin, "activated" if user.is_active else "deactivated")

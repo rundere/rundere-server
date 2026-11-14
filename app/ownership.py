@@ -7,8 +7,9 @@ Every table in `Base.metadata` is listed here once, with:
   it holds a user id or a traveller id;
 - its **parent**, for a table reached only through another row;
 - what the **export** does with it (D-241, app/archive.py);
-- what **deleting an account** does with it (D-242). The deletion side is data
-  only for now: wave 9b's `app/account_purge.py` is driven by it.
+- what **deleting an account** does with it (D-242): `app/account_purge.py`
+  reads the treatment from here, and refuses to import when a table that an
+  account deletion touches has no step.
 
 tests/test_ownership.py fails when a table isn't registered, and when a column
 named like a person link (`PERSON_COLUMNS`) isn't declared, so a migration that
@@ -26,7 +27,7 @@ from dataclasses import dataclass
 # Column names that tie a row to a person. A column with one of these names
 # that a table's entry doesn't declare fails the registry test.
 PERSON_COLUMNS = frozenset({"owner_id", "user_id", "author_id", "actor_id", "created_by",
-                            "updated_by", "fetched_by", "traveler_id"})
+                            "updated_by", "fetched_by", "requested_by", "traveler_id"})
 
 USER, TRAVELLER = "user", "traveller"       # what a person-link column holds
 
@@ -112,6 +113,14 @@ _ENTRIES: tuple[Entry, ...] = (
     Entry("archive_exports", ACCOUNT, EXPORT_NO, DELETE, _u("user_id"),
           export_note="build bookkeeping for the archive itself (SPEC-13 §2.5)",
           deletion_note="with the person's export folder"),
+    Entry("account_deletions", ACCOUNT, EXPORT_NO, KEEP_ANONYMISED,
+          _u("user_id", "requested_by"),
+          export_note="the request to delete the account; the person sees it on the "
+                      "locked page and in their account log",
+          deletion_note="the leaver's own record stays without them (user_id and "
+                        "choices cleared) so the mailbox step can be retried; in other "
+                        "people's records, an admin who asked or an heir who was named "
+                        "is cleared"),
 
     # ---------------------------------------------------------------- §1.3 traveller and profiles
     Entry("traveler_identities", PROFILE, EXPORT_OWN, CONDITIONAL,
