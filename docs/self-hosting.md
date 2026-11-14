@@ -48,6 +48,10 @@ the plain setting, and an unreadable one stops the server from starting.
    image made as root must be handed over by hand (`sudo chown -R 1000:1000 …`).
    If any data path isn't writable, the server refuses to start and lists them.
 3. Deploy the stack. Migrations run at start-up.
+   Run it as the image does, with **one server process** (don't add uvicorn's
+   `--workers` or put several copies behind a balancer): Discover runs and
+   archive builds are tracked by the process running them, and a second
+   process would mark them failed.
 4. Open the site and create the admin account at `/setup` straight away (see
    "Create the admin first" below).
 

@@ -127,6 +127,9 @@ def account_section(session: Session, user: User) -> dict:
         # Support access (D-211): whether admins may view, and until when.
         "support_access": {"on": bool(user.share_with_admins),
                            "until": _z(user.support_until)},
+        # The look they chose (D-237, D-239). A package's id, as stored.
+        "theme": _s(user.ui_theme) or "base",
+        "scenery": bool(user.scenery),
         # Action and time only: `detail` can name other rows, so it stays out.
         "account_log": [{"action": e.action, "at": _z(e.at), "by": by(e.actor_id)}
                         for e in events],

@@ -1005,8 +1005,8 @@ pass the guardrails: no migration and no app release.
   - The web, the JSON API, MCP and the iOS app follow the same rule; the user payload gains
     `support_until` (null = until turned off).
   - *Amended by D-242 (SPEC-13, proposed):* a person will be able to delete their own
-    account; admins keep deleting other accounts. SPEC-13 D-241 adds the export of a
-    person's own data, which admins don't get for anyone else.
+    account; admins keep deleting other accounts. SPEC-13 D-241 (built) adds the export
+    of a person's own data, which admins don't get for anyone else.
 - **D-205 — Legacy machine access is retired (YONDER-292; owner, 2026-10-19).** Every
   credential and endpoint that remains is one to defend, so what the built-in ones replaced
   goes.
