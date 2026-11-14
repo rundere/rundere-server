@@ -669,8 +669,10 @@ glow stays dark-grounds-only.
   light up at night; Winter, snowy peaks and pines, a ski chalet with lit
   windows and a snowman.
 - **It's the floor, never the wallpaper.** On the web it's the last element of
-  the page, full width, 150px tall (96px under 600px), cropped to the middle of
-  the scene on narrow screens (`xMidYMax slice`). It's never `position: fixed`
+  the page, full width, keeping the scene's 6:1 shape (at least 96px and at
+  most 320px tall), cropped to the middle of the scene on narrow screens
+  (`xMidYMax slice`). A fixed 150px floor sliced the top off the art on any
+  window wider than about 900px (YONDER-372, found on NEXT). It's never `position: fixed`
   and never behind text. The page shell becomes a full-height column so the
   floor sits at the window's foot on short pages.
 - **Token-coloured.** The scene is one inline SVG whose fills use nine
