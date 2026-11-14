@@ -56,9 +56,15 @@ _LAST_USED_EVERY = timedelta(minutes=5)       # throttle last_used_at writes
 class OAuthError(Exception):
     """An RFC 6749 error: `error` is the wire code, `description` the text."""
 
-    def __init__(self, error: str, description: str = "", status: int = 400):
+    def __init__(self, error: str, description: str = "", status: int = 400,
+                 deletion_pending: bool = False):
         super().__init__(description or error)
         self.error, self.description, self.status = error, description, status
+        self.deletion_pending = deletion_pending
+
+
+# What a locked account is told wherever it asks for a token (D-242).
+from app.authn import DELETION_PENDING  # noqa: E402
 
 
 def _now() -> datetime:
@@ -299,6 +305,7 @@ def revoke_grant(session, grant: OAuthGrant, *, action: str = "oauth_revoked",
 
 def _user_ok(user: User | None, grant: OAuthGrant) -> bool:
     return (user is not None and user.is_active
+            and user.deletion_due_at is None                     # locked: D-242
             and user.token_version == grant.token_version)
 
 
@@ -331,6 +338,10 @@ def exchange_code(session, *, client: OAuthClient, code: str | None,
     user = session.get(User, row.user_id)
     if user is None or not user.is_active:
         raise OAuthError("invalid_grant", "user is not active")
+    if user.deletion_due_at is not None:
+        # D-242: no tokens for a locked account. The app reads the flag and
+        # links to the web page (SPEC-13 §3.3).
+        raise OAuthError("invalid_grant", DELETION_PENDING, deletion_pending=True)
     grant = OAuthGrant(client_id=client.id, user_id=user.id, scope=row.scope,
                        resource=row.resource, token_version=user.token_version,
                        last_used_at=_now(), expires_at=_now())
@@ -340,6 +351,13 @@ def exchange_code(session, *, client: OAuthClient, code: str | None,
     row.grant_id = grant.id
     session.commit()
     return _token_response(user, grant, refresh, row.resource or default_aud)
+
+
+def _locked(session, grant: OAuthGrant) -> bool:
+    """Does this grant belong to an account waiting to be deleted (D-242)?
+    Only someone holding the grant's refresh token gets to ask."""
+    user = session.get(User, grant.user_id)
+    return user is not None and user.is_active and user.deletion_due_at is not None
 
 
 def _grant_from_refresh(session, opaque: str | None) -> OAuthGrant | None:
@@ -354,6 +372,9 @@ def refresh(session, *, client: OAuthClient, refresh_token: str | None,
     grant = _grant_from_refresh(session, refresh_token)
     if grant is None or grant.client_id != client.id:
         raise OAuthError("invalid_grant", "unknown refresh token")
+    if grant.revoked_at is not None and _locked(session, grant):
+        # D-242: asked again after the first refusal revoked the grant.
+        raise OAuthError("invalid_grant", DELETION_PENDING, deletion_pending=True)
     if grant.revoked_at is not None:
         raise OAuthError("invalid_grant", "grant revoked")
     h = _hash(refresh_token)
@@ -367,6 +388,9 @@ def refresh(session, *, client: OAuthClient, refresh_token: str | None,
     user = session.get(User, grant.user_id)
     if not _user_ok(user, grant):
         revoke_grant(session, grant, action="oauth_revoked_signout")
+        if user is not None and user.is_active and user.deletion_due_at is not None:
+            # D-242: this is how the apps learn why they were signed out.
+            raise OAuthError("invalid_grant", DELETION_PENDING, deletion_pending=True)
         raise OAuthError("invalid_grant", "user signed out or deactivated")
     new = _new_refresh(grant)
     grant.last_used_at = _now()
@@ -454,6 +478,8 @@ def pat_user(session, opaque: str) -> User | None:
         return None
     user = session.get(User, row.user_id)
     if user is None or not user.is_active or user.token_version != row.token_version:
+        return None
+    if user.deletion_due_at is not None:                         # locked: D-242
         return None
     last = _aware(row.last_used_at)
     if last is None or _now() - last > _LAST_USED_EVERY:

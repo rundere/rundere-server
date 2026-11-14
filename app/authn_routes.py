@@ -220,6 +220,26 @@ class RefreshBody(BaseModel):
     refresh: str
 
 
+class SignInRefused(BaseModel):
+    """Why the API issued no tokens. `deletion_pending` is true when the account
+    is locked, waiting to be deleted (D-242): the app says so and links to
+    `<server>/account/delete`, where the person can cancel or export."""
+    detail: str
+    deletion_pending: bool = False
+
+
+def _deletion_pending_response() -> JSONResponse:
+    from app import oauth
+    return JSONResponse({"detail": oauth.DELETION_PENDING, "deletion_pending": True},
+                        status_code=403)
+
+
+_REFUSED = {403: {"model": SignInRefused,
+                  "description": "No tokens: password sign-in is off on this address, or "
+                                 "the account is waiting to be deleted "
+                                 "(`deletion_pending`)."}}
+
+
 class AuthMethodsOut(BaseModel):
     """How someone may sign in on the host this was asked on (YONDER-180)."""
     password: bool                 # POST /api/v1/auth/login is accepted here
@@ -273,7 +293,7 @@ def api_auth_methods(request: Request):
             "version": settings.app_version}
 
 
-@router.post("/api/v1/auth/login", response_model=TokenOut)
+@router.post("/api/v1/auth/login", response_model=TokenOut, responses=_REFUSED)
 def api_login(body: LoginBody, request: Request, session: Session = Depends(get_session)):
     from app import oidc
     from app.config import settings
@@ -286,6 +306,10 @@ def api_login(body: LoginBody, request: Request, session: Session = Depends(get_
     if user is None:
         login_failed(request, body.username)
         return JSONResponse({"detail": "invalid credentials"}, status_code=401)
+    if authn.deletion_pending(user):
+        # D-242: said only once the password has been verified, so it tells a
+        # stranger nothing about which accounts are pending.
+        return _deletion_pending_response()
     from datetime import datetime, timezone
     user.last_login_at = datetime.now(timezone.utc)
     session.commit()
@@ -294,10 +318,14 @@ def api_login(body: LoginBody, request: Request, session: Session = Depends(get_
             "token_type": "bearer", "expires_in": _access_ttl(), "user": _user_public(user)}
 
 
-@router.post("/api/v1/auth/refresh", response_model=TokenOut)
+@router.post("/api/v1/auth/refresh", response_model=TokenOut, responses=_REFUSED)
 def api_refresh(body: RefreshBody, request: Request, session: Session = Depends(get_session)):
     user = authn.consume_refresh_token(session, body.refresh)   # validates + rotates
     if user is None:
+        if authn.refresh_owner_pending(session, body.refresh):
+            # D-242: the holder of a refresh token of a locked account learns why
+            # it stopped working. Still no tokens.
+            return _deletion_pending_response()
         return JSONResponse({"detail": "invalid or expired refresh token"}, status_code=401)
     refresh = authn.create_refresh_token(session, user, request.headers.get("user-agent"))
     return {"access": authn.issue_access_token(user), "refresh": refresh,

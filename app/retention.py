@@ -52,6 +52,7 @@ class Report:
     dropped_trashed: int = 0
     ai_calls_purged: int = 0             # the AI call log keeps 90 days (SPEC-12 §6)
     exports_expired: int = 0             # archives are kept 7 days (SPEC-13 §2.5)
+    accounts_deleted: int = 0            # accounts whose 7 days were up (SPEC-13 §3.5)
     mail_skipped: str | None = None      # why the mailbox step didn't run
     due_mail: list[str] = field(default_factory=list, repr=False)
 
@@ -274,6 +275,18 @@ def run(session_factory, *, today: date | None = None, dry_run: bool = False,
             report.exports_expired = archive_jobs.expire_due(session, dry_run=dry_run)
     except Exception:
         log.exception("retention: the archive step failed; retried tomorrow")
+    if not dry_run:
+        # D-242: accounts whose 7 days are up are deleted, one at a time; then
+        # the mailbox step for deleted accounts is retried and any folder a
+        # failed removal left behind goes (SPEC-13 §3.5). Counts only.
+        try:
+            from app import account_deletion
+            report.accounts_deleted = account_deletion.run_due(session_factory, mailbox=False)
+            if mailbox:
+                account_deletion.retry_mail(session_factory, connect=connect)
+            account_deletion.remove_orphan_folders(session_factory)
+        except Exception:
+            log.exception("retention: the account-deletion step failed; retried tomorrow")
     if mailbox:
         try:
             handled = trash_mail(report, today, dry_run=dry_run, connect=connect)

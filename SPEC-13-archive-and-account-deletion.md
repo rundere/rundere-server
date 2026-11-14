@@ -1,11 +1,11 @@
 # SPEC-13 — The Run·dere archive, and deleting an account
 
-Status: **5.0, part built** (written 2026-11-13; YONDER-375 and YONDER-377,
-under YONDER-274 and YONDER-273). The exporter (D-241, wave 8b, YONDER-376) is
-built, and §2 was amended on 2026-11-14 to say what it does where building it
-settled a point the first text left open. Deletion (D-242, wave 9b) is not
-built. Both halves are security-sensitive, so each waited, or waits, for the
-owner's agreement to this spec.
+Status: **5.0, built** (written 2026-11-13; YONDER-375 and YONDER-377, under
+YONDER-274 and YONDER-273). The exporter (D-241, wave 8b, YONDER-376) and
+deletion (D-242, wave 9b, YONDER-378) are both built. §2 and §3 were amended on
+2026-11-14 to say what the code does where building it settled a point the
+first text left open. Both halves are security-sensitive, so each waited for
+the owner's agreement to this spec.
 
 Before 5.0 the only way to take data out of Run·dere is the trip PDF, and the
 only way to remove a person is for an admin to deactivate the account, which
@@ -14,7 +14,7 @@ removes its credentials and files, but nothing deletes an account.
 
 This spec has three parts, in the order the work depends on them:
 
-1. **The table-ownership map** (§1): what each of the 58 tables holds, how a
+1. **The table-ownership map** (§1): what each of the 59 tables holds, how a
    row is tied to a person, and what export and deletion do with it.
 2. **D-241, the Run·dere archive** (§2): a versioned export of a person's own
    data.
@@ -53,7 +53,7 @@ server, are left for 5.x (owner, 2026-11-13).
 The "Export" and "On deletion" columns are summaries. §2.4 and §3.5 are the
 rules.
 
-### 1.2 Account and sign-in (12 tables)
+### 1.2 Account and sign-in (13 tables)
 
 | Table | Holds | Tied to a person by | Export | On deletion |
 |---|---|---|---|---|
@@ -69,6 +69,7 @@ rules.
 | `account_events` | Audit log of actions on an account | `user_id` (who it's about), `actor_id` (who did it) | The person's own log: action, time, and whether they or an admin did it | Kept without the person: `user_id` and `detail` cleared. Where they were the actor, `actor_id` cleared |
 | `ai_calls` | One row per AI call: feature, model, duration, outcome | `user_id` (nullable) | No. It holds no content, and it's gone after 90 days | Kept: `user_id` cleared. The row still ages out at 90 days |
 | `archive_exports` | One row per build of the person's archive (§2.5). The zip is at `<TX_EXPORT_DIR>/<user_id>/<id>.zip` | `user_id`, and the folder | No: bookkeeping for the archive itself | Deleted, with the person's export folder |
+| `account_deletions` | A request to delete an account: who asked, the due date, the per-trip choices (§3.3) | `user_id` (whose account), `requested_by` (who asked) | No. The person sees it on the locked page and in their account log | Kept without the person: `user_id` and the choices cleared, so the mailbox step can be retried (§3.5). In other people's records, an admin who asked or an heir who was named is cleared |
 
 ### 1.3 The traveller and their profiles (4 tables)
 
@@ -487,7 +488,12 @@ and types their username.
   there.
 - The API issues no tokens for the account. A sign-in attempt answers 403
   with `{"detail": …, "deletion_pending": true}`, so the apps can say why and
-  link to the page.
+  link to the page. It says so only once the password is right, so it tells a
+  stranger nothing; a refresh with one of the account's own refresh tokens
+  gets the same answer. The server's own OAuth sign-in, which the apps use,
+  sends the browser to the page instead of issuing a code, and its token
+  endpoint answers `invalid_grant` with `"deletion_pending": true`. A web
+  session that calls `/api/` gets the same 403.
 - Ingest keys are refused. Mail to the person's forward address is dropped
   with its own outcome and sits in `Rundere/Dropped` for the usual 30 days,
   so it can be forwarded again after a cancel.
@@ -531,6 +537,10 @@ trip to.
   - A trip marked "hand to X", where X no longer has an account or is no
     longer on the trip, goes to another account on it: travellers with a
     login first, then view-only shares, the longest-standing account first.
+    An account that can't use the trip that day (deactivated, or itself
+    waiting to be deleted) comes after every account that can.
+  - A view-only share that becomes the owner loses its share row: an owner
+    needs none.
   - A trip with **no recorded choice** that now has another account on it is
     handed over by the same rule. It is never deleted by default.
   - A trip marked "delete" is deleted.
@@ -720,7 +730,13 @@ what they miss:
    in every table, is byte-for-byte unchanged, except the changes this spec
    lists: the `trip_members` rows, the cleared `owner_id`, `author_id` and
    `fetched_by` values, the handed-over `trips.owner_id`, and the traveller
-   turned guest.
+   turned guest. A trip the leaver chose to delete goes through `purge_trip`
+   like any deleted trip, so on that trip only the other person also loses
+   what a trip delete always removes (their Discover, packing and files for
+   it, and their expenses on it) and their captures and journal entries lose
+   the trip link. As built, the test compares the whole database before and
+   after, and every row that went or changed must be the leaver's or on this
+   list.
 2. **The id scan.** After the purge, the leaver's user id is in no column of
    any table, JSON included, and in no folder name on disk.
 3. **Registry completeness** (§1.1), for tables and for person-link columns.
@@ -762,7 +778,7 @@ owner accepted all eight as written (2026-11-13).
 1. **8b, the exporter (built):** the registry and its tests, the section writers and
    schemas, the `archive_exports` table, the background build, the fresh
    confirmation helper, the Account page, the retention step.
-2. **9b, the purge:** the deletion record and the lock, `account_purge.py`,
+2. **9b, the purge (built):** the deletion record and the lock, `account_purge.py`,
    trip hand-over, the guards, the emails, the command line, the tests of
    §4.4. Fable 5.2 reviews it adversarially before it merges.
 3. **9c, the screens and the apps:** the web pages' wording, the app entries
@@ -770,9 +786,9 @@ owner accepted all eight as written (2026-11-13).
 4. **10, release:** the rundere.app pages, the self-hosting notes on backups
    and the export folder.
 
-Migrations: 8b added `archive_exports` (0054); 9b adds the deletion record and the
-pending marker on `users`, and makes `account_events.user_id` nullable. The
-numbers are taken when each wave branches.
+Migrations: 8b added `archive_exports` (0054); 9b added the deletion record
+(`account_deletions`), the pending marker `users.deletion_due_at`, and made
+`account_events.user_id` nullable (0055).
 
 ## Decisions
 
@@ -791,4 +807,4 @@ numbers are taken when each wave branches.
   trips; audit and AI-call rows stay without them. One purge service, driven
   by the table-ownership registry, serves self-service, admins and the
   command line. The last admin and the demo server are guarded. The apps link
-  to the web page. (proposed)
+  to the web page. (built in wave 9b; §3 amended 2026-11-14)

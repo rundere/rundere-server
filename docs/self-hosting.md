@@ -118,3 +118,48 @@ See [SPEC-12](../SPEC-12-ai-providers.md).
 ## 8. A demo server
 
 To run a read-only showcase like demo.rundere.app, see [demo-server.md](demo-server.md).
+
+## 9. Deleting an account
+
+**A person** deletes their own account under Account → Delete my account. They
+confirm who they are (their password, or signing in again with single sign-on)
+and type their username. The account is locked at once and deleted, with its
+data, 7 days later; the 7 days are fixed. Until then, signing in on the web
+shows the date, a "Cancel deletion" button and the export. The apps, API
+tokens, connected apps, capture keys and the forwarding address stop working
+at once, and cancelling doesn't bring them back. For each trip they own that
+other accounts are on, they choose who it passes to, or that it is deleted;
+those people are emailed.
+
+**An admin** deletes another account from Users → Delete account…, by typing
+its username. It takes the same path: locked at once, deleted after 7 days,
+the person emailed. The person can't cancel an admin's deletion; an admin can.
+The admin sees counts of trips, never their names, and shared trips pass to
+someone else on them. The last active admin can't be deleted: make someone
+else an admin first.
+
+**From a shell**, which is also the way out for an account whose owner can't
+sign in:
+
+```bash
+python -m app.cli delete-account <username>            # lock now, delete in 7 days
+python -m app.cli delete-account <username> --dry-run  # counts per table, changes nothing
+python -m app.cli delete-account <username> --now      # skip the 7 days
+python -m app.cli delete-account <username> --cancel   # clear a pending deletion
+```
+
+**The deletion itself** runs in the daily retention job. It removes the
+person's rows, their folders under `TX_DOCUMENTS_DIR` and `TX_EXPORT_DIR`, and
+moves their forwarded emails in `Rundere/Captured` to the mailbox's Trash.
+Their name stays on other people's trips as a guest with no account, and
+expenses they entered on trips that go on stay, with no link to them.
+
+**Out of reach.** Emails about a deletion are sent only when SMTP is set up;
+without it the 7 days are the person's only protection against a stolen
+password. A deletion doesn't touch your database backups (until they rotate),
+server logs (which can hold a username or an id in a request path), mail
+already in the mailbox's Trash, or anything in the person's own AirTrail or
+AdventureLog. It never touches the single sign-on provider either: someone who
+signs in through it afterwards gets a new, empty account, so remove them there
+too if they shouldn't come back. A demo server, and a server with sign-in off,
+have no account deletion.

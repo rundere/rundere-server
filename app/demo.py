@@ -45,7 +45,9 @@ _CLOSED_PREFIX = ("/oauth/", "/oidc/", "/.well-known/oauth", "/ingest", "/reset/
                   "/admin", "/users", "/settings/integrations", "/settings/mail",
                   "/settings/notifications", "/account/tokens", "/account/connected-apps",
                   # D-241: no export on a demo server, nor the confirmation it needs.
-                  "/account/export", "/account/confirm")
+                  "/account/export", "/account/confirm",
+                  # D-242: nor account deletion.
+                  "/account/delete")
 _READ_METHODS = ("GET", "HEAD", "OPTIONS")
 
 

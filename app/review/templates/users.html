@@ -25,7 +25,7 @@
             <td class="mono">{{ u.auth_source }}</td>
             <td>{{ tmap[u.traveler_id].display_name if u.traveler_id in tmap else "—" }}</td>
             <td>{{ "admin" if u.is_admin else "user" }}{% if u.id == me.id %} (you){% endif %}</td>
-            <td>{{ "active" if u.is_active else "inactive" }}</td>
+            <td>{{ "active" if u.is_active else "inactive" }}{% if u.deletion_due_at %}<div class="mono">locked; deleted on {{ u.deletion_due_at.strftime("%-d %b %Y") }}</div>{% endif %}</td>
             <td>{% if support.get(u.id) %}<span title="They let admins view their trips and Inbox, read-only (D-211)">on</span>{% else %}<span title="Admins see only what they're invited into">off</span>{% endif %}</td>
           </tr>
           <tr><td colspan="6" style="padding-top:0">
@@ -37,6 +37,22 @@
               <form method="post" action="/users/{{ u.id }}/reset-link" style="display:inline">
                 <button class="act tiny" type="submit">{{ "Email reset link" if u.id != me.id else "Reset link" }}</button></form>
             </div>
+            {% if deletion_available and u.id != me.id %}
+            {% if u.deletion_due_at %}
+            <form method="post" action="/users/{{ u.id }}/delete/cancel" style="margin-top:8px">
+              <button class="act tiny" type="submit">Cancel deletion</button></form>
+            {% else %}
+            <details style="margin-top:8px">
+              <summary style="cursor:pointer;color:var(--ink-2);font-size:12.5px">Delete account…</summary>
+              <p class="why" style="margin-top:8px">The account is locked at once and deleted in {{ grace_days }} days; the person is emailed and can still export their data.
+                {{ deletion_preview[u.id].handed }} trip(s) pass to other travellers, {{ deletion_preview[u.id].deleted }} are deleted. The web can't shorten the wait.</p>
+              <form method="post" action="/users/{{ u.id }}/delete" class="lookup-row" style="margin-top:8px">
+                <input name="confirm_username" placeholder="Type {{ u.username }} to confirm" autocomplete="off" required>
+                <button class="act tiny danger" type="submit">Delete in {{ grace_days }} days</button>
+              </form>
+            </details>
+            {% endif %}
+            {% endif %}
             <details style="margin-top:8px">
               <summary style="cursor:pointer;color:var(--ink-2);font-size:12.5px">Set password / email / traveller…</summary>
               {% if u.id == me.id %}

@@ -241,6 +241,10 @@ class User(Base):
     # floor, on by default.
     ui_theme: Mapped[str] = mapped_column(String(32), default="base", server_default="base")
     scenery: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    # D-242: set while the account waits to be deleted (the pending marker). The
+    # account is locked from the moment it is set; the request itself is the
+    # `account_deletions` row.
+    deletion_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class UserIntegration(Base):
@@ -283,7 +287,9 @@ class AccountEvent(Base):
     __tablename__ = "account_events"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(String(36), index=True)      # the account
+    # The account. NULL once that account is deleted (D-242): the row stays as a
+    # count, without the person.
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     actor_id: Mapped[str | None] = mapped_column(String(36))          # who did it (None = CLI)
     action: Mapped[str] = mapped_column(String(32))
     detail: Mapped[str | None] = mapped_column(String(255))
@@ -1516,3 +1522,31 @@ class ArchiveExport(Base):
     sha256: Mapped[str | None] = mapped_column(String(64))
     format_version: Mapped[int] = mapped_column(Integer, default=1)
     error: Mapped[str | None] = mapped_column(String(64))
+
+
+class AccountDeletion(Base):
+    """A request to delete an account (SPEC-13 §3.3, D-242). One row per
+    request; `users.deletion_due_at` is the lock, this is the record.
+
+    `status`: pending | cancelled | done. `requested_by` is who asked: the
+    person themself, an admin, or NULL for the operator's command line;
+    `by_admin` says which kind, and survives the ids being cleared. `choices`
+    holds the person's per-trip answers, `{trip_id: {"action": "hand" |
+    "delete", "to": user_id}}`, applied only when the purge runs (§3.4).
+
+    The row outlives the account so the mailbox step can be retried: once the
+    purge has run, `user_id` and `choices` are cleared and `mail_ids` holds
+    only the Message-IDs still to move to Trash (§3.5). Soft links, no foreign
+    keys (house rule 3)."""
+    __tablename__ = "account_deletions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    requested_by: Mapped[str | None] = mapped_column(String(36))
+    by_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    choices: Mapped[dict | None] = mapped_column(JsonCol)
+    mail_ids: Mapped[list | None] = mapped_column(JsonCol)

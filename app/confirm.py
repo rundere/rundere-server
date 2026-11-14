@@ -102,8 +102,8 @@ def is_fresh(request, user) -> bool:
     return claims.get("sub") == user.id and claims.get("ver") == user.token_version
 
 
-# The only pages a confirmation leads back to. Wave 9b adds /account/delete.
-_DESTINATIONS = ("/account", "/account/export")
+# The only pages a confirmation leads back to.
+_DESTINATIONS = ("/account", "/account/export", "/account/delete")
 
 
 def safe_next(nxt: str | None) -> str:

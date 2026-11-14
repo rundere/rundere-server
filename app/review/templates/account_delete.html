@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Delete my account{% endblock %}
+{% block content %}
+<div class="app">
+  <div class="ops"><div class="ops-row">
+    <span class="pagetitle">Delete my account</span>
+    {% if not pending %}<a class="act" href="/account">Back to my account</a>{% endif %}
+  </div></div>
+
+  {% if err %}<div class="violations">{{ err }}</div>{% endif %}
+
+  <div style="padding:16px;max-width:640px">
+  {% if pending %}
+    <p><strong>This account is locked and will be deleted on {{ due.strftime("%-d %B %Y") }}.</strong></p>
+    <p class="why">Until then nothing has been deleted. You are signed out of the apps, and
+      API tokens, connected apps, capture keys and your forwarding address don't work.</p>
+    {% if by_admin %}
+    <p class="why">An administrator asked for this deletion, so only an administrator can
+      cancel it. Contact whoever runs this server.</p>
+    {% else %}
+    <form method="post" action="/account/delete/cancel" style="margin-top:16px">
+      <button class="act" type="submit">Cancel deletion</button>
+    </form>
+    <p class="why" style="margin-top:8px">Cancelling keeps everything. It doesn't sign the
+      apps back in: sign in to them again, and make new API tokens if you used any.</p>
+    {% endif %}
+    <h3 style="margin-top:28px">Take a copy first</h3>
+    <p class="why">You can still download your data until the account is deleted.</p>
+    <p><a class="act" href="/account/export">Export my data</a></p>
+    <form method="post" action="/logout" style="margin-top:28px">
+      <button class="act" type="submit">Sign out</button>
+    </form>
+  {% else %}
+    <p class="why">Deleting your account locks it at once and deletes it, with your data,
+      {{ grace_days }} days later. Until then you can sign in here and cancel.</p>
+
+    <h3 style="margin-top:20px">What is deleted</h3>
+    <ul class="why">
+      <li>Your account, your traveller profile and homes, and your preferences.</li>
+      <li>Trips you own that nobody else with an account is on.</li>
+      <li>Your journal, saved places and lists, packing inventory, templates and bags.</li>
+      <li>The files you uploaded, your captures, and your Discover and packing on every trip.</li>
+      <li>Your connections to AirTrail and AdventureLog, your tokens, keys and forwarding address.</li>
+    </ul>
+
+    <h3 style="margin-top:20px">What stays</h3>
+    <ul class="why">
+      <li>Your name on trips other people own, as a guest with no account, and what was
+        logged from your bookings onto those timelines.</li>
+      <li>Expenses you entered on trips that go on, with no link to you.</li>
+      <li>Anything in your own AirTrail or AdventureLog. Run·dere doesn't delete there.</li>
+      <li>The server operator's backups and logs, until they rotate.</li>
+    </ul>
+
+    <p class="why" style="margin-top:16px">
+      <a href="/account/export">Export my data first</a>.</p>
+
+    {% if last_admin %}
+    <div class="violations" style="margin-top:16px">You are the only active admin on this
+      server. Make someone else an admin before you delete your account.</div>
+    {% elif not confirmed %}
+    <p style="margin-top:20px">
+      <a class="act" href="/account/confirm?next=%2Faccount%2Fdelete">Confirm it's you to continue</a></p>
+    {% else %}
+    <form method="post" action="/account/delete" style="margin-top:20px">
+      {% if shared %}
+      <h3>Trips other people are on</h3>
+      <p class="why">Choose what happens to each one. The people on it are emailed, and
+        nothing changes until your account is deleted.</p>
+      {% for trip, others in shared %}
+      <div class="fld" style="margin-top:12px">
+        <label for="trip_{{ trip.id }}">{{ trip.name }}</label>
+        <select id="trip_{{ trip.id }}" name="trip_{{ trip.id }}" required>
+          <option value="">Choose…</option>
+          {% for person in others %}
+          <option value="hand:{{ person.id }}">Hand it to {{ person.username }}</option>
+          {% endfor %}
+          <option value="delete">Delete it for everyone</option>
+        </select>
+      </div>
+      {% endfor %}
+      {% endif %}
+      <div class="fld" style="margin-top:16px">
+        <label for="username">Type your username, {{ u.username }}, to confirm</label>
+        <input id="username" name="username" autocomplete="off" required>
+      </div>
+      <p class="why" style="margin-top:12px">You will be signed out everywhere, and the apps,
+        API tokens and connected apps stop working at once. Cancelling doesn't bring them back.
+        {% if not (smtp and has_email) %}This server can't email you about it, so the
+        {{ grace_days }} days are the only chance to cancel.{% endif %}</p>
+      <button class="act danger" type="submit" style="margin-top:12px">Delete my account in {{ grace_days }} days</button>
+    </form>
+    {% endif %}
+  {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -133,6 +133,23 @@ def issue_web_token(user: User) -> str:
     return _token(user, "web", settings.jwt_web_ttl_seconds)
 
 
+def deletion_pending(user) -> bool:
+    """Is this account locked, waiting to be deleted (D-242)?"""
+    return getattr(user, "deletion_due_at", None) is not None
+
+
+# D-242: all a locked account can open (SPEC-13 §3.3): the page with the date
+# and the cancel button, the export, and the confirmation the export needs.
+LOCKED_PATHS = ("/account/delete", "/account/export", "/account/confirm", "/logout")
+DELETION_PENDING = ("this account is waiting to be deleted; sign in on the web to "
+                    "cancel or to export your data")
+
+
+def locked_out(user, path: str) -> bool:
+    """Is this a locked account asking for something other than its one page?"""
+    return deletion_pending(user) and not path.startswith(LOCKED_PATHS)
+
+
 def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "web"),
                     audiences: set[str] | None = None) -> User | None:
     """Resolve a Yonder JWT to its user. An `oauth` token (YONDER-107) must also
@@ -144,6 +161,10 @@ def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "we
     if user is None or not user.is_active:
         return None
     if claims.get("ver") != user.token_version:   # revoked via "sign out everywhere"
+        return None
+    # D-242: an account waiting to be deleted is locked. Only the web session
+    # still resolves, and the web gate lets it reach one page (SPEC-13 §3.3).
+    if deletion_pending(user) and claims.get("typ") != "web":
         return None
     if claims.get("typ") == "oauth":
         from app import oauth
@@ -203,11 +224,19 @@ def consume_refresh_token(session, opaque: str) -> User | None:
     if _now() > _as_aware(row.expires_at):
         return None
     user = session.get(User, row.user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or deletion_pending(user):   # locked: D-242
         return None
     row.revoked_at = _now()
     session.commit()
     return user
+
+
+def refresh_owner_pending(session, opaque: str) -> bool:
+    """Does this refresh token, live or revoked, belong to an account that is
+    waiting to be deleted (D-242)? Only someone holding the token can ask."""
+    row = session.query(RefreshToken).filter_by(token_hash=_hash_opaque(opaque)).one_or_none()
+    user = session.get(User, row.user_id) if row is not None else None
+    return user is not None and user.is_active and deletion_pending(user)
 
 
 def end_sessions(session, user: User) -> None:
@@ -357,6 +386,16 @@ def current_user_optional(request: "Request") -> "User | None":
 
     `request` MUST be annotated `Request` — without the annotation FastAPI reads
     it as a query parameter and every call 422s."""
+    user = _resolved(request)
+    # D-242: outside its one page a locked account is nobody. The web gate
+    # already holds it there; this covers the routes the gate leaves public
+    # (`/api/v1/auth/…`), which a locked web session could otherwise reach.
+    if user is not None and locked_out(user, request.url.path):
+        return None
+    return user
+
+
+def _resolved(request: "Request") -> "User | None":
     from app.db import SessionLocal
     cached = getattr(request.state, "user", None)
     if cached is not None:
@@ -366,6 +405,20 @@ def current_user_optional(request: "Request") -> "User | None":
         if user is not None:
             session.expunge(user)
         return user
+
+
+def _deletion_pending_error():
+    from fastapi import HTTPException
+
+    class DeletionPending(HTTPException):
+        """403 for a locked account (D-242). app/main.py answers it with
+        `{"detail": …, "deletion_pending": true}`."""
+        def __init__(self):
+            super().__init__(status_code=403, detail=DELETION_PENDING)
+    return DeletionPending
+
+
+DeletionPending = _deletion_pending_error()
 
 
 def is_first_party(request) -> bool:
@@ -402,9 +455,11 @@ def first_party_user(request: "Request") -> "User":
 def current_user(request: "Request") -> "User":
     """FastAPI dependency: require an authenticated user (401 otherwise)."""
     from fastapi import HTTPException
-    user = current_user_optional(request)
+    user = _resolved(request)
     if user is None:
         raise HTTPException(status_code=401, detail="authentication required")
+    if locked_out(user, request.url.path):
+        raise DeletionPending()
     return user
 
 
