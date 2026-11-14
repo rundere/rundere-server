@@ -66,7 +66,7 @@ public enum RDThemes {
             borderSubtle: Color(argb: 0x24AAB6C4),
             text: Color(argb: 0xFFE6EAF0),
             textSecondary: Color(argb: 0xFFAAB6C4),
-            textMuted: Color(argb: 0xFF8594A6),
+            textMuted: Color(argb: 0xFF8A99AB),
             accent: Color(argb: 0xFF7FB2FF),
             accentHover: Color(argb: 0xFFA9CCFF),
             onAccent: Color(argb: 0xFF0A1624),

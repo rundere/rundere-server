@@ -29,7 +29,7 @@ public extension Color {
     static let rdBorder        = Color(light: 0xCBD3DD, dark: 0x22405F)
     static let rdText          = Color(light: 0x0F2135, dark: 0xE6EAF0)
     static let rdTextSecondary = Color(light: 0x44536A, dark: 0xAAB6C4)
-    static let rdTextMuted     = Color(light: 0x5E6E82, dark: 0x8594A6)
+    static let rdTextMuted     = Color(light: 0x5E6E82, dark: 0x8A99AB)
     static let rdAccent        = Color(light: 0x1F57B0, dark: 0x7FB2FF)   // Beacon
     static let rdOnAccent      = Color(light: 0xFFFFFF, dark: 0x0A1624)
     static let rdHighlight     = Color(light: 0x8A5C08, dark: 0xF2B544)   // Runway: next up / warning

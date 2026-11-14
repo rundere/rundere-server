@@ -311,7 +311,7 @@ def reset_submit(request: Request, token: str, password: str = Form(...),
 
 # --------------------------------------------------------------------------- your account
 def _account_ctx(session: Session, user: User, **extra) -> dict:
-    from app import oauth, scope, support
+    from app import oauth, scope, support, themes
     return {"u": user, "smtp": email_configured(), "reset_note": reset_note(user),
             "support_on": scope.support_live(user), "support_until": support.until(user),
             "support_views": support.recent_views(session, user),
@@ -319,6 +319,9 @@ def _account_ctx(session: Session, user: User, **extra) -> dict:
             "pats": oauth.list_pats(session, user),
             # D-241: no export without accounts (sign-in off) or on a demo server.
             "export_available": _export_available(),
+            # Account › Appearance (SPEC-8 §15): every theme in the manifest, never
+            # a fixed list (D-240); the stored id is checked if it's still offered.
+            "themes": themes.picker(), "current_theme": themes.resolve(user.ui_theme),
             "msg": "", "err": "", **extra}
 
 
@@ -382,6 +385,25 @@ def account_revoke_token(token_id: str, user: User = Depends(authn.current_user)
     if not oauth.revoke_pat(session, user, token_id):
         return RedirectResponse("/account?err=No+such+token", status_code=303)
     return RedirectResponse("/account?msg=Token+revoked", status_code=303)
+
+
+@router.post("/account/appearance")
+def account_set_appearance(ui_theme: str = Form(""), scenery: str = Form(""),
+                           user: User = Depends(authn.first_party_user),
+                           session: Session = Depends(get_session)):
+    """Your own theme and scenery switch (D-237, D-239), the web's twin of
+    PATCH /api/v1/auth/me, first-party only like it (a bearer token from a
+    connected app or an API token gets 403). Only the caller's own row is written. An unchecked box sends nothing, so scenery is
+    on only when the box was ticked."""
+    from app import themes
+    if not themes.is_known(ui_theme):
+        return RedirectResponse("/account?err=Choose+one+of+the+themes#appearance",
+                                status_code=303)
+    user = session.get(User, user.id)
+    user.ui_theme = ui_theme
+    user.scenery = scenery == "1"
+    session.commit()
+    return RedirectResponse("/account?msg=Appearance+saved#appearance", status_code=303)
 
 
 @router.post("/account/email")

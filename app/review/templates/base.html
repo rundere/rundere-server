@@ -1,5 +1,8 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+{# D-237: the travel theme is per account and rendered server-side, so there is
+   no flash and no CSP change; theme.js still owns only the mode (D-201). #}
+{% set tv = travel(request) %}
+<html lang="en" data-theme="dark" data-travel="{{ tv.id }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -441,7 +444,7 @@ a{color:var(--accent)}
   flex-wrap:wrap}
 </style>
 </head>
-<body>
+<body class="rd-page{% if tv.scenery %} has-scenery{% endif %}"><div class="rd-shell">
 {% block appheader %}{% include "_appheader.html" %}{% endblock %}
 {% import "_settings_menu.html" as settings_menu with context %}
 {% if settings_menu.in_settings and not settings_menu.is_hub %}
@@ -452,5 +455,6 @@ a{color:var(--accent)}
 {# Sheets open here (design board: item detail and commit are sheets, never an
    inline expansion). Escape or a click on the backdrop closes one. #}
 <div id="modal-root"></div>
+</div>{% include "_scenery.html" %}
 </body>
 </html>

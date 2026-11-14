@@ -102,7 +102,7 @@ Use semantic tokens in UI code, never the ramp values directly:
 | `border` | #22405F | #CBD3DD |
 | `text` | #E6EAF0 | #0F2135 |
 | `text-secondary` | #AAB6C4 | #44536A |
-| `text-muted` | #8594A6 | #5E6E82 |
+| `text-muted` | #8A99AB | #5E6E82 |
 | `accent` | #7FB2FF | #1F57B0 |
 | `on-accent` | #0A1624 | #FFFFFF |
 | `highlight` | #F2B544 | #8A5C08 |

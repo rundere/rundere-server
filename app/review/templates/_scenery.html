@@ -1,0 +1,7 @@
+{# The scenery floor (SPEC-8 §15, D-239): the page's last element, full width,
+   never fixed and never behind text. Drawn from the rd-scene-* tokens, so the
+   same inline SVG follows the light/dark mode. Off for Base, when the person
+   turned it off, in print and with forced colours (theme.css). #}
+{% if tv.scenery %}{% set art = travel_scene(tv.id) %}{% if art %}
+<div class="rd-floor" aria-hidden="true">{{ art }}</div>
+{% endif %}{% endif %}

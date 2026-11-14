@@ -33,6 +33,30 @@
       <button class="act" type="submit" style="margin-top:12px">Save email</button>
     </form>
 
+    {# SPEC-8 §15: the travel theme follows your account to every device (D-237);
+       light or dark stays per device, the header's sun/moon button (D-201). #}
+    <h3 style="margin-top:28px" id="appearance">Appearance</h3>
+    <p class="why">Your theme follows you to every device you sign in on. Light or dark is
+      set per device, with the sun/moon button in the header.</p>
+    <form method="post" action="/account/appearance">
+      <fieldset class="ap-grid">
+        <legend class="sr-only">Theme</legend>
+        {% for t in themes %}
+        <label class="ap-card">
+          <input type="radio" name="ui_theme" value="{{ t.id }}"{% if t.id == current_theme %} checked{% endif %}>
+          {% for mode in ("dark", "light") %}{% set c = t[mode] %}
+          <span class="ap-swatch {{ mode }}" aria-hidden="true"><i style="background:{{ c.bg }}"></i><i style="background:{{ c.surface }}"></i><i style="background:{{ c.accent }}"></i><i style="background:{{ c.highlight }}"></i></span>
+          {% endfor %}
+          <span class="ap-name">{{ t.name }}{% if t.id == current_theme %}<span class="ap-on">· current</span>{% endif %}</span>
+          <span class="ap-desc">{{ t.description }}</span>
+        </label>
+        {% endfor %}
+      </fieldset>
+      <label class="ap-scenery"><input type="checkbox" name="scenery" value="1"{% if u.scenery %} checked{% endif %}>
+        Show the scenery along the foot of the page (travel themes only)</label>
+      <button class="act" type="submit" style="margin-top:12px">Save appearance</button>
+    </form>
+
     <h3 style="margin-top:28px" id="sharing">Support access</h3>
     {% if support_on %}
       <p class="why"><b>On</b>{% if support_until %} until {{ support_until.strftime("%Y-%m-%d %H:%M") }} UTC{% else %}, until you turn it off{% endif %}.

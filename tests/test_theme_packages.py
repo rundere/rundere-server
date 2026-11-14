@@ -57,7 +57,9 @@ def test_generated_outputs_are_fresh():
     assert bt.stale() == []
 
 
-@pytest.mark.parametrize("theme", THEMES, ids=IDS)
+# Base is held to guardrail 1 too: its dark text-muted sat at 4.36:1 on
+# surface-raised until 5.0 (YONDER-372).
+@pytest.mark.parametrize("theme", [bt.load_base()] + THEMES, ids=["base"] + IDS)
 @pytest.mark.parametrize("mode", bt.MODES)
 def test_guardrail_1_text_and_signals_reach_4_5(theme, mode):
     c = theme["modes"][mode]["color"]

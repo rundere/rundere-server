@@ -74,3 +74,76 @@ def manifest(base_url: str) -> dict:
             item["scene"] = None
         out.append(item)
     return {"version": _load()["version"], "themes": out}
+
+
+# --------------------------------------------------------------------------- web (6b)
+def for_user(user) -> dict:
+    """What a signed-in page draws: the resolved theme id (D-240) and whether
+    the scenery floor shows (D-239: a person's switch, and Base has none)."""
+    tid = resolve(getattr(user, "ui_theme", None)) if user is not None else BASE
+    scenery = getattr(user, "scenery", True) if user is not None else False
+    return {"id": tid, "scenery": bool(scenery) and tid != BASE and scene(tid) is not None}
+
+
+def for_request(request) -> dict:
+    """Jinja global: the theme for the page's signed-in user. Signed-out pages,
+    the auth card and the trip PDF never call this, so they stay Base (D-237)."""
+    if not request:
+        return for_user(None)
+    user = getattr(getattr(request, "state", None), "user", None)
+    if user is None:
+        # With sign-in optional (TX_AUTH_REQUIRED off) the gate doesn't set
+        # request.state.user, but a signed-in person still has a theme.
+        try:
+            from app import authn
+            user = authn.current_user_optional(request)
+        except Exception:  # noqa: BLE001 - page chrome must render regardless
+            user = None
+    return for_user(user)
+
+
+_SVG_OPEN = "<svg "
+
+
+@lru_cache(maxsize=32)
+def scene(theme_id: str):
+    """The token-coloured scene.svg, inline, so one file draws day and night
+    from the rd-scene-* tokens (D-239). Decorative: hidden from assistive tech.
+    None when the package has no scene (Base, or an unreadable file)."""
+    from markupsafe import Markup
+    if theme_id not in ids():
+        return None
+    t = next(t for t in _load()["themes"] if t["id"] == theme_id)
+    rel = (t.get("scene") or {}).get("svg")
+    if not rel:
+        return None
+    try:
+        svg = (THEMES_DIR / rel).resolve()
+        if THEMES_DIR not in svg.parents:          # the manifest is ours, but stay inside it
+            return None
+        text = svg.read_text()
+    except OSError:
+        return None
+    start = text.find(_SVG_OPEN)
+    if start < 0:
+        return None
+    text = text[start:]
+    text = _SVG_OPEN + 'class="rd-floor-art" aria-hidden="true" focusable="false" ' + \
+        text[len(_SVG_OPEN):]
+    return Markup(text)
+
+
+def picker() -> list[dict]:
+    """Account › Appearance: every theme with a few swatch colours per mode."""
+    out = []
+    for t in _load()["themes"]:
+        modes = t.get("modes") or {}
+
+        def sw(mode, t=t, modes=modes):
+            c = (modes.get(mode) or {}).get("color") or {}
+            return {k: c.get(k, "") for k in ("bg", "surface", "accent", "highlight", "text")}
+        out.append({"id": t["id"], "name": t.get("name", t["id"]),
+                    "description": t.get("description", ""),
+                    "light": sw("light"), "dark": sw("dark"),
+                    "has_scene": bool(t.get("scene"))})
+    return out

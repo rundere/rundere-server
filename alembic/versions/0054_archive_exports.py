@@ -5,14 +5,17 @@ zip itself is on disk under TX_EXPORT_DIR; this row says whose it is, where the
 build stands, when the file expires and its checksum. `user_id` is a plain
 indexed column, no foreign key (house rule 3).
 
-Revision ID: 0053
-Revises: 0052
+Revision ID: 0054
+Revises: 0053
+
+Renumbered from 0053 when 5.0 waves met on `next`: 0053 is the travel
+theme columns (0053_ui_theme.py, merged first).
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0053"
-down_revision = "0052"
+revision = "0054"
+down_revision = "0053"
 branch_labels = None
 depends_on = None
 
