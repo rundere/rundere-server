@@ -117,6 +117,19 @@ def safe_next(nxt: str | None) -> str:
     return "/account"
 
 
+# Why a round trip to the provider didn't confirm. The redirect back to the
+# page carries the CODE, and the page shows the sentence for it: text from the
+# address bar is never put on the page, so a crafted link can't make this
+# page say something of an attacker's choosing.
+_REASONS = {
+    "sso_unreachable": "Your sign-in provider can't be reached right now.",
+    "signed_out": "Sign in again, then confirm.",
+    "other_account": "That was a different account at your sign-in provider.",
+    "not_recent": ("Your sign-in provider didn't ask you to sign in again. "
+                   "Sign out there and retry."),
+}
+
+
 def page_url(nxt: str) -> str:
     return f"/account/confirm?next={quote(safe_next(nxt), safe='')}"
 
@@ -140,7 +153,7 @@ def confirm_page(request: Request, next: str = "/account", error: str = "",
                  user: User = Depends(web_user)):
     if is_fresh(request, user):
         return RedirectResponse(safe_next(next), status_code=303)
-    return _page(request, user, next, error[:120])
+    return _page(request, user, next, _REASONS.get(error, ""))
 
 
 @router.post("/account/confirm")
@@ -184,7 +197,7 @@ def confirm_sso(request: Request, next: str = "/account", user: User = Depends(w
     url = oidc.build_auth_url(_redirect_uri(request), state, nonce, challenge,
                               extra={"prompt": "login", "max_age": "0"})
     if not url:
-        return _fail(next, "Your sign-in provider can't be reached right now.")
+        return _fail(next, "sso_unreachable")
     token = authn.jwt_encode({"typ": "oidc_state", "pu": "confirm", "uid": user.id,
                               "st": state, "no": nonce, "vf": verifier,
                               "nx": safe_next(next), "exp": int(time.time()) + _STATE_TTL})
@@ -194,8 +207,10 @@ def confirm_sso(request: Request, next: str = "/account", user: User = Depends(w
     return resp
 
 
-def _fail(nxt: str, why: str) -> RedirectResponse:
-    return RedirectResponse(f"{page_url(nxt)}&error={quote(why, safe='')}", status_code=303)
+def _fail(nxt: str, code: str) -> RedirectResponse:
+    """Back to the confirm page with one of the _REASONS codes."""
+    assert code in _REASONS
+    return RedirectResponse(f"{page_url(nxt)}&error={code}", status_code=303)
 
 
 def is_confirm_handshake(saved: dict) -> bool:
@@ -214,12 +229,11 @@ def finish_sso(request, saved: dict, claims: dict) -> RedirectResponse:
         cookie = request.cookies.get(settings.auth_cookie_name)
         user = authn.user_from_token(session, cookie, kinds=("web",)) if cookie else None
         if user is None or user.id != saved.get("uid"):
-            resp = _fail(nxt, "Sign in again, then confirm.")
+            resp = _fail(nxt, "signed_out")
         elif not claims.get("sub") or user.external_subject != f"oidc:{claims['sub']}":
-            resp = _fail(nxt, "That was a different account at your sign-in provider.")
+            resp = _fail(nxt, "other_account")
         elif not _recent(claims.get("auth_time")):
-            resp = _fail(nxt, "Your sign-in provider didn't ask you to sign in again. "
-                              "Sign out there and retry.")
+            resp = _fail(nxt, "not_recent")
         else:
             resp = RedirectResponse(safe_next(nxt), status_code=303)
             grant(resp, user)

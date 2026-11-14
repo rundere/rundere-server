@@ -1,9 +1,11 @@
 # SPEC-13 — The Run·dere archive, and deleting an account
 
-Status: **5.0, proposed** (written 2026-11-13; YONDER-375 and YONDER-377, under
-YONDER-274 and YONDER-273). Nothing here is built. Both halves are
-security-sensitive, so the exporter (wave 8b) and the purge (wave 9b) wait for
-the owner's agreement to this spec.
+Status: **5.0, part built** (written 2026-11-13; YONDER-375 and YONDER-377,
+under YONDER-274 and YONDER-273). The exporter (D-241, wave 8b, YONDER-376) is
+built, and §2 was amended on 2026-11-14 to say what it does where building it
+settled a point the first text left open. Deletion (D-242, wave 9b) is not
+built. Both halves are security-sensitive, so each waited, or waits, for the
+owner's agreement to this spec.
 
 Before 5.0 the only way to take data out of Run·dere is the trip PDF, and the
 only way to remove a person is for an admin to deactivate the account, which
@@ -12,7 +14,7 @@ removes its credentials and files, but nothing deletes an account.
 
 This spec has three parts, in the order the work depends on them:
 
-1. **The table-ownership map** (§1): what each of the 57 tables holds, how a
+1. **The table-ownership map** (§1): what each of the 58 tables holds, how a
    row is tied to a person, and what export and deletion do with it.
 2. **D-241, the Run·dere archive** (§2): a versioned export of a person's own
    data.
@@ -51,7 +53,7 @@ server, are left for 5.x (owner, 2026-11-13).
 The "Export" and "On deletion" columns are summaries. §2.4 and §3.5 are the
 rules.
 
-### 1.2 Account and sign-in (11 tables)
+### 1.2 Account and sign-in (12 tables)
 
 | Table | Holds | Tied to a person by | Export | On deletion |
 |---|---|---|---|---|
@@ -66,6 +68,7 @@ rules.
 | `inbox_addresses` | The person's email-forward token | `user_id` (primary key) | Never: the token is a capability | Deleted |
 | `account_events` | Audit log of actions on an account | `user_id` (who it's about), `actor_id` (who did it) | The person's own log: action, time, and whether they or an admin did it | Kept without the person: `user_id` and `detail` cleared. Where they were the actor, `actor_id` cleared |
 | `ai_calls` | One row per AI call: feature, model, duration, outcome | `user_id` (nullable) | No. It holds no content, and it's gone after 90 days | Kept: `user_id` cleared. The row still ages out at 90 days |
+| `archive_exports` | One row per build of the person's archive (§2.5). The zip is at `<TX_EXPORT_DIR>/<user_id>/<id>.zip` | `user_id`, and the folder | No: bookkeeping for the archive itself | Deleted, with the person's export folder |
 
 ### 1.3 The traveller and their profiles (4 tables)
 
@@ -108,12 +111,12 @@ hands on. "With the trip" below means the row follows its trip either way.
 |---|---|---|---|---|
 | `trips` | The trip | `owner_id` | Owned: in full. Shared: a header only | Owned: deleted or handed over (§3.4). Others': untouched |
 | `trip_members` | View-only shares | `user_id` (who it's shared with) | No | The person's own shares deleted. Shares of a deleted trip go with the trip |
-| `trip_travelers` | The roster | `traveler_id` | As names | With the trip. On a surviving trip the row stays, now a guest |
+| `trip_travelers` | The roster | `traveler_id` | As names. Owned: the whole roster. Shared: only the people their exported rows name | With the trip. On a surviving trip the row stays, now a guest |
 | `trip_activities` | Timeline items | Its trip. No author column | Owned: all. Shared: only items logged from the person's own captures | With the trip |
 | `trip_activity_travelers` | Who an item is for | `traveler_id` | As names | With the trip |
-| `trip_expenses` | Expenses and settle-ups | Its trip; `owner_id` is who entered it; `payer_id` is a traveller | Owned: all. Shared: the ones they entered | With the trip. On a surviving trip the row stays and `owner_id` is cleared |
+| `trip_expenses` | Expenses and settle-ups | Its trip; `owner_id` is who entered it; `payer_id` is a traveller | Owned: the ones they can see (D-183). Shared: the ones they entered | With the trip. On a surviving trip the row stays and `owner_id` is cleared |
 | `trip_expense_shares` | Each traveller's part of an expense | `traveler_id` | With the expense | With the expense |
-| `trip_expense_comments` | Comments on an expense | `author_id` | Their own comments | Their comments deleted everywhere |
+| `trip_expense_comments` | Comments on an expense | `author_id` | Their own comments, as the trip file's `my_comments` | Their comments deleted everywhere |
 | `trip_budget_items` | Planned costs | Its trip; `owner_id` is who entered it | Owned: the ones they can see (D-183). Shared: the ones they entered | With the trip. On a surviving trip: deleted when it was planned only for the leaver, otherwise kept with `owner_id` cleared |
 | `trip_budget_travelers` | Who a planned cost is for | `traveler_id` | As names | With the budget item |
 | `trip_rates` | The trip's exchange-rate table | Its trip; `fetched_by` | Owned: the rates. Never who fetched them | With the trip. On a surviving trip `fetched_by` is cleared |
@@ -241,7 +244,9 @@ documents/<sha256>.<pdf|ics|eml>
 - **Other people are names.** Each trip file has its own `travellers` list of
   `{ref, name, is_me}`; expenses, shares and "who it's for" point at a `ref`.
   An archive never holds another person's user id, username, email, traveller
-  id, nationality or profile.
+  id, nationality or profile. For an owned trip the list is the whole roster.
+  For a shared trip it holds only the people the exported rows refer to: the
+  roster is the owner's to export.
 - **File names are generated.** A document is stored under its sha256 and its
   detected type. The name the person uploaded it with is a field in
   `documents/index.json` and is never used as a path, so a crafted filename
@@ -273,9 +278,10 @@ exporter to validate, would be guessing.
 
 **`profile/account.json`**: username, email, sign-in kind (local, SSO or
 proxy), when the account was made, whether it is an admin, the support-access
-setting (D-211), the theme and scenery choice once wave 6a adds them, and the
+setting (D-211), the theme and scenery choice (D-237, D-239), and the
 person's own account log (action, time, and "you", "an admin" or "the
-server").
+server"). The log's `detail` column is left out, because it can name other
+rows.
 
 **`profile/traveller.json`**: the person's traveller (name, aliases,
 nationality, base currency, time zone, notes) and their homes and home
@@ -292,13 +298,23 @@ packing templates with their lines, and the bags.
 - the roster, as names;
 - the whole timeline: each item's type, start, `values`, located points, who
   it's for, and whether it came from a capture;
-- costs: expenses with their shares, settle-ups, the planned costs this
-  person can see (D-183), the rates used, and their own comments;
+- costs: the expenses and settle-ups this person can see, with their shares,
+  and the planned costs they can see (both D-183), the rates used, and their
+  own comments;
 - their own Discover findings and items, and excluded places;
 - their own packing plan and its lines.
 
 It does not hold the other travellers' Discover, packing, journals, files or
-planned costs, because the owner can't see those in the app either.
+planned costs, nor an expense the app hides from the owner (one they aren't on
+and didn't enter, D-183), because the owner can't see those in the app either
+(§2.1).
+
+**Comments** are a list of their own, `my_comments`, in the trip file, each
+with the `expense_id` it is about. They aren't nested under the expenses,
+because on a shared trip a person can comment on an expense someone else
+entered, and that expense isn't in their archive. Such a comment's
+`expense_id` is the one link in an archive that can point at something
+outside it.
 
 For a trip **shared with** the person (a traveller or a viewer on it), the
 file is marked `"shared_with_me": true` and holds only what they added
@@ -313,6 +329,11 @@ Hand-made timeline items on a shared trip are left out, whoever typed them:
 `trip_activities` has no author column, so the exporter can't tell. The trip
 PDF remains the way to take a copy of a shared timeline. A trip the person can
 see only through support access (D-211) is not in their archive at all.
+
+An **ownerless trip** (§1.1) is in nobody's archive, even for a traveller on
+it, so that person's own Discover and packing for it are not exported either.
+This only arises with data from before sign-in existed; giving the trip an
+owner brings it into that owner's archive.
 
 **`places.json`**: saved places (dismissed ones included and marked, so a
 later import doesn't bring them back, D-169), lists, which places are in
@@ -330,13 +351,22 @@ date retention will remove it, and for files already removed, when (D-196).
 
 - **Start.** Account › Export my data shows what the archive will hold and a
   "Build my archive" button. One build per person at a time, one build on the
-  server at a time, and at most three a day per person.
+  server at a time, and at most three per person in any 24 hours, counted from
+  the rows (failed builds included) so a restart doesn't reset it. Starting a
+  build needs the web session but not the fresh confirmation: the file can't
+  leave without one.
 - **The job is a durable row**, like a Discovery run (D-63), not an entry in
   the in-memory job list: a new `archive_exports` table (id, user, status,
   requested and finished times, expiry, size, sha256, format version, and an
-  error's class name only). A build orphaned by a restart is marked failed the
-  next time someone looks. The table joins the map as own-only: it is not
-  exported, and it is deleted with the account.
+  error's class name only). Its states are `building`, `ready`, `failed`,
+  `replaced` (a newer build took its place) and `expired`. A build orphaned by
+  a restart is marked failed the next time someone looks. The table joins the
+  map (§1.2): it is not exported, and it is deleted with the account.
+- **One server process.** Which builds are running is known to the process
+  running them, as for Discovery runs (D-63), and the image runs one process.
+  With several, a process that isn't running a build would take it for
+  orphaned and mark it failed; no half-written archive results, but that
+  setup isn't supported.
 - **Where the zip lives.** `TX_EXPORT_DIR`, default `<TX_ARTIFACTS_DIR>/exports`,
   at `<dir>/<user id>/<export id>.zip`, readable by the server's user only.
   It is never under a web root and is served only by the download route. A
@@ -351,10 +381,15 @@ date retention will remove it, and for files already removed, when (D-196).
   same helper). The response is `Content-Disposition: attachment`,
   `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`. Someone
   else's export id answers 404.
+- **The web only.** A request carrying a bearer credential (a personal API
+  token, an OAuth or app token) is refused with 403 on the export and confirm
+  routes. With sign-in off the pages don't exist (404, §1.1).
 - **After 7 days** the daily retention job deletes the file and marks the row
   expired. The page shows the date.
 - **The demo server** has no export page (404, D-198).
-- **The account log** records each build and each download.
+- **The account log** records each build when it is started
+  (`export_built`, so a build someone else started shows even if it fails) and
+  each download (`export_downloaded`).
 
 ### 2.6 Left out of format 1 on purpose
 
@@ -421,7 +456,10 @@ one helper used by both:
 
 A confirmation lasts 10 minutes, is bound to the user and their
 `token_version`, and is held in a signed, http-only cookie. It grants nothing
-by itself.
+by itself. After confirming, the person is sent only to one of a fixed list
+of Account pages, and when the provider's round trip fails the page shows one
+of a fixed set of messages, chosen by a code: nothing from the address bar
+steers the redirect or is put on the page.
 
 ### 3.3 The request and the grace period
 
@@ -733,7 +771,7 @@ owner accepted all eight as written (2026-11-13).
 4. **10, release:** the rundere.app pages, the self-hosting notes on backups
    and the export folder.
 
-Migrations: 8b adds `archive_exports`; 9b adds the deletion record and the
+Migrations: 8b added `archive_exports` (0054); 9b adds the deletion record and the
 pending marker on `users`, and makes `account_events.user_id` nullable. The
 numbers are taken when each wave branches.
 
@@ -746,7 +784,7 @@ numbers are taken when each wave branches.
   shared trips only what they added. Files included, raw captures not. Built
   in the background, kept 7 days, downloaded from the web after a fresh
   confirmation of identity. No API, no MCP, no admin export. Import is 5.x.
-  (proposed)
+  (built in wave 8b; §2 amended 2026-11-14)
 - **D-242 — Deleting an account.** Self-service on the web; amends D-211.
   Locked at once, deleted after 7 days, cancellable by signing in. Owned
   trips with other accounts on them are handed over or deleted by choice, and

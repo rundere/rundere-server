@@ -13,6 +13,11 @@ app/trips/discovery_jobs.py), not an entry in the in-memory job list:
     previous one.
   * a build orphaned by a restart still says `building` but isn't in this
     process's _LIVE set: the next look (`latest()`) marks it failed.
+    This assumes ONE server process, as discovery_jobs.py does and as the
+    image runs. A second process would take a build running in the first for
+    orphaned, mark it failed and remove its `.part` file. The worker then
+    either fails at the rename or finishes a complete file, so no half-written
+    archive results, but several processes aren't supported (SPEC-13 §2.5).
   * the daily retention job (app/retention.py) deletes the file after 7 days
     and marks the row `expired`.
 

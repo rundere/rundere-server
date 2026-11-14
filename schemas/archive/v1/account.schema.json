@@ -11,6 +11,8 @@
     "created_at",
     "is_admin",
     "support_access",
+    "theme",
+    "scenery",
     "account_log"
   ],
   "properties": {
@@ -59,6 +61,12 @@
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
         }
       }
+    },
+    "theme": {
+      "type": "string"
+    },
+    "scenery": {
+      "type": "boolean"
     },
     "account_log": {
       "type": "array",

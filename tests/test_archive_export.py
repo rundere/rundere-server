@@ -306,7 +306,7 @@ if DEPS:
             assert other.encode() not in blob, other
         account = _json(zf, "profile/account.json")
         assert set(account) == {"username", "email", "sign_in", "created_at", "is_admin",
-                                "support_access", "account_log"}
+                                "support_access", "theme", "scenery", "account_log"}
         assert account["sign_in"] == "local" and version == 0
 
     # ------------------------------------------------------------------ other people (§4.1)
@@ -849,6 +849,15 @@ if DEPS:
         with SessionLocal() as s:
             assert s.query(m.User).filter(m.User.username.like("arx-%")).count() == 1
 
+    def test_the_confirm_page_never_shows_text_from_the_address_bar(env):
+        """Only a known code becomes a message; anything else in `error` is
+        dropped, so a crafted link can't put words on this page."""
+        c = _web(_user("sam"))
+        page = c.get("/account/confirm?next=/account/export&error=Call+the+helpdesk+on+555-0100").text
+        assert "helpdesk" not in page and 'class="err"' not in page
+        page = c.get("/account/confirm?next=/account/export&error=signed_out").text
+        assert "Sign in again, then confirm." in page
+
     def test_an_sso_provider_that_omits_auth_time_still_confirms(env, sso):
         c = _web(_user("sam", source="oidc", external_subject="oidc:arx-sam-sub"))
         r = _sso_round_trip(c, sso, sub="arx-sam-sub")
@@ -858,11 +867,15 @@ if DEPS:
         sam = _user("sam", source="oidc", external_subject="oidc:arx-sam-sub")
         c = _web(sam)
         r = _sso_round_trip(c, sso, sub="arx-sam-sub", auth_time=time.time() - 3600)
-        assert r.headers["location"].startswith("/account/confirm?") and "error=" in r.headers["location"]
+        assert r.headers["location"].startswith("/account/confirm?")
+        assert r.headers["location"].endswith("error=not_recent")
         assert confirm.COOKIE not in c.cookies
+        # The page shows the sentence for that code…
+        assert "didn&#39;t ask you to sign in again" in c.get(r.headers["location"]).text
         # A different person at the provider confirms nothing either.
         r = _sso_round_trip(c, sso, sub="arx-somebody-else", auth_time=time.time())
-        assert "error=" in r.headers["location"] and confirm.COOKIE not in c.cookies
+        assert r.headers["location"].endswith("error=other_account")
+        assert confirm.COOKIE not in c.cookies
         with SessionLocal() as s:                  # …and isn't provisioned as a new account
             assert s.query(m.User).filter_by(external_subject="oidc:arx-somebody-else").count() == 0
         # The handshake belongs to the browser that started it.
