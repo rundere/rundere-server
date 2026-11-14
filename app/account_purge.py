@@ -469,8 +469,11 @@ def _unlink(session: Session, uid: str, res: Result) -> None:
             rec.mail_ids = list(res.mail_ids) or None
     session.query(AccountDeletion).filter(AccountDeletion.requested_by == uid).update(
         {"requested_by": None}, synchronize_session=False)
+    session.flush()
     for rec in session.query(AccountDeletion).filter(
-            AccountDeletion.status == "pending", AccountDeletion.choices.isnot(None)).all():
+            AccountDeletion.status == "pending").all():
+        if not rec.choices:
+            continue
         kept = {t: ({k: v for k, v in c.items() if k != "to"}
                     if isinstance(c, dict) and c.get("to") == uid else c)
                 for t, c in (rec.choices or {}).items()}
