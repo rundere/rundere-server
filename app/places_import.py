@@ -24,6 +24,7 @@ import io
 from sqlalchemy.orm import Session
 
 from app import places as places_svc, places_geo
+from extract import place_url
 
 MAX_BYTES = 2 * 1024 * 1024          # D-243: one file of up to 2 MB …
 MAX_ROWS = 5000                      # … and 5,000 places
@@ -171,7 +172,14 @@ def _item(fields: dict, kinds: dict[str, str]) -> dict:
     country = fields.get("country", "").upper() or None
     if country and not (len(country) == 2 and country.isalpha()):
         raise ValueError("country must be a two-letter code, like GB or JP")
-    return {"name": fields.get("name") or None, "url": fields.get("url") or None,
+    name, url, source_url = fields.get("name") or None, fields.get("url") or None, None
+    if url and name and not place_url.parse_place_url(url):
+        # A link that can't be read offline (a short link, Takeout's `?cid=`) doesn't
+        # cost a named row: the name stands, and the link is kept as the place's
+        # link when it is a Maps link (`places._maps_url`). Only a row with nothing
+        # but such a link is refused (D-243).
+        url, source_url = None, url
+    return {"name": name, "url": url, "source_url": source_url,
             "address": fields.get("address") or None, "lat": la, "lon": lo,
             "notes": fields.get("notes") or None, "todo": fields.get("todo") or None,
             "priority": priority, "country_code": country,
@@ -186,7 +194,11 @@ def run(session: Session, user, data: bytes, *, dry_run: bool = False) -> dict:
     rows, refused, warnings = parse(data)
     kinds = _kinds()
     # The caller's own lists by folded name (D-235), read once.
-    mine = {_fold(lst.name): lst for lst, _ in places_svc.lists(session, user)}
+    # Only lists the caller owns, checked here as well as by `lists()`, so a row can
+    # never reach someone else's list whoever is importing (house rule 2).
+    owner_id = places_svc._owner_id(user)
+    mine = {_fold(lst.name): lst for lst, _ in places_svc.lists(session, user)
+            if lst.owner_id == owner_id}
     items: list[dict] = []
     lines: list[int] = []
     results: list[dict] = list(refused)

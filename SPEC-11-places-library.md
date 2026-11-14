@@ -194,8 +194,10 @@ Everything is own-only, with no admin view (D-166).
     `todo`, `priority`, `country`. A row needs a `name` or a Maps `url`. An unknown column is
     reported and ignored. The header map has room for other spellings, so Google's own CSV
     columns can be added from a real file.
-  - *Rows.* `url` must be a full Google or Apple Maps place link. A short link is refused,
-    because a file is never expanded over the network. `lat`/`lon` are a pair, and blank,
+  - *Rows.* `url` is a Google or Apple Maps place link. A file is never expanded over the
+    network, so a link that can't be read offline (a short link, or Takeout's `?cid=`) is
+    kept only as the place's link when the row has a name. A row with only such a link is
+    refused. `lat`/`lon` are a pair, and blank,
     half or `0,0` means no pin (Takeout writes `0,0` for "unknown"). A pinless place waits in
     "Needs a pin" (D-217), and nothing is geocoded. `kind` is a place kind (`restaurant`,
     `tour`, …). `priority` is `must` or `someday`. `country` is a two-letter code.

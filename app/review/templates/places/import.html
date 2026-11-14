@@ -38,8 +38,8 @@
       {% for c in columns %}<code>{{ c }}</code>{{ ", " if not loop.last }}{% endfor %}.
       Each row needs a <code>name</code> or a Maps <code>url</code>; the rest is optional.</p>
     <ul class="pl-lead">
-      <li><code>url</code> is a full Google or Apple Maps place link. Short links (maps.app.goo.gl)
-        can't be read from a file.</li>
+      <li><code>url</code> is a Google or Apple Maps place link. A short link (maps.app.goo.gl)
+        can't be read from a file, so give such a row a <code>name</code> too.</li>
       <li><code>lat</code> and <code>lon</code> place the pin. Without them a place waits in
         Unsorted, under “Needs a pin”.</li>
       <li><code>list</code> puts the place in one of your lists, or makes the list. To put a place in

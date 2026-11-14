@@ -3,6 +3,8 @@ preview writes nothing, re-importing adds nothing, lists are matched or made per
 person, a bad row never stops the rest, and the web page, API and MCP share one
 import. Every person, place, list and address here is invented. SQLite via
 conftest."""
+import csv
+import io
 import sys
 from pathlib import Path
 
@@ -52,8 +54,11 @@ def _clear():
 
 
 def _row(**cells) -> str:
-    """One CSV row in HEADER's order, from named cells, so no comma is miscounted."""
-    return ",".join(str(cells.get(c, "")) for c in HEADER)
+    """One CSV row in HEADER's order, from named cells, so no comma is miscounted.
+    Quoted the way a spreadsheet writes it (a Maps link carries commas)."""
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator="").writerow([cells.get(c, "") for c in HEADER])
+    return buf.getvalue()
 
 
 def _csv(*rows: str, header: str = ",".join(HEADER)) -> bytes:
@@ -290,3 +295,27 @@ def test_the_web_page_previews_then_imports_the_same_file(world):
     assert "Imported 3 rows" in done.text and done.headers["HX-Trigger"] == "places-changed"
     none = client.post("/places/import", data={"action": "import"})
     assert "Choose a CSV file first" in none.text
+
+
+GOOGLE_PLACE = ("https://www.google.com/maps/place/Example+Quay+Cafe/@51.5,-0.1,17z/"
+                "data=!3m1!4b1!4m6!3m5!1s0x48761b3333333333:0x1234567890abcdef!8m2!3d51.5!4d-0.1")
+
+
+def test_maps_links_are_read_offline_and_an_unreadable_one_never_costs_a_named_row(world):
+    out = _import(world["ada_id"], _csv(
+        _row(url=GOOGLE_PLACE),                                         # name and pin from the link
+        _row(url="http://maps.google.com/?q=48.85661,2.35222", name="Sample Square"),
+        _row(url="http://maps.google.com/?cid=1311768467294899695", name="Sample Cid Cafe"),
+        _row(url="http://maps.google.com/?cid=1311768467294899695"),    # nothing else: refused
+        _row(url="https://example.test/not-a-map", name="Sample Website Bar")))
+    assert [r["outcome"] for r in out["results"]] == [
+        "created", "created", "created", "error", "created"]
+    placed = _places(world["ada_id"])
+    quay = placed["Example Quay Cafe"]
+    assert (quay.provider, quay.lat, quay.lon) == ("google", 51.5, -0.1)
+    assert (placed["Sample Square"].lat, placed["Sample Square"].lon) == (48.85661, 2.35222)
+    cid = placed["Sample Cid Cafe"]
+    assert cid.lat is None and cid.source_url == "http://maps.google.com/?cid=1311768467294899695"
+    assert placed["Sample Website Bar"].source_url is None             # only Maps links are kept
+    again = _import(world["ada_id"], _csv(_row(url=GOOGLE_PLACE, list="Coffee")))
+    assert again["counts"] == {"duplicate": 1}                          # same feature id, same place
