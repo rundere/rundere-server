@@ -23,6 +23,62 @@ struct UserPublic: Codable, Identifiable, Hashable, Sendable {
     let sharing_prompt: Bool?
     /// Why opting out of admin sharing isn't possible yet ("" = it is).
     let opt_out_blocker: String?
+    /// The person's own currency (4.13): the calculator converts into it first.
+    let base_currency: String?
+    // Travel themes (5.0, D-237 to D-240); nil on a 4.x server, which draws Base.
+    /// The stored choice. After 5.0 it may be `random` or `next-trip`.
+    var ui_theme: String? = nil
+    /// What to draw: the server has already resolved the choice into a theme.
+    var resolved_theme: String? = nil
+    /// The scenery floor switch (D-239); the server's default is on.
+    var scenery: Bool? = nil
+}
+
+/// PATCH /api/v1/auth/me: send only what changes.
+struct AppearanceBody: Codable, Sendable {
+    var ui_theme: String?
+    var scenery: Bool?
+}
+
+/// GET /api/v1/themes: every theme the server offers (D-240).
+struct ThemesOut: Codable, Hashable, Sendable {
+    let version: Int
+    let themes: [ThemeOut]
+}
+
+struct ThemeOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    /// base | travel
+    let kind: String
+    /// Bumped when the theme's values change.
+    let version: Int
+    var description: String? = nil
+    var tags: [String]? = nil
+    /// `light` and `dark`.
+    var modes: [String: ThemeModeOut]? = nil
+    /// Nil for Base, which has no scenery.
+    var scene: ThemeSceneOut? = nil
+}
+
+struct ThemeModeOut: Codable, Hashable, Sendable {
+    /// The fifteen colour roles, by name (`text-secondary`), as `#RRGGBB` or `rgba()`.
+    var color: [String: String]? = nil
+    var effect: [String: String]? = nil
+    var scene: [String: String]? = nil
+}
+
+struct ThemeSceneOut: Codable, Hashable, Sendable {
+    var title: String? = nil
+    let light_url: String
+    let dark_url: String
+    /// D-245 (server 5.0): the same scenes as transparent PNG at 2x and 3x, for
+    /// a theme newer than the build, since iOS can't draw a fetched SVG.
+    /// Optional: older servers omit them.
+    var light_png_url: String? = nil
+    var dark_png_url: String? = nil
+    var light_png_3x_url: String? = nil
+    var dark_png_3x_url: String? = nil
 }
 
 struct TokenResponse: Codable, Sendable {
@@ -31,6 +87,36 @@ struct TokenResponse: Codable, Sendable {
     let token_type: String
     let expires_in: Int
     let user: UserPublic
+}
+
+/// How someone may sign in on the host that was asked (server 4.9.4, YONDER-180,
+/// D-194). A 404 means an older server: password only.
+struct AuthMethodsOut: Codable, Hashable, Sendable {
+    let password: Bool
+    let oauth: Bool
+    /// The first-party OAuth client for the app; nil = password only.
+    let oauth_client_id: String?
+    let sso: Bool
+    let sso_name: String?
+    let sso_forced: Bool?
+    let registration_open: Bool?
+    let server_name: String?
+    /// D-198 (server 4.12): the public read-only demo. Show its banner; every
+    /// trip also reports `my_role` viewer. Optional: older servers omit it.
+    let demo: Bool?
+    let version: String
+    /// D-244 (server 5.0): what this server can do, by stable name. Absent on a
+    /// server before 5.0, which means none of the names in `ServerCapability`.
+    var capabilities: [String]? = nil
+}
+
+/// The capability names the app gates on (server `app/capabilities.py`). Names
+/// are never renamed or reused; the app ignores names it doesn't know.
+enum ServerCapability {
+    static let tripPDFFlags = "trip_pdf_flags"
+    static let dataExport = "data_export"
+    static let accountDelete = "account_delete"
+    static let themeScenePNG = "theme_scene_png"
 }
 
 // MARK: - Dashboard
@@ -62,9 +148,9 @@ struct Dashboard: Codable, Sendable {
     /// its end moment). Optional: pre-4.7.1 servers and older caches omit them.
     let next_activity: MomentOut?
     let in_progress: [MomentOut]?
-    /// YONDER-250: the next moments within `window_h` (default 48 h, up to `limit`,
-    /// default 12) across every trip, soonest first; the first is `next_activity`.
-    /// Optional: pre-4.12 servers omit it.
+    /// YONDER-250 (server 4.12): the next moments within `window_h` (default 48 h,
+    /// up to `limit`, default 12) across every trip, soonest first; the first is
+    /// `next_activity`. Optional: pre-4.12 servers omit it.
     let upcoming: [MomentOut]?
     let counts: [String: Int]
     let capture: [String: Int]
@@ -85,16 +171,25 @@ struct TripSummary: Codable, Identifiable, Hashable, Sendable {
     /// The airport codes the trip's flights visit, in order (server 4.7.1,
     /// YONDER-177). Optional: older servers and caches omit it.
     let airports: [String]?
-    /// The trip's free-text notes, editable with PATCH /trips/{id} (server
-    /// after 4.9.4, YONDER-239). Optional: older servers and caches omit it.
+    /// The trip's notes (server 4.10, YONDER-239). nil = none, or an older server.
     let notes: String?
-    /// False for a view-only share (D-122): hide Edit rather than meet a 403.
-    /// Optional: older servers omit it — treat nil as "try, and handle 403".
+    /// Whether you may change the trip (4.10). nil from older servers: assume yes,
+    /// as before, and let the server refuse.
     let can_edit: Bool?
-    /// D-199 (YONDER-185): owner | traveller | admin | viewer. `viewer` = a
-    /// view-only share: hide every edit control (YONDER-259). The demo server
-    /// reports `viewer` on every trip. Optional: pre-4.12 servers omit it.
+    /// D-199 (server 4.12, YONDER-185): owner | traveller | admin | viewer.
+    /// `viewer` = a view-only share; the demo server reports it on every trip.
+    /// Optional: pre-4.12 servers omit it.
     let my_role: String?
+}
+
+extension TripSummary {
+    /// May this person change the trip? `can_edit` when the server says, else
+    /// the role; older servers say neither: assume yes and let the server refuse.
+    var isEditable: Bool {
+        if let can_edit { return can_edit }
+        return my_role != "viewer"
+    }
+    var isViewOnly: Bool { !isEditable }
 }
 
 struct ActivityOut: Codable, Identifiable, Hashable, Sendable {
@@ -199,6 +294,9 @@ struct PackingOut: Codable, Hashable, Sendable {
     let warnings: JSONValue?
     let tasks: JSONValue?
     var items: [PackingItemOut]
+    /// Whose list this is (5.0): always the signed-in person's own name. Nil on
+    /// an older server or when there's no list.
+    var for_name: String? = nil
 }
 
 struct CaptureLite: Codable, Identifiable, Hashable, Sendable {
@@ -220,117 +318,8 @@ struct TripSnapshot: Codable, Hashable, Sendable {
     let discovery_profile: JSONValue?
     var packing: PackingOut?
     let captures: [CaptureLite]
-    /// Newest stored rate per currency into the trip's balance currency (D-195):
-    /// the calculator uses these over the Discover snapshot, with no live call;
-    /// one older than today → offer "Update rate for today" (rates refresh).
-    /// Optional: older servers omit it.
+    /// The trip's shared, dated exchange rates (4.10, D-195). Optional: older servers.
     let trip_rates: [TripRateOut]?
-}
-
-/// One row of the trip's shared rate table (D-195, YONDER-237).
-struct TripRateOut: Codable, Hashable, Sendable {
-    let currency: String
-    let quote: String
-    let rate_date: String
-    let rate: String
-    let as_of: String?
-    let source: String               // frankfurter | discover
-    let fetched_at: String?
-}
-
-/// POST /trips/{id}/rates/{code}/refresh?date= (YONDER-242): the fetched rate
-/// and the caller's costs it converted. 409 = trip ended; 422 = no rate to get.
-struct RateRefreshOut: Codable, Hashable, Sendable {
-    let rate: TripRateOut
-    let applied: [String]
-}
-
-/// The caller's own Discovery run on a trip (YONDER-238): POST
-/// /trips/{id}/discover starts it (optionally targeted, see DiscoverIn) (409 on an ended trip, D-157), GET
-/// /trips/{id}/discover/status polls it. Reload the trip once `running` is false.
-/// YONDER-264 (Refine Discovery): GET /api/v1/trips/{id}/discover/places, and
-/// PUT /api/v1/trips/{id}/discover/places/{key} with {"excluded": Bool}.
-struct DiscoveryPlaceOut: Codable, Hashable, Sendable {
-    let key: String               // stable place key, e.g. "PT:Lisbon"
-    let label: String?
-    let city: String?
-    let country: String?
-    let lat: Double?
-    let lon: Double?
-    let sources: [String]
-    let is_home: Bool
-    let home_country: Bool
-    let excluded: Bool
-}
-
-struct DiscoveryPlacesOut: Codable, Sendable {
-    let places: [DiscoveryPlaceOut]
-    let countries: [String]
-    let dropped: [String]
-}
-
-struct DiscoveryStatusOut: Codable, Hashable, Sendable {
-    let running: Bool
-    let phase: String?
-    let done: Int
-    let total: Int
-    let pct: Int
-    let ended: Bool
-    let ended_message: String?
-    /// running | done | failed | cancelled; nil = never run.
-    let last_status: String?
-    let last_started_at: String?
-    let last_finished_at: String?
-    /// What the latest run covered: nil = the whole suite, else one topic (and
-    /// one place) — a targeted refresh.
-    let last_topic: String?
-    let last_place_key: String?
-}
-
-/// POST /trips/{id}/discover body — omit it for the whole suite, or refresh
-/// one `topic` ("weather"), or one topic for one place ("PT:Lisbon", as on the
-/// finding). Unknown topic or a place without a topic → 400.
-struct DiscoverIn: Codable, Hashable, Sendable {
-    let topic: String?
-    let place_key: String?
-}
-
-// MARK: - Documents (YONDER-179, SPEC-8 D-196)
-
-/// A file you captured — PDF, .ics or .eml. Only its uploader ever sees it.
-struct DocumentOut: Codable, Identifiable, Hashable, Sendable {
-    let id: String
-    let filename: String
-    let content_type: String         // application/pdf | text/calendar | message/rfc822
-    let size_bytes: Int
-    let trip_id: String?
-    let batch_id: String?
-    let source: String
-    let scan_notes: String?
-    let created_at: String?
-    /// When the stored copy is removed (12 months after its trip ends).
-    let removed_on: String?
-    let purged: Bool
-}
-
-/// GET /documents — your files and storage. `enabled` false = this server
-/// doesn't take files (hide the file actions; `reason` says why).
-struct DocumentsOut: Codable, Hashable, Sendable {
-    let enabled: Bool
-    let reason: String?
-    let used_bytes: Int
-    let quota_bytes: Int
-    let max_file_bytes: Int
-    let documents: [DocumentOut]
-}
-
-/// POST /capture/file (multipart: file, trip_id?, notes?, source="ios") →
-/// 202. 413 too big / over quota, 415 not PDF/.ics/.eml, 422 unsafe, 503 off
-/// or the scanner is down. `duplicate` = you'd already captured this file.
-struct FileCaptureOut: Codable, Hashable, Sendable {
-    let document: DocumentOut
-    let batch_id: String?
-    let duplicate: Bool
 }
 
 /// A place, event or activity inside a Food & Drink or Events & Activities
@@ -605,10 +594,8 @@ struct CaptureIn: Codable, Sendable {
 }
 
 struct CaptureOut: Codable, Sendable {
-    let batch_id: String        // "" when the shared link was a place (D-209)
-    let status: String          // "received", or "saved_place" for a place link
-    let place_id: String?       // the saved place, when status == "saved_place"
-    let outcome: String?        // created | revived | duplicate | … (as POST /places)
+    let batch_id: String
+    let status: String
 }
 
 // MARK: - Travel Journal (SPEC-6; own-only, YONDER-79)
@@ -618,6 +605,10 @@ struct JournalOut: Codable, Identifiable, Hashable, Sendable {
     /// The day the entry is ABOUT ("YYYY-MM-DD"), not when it was typed (D-132).
     let entry_date: String
     let captured_at: String?
+    /// The IANA zone to show `captured_at` in (D-224): the zone it was written
+    /// in, else the zone at its coordinates. Nil when unknown or on servers
+    /// before 4.13.4.
+    var captured_tz: String? = nil
     let trip_id: String?
     let body: String
     let values: [String: JSONValue]?
@@ -631,6 +622,9 @@ struct JournalOut: Codable, Identifiable, Hashable, Sendable {
 struct JournalCreate: Codable, Sendable {
     var entry_date: String?
     var captured_at: String?     // device time, ISO-8601
+    /// The device's IANA zone when the entry was written (D-224), so it reads
+    /// as the writer's clock did. Queued entries keep it (outbox replay).
+    var captured_tz: String?
     var body: String
     var trip_id: String?
     var place_lat: Double?
@@ -658,10 +652,39 @@ struct JournalPatch: Codable, Sendable {
     }
 }
 
+// MARK: - Release notes (server 5.0, D-234, RUNDEREIOS-4)
+
+struct ReleaseNotesVersionOut: Codable, Identifiable, Hashable, Sendable {
+    let version: String
+    /// YYYY-MM-DD; nil for a version that isn't out yet.
+    let date: String?
+    /// Short Markdown items: **bold**, `code` and https links only.
+    let everyone: [String]
+    /// Setup notes for admins; always empty for anyone else.
+    let admins: [String]
+}
+
+extension ReleaseNotesVersionOut {
+    var id: String { version }
+}
+
+struct ReleaseNotesOut: Codable, Hashable, Sendable {
+    let running_version: String
+    /// The last version whose notes the person closed, on any device or the web.
+    let seen_version: String?
+    let versions: [ReleaseNotesVersionOut]
+}
+
 // MARK: - Error envelope
 
 struct APIErrorBody: Codable, Sendable {
     let detail: String?
+    /// A machine-readable reason, e.g. `packing_profile_required` (5.0).
+    var code: String? = nil
+    /// A page on the server that fixes it, as a path.
+    var url: String? = nil
+    /// Sign-in refused because the account is waiting to be deleted (5.0, D-242).
+    var deletion_pending: Bool? = nil
 }
 
 // MARK: - Expenses (server 4.8, SPEC-10, YONDER-172)
@@ -682,10 +705,7 @@ struct ExpenseOut: Codable, Identifiable, Hashable, Sendable {
     let amount: String
     let currency: String
     let rate: String?                // trip currency per 1 unit; nil = unconverted
-    let rate_source: String?         // same | entered | frankfurter | discover
-    /// The day the rate is for ("1 USD = 0.92 EUR · 12 Oct"), D-195. Optional:
-    /// older servers omit it.
-    let rate_date: String?
+    let rate_source: String?         // same | entered | discover
     let amount_in_trip_currency: String?
     let spent_on: String?
     let payer_id: Int
@@ -701,6 +721,12 @@ struct ExpenseOut: Codable, Identifiable, Hashable, Sendable {
     let created_at: String?
     /// The discussion on it, oldest first (D-185). Optional: earlier 4.8 builds omit it.
     let comments: [ExpenseCommentOut]?
+    /// Where it was spent (YONDER-212, 4.8.2): set once when it was added.
+    let place_lat: Double?
+    let place_lon: Double?
+    let place_label: String?
+    /// The day its rate is for (4.10, D-195); nil = same currency or no rate.
+    let rate_date: String?
 }
 
 struct ExpenseCommentOut: Codable, Identifiable, Hashable, Sendable {
@@ -733,7 +759,6 @@ struct BudgetItemOut: Codable, Identifiable, Hashable, Sendable {
     let total: String?               // trip currency; nil = no rate
     let rate: String?
     let rate_source: String?
-    let rate_date: String?           // D-195; optional for older servers
     let status: String               // draft (an agent's suggestion) | kept
     let place_key: String?
     let activity_id: String?
@@ -798,6 +823,10 @@ struct ExpensesOut: Codable, Sendable {
     let categories: [String]
     /// The planned side of Costs (D-178). Optional: early 4.8 builds omit it.
     let plan: PlanOut?
+    /// The currency picker's suggestions, best first, and what a new entry
+    /// starts in (YONDER-213, 4.8.2). Optional for older servers.
+    let suggested_currencies: [String]?
+    let default_currency: String?
 }
 
 struct ExpenseIn: Codable, Sendable {
@@ -815,6 +844,11 @@ struct ExpenseIn: Codable, Sendable {
     var budget_item_id: String?      // the planned item it fulfils (D-181)
     var notes: String?
     var source: String = "ios"
+    /// Where it was spent (YONDER-212): captured on add, never on edit.
+    var place_lat: Double?
+    var place_lon: Double?
+    var place_accuracy_m: Double?
+    var place_label: String?
 }
 
 /// Only the fields set are sent (nil keys are omitted by JSONEncoder).
@@ -872,4 +906,285 @@ struct SettlementIn: Codable, Sendable {
 
 struct ExpenseCurrencyIn: Codable, Sendable {
     var currency: String
+}
+
+// MARK: - Saved places (YONDER-200, server 4.8.2, D-166–D-169)
+
+/// Save a place from a Google / Apple Maps place link; the server parses it.
+struct SavedPlaceIn: Codable, Sendable {
+    var url: String
+    var notes: String?
+    var source: String = "ios"
+    // What MapKit found on the phone (YONDER-344, D-167). Server 4.13 prefers
+    // these over its own parse; older servers ignore them.
+    var name: String?
+    var lat: Double?
+    var lon: Double?
+    var address: String?
+    var locality: String?
+    var region: String?
+    var country_code: String?
+    var category: String?
+    // Sort it as it's saved (5.0, D-236); older servers ignore both. The kind
+    // only applies to a place the save adds or brings back, and lists are
+    // added to, never replaced.
+    var activity_type: String?
+    var list_ids: [String]?
+}
+
+/// One of the person's own lists of places (5.0, D-213). A place's `list_ids`
+/// point to these.
+struct PlaceListOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    var name: String
+    var emoji: String?
+    var description: String?
+    /// Lists are shown lowest first, then oldest first.
+    var position: Int?
+    /// How many library places it holds.
+    var count: Int?
+    let created_at: String?
+    let updated_at: String?
+}
+
+extension PlaceListOut {
+    /// "🕯️ Date night", or the name alone.
+    var title: String { [emoji, name].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " ") }
+}
+
+struct PlaceListIn: Codable, Sendable {
+    var name: String
+    var emoji: String?
+    var description: String?
+}
+
+/// PATCH /api/v1/places/lists/{id}: only the fields you send change.
+struct PlaceListPatch: Codable, Sendable {
+    var name: String?
+    var emoji: String?
+    var description: String?
+    var position: Int?
+}
+
+/// Suggestions for the Places search box (5.0, D-235): put an item's `insert`
+/// where `q[start..<end]` was.
+struct PlaceSuggestOut: Codable, Hashable, Sendable {
+    let start: Int
+    let end: Int
+    let items: [PlaceSuggestionOut]
+}
+
+struct PlaceSuggestionOut: Codable, Hashable, Sendable {
+    /// chip | kind | list | city | country
+    let kind: String
+    let label: String
+    let insert: String
+    /// Add a space after it; false for a chip that still wants its value (`kind:`).
+    let complete: Bool
+    /// How many of the person's places it matches; nil for a chip.
+    let count: Int?
+}
+
+extension SavedPlaceIn {
+    /// The link plus whatever MapKit was sure of (YONDER-344).
+    mutating func adopt(_ m: PlaceResolver.Match?) {
+        guard let m else { return }
+        name = m.name
+        lat = m.lat
+        lon = m.lon
+        address = m.address
+        locality = m.locality
+        country_code = m.countryCode
+        category = m.category
+        activity_type = m.kind
+    }
+}
+
+struct SavedPlaceOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let lat: Double?
+    let lon: Double?
+    let address: String?
+    let category: String?
+    /// What it becomes on a timeline (dining, tour…).
+    let activity_type: String
+    let provider: String
+    let source_url: String?
+    let notes: String?
+    let source: String?
+    let created_at: String?
+    /// saved | filed | dismissed
+    let status: String?
+    /// The trip its location and dates point to, if any.
+    let suggested_trip_id: String?
+    /// created | revived | duplicate | near_duplicate | already_filed | removed_earlier
+    let outcome: String?
+    // Server 4.13 (SPEC-11 phase 1); nil on older servers.
+    let locality: String?
+    let region: String?
+    let country_code: String?
+    let continent: String?
+    /// What to do there.
+    let todo: String?
+    /// someday | must
+    let priority: String?
+    /// YYYY-MM-DD
+    let visited_on: String?
+    /// The trips it's on (a place can be on several).
+    let trip_ids: [String]?
+    let list_ids: [String]?
+    let updated_at: String?
+}
+
+/// PATCH /api/v1/places/{id}: only the fields you send change.
+struct SavedPlacePatch: Codable, Sendable {
+    var name: String?
+    var activity_type: String?
+    var address: String?
+    var locality: String?
+    var region: String?
+    var country_code: String?
+    var notes: String?
+    var todo: String?
+    var priority: String?
+    var visited_on: String?
+}
+
+/// File a saved place to a trip. All optional: no date = undated on the timeline.
+struct SavedPlaceFileIn: Codable, Sendable {
+    var starts_at: String?
+    var activity_type: String?
+    var notes: String?
+    var traveler_ids: [Int]?
+}
+
+// MARK: - Capture channels (YONDER-240)
+
+/// Your own email-forward address (SPEC-9 D-162). `enabled` is false when the
+/// server's inbox isn't set up.
+struct InboxAddressOut: Codable, Sendable {
+    let enabled: Bool
+    let address: String?
+}
+
+// MARK: - Discovery runs (server 4.10, YONDER-238)
+
+/// POST /api/v1/trips/{id}/discover. Empty = the whole suite; `topic` (and
+/// `place_key`) = just that one.
+struct DiscoverIn: Codable, Sendable {
+    var topic: String?
+    var place_key: String?
+}
+
+/// The caller's own Discovery run on a trip (runs are per person) — what the
+/// Run / Refresh button and its progress bar poll.
+struct DiscoveryStatusOut: Codable, Hashable, Sendable {
+    let running: Bool
+    let phase: String?
+    let done: Int
+    let total: Int
+    let pct: Int
+    /// The trip has ended: no new runs (D-157), and why.
+    let ended: Bool
+    let ended_message: String?
+    let last_status: String?
+    let last_started_at: String?
+    let last_finished_at: String?
+    let last_topic: String?
+    let last_place_key: String?
+}
+
+/// YONDER-264 (server 4.12, Refine Discovery): GET /trips/{id}/discover/places
+/// lists the places a run would research; PUT …/places/{key} with
+/// `DiscoveryPlaceIn` skips or restores one. Both need edit access.
+struct DiscoveryPlaceOut: Codable, Hashable, Sendable {
+    let key: String               // stable place key, e.g. "PT:Lisbon"
+    let label: String?
+    let city: String?
+    let country: String?
+    let lat: Double?
+    let lon: Double?
+    /// Where the place came from, e.g. "flight · to".
+    let sources: [String]
+    /// A home place: never researched.
+    let is_home: Bool
+    /// In the person's home country: local topics are skipped.
+    let home_country: Bool
+    let excluded: Bool
+}
+
+extension DiscoveryPlaceOut: Identifiable {
+    var id: String { key }
+}
+
+struct DiscoveryPlacesOut: Codable, Hashable, Sendable {
+    let places: [DiscoveryPlaceOut]
+    let countries: [String]
+    /// Places named on the trip that couldn't be verified: shown, not offered.
+    let dropped: [String]
+}
+
+struct DiscoveryPlaceIn: Codable, Sendable {
+    let excluded: Bool
+}
+
+// MARK: - Trip exchange rates (server 4.10, D-195, YONDER-237/242)
+
+/// One row of the trip's shared rate table: 1 `currency` = `rate` `quote` for
+/// `rate_date`; `as_of` is the day the feed published it.
+struct TripRateOut: Codable, Hashable, Sendable {
+    let currency: String
+    let quote: String
+    let rate_date: String
+    let rate: String
+    let as_of: String?
+    let source: String               // frankfurter | discover
+    let fetched_at: String?
+}
+
+/// POST /api/v1/trips/{id}/rates/{code}/refresh: the rate it stored, and the
+/// expenses it converted with it.
+struct RateRefreshOut: Codable, Sendable {
+    let rate: TripRateOut
+    let applied: [String]
+}
+
+// MARK: - Documents (server 4.11, YONDER-179, SPEC-8 D-196)
+// Kept the same as the server's contracts/ios/DTOs.swift, which added them first.
+
+/// A file you captured — PDF, .ics or .eml. Only its uploader ever sees it.
+struct DocumentOut: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let filename: String
+    let content_type: String         // application/pdf | text/calendar | message/rfc822
+    let size_bytes: Int
+    let trip_id: String?
+    let batch_id: String?
+    let source: String
+    let scan_notes: String?
+    let created_at: String?
+    /// When the stored copy is removed (12 months after its trip ends).
+    let removed_on: String?
+    let purged: Bool
+}
+
+/// GET /documents — your files and storage. `enabled` false = this server
+/// doesn't take files (hide the file actions; `reason` says why).
+struct DocumentsOut: Codable, Hashable, Sendable {
+    let enabled: Bool
+    let reason: String?
+    let used_bytes: Int
+    let quota_bytes: Int
+    let max_file_bytes: Int
+    let documents: [DocumentOut]
+}
+
+/// POST /capture/file (multipart: file, trip_id?, notes?, source="ios") →
+/// 202. 413 too big / over quota, 415 not PDF/.ics/.eml, 422 unsafe, 503 off
+/// or the scanner is down. `duplicate` = you'd already captured this file.
+struct FileCaptureOut: Codable, Hashable, Sendable {
+    let document: DocumentOut
+    let batch_id: String?
+    let duplicate: Bool
 }
