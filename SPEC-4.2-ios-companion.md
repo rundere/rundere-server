@@ -283,6 +283,11 @@ APNs push, a general offline write queue, the 5.0
 inventory pillar (YONDER-62–65; the app keeps packing a self-contained module
 so inventory can arrive beside it).
 
+**Orientation (D-246, SPEC-8):** portrait and landscape are both supported on
+iPhone and iPad, as #17 (YONDER-118) built. Screens may lay out for a wide
+window by size class, and the scenery floor is a shorter band in
+compact-height landscape.
+
 ## 6. Open decisions for the owner
 1. Distribution (YONDER-56): AltStore (free, 7-day re-sign) vs TestFlight ($99/yr).
 2. Confirm "web for profiles/admin, native for daily use" (§3.6).

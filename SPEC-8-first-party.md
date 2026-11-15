@@ -684,7 +684,8 @@ glow stays dark-grounds-only.
   appearances on iOS, VectorDrawables with `drawable-night` on Android. They
   show under Today's content, in empty states and at the end of a trip's
   timeline: never behind list rows, the tab or navigation bar, or the Capture
-  button, and hidden in compact-height landscape.
+  button. In compact-height landscape (a phone on its side) the floor is a
+  shorter band, sized to fit, under the same rules (D-246).
 - **The person controls it.** `users.scenery` (default on) is a switch in
   Account › Appearance. Base themes have no scenery, and it's off in print and
   with forced colours.
@@ -1169,6 +1170,9 @@ pass the guardrails: no migration and no app release.
   empty states and the trip timeline in the apps. Never behind content, not
   animated in 5.0, and switchable per account (`users.scenery`, default on).
   See §15.
+  - *Amended by D-246 (owner, 2026-11-14, recorded 2026-11-15):* the apps show
+    the floor in compact-height landscape too, as a shorter band, instead of
+    hiding it.
 - **D-240 — The server resolves the theme (owner, 2026-11-12).** `/me` returns
   `resolved_theme` and `/api/v1/themes` serves the manifest from 5.0. After
   5.0, `ui_theme` may be `random` (Surprise me: one theme per person per day)
@@ -1180,3 +1184,12 @@ pass the guardrails: no migration and no app release.
 - **D-245 — Theme scenes also ship as PNG (owner, 2026-11-14).** `/themes` gives
   each scene at 2x and 3x as PNG so an app that can't draw a fetched SVG can show a
   new theme's scenery. See §15.
+- **D-246 — The mobile apps support landscape (owner, 2026-11-14 and
+  2026-11-15).** Portrait and landscape are both supported orientations on iOS
+  and Android, on phones as well as tablets. Screens may lay out for a wide
+  window (side-by-side panes, wider forms, a list beside its detail) rather
+  than only stretching the portrait layout, keyed to the window's size class
+  rather than the device. Nothing may be landscape-only, and both orientations
+  keep the same features. The scenery floor shows in compact-height landscape
+  as a shorter band (amends D-239). The API is unaffected. See SPEC-4.2 §5 and
+  SPEC-4.3 §4.1.
