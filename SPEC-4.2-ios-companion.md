@@ -283,6 +283,13 @@ APNs push, a general offline write queue, the 5.0
 inventory pillar (YONDER-62–65; the app keeps packing a self-contained module
 so inventory can arrive beside it).
 
+**Orientation (D-246, SPEC-8):** landscape views are a 5.0 deliverable on
+iPhone and iPad. YONDER-118 already gives Trips and Review split views on wide
+windows. The other main screens (Today, Capture, Notebook, Settings) each get a
+landscape layout by size class too, keeping every feature and the person's
+place on rotation. The scenery floor is a shorter band in compact-height
+landscape.
+
 ## 6. Open decisions for the owner
 1. Distribution (YONDER-56): AltStore (free, 7-day re-sign) vs TestFlight ($99/yr).
 2. Confirm "web for profiles/admin, native for daily use" (§3.6).
