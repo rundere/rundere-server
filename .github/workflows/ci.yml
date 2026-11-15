@@ -39,6 +39,10 @@ jobs:
         run: |
           uv run python tests/validate.py | tail -1
           # e.g. "35/35 cases behaved as expected" — the regression contract.
+      # YONDER-387: a warning, never a failure, when the Android app's contract
+      # snapshot is behind the server. Breaking drift fails in pytest instead.
+      - name: Android contract staleness
+        run: uv run python scripts/schema_drift.py --warn-stale
 
   # YONDER-287: the pre-publish check (scripts/prepublish.py). A gate since
   # YONDER-295: the tree is clean, so any blocking finding fails the build. The
