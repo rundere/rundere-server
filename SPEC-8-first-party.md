@@ -719,6 +719,25 @@ After 5.0, `ui_theme` may also hold a mode:
 New themes after 5.0 (Jungle, Savanna, a sci-fi Orbit, …) are new packages that
 pass the guardrails: no migration and no app release.
 
+### What the server can do (D-244) and scenes as PNG (D-245)
+
+- **Capabilities.** `GET /api/v1/auth/methods` (unauthenticated, so an app reads
+  it before and after sign-in) returns `capabilities`, a list of stable lowercase
+  names from `app/capabilities.py`: `trip_pdf_flags`, `release_notes`,
+  `places_suggest`, `places_lists`, `themes`, `theme_scene_png`, and where the
+  web has them, `data_export` and `account_delete`. An app gates a feature on its
+  name, not on a 404 or the version. Names are only ever added; an unknown name
+  is ignored. A name is absent when the feature doesn't work on that server (no
+  export or deletion with sign-in off or on a demo server). The list is on
+  `/auth/methods` only, not on `/auth/me`.
+- **Scene PNGs.** `/api/v1/themes` adds `light_png_url`, `dark_png_url` (2x,
+  2880×480) and `light_png_3x_url`, `dark_png_3x_url` (4320×720) to each
+  theme's `scene`: transparent, same drawing as the SVG. iOS can't draw a
+  fetched SVG, so a theme newer than the build still shows its scenery without an
+  app release. `scripts/build_tokens.py` renders them (`scripts/scene_png.py`,
+  Pillow only) beside the SVGs as `scene-<mode>@<n>x.png`; `--check` fails when
+  one is missing or its SVG changed. Android keeps using the SVG.
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.
@@ -1155,3 +1174,9 @@ pass the guardrails: no migration and no app release.
   5.0, `ui_theme` may be `random` (Surprise me: one theme per person per day)
   or `next-trip` (Match my next trip: the trip's own theme, else a suggestion
   from its destination, never from its people). See §15.
+- **D-244 — Capabilities on `/auth/methods` (owner, 2026-11-14).** The server lists
+  what it can do by stable name so a build keeps working across releases. Names
+  are added, never renamed. See §15.
+- **D-245 — Theme scenes also ship as PNG (owner, 2026-11-14).** `/themes` gives
+  each scene at 2x and 3x as PNG so an app that can't draw a fetched SVG can show a
+  new theme's scenery. See §15.

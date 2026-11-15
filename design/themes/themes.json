@@ -136,7 +136,17 @@
         "title": "Coast floor: sea, headland lighthouse, palm and sand",
         "svg": "coast/scene.svg",
         "light": "coast/scene-light.svg",
-        "dark": "coast/scene-dark.svg"
+        "dark": "coast/scene-dark.svg",
+        "png": {
+          "light": {
+            "2x": "coast/scene-light@2x.png",
+            "3x": "coast/scene-light@3x.png"
+          },
+          "dark": {
+            "2x": "coast/scene-dark@2x.png",
+            "3x": "coast/scene-dark@3x.png"
+          }
+        }
       }
     },
     {
@@ -225,7 +235,17 @@
         "title": "Desert floor: mesas, dunes and saguaro",
         "svg": "desert/scene.svg",
         "light": "desert/scene-light.svg",
-        "dark": "desert/scene-dark.svg"
+        "dark": "desert/scene-dark.svg",
+        "png": {
+          "light": {
+            "2x": "desert/scene-light@2x.png",
+            "3x": "desert/scene-light@3x.png"
+          },
+          "dark": {
+            "2x": "desert/scene-dark@2x.png",
+            "3x": "desert/scene-dark@3x.png"
+          }
+        }
       }
     },
     {
@@ -314,7 +334,17 @@
         "title": "Forest floor: hills and two rows of pines",
         "svg": "forest/scene.svg",
         "light": "forest/scene-light.svg",
-        "dark": "forest/scene-dark.svg"
+        "dark": "forest/scene-dark.svg",
+        "png": {
+          "light": {
+            "2x": "forest/scene-light@2x.png",
+            "3x": "forest/scene-light@3x.png"
+          },
+          "dark": {
+            "2x": "forest/scene-dark@2x.png",
+            "3x": "forest/scene-dark@3x.png"
+          }
+        }
       }
     },
     {
@@ -401,7 +431,17 @@
         "title": "Metro floor: skyline with lit windows and street lamps",
         "svg": "metro/scene.svg",
         "light": "metro/scene-light.svg",
-        "dark": "metro/scene-dark.svg"
+        "dark": "metro/scene-dark.svg",
+        "png": {
+          "light": {
+            "2x": "metro/scene-light@2x.png",
+            "3x": "metro/scene-light@3x.png"
+          },
+          "dark": {
+            "2x": "metro/scene-dark@2x.png",
+            "3x": "metro/scene-dark@3x.png"
+          }
+        }
       }
     },
     {
@@ -490,7 +530,17 @@
         "title": "Winter floor: snowy peaks, pines, a lit ski chalet and a snowman",
         "svg": "winter/scene.svg",
         "light": "winter/scene-light.svg",
-        "dark": "winter/scene-dark.svg"
+        "dark": "winter/scene-dark.svg",
+        "png": {
+          "light": {
+            "2x": "winter/scene-light@2x.png",
+            "3x": "winter/scene-light@3x.png"
+          },
+          "dark": {
+            "2x": "winter/scene-dark@2x.png",
+            "3x": "winter/scene-dark@3x.png"
+          }
+        }
       }
     }
   ]

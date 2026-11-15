@@ -9,7 +9,7 @@ holds, so a new package needs no migration and no app release (D-240).
 - `resolve(ui_theme)`: the concrete theme to draw. In 5.0 that is the stored id,
   or `base` for an unknown or removed one (D-240).
 - `manifest(base_url)`: the manifest for `GET /api/v1/themes`, with absolute
-  URLs for each travel theme's fixed-colour scene files.
+  URLs for each travel theme's fixed-colour scene files (SVG, and PNG at 2x and 3x, D-245).
 """
 from __future__ import annotations
 
@@ -65,10 +65,19 @@ def manifest(base_url: str) -> dict:
         item["modes"] = t.get("modes") or {}
         scene = t.get("scene")
         if scene:
+            png = scene.get("png") or {}
+
+            def png_url(mode: str, scale: str) -> str | None:
+                path = (png.get(mode) or {}).get(scale)
+                return f"{base_url}{STATIC_PREFIX}/{path}" if path else None
+
             item["scene"] = {
                 "title": scene.get("title", ""),
                 "light_url": f"{base_url}{STATIC_PREFIX}/{scene['light']}",
                 "dark_url": f"{base_url}{STATIC_PREFIX}/{scene['dark']}",
+                # D-245: PNG at 2x and 3x, for apps that can't draw a fetched SVG.
+                "light_png_url": png_url("light", "2x"), "dark_png_url": png_url("dark", "2x"),
+                "light_png_3x_url": png_url("light", "3x"), "dark_png_3x_url": png_url("dark", "3x"),
             }
         else:
             item["scene"] = None

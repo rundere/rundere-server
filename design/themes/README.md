@@ -9,7 +9,8 @@ design/themes/<id>/
 ├── theme.json        the source: name, description, version, tags, colours per mode
 ├── scene.svg         the source: the floor, coloured only with rd-scene-* tokens
 ├── scene-light.svg   generated: fixed colours, for iOS image sets / Android drawables
-└── scene-dark.svg    generated
+├── scene-dark.svg    generated
+└── scene-<light|dark>@<2|3>x.png   generated: the same scenes as transparent PNG (D-245)
 ```
 
 ## Adding a theme
@@ -25,7 +26,9 @@ design/themes/<id>/
 3. Draw `scene.svg`: 1440×240, bottom-anchored, flat shapes, every fill or
    stroke `style="fill:var(--rd-scene-<role>)"`. Keep the signature shape in
    the middle third so it survives a phone crop.
-4. Run `uv run python scripts/build_tokens.py`, then
+4. Run `uv run python scripts/build_tokens.py` (it also renders the PNGs; scenes
+   may use only rect, circle, ellipse and M/L/H/V/C/S/Q/T/Z paths), then commit
+   the PNGs with it. Then run
    `uv run --extra dev pytest -q tests/test_theme_packages.py`.
 
 The tests hold every theme to the guardrails:

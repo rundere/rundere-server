@@ -32,6 +32,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import scene_png  # noqa: E402  (D-245: PNG scenes for apps that can't draw a fetched SVG)
+
 ROOT = Path(__file__).resolve().parent.parent
 TOKENS = ROOT / "design" / "tokens"
 THEMES = ROOT / "design" / "themes"
@@ -323,6 +326,10 @@ def render_scene(theme: dict, mode: str) -> str:
     return SCENE_FILL.sub(lambda m: f'{m.group(1)}="{colors[m.group(2)]}"', text)
 
 
+def png_name(mode: str, scale: int) -> str:
+    return f"scene-{mode}@{scale}x.png"
+
+
 def render_manifest(all_themes: list[dict]) -> str:
     items = []
     for t in all_themes:
@@ -337,6 +344,9 @@ def render_manifest(all_themes: list[dict]) -> str:
                 "svg": f"{t['id']}/{t['scene']['file']}",
                 "light": f"{t['id']}/scene-light.svg",
                 "dark": f"{t['id']}/scene-dark.svg",
+                # D-245: the same scenes as PNG at 2x and 3x of the SVG's size.
+                "png": {mode: {f"{s}x": f"{t['id']}/{png_name(mode, s)}" for s in scene_png.SCALES}
+                        for mode in MODES},
             }
         items.append(item)
     return json.dumps({"$description": GENERATED, "version": 1, "themes": items}, indent=2, ensure_ascii=False) + "\n"
@@ -359,8 +369,22 @@ def outputs() -> dict[Path, str]:
     return files
 
 
+def png_outputs() -> dict[Path, tuple[str, int]]:
+    """Each scene PNG, as (its fixed-colour SVG text, scale). Binary, so kept
+    apart from `outputs()`; staleness is the SVG's hash inside the PNG."""
+    files = {}
+    for t in load_themes():
+        for mode in MODES:
+            svg = render_scene(t, mode)
+            for scale in scene_png.SCALES:
+                files[THEMES / t["id"] / png_name(mode, scale)] = (svg, scale)
+    return files
+
+
 def stale() -> list[Path]:
-    return [p for p, text in outputs().items() if not p.is_file() or p.read_text() != text]
+    bad = [p for p, text in outputs().items() if not p.is_file() or p.read_text() != text]
+    bad += [p for p, (svg, scale) in png_outputs().items() if not scene_png.is_current(p, svg, scale)]
+    return bad
 
 
 def main(argv: list[str]) -> int:
@@ -375,6 +399,10 @@ def main(argv: list[str]) -> int:
         for p, text in outputs().items():
             if not p.is_file() or p.read_text() != text:
                 p.write_text(text)
+                print(f"wrote {p.relative_to(ROOT)}")
+        for p, (svg, scale) in png_outputs().items():
+            if not scene_png.is_current(p, svg, scale):
+                p.write_bytes(scene_png.png_bytes(svg, scale))
                 print(f"wrote {p.relative_to(ROOT)}")
         return 0
     except ThemeError as exc:

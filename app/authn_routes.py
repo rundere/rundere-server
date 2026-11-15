@@ -259,6 +259,9 @@ class AuthMethodsOut(BaseModel):
     # controls (every trip also reports can_edit=false).
     demo: bool = False
     version: str
+    # D-244: what this server can do, by stable name (app/capabilities.py). An
+    # app gates a feature on a name, not on the version or a 404.
+    capabilities: list[str] = []
 
 
 @router.get("/api/v1/auth/methods", response_model=AuthMethodsOut)
@@ -268,7 +271,7 @@ def api_auth_methods(request: Request):
     (_login_options, YONDER-164). The host is the one the request was made to —
     never a forwarded or proxy-supplied identity header. An older server
     answers 404, which the app reads as "password only"."""
-    from app import demo, oauth, oidc
+    from app import capabilities, demo, oauth, oidc
     from app.config import settings
     from app.db import SessionLocal
     if demo.enabled():
@@ -276,7 +279,8 @@ def api_auth_methods(request: Request):
         return {"password": True, "oauth": False, "oauth_client_id": None,
                 "oauth_clients": dict.fromkeys(oauth.APP_CLIENT_PLATFORMS), "sso": False,
                 "sso_name": None, "sso_forced": False, "registration_open": False,
-                "demo": True, "version": settings.app_version}
+                "demo": True, "version": settings.app_version,
+                "capabilities": capabilities.current()}
     forced = oidc.forced_on(request)
     sso = oidc.offered_on(request)
     with SessionLocal() as session:
@@ -290,7 +294,8 @@ def api_auth_methods(request: Request):
             "sso_name": settings.oidc_display_name if sso else None,
             "sso_forced": forced,
             "registration_open": settings.auth_registration_open and not forced,
-            "version": settings.app_version}
+            "version": settings.app_version,
+            "capabilities": capabilities.current()}
 
 
 @router.post("/api/v1/auth/login", response_model=TokenOut, responses=_REFUSED)
