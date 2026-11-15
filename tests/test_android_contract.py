@@ -325,3 +325,36 @@ def test_cli_exit_codes(tmp_path):
 
 def test_default_snapshot_is_the_android_copy():
     assert schema_drift.DEFAULT_SNAPSHOT == ROOT / "contracts" / "android" / "openapi.json"
+
+
+# ---------------------------------------------------------------- staleness (YONDER-387)
+def test_staleness_quiet_when_the_snapshot_is_current():
+    assert schema_drift.staleness([("INFO", "GET /api/v1/widgets response: a: new "
+                                            "optional field, not adopted")]) is None
+
+
+def test_staleness_warns_on_a_new_operation():
+    msg = schema_drift.staleness([("INFO", "GET /api/v1/gadgets: new operation")])
+    assert msg and "1 new operation(s)" in msg
+
+
+def test_staleness_warns_on_many_new_fields():
+    info = [("INFO", f"GET /api/v1/widgets response: f{i}: new optional field, "
+                     "not adopted") for i in range(schema_drift.STALE_FIELDS)]
+    msg = schema_drift.staleness(info)
+    assert msg and f"{schema_drift.STALE_FIELDS} new field(s)" in msg
+
+
+def test_staleness_ignores_errors_and_warnings():
+    assert schema_drift.staleness([("ERROR", "GET /api/v1/widgets: operation is gone"),
+                                   ("WARN", "GET /api/v1/widgets: status changed")]) is None
+
+
+def test_warn_stale_never_fails(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    snap, live = tmp_path / "snap.json", tmp_path / "live.json"
+    snap.write_text(json.dumps(spec({})))
+    live.write_text(json.dumps(spec({"/api/v1/gadgets": {"get": op(resp=obj({}))}})))
+    assert schema_drift.main(["--snapshot", str(snap), "--openapi", str(live),
+                              "--warn-stale"]) == 0
+    assert "::warning title=Android contract snapshot is behind::" in capsys.readouterr().out
