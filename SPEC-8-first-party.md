@@ -1184,12 +1184,16 @@ pass the guardrails: no migration and no app release.
 - **D-245 — Theme scenes also ship as PNG (owner, 2026-11-14).** `/themes` gives
   each scene at 2x and 3x as PNG so an app that can't draw a fetched SVG can show a
   new theme's scenery. See §15.
-- **D-246 — The mobile apps support landscape (owner, 2026-11-14 and
+- **D-246 — The mobile apps have landscape views (owner, 2026-11-14 and
   2026-11-15).** Portrait and landscape are both supported orientations on iOS
-  and Android, on phones as well as tablets. Screens may lay out for a wide
-  window (side-by-side panes, wider forms, a list beside its detail) rather
-  than only stretching the portrait layout, keyed to the window's size class
-  rather than the device. Nothing may be landscape-only, and both orientations
-  keep the same features. The scenery floor shows in compact-height landscape
-  as a shorter band (amends D-239). The API is unaffected. See SPEC-4.2 §5 and
-  SPEC-4.3 §4.1.
+  and Android, on phones as well as tablets, and landscape is a 5.0 deliverable,
+  not just allowed. The main screens (Today, Trips and a trip's timeline,
+  Capture, Inbox, Notebook and Settings) each get a landscape view that uses the
+  width rather than stretching the portrait layout: side-by-side panes and a
+  list beside its detail where there is room, wider forms and sheets otherwise.
+  Layout follows the window's size class, not the device, so split screen and
+  resizable windows get the same views. Nothing may be landscape-only, both
+  orientations keep the same features, and rotating never loses what the person
+  was typing or where they were. The scenery floor shows in compact-height
+  landscape as a shorter band (amends D-239). The API is unaffected. See
+  SPEC-4.2 §5 and SPEC-4.3 §4.1.
