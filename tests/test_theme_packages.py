@@ -116,6 +116,41 @@ def test_manifest_lists_base_first_then_every_package():
             assert (bt.THEMES / t["scene"][key]).is_file()
 
 
+def test_scene_pngs_are_published_for_every_theme_mode_and_scale():
+    """D-245: iOS can't draw a fetched SVG, so each scene is also a transparent PNG
+    at 2x and 3x of its 1440x240 size, tagged with its SVG's hash (no stale PNG)."""
+    from PIL import Image
+    manifest = json.loads((bt.THEMES / "themes.json").read_text())
+    for t in manifest["themes"][1:]:
+        for mode in bt.MODES:
+            svg = (bt.THEMES / t["id"] / f"scene-{mode}.svg").read_text()
+            for scale in (2, 3):
+                path = bt.THEMES / t["scene"]["png"][mode][f"{scale}x"]
+                assert path.is_file(), path
+                assert bt.scene_png.is_current(path, svg, scale), f"{path.name} is stale"
+                with Image.open(path) as im:
+                    assert im.size == (1440 * scale, 240 * scale) and im.mode == "RGBA"
+                    assert im.getpixel((0, 0))[3] == 0            # sky is transparent
+                    assert im.getpixel((im.width // 2, im.height - 2))[3] == 255   # ground is opaque
+
+
+def test_png_renderer_draws_the_supported_shapes_and_refuses_the_rest():
+    import pytest as _pt
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20" width="40" height="20">'
+           '<rect x="0" y="10" width="40" height="10" fill="#112233"/>'
+           '<path d="M0 10 Q10 0 20 10 T40 10 V0 H0Z" fill="#445566" opacity="0.5"/>'
+           '<circle cx="30" cy="5" r="3" fill="#ABCDEF"/></svg>')
+    im = bt.scene_png.render(svg, 2)
+    assert im.size == (80, 40)
+    assert im.getpixel((40, 35))[:4] == (0x11, 0x22, 0x33, 255)
+    assert im.getpixel((60, 10))[:3] == (0xAB, 0xCD, 0xEF)
+    assert 120 <= im.getpixel((10, 4))[3] <= 135                    # opacity 0.5 kept
+    for bad in ('<rect width="1" height="1" fill="red"/>',          # named colour
+                '<text>x</text>', '<path d="M0 0 A5 5 0 0 1 9 9"/>'):  # element / arc command
+        with _pt.raises(bt.scene_png.SceneError):
+            bt.scene_png.render(svg.replace('<circle cx="30" cy="5" r="3" fill="#ABCDEF"/>', bad), 1)
+
+
 def test_css_blocks_follow_the_mode_rules():
     css = (bt.TOKENS / "tokens.css").read_text()
     head = css.split(bt.CSS_BEGIN)[0]

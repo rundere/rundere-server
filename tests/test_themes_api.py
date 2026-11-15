@@ -173,6 +173,12 @@ if DEPS:
             for mode in ("light", "dark"):
                 url = out["scene"][f"{mode}_url"]
                 assert url.endswith(f"/brand/themes/{t['id']}/scene-{mode}.svg")
+                # D-245: the same scene as PNG at 2x and 3x, served as a static file.
+                for key, scale in ((f"{mode}_png_url", 2), (f"{mode}_png_3x_url", 3)):
+                    assert out["scene"][key].endswith(
+                        f"/brand/themes/{t['id']}/scene-{mode}@{scale}x.png")
+                    png = client.get(urlsplit(out["scene"][key]).path)
+                    assert png.status_code == 200 and png.headers["content-type"] == "image/png"
                 svg = client.get(urlsplit(url).path)
                 assert svg.status_code == 200 and "<svg" in svg.text
 

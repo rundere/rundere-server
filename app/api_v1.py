@@ -806,6 +806,12 @@ class ThemeSceneOut(BaseModel):
     title: str = ""
     light_url: str = Field(description="Fixed-colour scenery floor for light mode (SVG).")
     dark_url: str = Field(description="Fixed-colour scenery floor for dark mode (SVG).")
+    # D-245: for apps that can't draw a fetched SVG (iOS). Transparent PNGs of the
+    # same scenes at 2x and 3x of the SVG's 1440x240 points (2880x480, 4320x720).
+    light_png_url: str | None = Field(None, description="Light scene, PNG at 2x.")
+    dark_png_url: str | None = Field(None, description="Dark scene, PNG at 2x.")
+    light_png_3x_url: str | None = Field(None, description="Light scene, PNG at 3x.")
+    dark_png_3x_url: str | None = Field(None, description="Dark scene, PNG at 3x.")
 
 
 class ThemeOut(BaseModel):

@@ -32,9 +32,11 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 - **What's new.** After an upgrade, Run·dere shows you once what changed, like this. The About page lists every version.
 - **Export your data.** Account → Export my data builds a zip of your own data as JSON files, with the files you uploaded: trips, places, journal, profiles. It is kept for 7 days, and downloading it asks you to confirm it's you. Passwords, tokens and other people's data are never in it.
 - **Delete your account.** Account → Delete my account locks your account at once and deletes it, with your data, 7 days later. Until then you can sign in on the web and cancel, or take an export. For each trip of yours that other people are on, you choose who it passes to, or that it is deleted. Your name stays on other people's trips as a guest.
+- **New themes without a new app.** The iPhone app can now show the scenery for a theme that is newer than the app itself.
 - **Typing in a capture by hand.** When a capture can't be read automatically, review shows the original email, page or file next to the form so you can fill it in.
 
 ### For admins
+- **Apps ask the server what it supports.** `/api/v1/auth/methods` lists the features this server offers, so the apps only show what works here.
 - **AI is now off unless you turn it on.** Set `TX_AI_ENABLED=true` to keep reading booking emails and running Discover's research with AI. Point `TX_AI_URL` at Ollama or any OpenAI-compatible server (LiteLLM, vLLM, a cloud provider). The old `TX_OLLAMA_URL` still works in 5.0, with a warning.
 - **Settings → AI** shows what AI is used for, any configuration problems, a connection test and a log of calls (never their content).
 - **Tell everyone to retake the packing questionnaire** (Settings → Packing profile). Packing lists can't be generated until they do.
