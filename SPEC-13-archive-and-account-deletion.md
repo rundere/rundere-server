@@ -433,8 +433,11 @@ owner, 2026-11-13.)
 - **Emails** go out when deletion is requested, cancelled and finished, when
   the account has an address and SMTP is set up.
 - **Guards.** The last active admin can't delete their own account, and no
-  deletion may leave the server without an active admin. The demo server
-  offers no deletion (404, D-198).
+  deletion may leave the server without an active admin. The guard applies on
+  every path that can remove or lock an admin: the web role and active
+  switches, the deletion request and purge, and the command line's
+  `make-admin --revoke` (which takes `--force` for an operator who means it).
+  The demo server offers no deletion (404, D-198).
 
 D-211's list of admin-only actions changes in one word: admins still create
 and deactivate accounts and can delete **other** accounts; deleting your own
@@ -563,7 +566,9 @@ for admins. It is driven by the registry of §1.1, and these rules hold:
   `users` row last.
 - **No reliance on cascades.** A few tables have database foreign keys
   (`refresh_tokens`, `password_reset_tokens`, `item_keys`, `commit_attempts`,
-  `ingest_batches.api_key_id`, `travel_items.batch_id`). SQLite in the tests
+  `ingest_batches.api_key_id`, `ingest_batches.artifact_sha256`,
+  `travel_items.batch_id`, `travel_items.artifact_sha256`,
+  `trip_travelers.trip_id`, `trip_activities.trip_id`). SQLite in the tests
   doesn't enforce them, so children are deleted explicitly, in an order that
   also satisfies Postgres.
 - **One transaction for the rows.** Files can't be rolled back, so the
