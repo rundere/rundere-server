@@ -36,7 +36,15 @@ _thread: threading.Thread | None = None
 
 
 def _locate_addresses(session) -> str:
-    from app.trips.geo import backfill, geocoder_state
+    from app.trips.geo import backfill, geocoder_state, needs_locating
+    # Ask first: with no geocoder answering a run gains nothing, and it would
+    # only rescan every activity at each start (D-146). Nothing to locate is
+    # done either way.
+    todo = needs_locating(session)
+    if not todo:
+        return "nothing to locate"
+    if (state := geocoder_state()) != "ok":
+        raise NotYet(f"geocoder {state}; {todo} to locate")
     counts = backfill(session)
     # D-233 / D-146: backfill never raises and a down Photon looks like "not
     # found", so activities left unlocated are told apart here. Photon unset or
