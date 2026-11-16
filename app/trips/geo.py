@@ -313,10 +313,26 @@ def locate_activity(atype: str, values: dict, *, old_geo: dict | None = None,
         return old_geo
     loc = locator or Locator.default()
     try:
-        return _locate(atype, values, spec, key, loc)
+        new = _locate(atype, values, spec, key, loc)
     except Exception:
         log.warning("locating a %s activity failed", atype, exc_info=True)
-        return {"points": [], "key": key, "complete": False, "at": _now()}
+        new = {"points": [], "key": key, "complete": False, "at": _now()}
+    return keep_better(old_geo, new)
+
+
+def keep_better(old: dict | None, new: dict | None) -> dict | None:
+    """`new`, unless it is worse than `old` for the same location values: then
+    `old` stays. A down or unset Photon answers "nothing found" (D-146), so
+    redoing a pin from before addresses were kept (D-233) must never swap a
+    located pin for an empty one; it waits for a geocoder that answers."""
+    if not old or not new or old.get("key") != new.get("key"):
+        return new
+    if any(is_placeholder(p.get("label")) for p in old.get("points") or []):
+        return new                     # a pin for "Unknown" is wrong: redone, to nothing
+    had, got = len(old.get("points") or []), len(new.get("points") or [])
+    if got < had or (old.get("complete") and not new.get("complete")):
+        return old
+    return new
 
 
 def _locate(atype, values, spec, key, loc: Locator) -> dict:
@@ -443,6 +459,15 @@ def trip_places(session, trip_id: str, *, exclude_id: str | None = None) -> dict
     return known
 
 
+def needs_locating(session) -> int:
+    """How many activities backfill() would look up: a type with something to
+    locate whose stored geo doesn't stand. Reads only; no lookups."""
+    from app.models import TripActivity
+    return sum(1 for a in session.query(TripActivity).all()
+               if a.type in _POINTS
+               and not _reusable(a.geo, fingerprint(a.type, a.values or {})))
+
+
 def backfill(session, *, trip_id: str | None = None, redo: bool = False,
              progress: Callable[[str], None] | None = None) -> dict:
     """Locate existing activities (NULL or incomplete geo; all of them with
@@ -466,7 +491,7 @@ def backfill(session, *, trip_id: str | None = None, redo: bool = False,
         # Two passes per trip: places first, then anything still missing with
         # what the trip now knows (a route naming its hotels).
         for a in acts:
-            a.geo = locate_activity(a.type, a.values or {}, locator=base)
+            a.geo = keep_better(a.geo, locate_activity(a.type, a.values or {}, locator=base))
         session.commit()
         pending = [a for a in acts if a.geo is not None and not a.geo.get("complete")]
         if pending:
@@ -474,7 +499,7 @@ def backfill(session, *, trip_id: str | None = None, redo: bool = False,
             loc = Locator(geocoder=base.geocoder, airport=base.airport,
                           route_url=base.route_url, known=known)
             for a in pending:
-                a.geo = locate_activity(a.type, a.values or {}, locator=loc)
+                a.geo = keep_better(a.geo, locate_activity(a.type, a.values or {}, locator=loc))
             session.commit()
         for a in acts:
             geo = a.geo

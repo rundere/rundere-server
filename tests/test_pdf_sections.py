@@ -331,6 +331,8 @@ def test_the_address_step_is_the_locate_backfill(monkeypatch):
     from app import upgrade
     from app.trips import geo as geo_mod
     monkeypatch.setattr(geo_mod, "backfill", lambda session: {"located": 2, "skipped": 5})
+    monkeypatch.setattr(geo_mod, "geocoder_state", lambda: "ok")
+    monkeypatch.setattr(geo_mod, "needs_locating", lambda session: 7)
     assert dict(upgrade.STEPS)["locate-addresses"](None) == "located=2, skipped=5"
 
 
@@ -431,3 +433,76 @@ def test_address_step_done_with_nothing_to_locate_and_no_photon(monkeypatch):
     upgrade.run(SessionLocal)
     assert _step_state() == []
     _fresh_address_step(with_lodging=False)
+
+
+# ---- a pin from before 5.0 is never lost to a geocoder that can't answer (D-146)
+
+def _old_pin(values):
+    """A pre-5.0 Photon pin: located and complete, but kept no address."""
+    return {"points": [{"role": "place", "label": "Hotel Imaginary", "lat": 20.0, "lon": 10.0,
+                        "source": "photon"}],
+            "key": geo.fingerprint("lodging", values), "complete": True, "at": "2026-10-01"}
+
+
+def _lodging_with_old_pin():
+    values = {"name": "Hotel Imaginary", "address": "1 Example Street, Nowhere"}
+    with SessionLocal() as s:
+        s.query(TripActivity).delete()
+        t = Trip(name="Old pin test", start_date="2027-03-01", end_date="2027-03-03")
+        s.add(t)
+        s.flush()
+        a = TripActivity(trip_id=t.id, type="lodging", starts_at="2027-03-01",
+                         values=values, geo=_old_pin(values))
+        s.add(a)
+        s.commit()
+        return a.id, values
+
+
+def test_backfill_keeps_an_old_pin_when_photon_is_unset(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "photon_url", "")
+    aid, values = _lodging_with_old_pin()
+    try:
+        with SessionLocal() as s:
+            geo.backfill(s)
+        with SessionLocal() as s:
+            assert s.get(TripActivity, aid).geo == _old_pin(values)
+    finally:
+        _fresh_address_step(with_lodging=False)
+
+
+def test_the_upgrade_step_leaves_old_pins_alone_until_photon_answers(monkeypatch):
+    from app.config import settings
+    upgrade = _only_address_step(monkeypatch)
+    monkeypatch.setattr(settings, "photon_url", "")
+    aid, values = _lodging_with_old_pin()
+    from app.models import ServerSetting
+    with SessionLocal() as s:
+        s.query(ServerSetting).filter(ServerSetting.key == _STEP).delete()
+        s.commit()
+    called = []
+    monkeypatch.setattr(geo, "backfill", lambda *a, **k: called.append(1) or {})
+    try:
+        assert upgrade.run(SessionLocal)["locate-addresses"].startswith("not yet")
+        assert called == []                                   # nothing rescanned
+        with SessionLocal() as s:
+            assert s.get(TripActivity, aid).geo == _old_pin(values)
+    finally:
+        _fresh_address_step(with_lodging=False)
+
+
+def test_saving_an_old_activity_with_photon_down_keeps_its_pin(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "photon_url", "")
+    values = {"name": "Hotel Imaginary", "address": "1 Example Street, Nowhere"}
+    old = _old_pin(values)
+    assert geo.locate_activity("lodging", values, old_geo=old) == old
+
+
+def test_a_better_or_moved_location_still_replaces_the_pin():
+    old = {"points": [{"lat": 1, "lon": 1}], "key": "k", "complete": True}
+    better = {"points": [{"lat": 1, "lon": 1, "address": "x"}], "key": "k", "complete": True}
+    moved = {"points": [], "key": "other", "complete": False}
+    assert geo.keep_better(old, better) is better
+    assert geo.keep_better(old, moved) is moved            # values changed: old pin is wrong now
+    assert geo.keep_better(None, moved) is moved
