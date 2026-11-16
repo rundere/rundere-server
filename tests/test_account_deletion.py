@@ -878,6 +878,11 @@ if DEPS:
                     oauth.refresh(s, client=client, refresh_token=tokens[L], default_aud="x")
                 assert why.value.deletion_pending is True
                 assert why.value.error == "invalid_grant"
+            # Knowing the grant id without the token's secret tells nothing.
+            forged = tokens[L].rsplit("_", 1)[0] + "_" + uuid.uuid4().hex
+            with pytest.raises(oauth.OAuthError) as why:
+                oauth.refresh(s, client=client, refresh_token=forged, default_aud="x")
+            assert why.value.deletion_pending is False
             # Someone merely signed out is told nothing of the kind.
             other = s.get(m.User, w.ids["survivor"])
             authn.end_sessions(s, other)
@@ -886,6 +891,25 @@ if DEPS:
                 oauth.refresh(s, client=client, refresh_token=tokens[w.ids["survivor"]],
                               default_aud="x")
             assert why.value.deletion_pending is False
+
+    def test_signing_out_ends_the_session_and_the_confirmation(env):
+        """SPEC-13 §4.1: cookies copied before signing out don't download the
+        archive afterwards; the web session itself ends on the server."""
+        w = _world(env)
+        S = w.ids["survivor"]
+        c = _confirmed(S)
+        copied = TestClient(app, follow_redirects=False)
+        for cookie in c.cookies.jar:
+            copied.cookies.set(cookie.name, cookie.value, path=cookie.path)
+        assert copied.get("/account/delete").status_code == 200
+        r = c.post("/logout")
+        assert r.status_code == 303
+        assert any("rundere_confirm" in h and "Max-Age=0" in h
+                   for h in r.headers.get_list("set-cookie"))
+        assert copied.get("/account/delete").status_code in (303, 401)
+        assert copied.get("/account").status_code in (303, 401)
+        # Another browser of the same person stays signed in.
+        assert _web(S).get("/account").status_code == 200
 
     def test_inbox_routing_drops_mail_for_a_locked_account(env, monkeypatch):
         w = _world(env)

@@ -372,12 +372,17 @@ def refresh(session, *, client: OAuthClient, refresh_token: str | None,
     grant = _grant_from_refresh(session, refresh_token)
     if grant is None or grant.client_id != client.id:
         raise OAuthError("invalid_grant", "unknown refresh token")
-    if grant.revoked_at is not None and _locked(session, grant):
-        # D-242: asked again after the first refusal revoked the grant.
+    h = _hash(refresh_token)
+    # D-242: asked again after the first refusal revoked the grant. Only a
+    # caller holding this grant's token (current or retired) learns why: the
+    # grant id in the token's prefix alone must not reveal that an account is
+    # waiting to be deleted.
+    held = (grant.refresh_hash is not None and hmac.compare_digest(h, grant.refresh_hash)) \
+        or h in (grant.prev_refresh_hashes or [])
+    if grant.revoked_at is not None and held and _locked(session, grant):
         raise OAuthError("invalid_grant", DELETION_PENDING, deletion_pending=True)
     if grant.revoked_at is not None:
         raise OAuthError("invalid_grant", "grant revoked")
-    h = _hash(refresh_token)
     if grant.refresh_hash is None or not hmac.compare_digest(h, grant.refresh_hash):
         if h in (grant.prev_refresh_hashes or []):
             # A retired token came back: someone else holds a copy. Kill the grant.

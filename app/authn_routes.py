@@ -20,7 +20,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import authn
+from app import authn, confirm
 from app.api_v1 import Instant  # D-224: instants carry their offset
 from app.auth import RateLimiter, client_ip
 from app.config import settings
@@ -204,9 +204,13 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
 
 
 @router.post("/logout")
-def logout():
+def logout(request: Request):
+    # The session ends on the server too, not just in this browser, and the
+    # fresh confirmation goes with it (SPEC-13 §4.1).
+    authn.sign_out_web_token(request.cookies.get(settings.auth_cookie_name))
     resp = RedirectResponse("/login", status_code=303)
     authn.clear_session_cookie(resp)
+    confirm.clear(resp)
     return resp
 
 
