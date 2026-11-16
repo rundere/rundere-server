@@ -612,12 +612,22 @@ def readme(user: User, exported_at: str) -> str:
 
 
 # --------------------------------------------------------------------------- the zip
-def archive_name(user: User, on: date | None = None) -> str:
-    """`rundere-archive-<username>-<YYYYMMDD>.zip`, with the username reduced
-    to characters that are safe in a Content-Disposition header."""
-    safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in user.username)
+def archive_name(user: User, on: date | None = None, *, ascii_only: bool = True) -> str:
+    """`rundere-archive-<username>-<YYYYMMDD>.zip`. The username is reduced to
+    ASCII letters, digits and `-_.` (D-241): usernames are not validated (SSO
+    and proxy accounts take whatever the provider sends), a header is Latin-1,
+    and `str.isalnum()` kept Cyrillic or CJK, which made the download a 500.
+    `ascii_only=False` keeps the person's own letters for the RFC 5987
+    `filename*`, still without separators or controls (`isprintable` drops
+    bidi overrides, which are format characters)."""
+    if ascii_only:
+        safe = "".join(ch for ch in user.username
+                       if (ch.isascii() and ch.isalnum()) or ch in "-_.")
+    else:
+        safe = "".join(ch for ch in user.username
+                       if (ch.isalnum() or ch in "-_.") and ch.isprintable())
     day = (on or datetime.now(timezone.utc).date()).strftime("%Y%m%d")
-    return f"rundere-archive-{safe.strip('.') or 'account'}-{day}.zip"
+    return f"rundere-archive-{safe.strip('._') or 'account'}-{day}.zip"
 
 
 def sections(session: Session, user: User) -> tuple[list[tuple[str, str, dict, int]],

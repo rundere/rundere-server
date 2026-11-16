@@ -16,7 +16,7 @@ on a demo server `demo_guard` answers 404 before any of this runs (D-198).
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -103,9 +103,14 @@ def export_download(request: Request, export_id: str,
     session.add(AccountEvent(user_id=user.id, actor_id=user.id, action="export_downloaded"))
     session.commit()
     finished = archive_jobs._aware(row.finished_at)
-    name = archive.archive_name(user, finished.date() if finished else None)
+    on = finished.date() if finished else None
+    name = archive.archive_name(user, on)
+    # D-241: `filename=` is ASCII-safe (a header is Latin-1); the person's real
+    # name rides along as an RFC 5987 `filename*` for clients that read it.
+    real = quote(archive.archive_name(user, on, ascii_only=False), safe="")
     return FileResponse(
         archive_jobs.path_for(row), media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{name}"',
+        headers={"Content-Disposition": f"attachment; filename=\"{name}\"; "
+                                        f"filename*=UTF-8''{real}",
                  "X-Content-Type-Options": "nosniff",
                  "Cache-Control": "no-store"})
