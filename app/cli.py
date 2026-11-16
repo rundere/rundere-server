@@ -7,7 +7,9 @@
     python -m app.cli create-user <username> [--admin] [--password PW]  # 4.0 auth
     python -m app.cli set-password <username> [--password PW]
     python -m app.cli set-email <username> <email>     # blank "" clears it
-    python -m app.cli make-admin <username> [--revoke]
+    python -m app.cli make-admin <username> [--revoke [--force]]
+                                                      # D-242: --revoke refuses to remove the
+                                                      # last usable admin unless --force
     python -m app.cli link-traveler <username> <traveler_id>
     python -m app.cli list-users
     python -m app.cli delete-account <username> [--dry-run] [--now] [--cancel]
@@ -82,7 +84,7 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         create-user <username> [--admin] [--password PW] [--email E] [--traveler ID]
         set-password <username> [--password PW]
         set-email   <username> <email>   ("" clears)
-        make-admin  <username> [--revoke]
+        make-admin  <username> [--revoke [--force]]
         link-traveler <username> <traveler_id>
         list-users
     """
@@ -170,6 +172,15 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         return 0
 
     if cmd == "make-admin":
+        # D-242 (SPEC-13 §3.1): the same last-admin guard the web routes use.
+        # An admin locked for deletion or deactivated doesn't count, so
+        # revoking the only other one would leave nobody. --force overrides.
+        from app import account_deletion as deletion
+        if ("--revoke" in args and "--force" not in args and user.is_admin
+                and deletion.usable_admins(session, without=user.id) == 0):
+            print(f"refusing: no other usable admin would remain (the others are inactive "
+                  f"or waiting to be deleted); use --force to revoke {username!r} anyway")
+            return 1
         user.is_admin = "--revoke" not in args
         session.commit()
         print(f"{username!r} is now {'a regular user' if '--revoke' in args else 'an admin'}")
