@@ -60,6 +60,52 @@ def test_revoked_key_authenticates_as_none():
         assert auth.lookup_key(s, "irrelevant-because-revoked-row-exists") is None
 
 
+# --- make-admin --revoke must not strand the server (D-242, SPEC-13 §3.1) ---
+def _admins(*names, locked=()):
+    """Exactly these admins (others in the shared test DB are made inactive)."""
+    from datetime import datetime, timezone
+    from app.models import User
+    with SessionLocal() as s:
+        for u in s.query(User).filter(User.is_admin.is_(True)).all():
+            u.is_active = False
+        for n in names:
+            u = s.query(User).filter_by(username=n).one_or_none()
+            if u is None:
+                u = User(username=n, password_hash="x", auth_source="local")
+                s.add(u)
+            u.is_admin, u.is_active, u.deletion_due_at = True, True, None
+            if n in locked:
+                u.deletion_due_at = datetime.now(timezone.utc)
+        s.commit()
+
+
+def _is_admin(name):
+    from app.models import User
+    with SessionLocal() as s:
+        return s.query(User).filter_by(username=name).one().is_admin
+
+
+def test_revoke_refused_when_other_admin_is_locked_for_deletion(capsys):
+    _admins("ada-lovelace", "grace-hopper", locked=("grace-hopper",))
+    rc = main(["make-admin", "ada-lovelace", "--revoke"])
+    out = capsys.readouterr().out
+    assert rc != 0 and "--force" in out
+    assert _is_admin("ada-lovelace")
+
+
+def test_revoke_force_overrides_the_guard():
+    _admins("ada-lovelace", "grace-hopper", locked=("grace-hopper",))
+    assert main(["make-admin", "ada-lovelace", "--revoke", "--force"]) == 0
+    assert not _is_admin("ada-lovelace")
+
+
+def test_revoke_allowed_while_another_usable_admin_remains():
+    _admins("ada-lovelace", "grace-hopper")
+    assert main(["make-admin", "ada-lovelace", "--revoke"]) == 0
+    assert not _is_admin("ada-lovelace")
+    assert _is_admin("grace-hopper")
+
+
 if __name__ == "__main__":
     import io
     import contextlib
