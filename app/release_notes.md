@@ -20,21 +20,20 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 ## 5.0.0
 
 ### For everyone
-- **Packing starts from what you own.** A short questionnaire under Settings → Packing profile sets up your inventory, your bags and your own packing templates. Lists are built from your inventory, and anything you don't own shows as a suggestion you can add or mark not needed. Everyone retakes the questionnaire once.
-- **Pick a trip's bags and see what fits.** Choose bags for a trip and Run·dere estimates how full each one is, in litres, and warns when one is over.
-- **Cuisines you like and don't like.** The Discovery profile has a cuisine list where each one is Like, Neutral or Don't like. Likes now steer the food research, not only dislikes.
-- **Choose what the trip PDF carries.** Export PDF asks first: times, addresses, maps and booking details, plus your own packing list and Discover research, topic by topic. Leave out times and addresses when you hand it to someone else.
-- **The PDF prints addresses** for places found on the map and for airports, labelled "from the map".
-- **Search on the Places map.** A search made on the Map tab narrows the pins and zooms to them instead of leaving the map.
-- **The Places search helps you write it.** As you type, it suggests the kinds after `kind:`, your own lists after `list:`, and your cities and countries after `city:` and `country:`, with counts. Chips under the box filter by kind, and list names with spaces work: `list:"Date night"`.
-- **Import places from a file.** Places → Import a file takes a CSV from a spreadsheet or another app, with a template to start from. Preview it first; nothing is saved until you press Import, a `list` column sorts places into your lists, and importing the same file again adds nothing.
-- **Lists in the apps.** The iPhone and Android apps can show your Places lists, make and edit them, and put a place in the right list as you save it.
-- **What's new.** After an upgrade, Run·dere shows you once what changed, like this. The About page lists every version.
-- **Export your data.** Account → Export my data builds a zip of your own data as JSON files, with the files you uploaded: trips, places, journal, profiles. It is kept for 7 days, and downloading it asks you to confirm it's you. Passwords, tokens and other people's data are never in it.
-- **Delete your account.** Account → Delete my account locks your account at once and deletes it, with your data, 7 days later. Until then you can sign in on the web and cancel, or take an export. For each trip of yours that other people are on, you choose who it passes to, or that it is deleted. Your name stays on other people's trips as a guest.
-- **New themes without a new app.** The iPhone app can now show the scenery for a theme that is newer than the app itself.
-- **Typing in a capture by hand.** When a capture can't be read automatically, review shows the original email, page or file next to the form so you can fill it in.
-- **Signing out ends that session.** Signing out on the web stops that browser's session working anywhere it was copied, while your other devices stay signed in.
+- **Pick your travel theme.** Choose Desert, Coast, Forest, Metro or Winter under Account → Appearance on the web, or Settings → Appearance in the app. Each has a light and a dark look and an optional landscape along the bottom of the screen, and your theme follows you to every device.
+- **Packing starts from what you own.** Answer a short questionnaire under Settings → Packing profile and Run·dere sets up your gear, your bags and your packing templates. Everyone answers it once before making new packing lists.
+- **See what fits in your bags.** Choose the bags for a trip and Run·dere shows how full each one is, and warns you when one is over.
+- **Tell Discover which food you like.** In your Discovery profile, mark each cuisine Like, Neutral or Don't like. Food suggestions now follow your likes too.
+- **Choose what goes in a trip PDF.** Export PDF asks what to include: times, addresses, maps, booking details, your packing list and your Discover research. Leave out the private parts before you share it. Airports and places on the map now print with their address.
+- **Search on the Places map.** Searching on the Map tab zooms to the matching pins.
+- **Places search helps as you type.** Start with `kind:`, `list:`, `city:` or `country:` and pick from the suggestions, or tap a chip under the search box.
+- **Import places from a spreadsheet.** Places → Import a file takes a CSV, and there's a template to start from. You see a preview before anything is saved, and importing the same file twice adds nothing new.
+- **Your Places lists in the apps.** On iPhone and Android you can see and edit your lists, and choose a list when you save a place.
+- **Download your data.** Account → Export my data gives you a zip of your trips, places, journal and profiles, with the files you uploaded. It's kept for 7 days.
+- **Delete your account.** Account → Delete my account locks your account straight away and deletes it 7 days later. Until then you can sign in on the web and cancel. If you share trips, you choose who takes each one over.
+- **Fill in a booking by hand.** When Run·dere can't read an email or file, review shows the original next to the form so you can copy the details across.
+- **Signing out of the web ends that session.**
+- **What's new.** After each upgrade you see a short note like this one, once. The About page keeps them all.
 
 ### For admins
 - **Apps ask the server what it supports.** `/api/v1/auth/methods` lists the features this server offers, so the apps only show what works here.
