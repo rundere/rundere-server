@@ -15,6 +15,9 @@ again from the top.
   nothing to locate: with Photon unset, starting or down nothing can be found,
   and "done" would leave old timeline items without pins for good. The
   operator can also run `python -m app.cli locate-activities`.
+- `claim-bags` (SPEC-5 §6.6): on a server with one active admin, the bags from
+  before 5.0 (no owner) become that admin's, so the trip's bag picker and fit
+  can use them. With several admins they stay ownerless.
 """
 from __future__ import annotations
 
@@ -50,7 +53,20 @@ def _locate_addresses(session) -> str:
     return ", ".join(f"{k}={v}" for k, v in counts.items())
 
 
-STEPS = (("locate-addresses", _locate_addresses),)
+def _claim_bags(session) -> str:
+    """SPEC-5 §6.6: on a server with one active admin, that admin's bags from
+    before 5.0 become theirs (for an admin who took the questionnaire before
+    this step existed). Nothing to do otherwise; done either way."""
+    from app.models import User
+    from planning.inventory import claim_ownerless_bags
+    admins = [u.id for u in session.query(User.id)
+              .filter(User.is_admin.is_(True), User.is_active.is_(True))]
+    n = claim_ownerless_bags(session, admins[0]) if len(admins) == 1 else 0
+    session.commit()
+    return f"bags={n}"
+
+
+STEPS = (("locate-addresses", _locate_addresses), ("claim-bags", _claim_bags))
 
 
 def _key(name: str) -> str:

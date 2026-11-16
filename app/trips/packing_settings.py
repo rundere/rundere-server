@@ -219,6 +219,9 @@ async def save_packing_profile(request: Request, session: Session = Depends(get_
     if not acting.is_other:            # the inventory is the account's (§6.6)
         _, uid = _owner(request)
         added = inventory.seed_inventory(session, uid, answers, catalog.items(session))
+        # First, so the admin's own bags from before 5.0 count as names they
+        # already have and the questionnaire doesn't add generic twins.
+        inventory.claim_ownerless_bags(session, uid)
         bags_added = inventory.seed_bags(session, uid, answers["bags"])
     session.commit()
     if added or bags_added:

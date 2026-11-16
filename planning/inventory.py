@@ -69,6 +69,24 @@ BAG_SEEDS = {"daypack": ("Daypack", "backpack"),
              "personal_item": ("Personal item", "personal_item")}
 
 
+def claim_ownerless_bags(session: Session, user_id) -> int:
+    """Give the bags from before 5.0 (no owner) to `user_id` when that is the
+    server's only active admin (SPEC-5 §6.6): the bag picker and the fit count
+    only a person's own bags, so ownerless ones would show on the Inventory page
+    but never be usable. With several admins it isn't ours to choose, and with
+    sign-in off the ownerless rows are already everyone's. The caller commits."""
+    from app.config import settings
+    from app.models import Bag, User
+    if not settings.auth_required or not user_id:
+        return 0
+    admins = [u.id for u in session.query(User.id)
+              .filter(User.is_admin.is_(True), User.is_active.is_(True))]
+    if admins != [user_id]:
+        return 0
+    return (session.query(Bag).filter(Bag.user_id.is_(None))
+            .update({Bag.user_id: user_id}, synchronize_session=False))
+
+
 def seed_bags(session: Session, user_id, counts: dict) -> int:
     """Make sure the person has `counts[answer]` bags of each kind, named
     "Daypack", "Daypack 2", …; a name they already have counts. Add-only,

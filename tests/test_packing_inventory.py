@@ -279,3 +279,122 @@ def test_migration_adds_the_tables_and_leaves_bags_ownerless(tmp_path):
     insp = sa.inspect(sa.create_engine(f"sqlite:///{db}"))
     assert "inventory_items" not in insp.get_table_names()
     assert "user_id" not in {c["name"] for c in insp.get_columns("bags")}
+
+
+# ------------------------------------------------------------------ bags from before 5.0 (§6.6)
+
+@pytest.fixture
+def sole_admin(people):
+    """An admin who is the server's only active one; other admins in the shared
+    test database are switched off for the test and restored after."""
+    with SessionLocal() as s:
+        others = [u.id for u in s.query(User).filter(User.is_admin.is_(True),
+                                                     User.is_active.is_(True))]
+        s.query(User).filter(User.id.in_(others)).update({User.is_active: False},
+                                                         synchronize_session=False)
+        s.commit()
+    try:
+        yield people("sole", admin=True)
+    finally:
+        with SessionLocal() as s:
+            s.query(User).filter(User.id.in_(others)).update({User.is_active: True},
+                                                             synchronize_session=False)
+            s.commit()
+
+
+def _old_bag(label="Grey roller"):
+    with SessionLocal() as s:
+        b = Bag(id=f"old-{uuid.uuid4().hex[:8]}", user_id=None, label=label, kind="suitcase",
+                capacity="40 L")
+        s.add(b)
+        s.commit()
+        return b.id
+
+
+def _owner_of(bag_id):
+    with SessionLocal() as s:
+        b = s.get(Bag, bag_id)
+        return b.user_id if b else "gone"
+
+
+def test_the_only_admin_gets_the_old_bags_after_the_upgrade(auth_on, sole_admin, monkeypatch):
+    from app import upgrade
+    from app.models import ServerSetting
+    from planning import runner
+    bag = _old_bag()
+    monkeypatch.setattr(upgrade, "STEPS", tuple(x for x in upgrade.STEPS if x[0] == "claim-bags"))
+    with SessionLocal() as s:
+        s.query(ServerSetting).filter(ServerSetting.key == "upgrade:claim-bags").delete()
+        s.commit()
+    try:
+        out = upgrade.run(SessionLocal)
+        assert out["claim-bags"].startswith("bags=") and out["claim-bags"] != "bags=0"
+        assert _owner_of(bag) == sole_admin.id
+        with SessionLocal() as s:                  # now the trip's bag picker offers it
+            assert bag in {b.id for b in runner.bag_infos(s, sole_admin.id)}
+            assert upgrade.pending(s) == []
+    finally:
+        with SessionLocal() as s:
+            s.query(Bag).filter(Bag.id == bag).delete()
+            s.commit()
+
+
+def test_with_two_admins_the_old_bags_stay_ownerless(auth_on, sole_admin, people):
+    second = people("second", admin=True)
+    bag = _old_bag()
+    try:
+        with SessionLocal() as s:
+            assert inventory.claim_ownerless_bags(s, sole_admin.id) == 0
+            assert inventory.claim_ownerless_bags(s, second.id) == 0
+            s.commit()
+        assert _owner_of(bag) is None
+    finally:
+        with SessionLocal() as s:
+            s.query(Bag).filter(Bag.id == bag).delete()
+            s.commit()
+
+
+def test_a_regular_user_never_gets_the_old_bags(auth_on, sole_admin, people):
+    alice = people("alice")
+    bag = _old_bag()
+    try:
+        with SessionLocal() as s:
+            assert inventory.claim_ownerless_bags(s, alice.id) == 0
+            s.commit()
+        assert _owner_of(bag) is None
+    finally:
+        with SessionLocal() as s:
+            s.query(Bag).filter(Bag.id == bag).delete()
+            s.commit()
+
+
+def test_with_sign_in_off_the_old_bags_stay_everyones(sole_admin, monkeypatch):
+    monkeypatch.setattr(settings, "auth_required", False)
+    bag = _old_bag()
+    try:
+        with SessionLocal() as s:
+            assert inventory.claim_ownerless_bags(s, sole_admin.id) == 0
+        assert _owner_of(bag) is None
+    finally:
+        with SessionLocal() as s:
+            s.query(Bag).filter(Bag.id == bag).delete()
+            s.commit()
+
+
+def test_the_questionnaire_claims_old_bags_before_seeding(auth_on, sole_admin):
+    """A real "Carry-on suitcase" from before 5.0 counts as one the admin has,
+    so the questionnaire adds no generic twin."""
+    bag = _old_bag("Carry-on suitcase")
+    try:
+        with SessionLocal() as s:
+            inventory.claim_ownerless_bags(s, sole_admin.id)
+            inventory.seed_bags(s, sole_admin.id, {"carry_on": 1})
+            s.commit()
+        with SessionLocal() as s:
+            mine = [b.id for b in s.query(Bag).filter(Bag.user_id == sole_admin.id,
+                                                      Bag.label == "Carry-on suitcase")]
+        assert mine == [bag]
+    finally:
+        with SessionLocal() as s:
+            s.query(Bag).filter(Bag.id == bag).delete()
+            s.commit()
