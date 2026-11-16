@@ -1,4 +1,6 @@
 <div align="center">
+  <img src="docs/images/readme-header.png" alt="A jet climbing from a point of origin along a dashed route line into the night sky" width="100%">
+
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="design/logo/rundere-lockup-horizontal-silver.svg">
     <img src="design/logo/rundere-lockup-horizontal-night.svg" alt="Run·dere" width="360">
