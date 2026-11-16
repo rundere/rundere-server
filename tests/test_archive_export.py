@@ -800,6 +800,43 @@ if DEPS:
         assert calls == []
         archive_jobs._LIVE.clear()
 
+    def test_a_parallel_request_does_not_take_a_new_build_for_an_orphan(env, monkeypatch):
+        """Found on NEXT (Postgres): the row lock lined the second request up
+        right after the first one's commit, where the first's committed
+        "building" row was not yet live, so latest() marked it failed and a
+        second build started. A build is live before its row is visible."""
+        ana = _user("ana")
+        monkeypatch.setattr(archive_jobs._EXECUTOR, "submit", lambda fn, *a, **k: None)
+        seen = []
+        real = archive_jobs._lost_race
+
+        def parallel_look(session, mine):
+            with SessionLocal() as other:          # the other request, after our commit
+                row = archive_jobs.latest(other, ana.id)
+                seen.append((row.id, row.status))
+                seen.append(archive_jobs.start_problem(other, other.get(m.User, ana.id)))
+            return real(session, mine)
+
+        monkeypatch.setattr(archive_jobs, "_lost_race", parallel_look)
+        try:
+            with SessionLocal() as s:
+                built = archive_jobs.launch(s, s.get(m.User, ana.id))
+                built_id = built.id
+            assert seen == [(built_id, "building"), "your archive is already being built"]
+            with SessionLocal() as s:
+                assert s.get(m.ArchiveExport, built_id).status == "building"
+        finally:
+            with archive_jobs._LOCK:
+                archive_jobs._LIVE.clear()
+
+    def test_a_refused_racer_is_not_left_live(env, monkeypatch):
+        """Guards the new clean-up path: a refused request drops its id again."""
+        ana = _user("ana")
+        monkeypatch.setattr(archive_jobs, "_lost_race", lambda *a, **k: "your archive is already being built")
+        with SessionLocal() as s, pytest.raises(archive_jobs.Refused):
+            archive_jobs.launch(s, s.get(m.User, ana.id))
+        assert not archive_jobs._LIVE
+
     def test_a_racing_fourth_build_in_a_day_is_refused(env, monkeypatch):
         ana = _user("ana")
         with SessionLocal() as s:
