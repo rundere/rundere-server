@@ -34,6 +34,7 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 - **Delete your account.** Account → Delete my account locks your account at once and deletes it, with your data, 7 days later. Until then you can sign in on the web and cancel, or take an export. For each trip of yours that other people are on, you choose who it passes to, or that it is deleted. Your name stays on other people's trips as a guest.
 - **New themes without a new app.** The iPhone app can now show the scenery for a theme that is newer than the app itself.
 - **Typing in a capture by hand.** When a capture can't be read automatically, review shows the original email, page or file next to the form so you can fill it in.
+- **Signing out ends that session.** Signing out on the web stops that browser's session working anywhere it was copied, while your other devices stay signed in.
 
 ### For admins
 - **Apps ask the server what it supports.** `/api/v1/auth/methods` lists the features this server offers, so the apps only show what works here.
@@ -42,9 +43,11 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 - **Tell everyone to retake the packing questionnaire** (Settings → Packing profile). Packing lists can't be generated until they do.
 - **Database migrations run on start.** Back up first as usual.
 - **Keep the export folder out of backups.** People's archives wait in `TX_EXPORT_DIR` (default: `exports/` in the artifacts folder) for 7 days. Each is a person's whole record with no password; see the self-hosting guide.
-- **Deleting accounts.** People can delete their own account, and you can delete someone else's from Users → Delete account…, by typing its username. Either way it is locked at once and deleted after 7 days; the web can't shorten that. `python -m app.cli delete-account <username>` does the same from a shell, with `--dry-run`, `--now` and `--cancel`. The last active admin can't be deleted.
+- **Deleting accounts.** People can delete their own account, and you can delete someone else's from Users → Delete account…, by typing its username after entering your own password again. Either way it is locked at once and deleted after 7 days; the web can't shorten that. `python -m app.cli delete-account <username>` does the same from a shell, with `--dry-run`, `--now` and `--cancel`. The last active admin can't be deleted, and `python -m app.cli make-admin <username> --revoke` won't remove the last one unless you add `--force`.
+- **Admin pages need a web sign-in.** Users and the server settings (mail, notifications, AI) open only from the web or through your trusted sign-in proxy, never with an app's token. The apps already open them in the browser.
 - **Deleted accounts and your backups.** A deletion can't reach your database backups, server logs or the single sign-on provider; see the self-hosting guide.
-- **Nothing to run by hand for addresses:** about two minutes after the first start, the server fills in the addresses of older map pins once by itself.
+- **Addresses for older map pins:** after the first start, the server fills in the addresses of map pins made before 5.0 as soon as your geocoder (Photon) answers; if Photon isn't set up or is down, it tries again at the next start. To do it by hand: `python -m app.cli locate-activities`.
+- **The image installs exactly the locked dependencies** (`uv.lock`, hash-checked) on Python 3.12, the version the tests run on.
 - **A stricter Content Security Policy:** pages now load only the server's own scripts. A reverse proxy that injects scripts into pages will find them blocked.
 
 ## 4.13.6 — 2026-11-07
