@@ -7,6 +7,7 @@ the pages are web-only, behind a fresh confirmation, gone on a demo server and
 with sign-in off; builds are limited; and archives are deleted after 7 days."""
 import io
 import json
+import os
 import hashlib
 import stat
 import sys
@@ -777,6 +778,99 @@ if DEPS:
         _confirm(c)
         assert c.get(f"/account/export/{row.id}/download").status_code == 404
         assert "deleted after 7 days" in c.get("/account/export").text
+
+    # ------------------------------------------------------------------ races and leftovers (§2.5)
+    def test_a_racing_second_build_is_refused_after_the_insert(env, monkeypatch):
+        ana = _user("ana")
+        with SessionLocal() as s:
+            s.add(m.ArchiveExport(user_id=ana.id, status="building",
+                                  requested_at=datetime.now(timezone.utc) - timedelta(seconds=5)))
+            s.commit()
+        archive_jobs._LIVE.add(_latest(None).id)        # a build really running
+        calls = []
+        monkeypatch.setattr(archive_jobs._EXECUTOR, "submit", lambda fn, *a, **k: calls.append(a))
+        # The up-front check passes once, as it does for a parallel request.
+        monkeypatch.setattr(archive_jobs, "start_problem", lambda *a, **k: None)
+        with SessionLocal() as s, pytest.raises(archive_jobs.Refused):
+            archive_jobs.launch(s, s.get(m.User, ana.id))
+        with SessionLocal() as s:
+            assert s.query(m.ArchiveExport).filter_by(user_id=ana.id).count() == 1
+            assert s.query(m.AccountEvent).filter_by(user_id=ana.id,
+                                                     action="export_built").count() == 0
+        assert calls == []
+        archive_jobs._LIVE.clear()
+
+    def test_a_racing_fourth_build_in_a_day_is_refused(env, monkeypatch):
+        ana = _user("ana")
+        with SessionLocal() as s:
+            for i in range(3):
+                s.add(m.ArchiveExport(user_id=ana.id, status="failed",
+                                      requested_at=datetime.now(timezone.utc)
+                                      - timedelta(hours=3 - i)))
+            s.commit()
+        monkeypatch.setattr(archive_jobs, "start_problem", lambda *a, **k: None)
+        with SessionLocal() as s, pytest.raises(archive_jobs.Refused, match="3 times a day"):
+            archive_jobs.launch(s, s.get(m.User, ana.id))
+        with SessionLocal() as s:
+            assert s.query(m.ArchiveExport).filter_by(user_id=ana.id).count() == 3
+
+    def test_the_daily_job_sweeps_stray_part_files(env):
+        ana = _user("ana")
+        folder = Path(settings.export_dir) / ana.id
+        folder.mkdir(parents=True)
+        old, fresh, live = (folder / "old.part", folder / "fresh.part", folder / "live.part")
+        for f in (old, fresh, live):
+            f.write_bytes(b"x")
+        long_ago = time.time() - 2 * 3600
+        for f in (old, live):
+            os.utime(f, (long_ago, long_ago))
+        archive_jobs._LIVE.add("live")
+        try:
+            retention.run(SessionLocal, today=date.today(), mailbox=False, dry_run=True)
+            assert old.exists()
+            retention.run(SessionLocal, today=date.today(), mailbox=False)
+        finally:
+            archive_jobs._LIVE.discard("live")
+        assert not old.exists() and fresh.exists() and live.exists()
+
+    def test_a_build_stops_if_its_account_was_purged_meanwhile(env, monkeypatch):
+        ana = _user("ana")
+        with SessionLocal() as s:
+            row = m.ArchiveExport(user_id=ana.id, status="building")
+            s.add(row)
+            s.commit()
+            export_id = row.id
+        real = archive.build
+
+        def purge_during_build(s, user, tmp):
+            out = real(s, user, tmp)
+            with SessionLocal() as other:          # the account purge lands now
+                other.query(m.ArchiveExport).filter_by(id=export_id).delete()
+                other.query(m.User).filter_by(id=ana.id).delete()
+                other.query(m.TravelerIdentity).filter_by(id=ana.traveler_id).delete()
+                other.commit()
+            return out
+        monkeypatch.setattr(archive, "build", purge_during_build)
+        archive_jobs._execute(export_id)
+        assert not (Path(settings.export_dir) / ana.id).exists()
+
+    def test_old_failed_replaced_and_expired_rows_are_deleted(env):
+        ana = _user("ana")
+        now = datetime.now(timezone.utc)
+        with SessionLocal() as s:
+            for status, age in (("failed", 40), ("replaced", 40), ("expired", 40),
+                                ("failed", 5), ("ready", 40), ("building", 40)):
+                s.add(m.ArchiveExport(user_id=ana.id, status=status, error=None,
+                                      requested_at=now - timedelta(days=age),
+                                      finished_at=now - timedelta(days=age)))
+            s.commit()
+            assert archive_jobs.purge_old_rows(s, dry_run=True) == 3
+        retention.run(SessionLocal, today=date.today(), mailbox=False)
+        with SessionLocal() as s:
+            left = sorted((r.status for r in s.query(m.ArchiveExport).filter_by(user_id=ana.id)))
+            assert left == ["building", "failed", "ready"]
+            # The daily count still sees only the last 24 hours.
+            assert archive_jobs.builds_today(s, ana.id) == 0
 
     # ------------------------------------------------------------------ fresh confirmation (§3.2)
     def test_a_confirmation_lasts_ten_minutes_and_is_bound_to_the_person(env, monkeypatch):
