@@ -496,12 +496,31 @@ def current_user(request: "Request") -> "User":
     return user
 
 
+def _web_session(request: "Request") -> bool:
+    """Did this request come from a browser's web session (or the trusted
+    proxy), not from an app? A bearer credential, or an app's access token
+    sent as the session cookie, is not a web session."""
+    if request.headers.get("authorization"):
+        return False
+    claims = jwt_decode(request.cookies.get(settings.auth_cookie_name, "") or "")
+    if claims:
+        return claims.get("typ") == "web"
+    return bool(settings.auth_proxy_header_trust)
+
+
 def require_admin(request: "Request") -> "User":
-    """FastAPI dependency: require an authenticated admin (403 otherwise)."""
+    """FastAPI dependency: require an authenticated admin (403 otherwise), on
+    the WEB. Every route behind it is an admin page (Users, server mail,
+    notifications, AI); none is for the apps, which use /api/v1. Taking an app
+    token here let a stolen admin app token create an admin with a password of
+    its choosing, or reset anyone's, which also reached around the web-only
+    rule for deleting accounts (SPEC-13 §3.6, §3.7, D-242)."""
     from fastapi import HTTPException
     user = current_user(request)
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="admin only")
+    if settings.auth_required and not _web_session(request):
+        raise HTTPException(status_code=403, detail="this is only available on the web")
     return user
 
 

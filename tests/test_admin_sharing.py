@@ -77,6 +77,12 @@ if DEPS:
             u = s.query(User).filter_by(username=username).one()
             return {"Authorization": f"Bearer {authn.issue_access_token(u)}"}
 
+    def _web_h(username):
+        """A browser's web session: the admin pages take nothing else."""
+        with SessionLocal() as s:
+            u = s.query(User).filter_by(username=username).one()
+            return {"Cookie": f"{settings.auth_cookie_name}={authn.issue_web_token(u)}"}
+
     def _with_smtp(monkeypatch):
         monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
         monkeypatch.setattr(settings, "smtp_from", "yonder@example.com")
@@ -188,7 +194,11 @@ if DEPS:
 
         def body(ids):
             client.post("/account/sharing", headers=_h("as-sis"), data={"choice": "private"})
-            h = _h("as-admin")
+            h = _web_h("as-admin")
+            # The admin pages are web only: an app token gets nowhere (SPEC-13 §3.7).
+            r = client.post(f"/users/{ids['sis']}/password", headers=_h("as-admin"),
+                            data={"password": "hijack"}, follow_redirects=False)
+            assert r.status_code == 403
             # can't set her password or email
             r = client.post(f"/users/{ids['sis']}/password", headers=h,
                             data={"password": "hijack"}, follow_redirects=False)

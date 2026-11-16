@@ -225,7 +225,10 @@ def test_existing_sharers_see_a_notice_once_and_are_emailed_once(world, monkeypa
 
 
 def test_an_admin_never_sets_someone_elses_password_even_under_support(world):
-    r = client.post(f"/users/{world['sis']}/password", headers=_h(world["admin"]),
+    with SessionLocal() as s:
+        web = {"Cookie": f"{settings.auth_cookie_name}="
+                         f"{authn.issue_web_token(s.get(User, world['admin']))}"}
+    r = client.post(f"/users/{world['sis']}/password", headers=web,
                     data={"password": "hijack"}, follow_redirects=False)
     assert "err=" in r.headers["location"]
     with SessionLocal() as s:
