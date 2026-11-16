@@ -958,6 +958,31 @@ if DEPS:
                        "exp": time.time() + 300, "nonce": q["nonce"][0], **claims})
         return c.get(f"/oidc/callback?code=arx-code&state={q['state'][0]}")
 
+    def test_an_sso_admin_confirms_for_the_users_page_then_deletes(env, sso):
+        """SPEC-13 §3.6: an admin who signs in through SSO confirms by signing in
+        again at the provider, comes back to Users, and can then ask for another
+        account's deletion."""
+        from app import account_deletion as deletion
+        sam = _user("sso-admin", source="oidc", admin=True,
+                    external_subject="oidc:arx-sso-admin-sub")
+        _user("keeper", admin=True)
+        bob = _user("sso-target")
+        c = _web(sam)
+        r = c.post(f"/users/{bob.id}/delete", data={"confirm_username": bob.username})
+        assert r.headers["location"] == "/account/confirm?next=%2Fusers"
+        r = c.get("/account/confirm/sso?next=/users")
+        q = parse_qs(urlsplit(r.headers["location"]).query)
+        sso.clear()
+        sso.update({"iss": "https://idp.example.test", "aud": "arx-rundere",
+                    "exp": time.time() + 300, "nonce": q["nonce"][0],
+                    "sub": "arx-sso-admin-sub", "auth_time": time.time() - 5})
+        r = c.get(f"/oidc/callback?code=arx-code&state={q['state'][0]}")
+        assert r.status_code == 303 and r.headers["location"] == "/users"
+        r = c.post(f"/users/{bob.id}/delete", data={"confirm_username": bob.username})
+        assert r.status_code == 303 and "msg=" in r.headers["location"], r.headers
+        with SessionLocal() as s:
+            assert deletion.pending(s.get(m.User, bob.id))
+
     def test_an_sso_account_confirms_by_signing_in_again(env, sso):
         sam = _user("sam", source="oidc", external_subject="oidc:arx-sam-sub")
         c = _web(sam)

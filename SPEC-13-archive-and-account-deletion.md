@@ -586,7 +586,8 @@ for admins. It is driven by the registry of §1.1, and these rules hold:
 - **Guards count under a lock.** The last-admin guard (§3.1) locks the admin
   rows before it counts them, in the request, the purge and the admin's role
   and active switches, so two changes at once can't both pass it. Postgres
-  enforces the locks; SQLite has one writer at a time.
+  (production) enforces the locks; SQLite ignores them, which narrows the
+  window there but doesn't close it.
 - **Captures leave no tombstone.** D-196 keeps a purged capture's hash,
   subject and sender so its owner can see what it was. With no owner there is
   nobody to show it to, and a subject and sender are personal data. The batch

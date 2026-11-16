@@ -176,7 +176,8 @@ def cancel(session: Session, user: User, *, actor: User | None,
     is cancelled by an admin or the operator, never by the person (§3.6).
     Takes the same row lock as the purge, so a cancel and a purge of the same
     account run one after the other, never interleaved."""
-    lock_user(session, user.id)
+    if lock_user(session, user.id) is None:      # purged meanwhile: nothing to cancel
+        raise Refused("This account isn't waiting to be deleted.")
     rec = record(session, user)
     if not pending(user) or rec is None:
         raise Refused("This account isn't waiting to be deleted.")

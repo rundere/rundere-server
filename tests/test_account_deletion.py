@@ -996,6 +996,23 @@ if DEPS:
             log = s.query(m.AccountEvent).filter_by(action="account_deleted").one()
             assert (log.user_id, log.actor_id, log.detail) == (None, A, "by an admin")
 
+    def test_a_locked_admin_cant_lock_anyone_even_confirmed(env):
+        """D-242: an admin waiting to be deleted is held to their one page, so a
+        confirmation taken before the lock doesn't let them delete others."""
+        w = _world(env)
+        A, L = w.ids["admin"], w.ids["leaver"]
+        with SessionLocal() as s:
+            _user(s, "other-admin", admin=True)
+            s.commit()
+        c = _admin(A)                                   # confirmed for /users
+        with SessionLocal() as s:
+            deletion.request(s, s.get(m.User, A), actor=s.get(m.User, A), choices={})
+        r = c.post(f"/users/{L}/delete", data={"confirm_username": _username(L)})
+        assert r.status_code in (303, 401, 403)
+        assert r.headers.get("location", "") != "/users?msg="
+        with SessionLocal() as s:
+            assert s.get(m.User, L).deletion_due_at is None
+
     def test_an_admin_can_cancel(env):
         w = _world(env)
         A, L = w.ids["admin"], w.ids["leaver"]
