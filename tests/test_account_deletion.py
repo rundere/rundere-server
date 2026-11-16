@@ -581,6 +581,124 @@ if DEPS:
         with SessionLocal() as s:
             assert s.get(m.TravelerIdentity, tid) is None
 
+    # ------------------------------------------------------------------ cancel races the purge
+    def test_a_cancel_after_the_due_list_is_read_is_not_purged(env, monkeypatch):
+        """SPEC-13 §3.5: the daily step reads the due accounts, then purges them
+        one at a time. One that cancels in between keeps their account."""
+        with SessionLocal() as s:
+            _user(s, "keeper", admin=True)
+            a, b = _user(s, "first"), _user(s, "second")
+            ids = [a.id, b.id]
+            s.commit()
+            for uid in ids:
+                u = s.get(m.User, uid)
+                deletion.request(s, u, actor=u, choices={})
+        for uid in ids:
+            _make_due(uid)
+        real, cancelled = deletion._mail_finished, []
+
+        def finished(email, username):           # the first purge is done; the other cancels
+            if not cancelled:
+                with SessionLocal() as s:
+                    other = next(u for u in (s.get(m.User, i) for i in ids) if u is not None)
+                    deletion.cancel(s, other, actor=other)
+                    cancelled.append(other.id)
+            real(email, username)
+        monkeypatch.setattr(deletion, "_mail_finished", finished)
+        assert deletion.run_due(SessionLocal, mailbox=False) == 1
+        with SessionLocal() as s:
+            kept = s.get(m.User, cancelled[0])
+            assert kept is not None and kept.deletion_due_at is None
+
+    def test_the_daily_step_needs_a_pending_request(env):
+        """A due date with no pending record (cancelled, or never asked) is not
+        enough for the daily step; only the operator's --now skips the check."""
+        with SessionLocal() as s:
+            _user(s, "keeper", admin=True)
+            u = _user(s, "stray")
+            uid = u.id
+            s.commit()
+        _make_due(uid)
+        assert deletion.run_due(SessionLocal, mailbox=False) == 0
+        with SessionLocal() as s:
+            assert s.get(m.User, uid) is not None
+        assert deletion.delete_now(SessionLocal, uid) is not None
+
+    def test_the_daily_step_skips_a_request_whose_date_moved_later(env):
+        with SessionLocal() as s:
+            _user(s, "keeper", admin=True)
+            u = _user(s, "later")
+            uid = u.id
+            s.commit()
+            deletion.request(s, u, actor=u, choices={})
+        now = datetime.now(timezone.utc)
+        assert deletion._purge_one(SessionLocal, uid, due_by=now, mailbox=False) is None
+        with SessionLocal() as s:
+            assert s.get(m.User, uid) is not None
+
+    @pytest.mark.skipif(engine.dialect.name != "postgresql",
+                        reason="row locks need Postgres; SQLite has one writer")
+    def test_two_admins_leaving_at_once_keep_one_on_postgres(env):
+        """D-242 / SPEC-13 §3.1 under a real race: two admins ask at the same
+        moment, the admin rows are locked, so exactly one is refused."""
+        import threading
+        with SessionLocal() as s:
+            ids = [_user(s, "twin-a", admin=True).id, _user(s, "twin-b", admin=True).id]
+            s.commit()
+        gate, out = threading.Barrier(2), {}
+
+        def ask(uid):
+            with SessionLocal() as s:
+                u = s.get(m.User, uid)
+                gate.wait()
+                try:
+                    deletion.request(s, u, actor=u, choices={})
+                    out[uid] = "locked"
+                except deletion.Refused:
+                    out[uid] = "refused"
+        threads = [threading.Thread(target=ask, args=(uid,)) for uid in ids]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(30)
+        assert sorted(out.values()) == ["locked", "refused"]
+        with SessionLocal() as s:
+            assert deletion.usable_admins(s) >= 1
+
+    @pytest.mark.skipif(engine.dialect.name != "postgresql",
+                        reason="row locks need Postgres; SQLite has one writer")
+    def test_a_cancel_holding_the_row_lock_wins_over_the_purge_on_postgres(env):
+        """The cancel holds the account's row lock while the purge starts; the
+        purge waits, then reads the cancelled request and stops."""
+        import threading
+        with SessionLocal() as s:
+            _user(s, "keeper", admin=True)
+            u = _user(s, "racer")
+            uid = u.id
+            s.commit()
+            deletion.request(s, u, actor=u, choices={})
+        _make_due(uid)
+        locked, result = threading.Event(), {}
+        canceller = SessionLocal()
+        try:
+            user = deletion.lock_user(canceller, uid)          # the cancel has begun
+            locked.set()
+
+            def purge():
+                result["r"] = deletion._purge_one(
+                    SessionLocal, uid, due_by=datetime.now(timezone.utc), mailbox=False)
+            t = threading.Thread(target=purge)
+            t.start()
+            t.join(1.0)
+            assert t.is_alive()                                # waiting on the row lock
+            deletion.cancel(canceller, user, actor=user)       # commits, releasing it
+            t.join(30)
+        finally:
+            canceller.close()
+        assert result["r"] is None
+        with SessionLocal() as s:
+            assert s.get(m.User, uid) is not None
+
     # ------------------------------------------------------------------ the request (§3.3)
     def test_the_request_needs_a_fresh_confirmation_the_username_and_the_choices(env):
         w = _world(env)

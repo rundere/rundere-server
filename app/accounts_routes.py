@@ -721,7 +721,10 @@ def users_toggle_admin(user_id: str, admin: User = Depends(authn.require_admin),
     if user.id == admin.id:
         return RedirectResponse("/users?err=You+can%27t+change+your+own+admin+role", status_code=303)
     # An admin who is deactivated or waiting to be deleted (D-242) doesn't count:
-    # the server must keep one who can act.
+    # the server must keep one who can act. The admins are locked first so two
+    # changes at once can't both pass the count.
+    deletion.lock_admins(session)
+    deletion.lock_user(session, user.id)
     if user.is_admin and deletion.usable_admins(session, without=user.id) == 0:
         return RedirectResponse("/users?err=Can%27t+remove+the+last+admin", status_code=303)
     user.is_admin = not user.is_admin
@@ -739,6 +742,8 @@ def users_toggle_active(user_id: str, admin: User = Depends(authn.require_admin)
         return RedirectResponse("/users?err=No+such+user", status_code=303)
     if user.id == admin.id:
         return RedirectResponse("/users?err=You+can%27t+deactivate+yourself", status_code=303)
+    deletion.lock_admins(session)              # as above: count under the lock
+    deletion.lock_user(session, user.id)
     if user.is_active and deletion.last_admin(session, user):
         return RedirectResponse("/users?err=Can%27t+deactivate+the+last+active+admin",
                                 status_code=303)
