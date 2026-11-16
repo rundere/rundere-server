@@ -130,7 +130,13 @@ def issue_access_token(user: User) -> str:
 
 
 def issue_web_token(user: User) -> str:
-    return _token(user, "web", settings.jwt_web_ttl_seconds)
+    # A random id makes each web session's token unique, so signing one out
+    # (below) never ends another issued in the same second.
+    now = int(time.time())
+    return jwt_encode({"sub": user.id, "username": user.username,
+                       "adm": bool(user.is_admin), "ver": user.token_version,
+                       "typ": "web", "iat": now, "exp": now + settings.jwt_web_ttl_seconds,
+                       "jti": secrets.token_urlsafe(12)})
 
 
 def deletion_pending(user) -> bool:
@@ -150,6 +156,31 @@ def locked_out(user, path: str) -> bool:
     return deletion_pending(user) and not path.startswith(LOCKED_PATHS)
 
 
+# --------------------------------------------------------------------------- signed-out web sessions
+# Web sessions are stateless JWTs, so signing out only cleared the browser's
+# cookie: a copy taken earlier kept working until it expired (SPEC-13 §4.1, "a
+# stolen web session"). Signing out now also records the token here until its
+# expiry. Kept in memory: the image runs one process (as the archive builds
+# assume, SPEC-13 §2.5), and a restart forgets the list, which leaves a copied
+# cookie no worse off than before. "Sign out everywhere" (token_version) is
+# still the durable way to end every session.
+_SIGNED_OUT: dict[str, int] = {}
+
+
+def _token_key(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def sign_out_web_token(token: str | None) -> None:
+    claims = jwt_decode(token or "")
+    if not claims or claims.get("typ") != "web":
+        return
+    now = int(time.time())
+    for key in [k for k, exp in _SIGNED_OUT.items() if exp <= now]:   # forget expired ones
+        _SIGNED_OUT.pop(key, None)
+    _SIGNED_OUT[_token_key(token)] = int(claims.get("exp") or now)
+
+
 def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "web"),
                     audiences: set[str] | None = None) -> User | None:
     """Resolve a Yonder JWT to its user. An `oauth` token (YONDER-107) must also
@@ -157,6 +188,8 @@ def user_from_token(session, token: str, kinds: tuple[str, ...] = ("access", "we
     claims = jwt_decode(token)
     if not claims or claims.get("typ") not in kinds:
         return None
+    if claims.get("typ") == "web" and _token_key(token) in _SIGNED_OUT:
+        return None                               # this browser session signed out
     user = session.get(User, claims.get("sub"))
     if user is None or not user.is_active:
         return None
