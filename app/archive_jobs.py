@@ -199,6 +199,10 @@ def _lost_race(session: Session, mine: ArchiveExport) -> str | None:
 def launch(session: Session, user: User, *, base_url: str = "") -> ArchiveExport:
     """Start a build for `user`, or raise Refused. `base_url` is this server's
     address, for the "ready" email's link to the Account page."""
+    # Take the person's row lock first, so two requests of theirs check the
+    # limits one after the other (Postgres). The recheck below still covers a
+    # database without row locks.
+    session.get(User, user.id, with_for_update=True)
     if (why := start_problem(session, user)) is not None:
         raise Refused(why)
     row = ArchiveExport(user_id=user.id, status=BUILDING, requested_at=_now())
