@@ -617,6 +617,12 @@ for admins. It is driven by the registry of §1.1, and these rules hold:
 - **Deleting another account** is on the Users page: the admin types the
   account's username to confirm. It follows the same path: locked at once,
   deleted after 7 days, the person emailed.
+  - Web only, as for your own: the request and the cancel take a web session
+    (or the trusted proxy), never an app's access token, even one sent as the
+    session cookie (§3.7).
+  - The admin makes the same fresh confirmation of who they are (§3.2) before
+    the request (owner, 2026-11-16). Cancelling needs none: it deletes
+    nothing.
   - The person can't cancel an admin's deletion; an admin can.
   - Unless the account was also deactivated, the person can still sign in to
     the locked page and take their export.

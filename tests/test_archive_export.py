@@ -782,7 +782,7 @@ if DEPS:
     def test_a_confirmation_lasts_ten_minutes_and_is_bound_to_the_person(env, monkeypatch):
         ana, ben = _user("ana"), _user("ben")
         c = _confirm(_web(ana))
-        cookie = c.cookies.get(confirm.COOKIE)
+        cookie = c.cookies.get(confirm.COOKIE, path="/account")
         claims = authn.jwt_decode(cookie)
         assert claims["typ"] == "confirm" and claims["sub"] == ana.id
         assert claims["exp"] - claims["iat"] == 600
@@ -834,7 +834,7 @@ if DEPS:
         assert c.post("/account/confirm", data={"username": "arx-ana"}).status_code == 400
         r = c.post("/account/confirm", data={"username": "arx-pia", "next": "/account/export"})
         assert r.status_code == 303 and confirm.COOKIE in r.headers["set-cookie"]
-        assert pia.id == authn.jwt_decode(c.cookies.get(confirm.COOKIE))["sub"]
+        assert pia.id == authn.jwt_decode(c.cookies.get(confirm.COOKIE, path="/account"))["sub"]
 
     @pytest.fixture()
     def sso(monkeypatch):
@@ -872,10 +872,10 @@ if DEPS:
         # Typing something is never enough for an SSO account.
         assert c.post("/account/confirm", data={"password": PW,
                                                 "username": "arx-sam"}).status_code == 400
-        assert confirm.COOKIE not in c.cookies
+        assert c.cookies.get(confirm.COOKIE, path="/account") is None
         r = _sso_round_trip(c, sso, sub="arx-sam-sub", auth_time=time.time() - 5)
         assert r.status_code == 303 and r.headers["location"] == "/account/export"
-        assert authn.jwt_decode(c.cookies.get(confirm.COOKIE))["sub"] == sam.id
+        assert authn.jwt_decode(c.cookies.get(confirm.COOKIE, path="/account"))["sub"] == sam.id
         # It confirmed; it didn't sign anyone in or make an account.
         assert settings.auth_cookie_name not in r.headers.get("set-cookie", "")
         with SessionLocal() as s:
@@ -901,7 +901,7 @@ if DEPS:
     def test_an_sso_provider_that_omits_auth_time_still_confirms(env, sso):
         c = _web(_user("sam", source="oidc", external_subject="oidc:arx-sam-sub"))
         r = _sso_round_trip(c, sso, sub="arx-sam-sub")
-        assert r.headers["location"] == "/account/export" and confirm.COOKIE in c.cookies
+        assert r.headers["location"] == "/account/export" and c.cookies.get(confirm.COOKIE, path="/account")
 
     def test_an_sso_round_trip_that_didnt_sign_in_again_is_refused(env, sso):
         sam = _user("sam", source="oidc", external_subject="oidc:arx-sam-sub")
@@ -909,13 +909,13 @@ if DEPS:
         r = _sso_round_trip(c, sso, sub="arx-sam-sub", auth_time=time.time() - 3600)
         assert r.headers["location"].startswith("/account/confirm?")
         assert r.headers["location"].endswith("error=not_recent")
-        assert confirm.COOKIE not in c.cookies
+        assert c.cookies.get(confirm.COOKIE, path="/account") is None
         # The page shows the sentence for that code…
         assert "didn&#39;t ask you to sign in again" in c.get(r.headers["location"]).text
         # A different person at the provider confirms nothing either.
         r = _sso_round_trip(c, sso, sub="arx-somebody-else", auth_time=time.time())
         assert r.headers["location"].endswith("error=other_account")
-        assert confirm.COOKIE not in c.cookies
+        assert c.cookies.get(confirm.COOKIE, path="/account") is None
         with SessionLocal() as s:                  # …and isn't provisioned as a new account
             assert s.query(m.User).filter_by(external_subject="oidc:arx-somebody-else").count() == 0
         # The handshake belongs to the browser that started it.
@@ -925,4 +925,4 @@ if DEPS:
         other = _web(_user("ben"))
         other.cookies.set("yonder_oidc", c.cookies.get("yonder_oidc"))
         r = other.get(f"/oidc/callback?code=arx-code&state={q['state'][0]}")
-        assert "error=" in r.headers["location"] and confirm.COOKIE not in other.cookies
+        assert "error=" in r.headers["location"] and other.cookies.get(confirm.COOKIE, path="/account") is None

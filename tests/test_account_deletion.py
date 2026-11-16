@@ -336,6 +336,13 @@ if DEPS:
         assert r.status_code == 303 and r.headers["location"] == "/account/delete", r.text
         return c
 
+    def _admin(uid):
+        """An admin's web session, freshly confirmed for the Users page."""
+        c = _web(uid)
+        r = c.post("/account/confirm", data={"password": PW, "next": "/users"})
+        assert r.status_code == 303 and r.headers["location"] == "/users", r.text
+        return c
+
     def _username(uid):
         with SessionLocal() as s:
             return s.get(m.User, uid).username
@@ -899,6 +906,16 @@ if DEPS:
         # A non-admin can't delete anyone else.
         r = _web(S).post(f"/users/{L}/delete", data={"confirm_username": _username(L)})
         assert r.status_code == 403
+        # An admin's app token sent as the session cookie is not a web session
+        # (SPEC-13 §3.7): refused, with or without a confirmation.
+        with SessionLocal() as s:
+            app_token = authn.issue_access_token(s.get(m.User, w.ids["admin"]))
+        x = _admin(w.ids["admin"])
+        x.cookies.set(settings.auth_cookie_name, app_token)
+        r = x.post(f"/users/{L}/delete", data={"confirm_username": _username(L)})
+        assert r.status_code in (401, 403)
+        r = x.post(f"/users/{L}/delete/cancel")
+        assert r.status_code in (401, 403)
         _request(w)
         # Another person's cancel acts on their own account only.
         assert _web(S).post("/account/delete/cancel").status_code == 400
@@ -920,6 +937,12 @@ if DEPS:
         w = _world(env)
         A, L = w.ids["admin"], w.ids["leaver"]
         c = _web(A)
+        # Not confirmed yet: sent to confirm, and nothing happens.
+        r = c.post(f"/users/{L}/delete", data={"confirm_username": _username(L)})
+        assert r.status_code == 303 and r.headers["location"] == "/account/confirm?next=%2Fusers"
+        with SessionLocal() as s:
+            assert s.get(m.User, L).deletion_due_at is None
+        c = _admin(A)
         page = c.get("/users").text
         assert "Delete account" in page and "Del handed" not in page       # counts, never names
         with SessionLocal() as s:
@@ -952,9 +975,9 @@ if DEPS:
     def test_an_admin_can_cancel(env):
         w = _world(env)
         A, L = w.ids["admin"], w.ids["leaver"]
-        c = _web(A)
+        c = _admin(A)
         c.post(f"/users/{L}/delete", data={"confirm_username": _username(L)})
-        assert c.post(f"/users/{L}/delete/cancel").status_code == 303
+        assert _web(A).post(f"/users/{L}/delete/cancel").status_code == 303   # no confirmation
         with SessionLocal() as s:
             assert s.get(m.User, L).deletion_due_at is None
 
