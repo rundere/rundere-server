@@ -207,22 +207,32 @@ def launch(session: Session, user: User, *, base_url: str = "") -> ArchiveExport
         raise Refused(why)
     row = ArchiveExport(user_id=user.id, status=BUILDING, requested_at=_now())
     session.add(row)
-    # Insert, commit, THEN re-check (SPEC-13 §2.5): two parallel POSTs can both
-    # pass start_problem() above. There is no unique index to stop the second
-    # (the schema is locked for 5.0), so each request looks again once its row
-    # is visible to the other, and only the earliest row survives.
-    session.commit()
+    session.flush()
     export_id = row.id
-    if (why := _lost_race(session, row)) is not None:
-        session.delete(row)
-        session.commit()
-        raise Refused(why)
-    # The account log records each build (SPEC-13 §2.5). Written only now, so a
-    # refused request leaves no `export_built` entry.
-    session.add(AccountEvent(user_id=user.id, actor_id=user.id, action="export_built"))
-    session.commit()
+    # Live before the row is visible to anyone: a parallel request's latest()
+    # would otherwise take the committed "building" row for one orphaned by a
+    # restart, mark it failed, and start a second build. The row lock above
+    # makes that request run exactly in this window.
     with _LOCK:
         _LIVE.add(export_id)
+    try:
+        # Insert, commit, THEN re-check (SPEC-13 §2.5): two parallel POSTs can
+        # both pass start_problem() above. There is no unique index to stop the
+        # second (the schema is locked for 5.0), so each request looks again once
+        # its row is visible to the other, and only the earliest row survives.
+        session.commit()
+        if (why := _lost_race(session, row)) is not None:
+            session.delete(row)
+            session.commit()
+            raise Refused(why)
+        # The account log records each build (SPEC-13 §2.5). Written only now,
+        # so a refused request leaves no `export_built` entry.
+        session.add(AccountEvent(user_id=user.id, actor_id=user.id, action="export_built"))
+        session.commit()
+    except BaseException:
+        with _LOCK:
+            _LIVE.discard(export_id)
+        raise
     _EXECUTOR.submit(_execute, export_id, base_url)
     return row
 
