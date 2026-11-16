@@ -273,6 +273,9 @@ def run(session_factory, *, today: date | None = None, dry_run: bool = False,
         from app import archive_jobs
         with session_factory() as session:
             report.exports_expired = archive_jobs.expire_due(session, dry_run=dry_run)
+            # SPEC-13 §2.5: stray `.part` files and long-dead build rows.
+            archive_jobs.sweep_stray_parts(dry_run=dry_run)
+            archive_jobs.purge_old_rows(session, dry_run=dry_run)
     except Exception:
         log.exception("retention: the archive step failed; retried tomorrow")
     if not dry_run:

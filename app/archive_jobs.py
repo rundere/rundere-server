@@ -173,6 +173,28 @@ def start_problem(session: Session, user: User) -> str | None:
     return space_problem(session, user)
 
 
+def _lost_race(session: Session, mine: ArchiveExport) -> str | None:
+    """After inserting `mine`: why another request beat it to the limit, or
+    None. Rows are ordered by (requested_at, id), the same for every request,
+    so when two race exactly one of them wins. A plain query: it must not
+    mark a build orphaned the way latest() does."""
+    earlier_first = (ArchiveExport.requested_at, ArchiveExport.id)
+    rows = (session.query(ArchiveExport.id, ArchiveExport.status)
+            .filter(ArchiveExport.user_id == mine.user_id,
+                    ArchiveExport.requested_at >= _now() - timedelta(hours=24))
+            .order_by(*earlier_first).all())
+    ids = [r.id for r in rows]
+    if mine.id not in ids:                       # pragma: no cover - defensive
+        return "your archive is already being built"
+    if any(r.status == BUILDING and r.id != mine.id and ids.index(r.id) < ids.index(mine.id)
+           for r in rows):
+        return "your archive is already being built"
+    if ids.index(mine.id) >= MAX_PER_DAY:
+        return (f"you can build your archive {MAX_PER_DAY} times a day — "
+                "try again tomorrow")
+    return None
+
+
 # --------------------------------------------------------------------------- launch + worker
 def launch(session: Session, user: User, *, base_url: str = "") -> ArchiveExport:
     """Start a build for `user`, or raise Refused. `base_url` is this server's
@@ -181,10 +203,20 @@ def launch(session: Session, user: User, *, base_url: str = "") -> ArchiveExport
         raise Refused(why)
     row = ArchiveExport(user_id=user.id, status=BUILDING, requested_at=_now())
     session.add(row)
-    # The account log records each build (SPEC-13 §2.5).
-    session.add(AccountEvent(user_id=user.id, actor_id=user.id, action="export_built"))
+    # Insert, commit, THEN re-check (SPEC-13 §2.5): two parallel POSTs can both
+    # pass start_problem() above. There is no unique index to stop the second
+    # (the schema is locked for 5.0), so each request looks again once its row
+    # is visible to the other, and only the earliest row survives.
     session.commit()
     export_id = row.id
+    if (why := _lost_race(session, row)) is not None:
+        session.delete(row)
+        session.commit()
+        raise Refused(why)
+    # The account log records each build (SPEC-13 §2.5). Written only now, so a
+    # refused request leaves no `export_built` entry.
+    session.add(AccountEvent(user_id=user.id, actor_id=user.id, action="export_built"))
+    session.commit()
     with _LOCK:
         _LIVE.add(export_id)
     _EXECUTOR.submit(_execute, export_id, base_url)
@@ -217,6 +249,23 @@ def _execute(export_id: str, base_url: str = "") -> None:
             # Created 0600 before a byte is written, whatever the umask.
             os.close(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600))
             result = archive.build(s, user, tmp)
+            # The account may have been purged while this ran (SPEC-13 §3.5):
+            # then there is nobody to hand the file to, and a rename would leave
+            # `<deleted user id>/<id>.zip` behind. Look again, on fresh reads.
+            uid = user.id
+            s.expire_all()
+            if (s.query(User.id).filter(User.id == uid).first() is None
+                    or s.query(ArchiveExport.id).filter(
+                        ArchiveExport.id == export_id,
+                        ArchiveExport.status == BUILDING).first() is None):
+                _remove(tmp)
+                tmp = None
+                try:
+                    folder.rmdir()               # only if empty
+                except OSError:
+                    pass
+                log.info("archive: build %s stopped, its account is gone", export_id)
+                return
             os.chmod(tmp, 0o600)
             os.replace(tmp, final)               # atomic: never a half-written archive
             tmp = None
@@ -287,4 +336,54 @@ def expire_due(session: Session, *, now: datetime | None = None, dry_run: bool =
             row.status = EXPIRED
     if not dry_run:
         session.commit()
+    return count
+
+
+# Failed, replaced and expired rows hold no file and nothing but a status and a
+# date. SPEC-13 §2.5 states no retention for them, so this is our choice: 30
+# days is longer than the 24 hours the "3 a day" count looks at, and long
+# enough for a person to see why a build failed; after that they only
+# accumulate for as long as the account lives.
+ROW_KEEP_DAYS = 30
+STRAY_PART_AGE = timedelta(hours=1)
+
+
+def purge_old_rows(session: Session, *, now: datetime | None = None,
+                   dry_run: bool = False) -> int:
+    """Delete failed/replaced/expired rows older than ROW_KEEP_DAYS. Returns
+    how many. Safe for the daily limit: builds_today() only counts rows
+    requested in the last 24 hours. Called by the daily job."""
+    cutoff = (now or _now()) - timedelta(days=ROW_KEEP_DAYS)
+    q = session.query(ArchiveExport).filter(
+        ArchiveExport.status.in_((FAILED, REPLACED, EXPIRED)))
+    old = [r for r in q.all()
+           if (_aware(r.finished_at) or _aware(r.requested_at) or cutoff) < cutoff]
+    if not dry_run:
+        for r in old:
+            session.delete(r)
+        session.commit()
+    return len(old)
+
+
+def sweep_stray_parts(*, now: datetime | None = None, dry_run: bool = False) -> int:
+    """Remove `.part` files a restart interrupted: older than an hour and not
+    owned by a build running in this process. latest() only clears the one
+    its owner next looks at; this covers people who never come back. Returns
+    how many. Called by the daily job."""
+    base = root()
+    if not base.is_dir():
+        return 0
+    cutoff = (now or _now()).timestamp() - STRAY_PART_AGE.total_seconds()
+    with _LOCK:
+        live = set(_LIVE)
+    count = 0
+    for part in base.glob("*/*.part"):
+        try:
+            if part.stem in live or part.stat().st_mtime > cutoff:
+                continue
+        except OSError:
+            continue
+        count += 1
+        if not dry_run:
+            _remove(part)
     return count
