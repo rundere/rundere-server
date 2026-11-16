@@ -32,7 +32,10 @@ that separately.** It amends D-11.
 - **A demo server never calls AI** (D-198), whatever its settings say.
 - **The configuration lives in the environment only.** The key comes from
   `TX_AI_API_KEY` or a `_FILE` secret and is never stored in the database
-  (in the spirit of D-151), never logged, and never shown.
+  (in the spirit of D-151), never logged, and never shown. No user can set
+  the endpoint or the key: they are the operator's settings. So D-151 itself
+  (per-user credentials, encrypted at rest) and D-152 (the SSRF policy for
+  URLs a user supplies) don't govern them.
 
 D-11's validation gate and its single retry still apply to every provider.
 
