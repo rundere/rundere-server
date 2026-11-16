@@ -332,3 +332,102 @@ def test_the_address_step_is_the_locate_backfill(monkeypatch):
     from app.trips import geo as geo_mod
     monkeypatch.setattr(geo_mod, "backfill", lambda session: {"located": 2, "skipped": 5})
     assert dict(upgrade.STEPS)["locate-addresses"](None) == "located=2, skipped=5"
+
+
+# ---- the address step waits for a geocoder (D-233, D-146)
+
+_STEP = "upgrade:locate-addresses"
+
+
+def _fresh_address_step(with_lodging: bool):
+    """Empty the timeline and the step's record; optionally one unlocated lodging."""
+    from app.models import ServerSetting
+    with SessionLocal() as s:
+        s.query(TripActivity).delete()
+        s.query(ServerSetting).filter(ServerSetting.key == _STEP).delete()
+        if with_lodging:
+            t = Trip(name="Upgrade locate test", start_date="2027-03-01", end_date="2027-03-03")
+            s.add(t)
+            s.flush()
+            s.add(TripActivity(trip_id=t.id, type="lodging", starts_at="2027-03-01",
+                               values={"name": "Hotel Imaginary",
+                                       "address": "1 Example Street, Nowhere"}))
+        s.commit()
+
+
+def _step_state():
+    from app import upgrade
+    with SessionLocal() as s:
+        return upgrade.pending(s)
+
+
+def _only_address_step(monkeypatch):
+    from app import upgrade
+    monkeypatch.setattr(upgrade, "STEPS", tuple(x for x in upgrade.STEPS
+                                                if x[0] == "locate-addresses"))
+    return upgrade
+
+
+def test_address_step_stays_pending_without_photon(monkeypatch, caplog):
+    from app.config import settings
+    upgrade = _only_address_step(monkeypatch)
+    monkeypatch.setattr(settings, "photon_url", "")
+    _fresh_address_step(with_lodging=True)
+    try:
+        with caplog.at_level("INFO", logger="rundere.upgrade"):
+            out = upgrade.run(SessionLocal)
+        assert out["locate-addresses"].startswith("not yet")
+        assert _step_state() == ["locate-addresses"]
+        assert not [r for r in caplog.records if r.levelname in ("ERROR", "WARNING")
+                    or r.exc_info]                       # quiet: no traceback per start
+    finally:
+        _fresh_address_step(with_lodging=False)
+
+
+def test_address_step_stays_pending_when_photon_is_down(monkeypatch):
+    import urllib.error
+    import urllib.request
+    from app.config import settings
+    upgrade = _only_address_step(monkeypatch)
+    monkeypatch.setattr(settings, "photon_url", "http://photon.example.test:2322")
+
+    def refused(*a, **k):
+        raise urllib.error.URLError(ConnectionRefusedError("refused"))
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
+    _fresh_address_step(with_lodging=True)
+    try:
+        assert upgrade.run(SessionLocal)["locate-addresses"].startswith("not yet")
+        assert _step_state() == ["locate-addresses"]
+    finally:
+        _fresh_address_step(with_lodging=False)
+
+
+def test_address_step_done_once_photon_answers(monkeypatch):
+    import io
+    import json
+    import urllib.request
+    from app.config import settings
+    upgrade = _only_address_step(monkeypatch)
+    monkeypatch.setattr(settings, "photon_url", "http://photon.example.test:2322")
+    body = json.dumps({"features": [{
+        "geometry": {"coordinates": [10.0, 20.0]},
+        "properties": {"name": "Hotel Imaginary", "street": "Example Street",
+                       "housenumber": "1", "city": "Nowhere", "countrycode": "ZZ"}}]}).encode()
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: io.BytesIO(body))
+    _fresh_address_step(with_lodging=True)
+    try:
+        out = upgrade.run(SessionLocal)
+        assert out == {"locate-addresses": "located=1, partial=0, unlocated=0, skipped=0"}
+        assert _step_state() == []
+    finally:
+        _fresh_address_step(with_lodging=False)
+
+
+def test_address_step_done_with_nothing_to_locate_and_no_photon(monkeypatch):
+    from app.config import settings
+    upgrade = _only_address_step(monkeypatch)
+    monkeypatch.setattr(settings, "photon_url", "")
+    _fresh_address_step(with_lodging=False)
+    upgrade.run(SessionLocal)
+    assert _step_state() == []
+    _fresh_address_step(with_lodging=False)

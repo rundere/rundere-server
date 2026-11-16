@@ -526,8 +526,11 @@ person chooses what goes in. Agreed with the owner on 2026-11-10.
   again. The server does that once by itself after upgrading (`app/upgrade.py`):
   two minutes after start it runs `locate-activities`, which redoes only the pins
   that lack an address, and records it in `server_settings` so it doesn't run
-  again. If it fails it runs at the next start. The PDF never fills a missing
-  address in itself; it prints what the pins hold.
+  again. If it fails it runs at the next start. So does it when pins stayed
+  unlocated because no geocoder was configured or reachable (D-146): it is
+  recorded only once Photon answers or there was nothing to locate, and the
+  operator can run `python -m app.cli locate-activities` instead. The PDF never
+  fills a missing address in itself; it prints what the pins hold.
 
 ## 14. What's new after an upgrade (D-234)
 

@@ -256,6 +256,24 @@ def _airport_address(ap) -> str | None:
 _ADDRESSED = {"photon", "airport"}
 
 
+def geocoder_state() -> str:
+    """"ok" when Photon is configured and answers, else "unconfigured" or
+    "unreachable" (D-146, D-233). The geocoder reports a down server as "no
+    result", so the one-time upgrade step asks here to tell "nothing found"
+    from "couldn't look"; the lookups' own behaviour is unchanged."""
+    from app.config import settings
+    if not settings.photon_url:
+        return "unconfigured"
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{settings.photon_url.rstrip('/')}/api?q=a&limit=1",
+                                    timeout=5) as resp:
+            resp.read(1)
+    except Exception:                    # refused, timed out, still starting (503)
+        return "unreachable"
+    return "ok"
+
+
 def _point(role: str, label: str | None, lat, lon, source: str,
            address: str | None = None) -> dict:
     p = {"role": role, "label": label or "", "lat": round(float(lat), 6),
