@@ -11,6 +11,8 @@
 # CI tests the pinned dependency set. A new upstream release then arrives as a
 # Dependabot or `uv lock` bump, instead of breaking an unrelated PR (pypdf 7.0.0
 # removed PdfWriter.add_js and failed a README-only PR).
+# The Dockerfile installs from the same lock on the same Python (3.12), so the
+# published image matches what these jobs tested.
 name: ci
 
 on:
