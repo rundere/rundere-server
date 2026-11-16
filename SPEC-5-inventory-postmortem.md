@@ -275,8 +275,11 @@ to **suggest** which template types fit a trip.
 - **`packing_items.inventory_item_id`**: nullable soft link, so a line knows
   which owned item it is.
 - **`bags.user_id`**: `Bag` becomes the luggage part of the person's inventory
-  (P6). Existing rows stay ownerless, so only admins see them (house rule 2),
-  until the owner takes the questionnaire. A new bag's id is a uuid rather
+  (P6). Existing rows stay ownerless, so only admins see them (house rule 2).
+  On a server with one active admin they become that admin's (owner,
+  2026-11-17): once after the upgrade, and when that admin saves the
+  questionnaire, before its bags are seeded, so their real bags count and get
+  no generic twins. With several admins they stay ownerless. A new bag's id is a uuid rather
   than the label's slug, so two people's "Carry-on" don't collide; older slug
   ids keep working. Bags have no admin screen: they're edited on the
   Inventory page, where an admin also sees the ownerless ones (D-124).
