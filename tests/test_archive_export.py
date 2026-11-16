@@ -545,7 +545,8 @@ if DEPS:
         assert r.status_code == 200 and r.content == path.read_bytes()
         today = datetime.now(timezone.utc).strftime("%Y%m%d")
         assert r.headers["content-disposition"] == (
-            f'attachment; filename="rundere-archive-arx-ana-{today}.zip"')
+            f'attachment; filename="rundere-archive-arx-ana-{today}.zip"; '
+            f"filename*=UTF-8''rundere-archive-arx-ana-{today}.zip")
         assert r.headers["x-content-type-options"] == "nosniff"
         assert r.headers["cache-control"] == "no-store"
         _validate(zipfile.ZipFile(io.BytesIO(r.content)))
@@ -553,6 +554,37 @@ if DEPS:
         with SessionLocal() as s:
             actions = [e.action for e in s.query(m.AccountEvent).filter_by(user_id=ana.id)]
         assert sorted(actions) == ["export_built", "export_downloaded"]
+
+    def test_archive_name_is_ascii_safe_for_any_username():
+        # D-241: usernames are unvalidated; the name goes into a Latin-1 header.
+        def name(username):
+            return archive.archive_name(m.User(username=username), date(2026, 1, 2))
+        assert name("alice") == "rundere-archive-alice-20260102.zip"
+        assert name("алиса") == "rundere-archive-account-20260102.zip"
+        assert name("爱丽丝") == "rundere-archive-account-20260102.zip"
+        assert name("ana‮фыва") == "rundere-archive-ana-20260102.zip"
+        assert name("../etc/passwd") == "rundere-archive-etcpasswd-20260102.zip"
+        assert name("..") == "rundere-archive-account-20260102.zip"
+        for u in ("алиса", "爱丽丝", "ana‮", "../x", "é"):
+            name(u).encode("ascii")
+        # The real letters (without separators or bidi controls) go to filename*.
+        assert archive.archive_name(m.User(username="алиса‮/"), date(2026, 1, 2),
+                                    ascii_only=False) == "rundere-archive-алиса-20260102.zip"
+
+    def test_download_with_a_non_ascii_username(env):
+        ana = _user("алиса")
+        c = _web(ana)
+        row = _build(c)
+        assert row.status == "ready"
+        _confirm(c)
+        r = c.get(f"/account/export/{row.id}/download")
+        assert r.status_code == 200
+        cd = r.headers["content-disposition"]
+        cd.encode("ascii")
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        assert f'filename="rundere-archive-arx--{today}.zip"' in cd
+        assert ("filename*=UTF-8''rundere-archive-arx-%D0%B0%D0%BB%D0%B8%D1%81%D0%B0-"
+                f"{today}.zip") in cd
 
     def test_a_new_build_replaces_the_old_archive(env):
         ana = _user("ana")
