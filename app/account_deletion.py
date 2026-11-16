@@ -76,6 +76,22 @@ def usable_admins(session: Session, *, without: str | None = None) -> int:
     return q.count()
 
 
+def lock_admins(session: Session) -> None:
+    """Take a row lock on every admin before a guard counts them, so two
+    requests (or a request and a role change) can't both pass the count and
+    leave no usable admin. Postgres serialises on it; SQLite ignores FOR
+    UPDATE, but its single writer already serialises the writes. Always lock
+    the admins before the account itself, everywhere, so two callers can't
+    wait on each other."""
+    session.query(User.id).filter(User.is_admin.is_(True)).with_for_update().all()
+
+
+def lock_user(session: Session, user_id: str) -> User | None:
+    """Re-read the account under a row lock: the request, the cancel and the
+    purge decide on what is committed now, not on what they read earlier."""
+    return session.get(User, user_id, with_for_update=True, populate_existing=True)
+
+
 def last_admin(session: Session, user) -> bool:
     """Would deleting (or locking) this account leave the server without an
     active admin? (SPEC-13 §3.1)"""
@@ -128,6 +144,8 @@ def request(session: Session, user: User, *, actor: User | None, choices: dict |
     admin and the operator make no per-trip choice: every shared trip is
     handed over by the rule of §3.4. Commits, then sends the emails."""
     by_admin = operator or (actor is not None and actor.id != user.id)
+    lock_admins(session)
+    lock_user(session, user.id)
     if pending(user):
         raise Refused("This account is already waiting to be deleted.")
     if last_admin(session, user):
@@ -155,7 +173,10 @@ def request(session: Session, user: User, *, actor: User | None, choices: dict |
 def cancel(session: Session, user: User, *, actor: User | None,
            operator: bool = False, base_url: str = "") -> None:
     """Clear the request. The person cancels their own; an admin's deletion
-    is cancelled by an admin or the operator, never by the person (§3.6)."""
+    is cancelled by an admin or the operator, never by the person (§3.6).
+    Takes the same row lock as the purge, so a cancel and a purge of the same
+    account run one after the other, never interleaved."""
+    lock_user(session, user.id)
     rec = record(session, user)
     if not pending(user) or rec is None:
         raise Refused("This account isn't waiting to be deleted.")
@@ -246,13 +267,25 @@ def _mail_finished(email: str | None, username: str) -> None:
 
 
 # --------------------------------------------------------------------------- the purge, run
-def _purge_one(session_factory, user_id: str, *, mailbox: bool = True,
-               connect=None) -> account_purge.Result | None:
+def _purge_one(session_factory, user_id: str, *, due_by: datetime | None,
+               mailbox: bool = True, connect=None) -> account_purge.Result | None:
     """Purge one account in its own transaction, then remove its files, try
-    the mailbox and send the last email. Returns None when a guard held it."""
+    the mailbox and send the last email. Returns None when a guard held it.
+
+    `due_by` is the daily step's clock: the account is purged only if, read
+    again under a row lock inside this transaction, it still has a pending
+    request whose date has come. The list of due accounts was read earlier, and
+    the person (or an admin) may have cancelled since (SPEC-13 §3.5, D-242).
+    Only the operator's `--now` passes None and skips that check."""
     with session_factory() as session:
-        user = session.get(User, user_id)
+        lock_admins(session)
+        user = lock_user(session, user_id)
         if user is None:
+            return None
+        rec = record(session, user)
+        if due_by is not None and (rec is None or user.deletion_due_at is None
+                                   or _aware(user.deletion_due_at) > due_by):
+            log.info("account deletion: skipped, the request was cancelled or isn't due")
             return None
         if last_admin(session, user):
             # Decided again when the purge runs: the other admin may have gone
@@ -260,7 +293,6 @@ def _purge_one(session_factory, user_id: str, *, mailbox: bool = True,
             log.warning("account deletion: held, it would leave the server without an "
                         "active admin")
             return None
-        rec = record(session, user)
         res = account_purge.purge(
             session, user.id, choices=rec.choices if rec else None,
             actor_id=rec.requested_by if rec else None,
@@ -275,7 +307,7 @@ def _purge_one(session_factory, user_id: str, *, mailbox: bool = True,
 
 def delete_now(session_factory, user_id: str, *, connect=None) -> account_purge.Result | None:
     """The operator's `--now` (SPEC-13 §3.6): purge without the 7 days."""
-    return _purge_one(session_factory, user_id, connect=connect)
+    return _purge_one(session_factory, user_id, due_by=None, connect=connect)
 
 
 def run_due(session_factory, *, now: datetime | None = None, mailbox: bool = True,
@@ -292,7 +324,8 @@ def run_due(session_factory, *, now: datetime | None = None, mailbox: bool = Tru
     done = 0
     for uid in due:
         try:
-            if _purge_one(session_factory, uid, mailbox=mailbox, connect=connect) is not None:
+            if _purge_one(session_factory, uid, due_by=now, mailbox=mailbox,
+                          connect=connect) is not None:
                 done += 1
         except Exception as ex:
             log.error("account deletion: a purge failed (%s); retried tomorrow",

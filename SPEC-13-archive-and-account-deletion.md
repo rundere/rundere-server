@@ -572,6 +572,16 @@ for admins. It is driven by the registry of §1.1, and these rules hold:
   removal that failed.
 - **Safe to run again.** Because the `users` row goes last, a purge that
   stops halfway leaves a pending account, and the next daily run finishes it.
+- **Checked again when it runs.** The daily step reads the due accounts
+  first and purges them one at a time, so each purge re-reads the account
+  inside its own transaction, under a row lock, and stops unless the account
+  still has a pending request whose date has come. A cancel takes the same
+  lock, so a cancel and a purge of one account never interleave. Only the
+  operator's `--now` skips the check (§3.6).
+- **Guards count under a lock.** The last-admin guard (§3.1) locks the admin
+  rows before it counts them, in the request, the purge and the admin's role
+  and active switches, so two changes at once can't both pass it. Postgres
+  enforces the locks; SQLite has one writer at a time.
 - **Captures leave no tombstone.** D-196 keeps a purged capture's hash,
   subject and sender so its owner can see what it was. With no owner there is
   nobody to show it to, and a subject and sender are personal data. The batch

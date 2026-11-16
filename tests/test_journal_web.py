@@ -171,7 +171,9 @@ if DEPS:
                            params={"entry_date": "2026-10-02", "picked": ids["2027-03-01"]})
             assert f'value="{ids["2027-03-01"]}" selected' in r.text      # hand pick wins
             r = client.get("/journal/trip-options", params={"entry_date": "2026-12-25"})
-            assert "selected" not in r.text                                # nothing covers it
+            # Neither of this test's trips covers it. Other files leave trips in
+            # the shared test database (some dated from today), so check ours only.
+            assert all(f'value="{i}" selected' not in r.text for i in ids.values())
         finally:
             _cleanup()
 
