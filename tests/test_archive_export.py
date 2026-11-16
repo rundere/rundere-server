@@ -818,16 +818,19 @@ if DEPS:
             return real(session, mine)
 
         monkeypatch.setattr(archive_jobs, "_lost_race", parallel_look)
-        with SessionLocal() as s:
-            built = archive_jobs.launch(s, s.get(m.User, ana.id))
-            built_id = built.id
-        assert seen == [(built_id, "building"), "your archive is already being built"]
-        with SessionLocal() as s:
-            assert s.get(m.ArchiveExport, built_id).status == "building"
-        with archive_jobs._LOCK:
-            archive_jobs._LIVE.clear()
+        try:
+            with SessionLocal() as s:
+                built = archive_jobs.launch(s, s.get(m.User, ana.id))
+                built_id = built.id
+            assert seen == [(built_id, "building"), "your archive is already being built"]
+            with SessionLocal() as s:
+                assert s.get(m.ArchiveExport, built_id).status == "building"
+        finally:
+            with archive_jobs._LOCK:
+                archive_jobs._LIVE.clear()
 
     def test_a_refused_racer_is_not_left_live(env, monkeypatch):
+        """Guards the new clean-up path: a refused request drops its id again."""
         ana = _user("ana")
         monkeypatch.setattr(archive_jobs, "_lost_race", lambda *a, **k: "your archive is already being built")
         with SessionLocal() as s, pytest.raises(archive_jobs.Refused):
