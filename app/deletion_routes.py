@@ -9,10 +9,11 @@
                                 (POST), by typing its username.
 - **/users/{id}/delete/cancel** an admin cancels it (POST).
 
-Web only: the Account routes take `confirm.web_user`, which refuses bearer
-credentials, so there is no way to a deletion through /api/v1, MCP, a personal
+Web only: the Account routes take `confirm.web_user` and the admin routes
+`web_admin`, which refuse bearer credentials and app tokens sent as a cookie, so there is no way to a deletion through /api/v1, MCP, a personal
 API token or an OAuth token. The request also needs a fresh confirmation of who
-the person is (app/confirm.py) and their typed username. There is no "delete
+the person is (app/confirm.py) and their typed username; an admin deleting
+someone else confirms too (SPEC-13 §3.6). There is no "delete
 now" here: only the operator's command line skips the 7 days (§3.3). With
 sign-in off the pages don't exist; on a demo server `demo_guard` answers 404.
 """
@@ -124,6 +125,18 @@ def delete_cancel(request: Request, user: User = Depends(confirm.web_user),
 
 
 # --------------------------------------------------------------------------- admin: Users
+def web_admin(request: Request) -> User:
+    """FastAPI dependency: an admin signed in on the WEB. `authn.require_admin`
+    also takes an app's access token sent as the session cookie, so a stolen
+    app token could ask for someone's deletion. SPEC-13 §3.1 and §3.7 say no
+    app token can delete an account; this takes a web session (or the trusted
+    proxy) only, as the Account routes do (D-242)."""
+    user = confirm.web_user(request)
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="admin only")
+    return user
+
+
 def _admin_target(session: Session, user_id: str, admin: User) -> User:
     if not deletion.available():
         raise HTTPException(status_code=404, detail="not found")
@@ -144,11 +157,13 @@ def _users(msg: str = "", err: str = "") -> RedirectResponse:
 
 @router.post("/users/{user_id}/delete")
 def users_delete(request: Request, user_id: str, confirm_username: str = Form(""),
-                 admin: User = Depends(authn.require_admin),
+                 admin: User = Depends(web_admin),
                  session: Session = Depends(get_session)):
-    if request.headers.get("authorization"):       # the web only, as for your own
-        raise HTTPException(status_code=403, detail="this is only available on the web")
     target = _admin_target(session, user_id, admin)
+    # The admin confirms who they are first, as for their own account (owner,
+    # 2026-11-16; SPEC-13 §3.6), then comes back to Users and asks again.
+    if not confirm.is_fresh(request, session.get(User, admin.id)):
+        return RedirectResponse(confirm.page_url("/users"), status_code=303)
     if not _same(confirm_username, target.username):
         return _users(err="Type the account's username to confirm.")
     try:
@@ -162,10 +177,10 @@ def users_delete(request: Request, user_id: str, confirm_username: str = Form(""
 
 @router.post("/users/{user_id}/delete/cancel")
 def users_delete_cancel(request: Request, user_id: str,
-                        admin: User = Depends(authn.require_admin),
+                        admin: User = Depends(web_admin),
                         session: Session = Depends(get_session)):
-    if request.headers.get("authorization"):
-        raise HTTPException(status_code=403, detail="this is only available on the web")
+    # Web only, like the request. Cancelling deletes nothing, so it needs no
+    # fresh confirmation.
     target = _admin_target(session, user_id, admin)
     try:
         deletion.cancel(session, target, actor=session.get(User, admin.id),

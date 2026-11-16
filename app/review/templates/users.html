@@ -45,7 +45,7 @@
             <details style="margin-top:8px">
               <summary style="cursor:pointer;color:var(--ink-2);font-size:12.5px">Delete account…</summary>
               <p class="why" style="margin-top:8px">The account is locked at once and deleted in {{ grace_days }} days; the person is emailed and can still export their data.
-                {{ deletion_preview[u.id].handed }} trip(s) pass to other travellers, {{ deletion_preview[u.id].deleted }} are deleted. The web can't shorten the wait.</p>
+                {{ deletion_preview[u.id].handed }} trip(s) pass to other travellers, {{ deletion_preview[u.id].deleted }} are deleted. The web can't shorten the wait. You'll be asked to confirm it's you first.</p>
               <form method="post" action="/users/{{ u.id }}/delete" class="lookup-row" style="margin-top:8px">
                 <input name="confirm_username" placeholder="Type {{ u.username }} to confirm" autocomplete="off" required>
                 <button class="act tiny danger" type="submit">Delete in {{ grace_days }} days</button>

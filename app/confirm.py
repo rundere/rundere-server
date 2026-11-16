@@ -38,6 +38,7 @@ from app.db import SessionLocal
 from app.models import User
 
 COOKIE = "rundere_confirm"
+_PATHS = ("/account", "/users")    # where the browser sends the cookie
 TTL = 600                          # 10 minutes (SPEC-13 §3.2); there is no setting
 _AUTH_TIME_SKEW = 60               # clock drift allowed against the provider's auth_time
 PASSWORD, SSO, PROXY = "password", "sso", "proxy"
@@ -85,12 +86,16 @@ def grant(response, user) -> None:
     now = int(time.time())
     token = authn.jwt_encode({"typ": "confirm", "sub": user.id, "ver": user.token_version,
                               "iat": now, "exp": now + TTL})
-    response.set_cookie(COOKIE, token, max_age=TTL, httponly=True,
-                        secure=settings.auth_cookie_secure, samesite="lax", path="/account")
+    # Sent only where it is needed: the Account pages, and the admin's Users
+    # page, where deleting another account needs it too (SPEC-13 §3.6).
+    for path in _PATHS:
+        response.set_cookie(COOKIE, token, max_age=TTL, httponly=True,
+                            secure=settings.auth_cookie_secure, samesite="lax", path=path)
 
 
 def clear(response) -> None:
-    response.delete_cookie(COOKIE, path="/account")
+    for path in _PATHS:
+        response.delete_cookie(COOKIE, path=path)
 
 
 def is_fresh(request, user) -> bool:
@@ -103,7 +108,7 @@ def is_fresh(request, user) -> bool:
 
 
 # The only pages a confirmation leads back to.
-_DESTINATIONS = ("/account", "/account/export", "/account/delete")
+_DESTINATIONS = ("/account", "/account/export", "/account/delete", "/users")
 
 
 def safe_next(nxt: str | None) -> str:
