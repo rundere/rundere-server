@@ -7,7 +7,7 @@
 # the venv. The export needs no project source, so this layer is cached until
 # pyproject.toml or uv.lock changes. The uv tag is pinned (bump it like any
 # other dependency; Dependabot's docker ecosystem tracks it).
-FROM ghcr.io/astral-sh/uv:0.11.29 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.8 AS uv
 
 FROM python:3.12-slim AS builder
 COPY --from=uv /uv /bin/uv
