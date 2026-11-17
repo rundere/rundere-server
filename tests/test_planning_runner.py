@@ -433,3 +433,78 @@ def test_bag_label_survives_retiring_a_bag():
         assert "Retired Duffel" in r.text                # still labeled, not raw id
     finally:
         _clear_bags()
+
+
+def test_a_line_shared_by_long_named_templates_keeps_its_reason_in_its_column():
+    """Template names run to 128 chars and an item can sit in several: the
+    reason names them once and never outgrows PackingItem.reason (String(256);
+    Postgres raises where SQLite doesn't)."""
+    if not DEPS:
+        return
+    tid = _trip()
+    names = [f"Example {c} kit " + "x" * 110 for c in "ABC"]
+    ids = [_template(n, type_key="cold_ski")[0] if i == 0 else _template2(n)
+           for i, n in enumerate(names)]
+    with SessionLocal() as s:
+        generate_plan(s, s.get(Trip, tid), resolve_airport=_airports,
+                      geocoder=_NoGeo(), manual_archetypes=ids)
+    with SessionLocal() as s:
+        plan = _latest(s, tid)
+        assert plan.status == "done"
+        line = s.query(PackingItem).filter(PackingItem.trip_id == tid,
+                                           PackingItem.label.ilike("%hoodie%")).one()
+        assert len(line.reason) <= 256
+        assert line.reason.startswith("from your Example A kit")
+        assert line.reason.endswith("…")
+
+
+def _template2(name, item="hoodie"):
+    with SessionLocal() as s:
+        inv = s.query(InventoryItem).filter(InventoryItem.user_id.is_(None),
+                                            InventoryItem.type_key == item).one()
+        t = PackingTemplate(user_id=None, type_key="cold_ski", name=name)
+        s.add(t)
+        s.flush()
+        s.add(PackingTemplateItem(template_id=t.id, inventory_item_id=inv.id, quantity=1))
+        s.commit()
+        return t.id
+
+
+def test_templates_are_named_once_in_a_short_reason():
+    if not DEPS:
+        return
+    tid = _trip()
+    a, _ = _template("Example ski kit")
+    b = _template2("Example hut kit")
+    with SessionLocal() as s:
+        generate_plan(s, s.get(Trip, tid), resolve_airport=_airports,
+                      geocoder=_NoGeo(), manual_archetypes=[a, b])
+        line = s.query(PackingItem).filter(PackingItem.trip_id == tid,
+                                           PackingItem.label.ilike("%hoodie%")).one()
+        assert "from your Example ski kit and Example hut kit templates" in line.reason
+
+
+def test_a_failed_generate_is_recorded_not_raised(monkeypatch):
+    """A flush error mid-generate (Postgres on a bad row) used to leave the
+    session needing a rollback, so the closing commit raised: a 500 every time."""
+    if not DEPS:
+        return
+    from planning import runner
+    tid = _trip()
+
+    def boom(session, plan, trip_id, pi, user_id=None):
+        session.add(PackingItem(trip_id=None, item_key="bad"))   # NOT NULL breach
+        session.flush()
+    monkeypatch.setattr(runner, "_upsert_item", boom)
+    with SessionLocal() as s:
+        plan = generate_plan(s, s.get(Trip, tid), resolve_airport=_airports,
+                             geocoder=_NoGeo())
+        assert plan.status == "failed" and plan.error
+    with SessionLocal() as s:
+        latest = _latest(s, tid)
+        assert latest.status == "failed" and latest.finished_at is not None
+        assert s.query(PackingItem).filter_by(trip_id=tid).count() == 0
+    monkeypatch.undo()
+    with SessionLocal() as s:                       # and the next try just works
+        assert generate_plan(s, s.get(Trip, tid), resolve_airport=_airports,
+                             geocoder=_NoGeo()).status == "done"

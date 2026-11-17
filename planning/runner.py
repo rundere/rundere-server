@@ -129,6 +129,22 @@ def _templates(session: Session, user_id: str | None) -> list[dict]:
              "lines": lines.get(r.id, [])} for r in rows]
 
 
+REASON_MAX = 256                      # PackingItem.reason is String(256)
+
+
+def clip_reason(text: str | None, limit: int = REASON_MAX) -> str | None:
+    """Fit a reason into its column: Postgres rejects an over-long string where
+    SQLite shrugs, and one bad line used to fail the whole generate. Trims at a
+    word boundary and ends with an ellipsis."""
+    if text is None or len(text) <= limit:
+        return text
+    cut = text[:limit - 1]
+    space = cut.rfind(" ")
+    if space > limit // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,;") + "…"
+
+
 def _upsert_item(session: Session, plan: PackingPlan, trip_id: str, pi,
                  user_id: str | None = None) -> None:
     row = (session.query(PackingItem)
@@ -143,7 +159,7 @@ def _upsert_item(session: Session, plan: PackingPlan, trip_id: str, pi,
     row.category = pi.category
     row.quantity = pi.quantity
     row.bag = pi.bag
-    row.reason = pi.reason
+    row.reason = clip_reason(pi.reason)
     row.source = pi.source
     row.swap_for = pi.swap_for
     row.inventory_item_id = pi.inventory_item_id
@@ -284,6 +300,8 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
         session, PackingPlan(bag_ids=bag_ids), user_id)] or None
     session.add(plan)
     session.flush()
+    # Read now: after a rollback these would reload from a session in trouble.
+    trip_id, generated_at, bag_ids_saved = trip.id, plan.generated_at, plan.bag_ids
     try:
         acts = session.query(TripActivity).filter(
             TripActivity.trip_id == trip.id).all()
@@ -342,9 +360,16 @@ def generate_plan(session: Session, trip, *, resolve_airport, geocoder,
 
         plan.status = "done"
     except Exception as ex:
-        log.exception("packing plan failed for trip %s", trip.id)
-        plan.status = "failed"
-        plan.error = str(ex)
+        log.exception("packing plan failed for trip %s", trip_id)
+        # A DB error leaves the session needing a rollback, and the finally's
+        # commit would then raise (a 500 on every retry). Roll back, which also
+        # drops the plan row and this run's lines, then record the failure on a
+        # fresh row so the plan history still shows it.
+        session.rollback()
+        plan = PackingPlan(trip_id=trip_id, user_id=user_id, status="failed",
+                           generated_at=generated_at, manual_archetypes=override,
+                           bag_ids=bag_ids_saved, error=str(ex)[:1000])
+        session.add(plan)
     finally:
         plan.finished_at = _now()
         session.commit()
