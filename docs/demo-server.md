@@ -17,6 +17,16 @@ Start from [`deploy/docker-compose.demo.example.yml`](../deploy/docker-compose.d
 - **No visitor log.** uvicorn's per-request log is off (YONDER-277).
 - **Kept current, never wiped.** The sample trips' dates move forward each night
   at 03:00 in `TX_DEMO_TIMEZONE`, and at every start.
+- **Sample data shows off 5.0.** Besides the three trips and 13 saved places, the
+  demo user has three place lists (Eat well, Rainy-day ideas, Japan next) and six
+  captures waiting in Review for an unplanned Tokyo trip, from different channels:
+  web pages (flight, hotel, event), forwarded emails (a train on a made-up
+  operator and a dinner `.ics` invite) and a Calendar event. All read
+  deterministically, with no AI, and are fictional: Jane Doe, `DEMO-` codes,
+  "(sample)" venues, `example.com` hosts.
+- **A different theme each day.** The nightly roll sets the demo login's travel
+  theme to the next one in the theme manifest, chosen by date so a restart never
+  skips or repeats one. If the manifest can't be read the theme is left alone.
 - **Refuses to start** without sign-in, with mail or SSO configured, or on a
   database that holds any user other than the demo login. A real server can't be
   turned into a demo by accident.
