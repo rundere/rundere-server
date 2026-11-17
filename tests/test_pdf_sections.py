@@ -329,7 +329,9 @@ def test_a_failed_upgrade_step_runs_again(monkeypatch):
 
 def test_the_address_step_is_the_locate_backfill(monkeypatch):
     from app import upgrade
+    from app.config import settings
     from app.trips import geo as geo_mod
+    monkeypatch.setattr(settings, "photon_url", "http://photon.example.test:2322")
     monkeypatch.setattr(geo_mod, "backfill", lambda session: {"located": 2, "skipped": 5})
     monkeypatch.setattr(geo_mod, "geocoder_state", lambda: "ok")
     monkeypatch.setattr(geo_mod, "needs_locating", lambda session: 7)
@@ -374,10 +376,16 @@ def test_address_step_stays_pending_without_photon(monkeypatch, caplog):
     from app.config import settings
     upgrade = _only_address_step(monkeypatch)
     monkeypatch.setattr(settings, "photon_url", "")
+    from app.trips import geo as geo_mod
+    scanned = []
+    # D-146: unconfigured means no scan and no backfill at all.
+    monkeypatch.setattr(geo_mod, "needs_locating", lambda s: scanned.append("scan") or 1)
+    monkeypatch.setattr(geo_mod, "backfill", lambda *a, **k: scanned.append("backfill") or {})
     _fresh_address_step(with_lodging=True)
     try:
         with caplog.at_level("INFO", logger="rundere.upgrade"):
             out = upgrade.run(SessionLocal)
+        assert scanned == []
         assert out["locate-addresses"].startswith("not yet")
         assert _step_state() == ["locate-addresses"]
         assert not [r for r in caplog.records if r.levelname in ("ERROR", "WARNING")
@@ -425,13 +433,15 @@ def test_address_step_done_once_photon_answers(monkeypatch):
         _fresh_address_step(with_lodging=False)
 
 
-def test_address_step_done_with_nothing_to_locate_and_no_photon(monkeypatch):
+def test_address_step_not_recorded_with_nothing_to_locate_and_no_photon(monkeypatch):
+    # D-146: unconfigured returns before the scan, so even an empty timeline
+    # isn't recorded; a later TX_PHOTON_URL still triggers the step.
     from app.config import settings
     upgrade = _only_address_step(monkeypatch)
     monkeypatch.setattr(settings, "photon_url", "")
     _fresh_address_step(with_lodging=False)
-    upgrade.run(SessionLocal)
-    assert _step_state() == []
+    assert upgrade.run(SessionLocal)["locate-addresses"].startswith("not yet")
+    assert _step_state() == ["locate-addresses"]
     _fresh_address_step(with_lodging=False)
 
 

@@ -40,6 +40,15 @@ _thread: threading.Thread | None = None
 
 def _locate_addresses(session) -> str:
     from app.trips.geo import backfill, geocoder_state, needs_locating
+    from app.config import settings
+    # D-146: Photon is optional. With none configured the step can't do
+    # anything, so leave before touching the database: no scan of every
+    # activity at each start. It is left unrecorded (NotYet) rather than marked
+    # done so that setting TX_PHOTON_URL later still runs it at the next start,
+    # which is what the step is for; the check costs one setting read. A
+    # configured but down geocoder is told apart below and retried.
+    if not settings.photon_url:
+        raise NotYet("geocoder unconfigured; nothing scanned")
     # Ask first: with no geocoder answering a run gains nothing, and it would
     # only rescan every activity at each start (D-146). Nothing to locate is
     # done either way.
