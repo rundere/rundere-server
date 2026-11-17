@@ -12,6 +12,11 @@
   var controller = null;     // aborts a request a newer move has made stale
   var timer = null;          // debounce for moveend
   var lastView = { center: [20, 0], zoom: 2 };   // kept across lens switches and reloads
+  // YONDER-389: the map fits its matches only the first time it is shown. After that a
+  // filter (a list: or kind: chip, a search) swaps #pl-map for a new one, and the new map
+  // opens on lastView: the person zoomed in, so the view stays where they put it.
+  var shown = false;
+  var keepView = false;      // true when this map replaces one the person has been looking at
   var MAX_DRAWN = 1000;
 
   function escapeHtml(s) {
@@ -44,6 +49,8 @@
     if (!window.L || !L.markerClusterGroup) { setStatus('The map could not load.'); return; }
 
     mapEl = el;
+    keepView = shown;
+    shown = true;
     var canvas = document.createElement('div');
     canvas.className = 'pl-map-canvas';
     el.appendChild(canvas);
@@ -86,8 +93,13 @@
       setStatus((data.places || []).length ? '' : 'No matching places on the map.');
       draw({ places: data.places || [] });
       var b = data.bounds;
-      if (b && finite(b[0][0], b[0][1]) && finite(b[1][0], b[1][1])) {
+      if (!b || !finite(b[0][0], b[0][1]) || !finite(b[1][0], b[1][1])) return;
+      if (!keepView) {
+        keepView = true;              // fit once; a later filter keeps whatever view is current
         map.fitBounds(b, { padding: [30, 30], maxZoom: 15 });
+      } else if (!map.getBounds().intersects(b)) {
+        // The view stays put even when the filter leaves nothing in it; say where they went.
+        setStatus('No matches in this view. Zoom out or move the map to find them.');
       }
     }).catch(function (err) {
       if (err && err.name === 'AbortError') return;
