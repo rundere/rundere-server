@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import urllib.error
 from pathlib import Path
 
 from ai.client import Endpoint, chat_json
 from validation import validate_schema
+
+log = logging.getLogger("rundere.ai")
 
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "travel-extraction.schema.json"
 
@@ -229,7 +232,10 @@ class LLMExtractor:
                 detail = ex if isinstance(ex, urllib.error.HTTPError) else getattr(ex, "reason", ex)
                 why = f"{type(ex).__name__}: {detail}"[:200]
                 attempts.append({"attempt": attempt, "error": f"AI endpoint unreachable: {why}"})
-                raise ExtractionFailed(f"AI call failed ({self.llm.where}): {why}", attempts)
+                # The address stays in the log; the reason is stored on the capture
+                # and shown to its owner, so it carries neither model nor URL.
+                log.warning("AI call failed (%s): %s", self.llm.where, why)
+                raise ExtractionFailed(f"AI call failed: {why}", attempts)
             try:
                 batch = json.loads(content)
             except ValueError as ex:

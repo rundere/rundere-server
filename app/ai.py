@@ -18,7 +18,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from ai import client
-from ai.client import PROVIDERS, CallRecord, Endpoint
+from ai.client import PROVIDERS, CallRecord, Endpoint, shown_url
 from app.config import settings
 
 log = logging.getLogger("rundere.ai")
@@ -116,16 +116,6 @@ def config_problems() -> list[str]:
     return problems
 
 
-def _shown(url: str) -> str:
-    """An address for display: any user:password@ in it is dropped."""
-    from urllib.parse import urlsplit, urlunsplit
-    parts = urlsplit(url)
-    host = parts.hostname or ""
-    if parts.port:
-        host = f"{host}:{parts.port}"
-    return urlunsplit((parts.scheme, host, parts.path, "", ""))
-
-
 def describe() -> dict:
     """For the admin and health pages: on or off, and per feature where calls go.
     Never includes the key."""
@@ -134,7 +124,7 @@ def describe() -> dict:
         "enabled": bool(settings.ai_enabled),
         "provider": llm.provider if llm else None,
         "model": llm.model if llm else None,
-        "url": _shown(llm.url) if llm else None,
+        "url": shown_url(llm.url) if llm else None,
         "cloud": llm.cloud if llm else False,
         "features": {f: endpoint(f) is not None for f in FEATURES},
         "problems": config_problems(),
