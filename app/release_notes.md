@@ -17,7 +17,7 @@ How to write a section (the release PR does this; RELEASING.md):
 Run·dere was called Yonder until 4.4.0, so older notes use that name.
 -->
 
-## 5.0.0
+## 5.0.0 — 2026-11-17
 
 ### For everyone
 - **Pick your travel theme.** Choose Desert, Coast, Forest, Metro or Winter under Account → Appearance on the web, or Settings → Appearance in the app. Each has a light and a dark look and an optional landscape along the bottom of the screen, and your theme follows you to every device.
