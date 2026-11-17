@@ -69,7 +69,7 @@ keep Run·dere fully local.
 | `TX_AI_LOCATION` | `local` | `local` or `cloud`. A cloud endpoint must be https |
 | `TX_AI_CLOUD_EXTRACTION` | `false` | Lets booking emails and files go to a **cloud** endpoint (D-228). Discovery may use one without it |
 | `TX_LLM_TIMEOUT_SECONDS` | `600` | LLM call timeout |
-| `TX_OLLAMA_URL` / `TX_OLLAMA_MODEL` | `http://ollama:11434` / `qwen3:14b` | **Deprecated in 5.0, removed in 5.1.** Used, with a start-up warning, only when `TX_AI_URL` is unset and `TX_OLLAMA_URL` is set explicitly. `TX_AI_ENABLED=true` is still needed |
+| `TX_OLLAMA_URL` / `TX_OLLAMA_MODEL` | `http://ollama:11434` / `qwen3:14b` | **Deprecated in 5.0, removed in 5.1.** Used, with a start-up warning, only when `TX_AI_URL` is unset and `TX_OLLAMA_URL` is set explicitly. `TX_AI_ENABLED=true` is still needed. The built-in default is **not** read, so an install that never set `TX_OLLAMA_URL` must set `TX_AI_URL` and `TX_AI_MODEL_CHAT` |
 | `TX_SECRETS_KEY` | `""` | 32 random bytes (base64 or hex) that encrypt per-user connection tokens (D-151). Empty = connections can't be saved. `TX_SECRETS_KEY_FILE` reads it from a Docker secret |
 | `TX_SECRETS_KEYS` | `""` | Keyring for rotation, `v2:<key>,v1:<key>`: the first encrypts, any decrypts. Then `python -m app.cli secrets-rotate` |
 | `TX_INTEGRATION_ALLOWED_HOSTS` | `""` | Hosts (or host:port) a connection may reach on the LAN, over http (D-152). Everything else must be public https |

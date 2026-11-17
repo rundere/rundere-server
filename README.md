@@ -162,7 +162,8 @@ secret files. The essentials:
 | `TX_DATABASE_URL` | Postgres in production (SQLite for development) |
 | `TX_JWT_SECRET`, `TX_SECRETS_KEY` | Signing sign-ins, and encrypting each person's integration tokens |
 | `TX_PUBLIC_BASE_URL` | Your public address, for email links, the app and AI assistants |
-| `TX_OLLAMA_URL`, `TX_PHOTON_URL`, `TX_SEARXNG_URL` | Optional local LLM, geocoder and web search |
+| `TX_AI_ENABLED`, `TX_AI_URL`, `TX_AI_MODEL_CHAT` | Optional AI (off by default): set all three to turn it on. Ollama or any OpenAI-compatible server |
+| `TX_PHOTON_URL`, `TX_SEARXNG_URL` | Optional local geocoder and web search |
 | `TX_OIDC_*` | Optional single sign-on (Authentik, Keycloak, …) |
 
 **[docs/configuration.md](docs/configuration.md)** is the full reference.
