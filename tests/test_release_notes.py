@@ -62,6 +62,7 @@ def sample(monkeypatch, tmp_path):
     p = tmp_path / "release_notes.md"
     p.write_text(SAMPLE, encoding="utf-8")
     monkeypatch.setattr(rn, "PATH", p)
+    monkeypatch.setattr(rn, "FIRST_TRACKED", "1.0.10")   # stands in for 5.0.0 (D-247)
     rn._cached.cache_clear()
     yield p
     rn._cached.cache_clear()
@@ -115,9 +116,38 @@ def test_unseen_is_the_range_since_last_seen_newest_first(sample):
     assert "2.0.0" not in [v["version"] for v in rn.unseen(_U(seen="1.0.9"), running="1.2.0")]
 
 
-def test_an_account_from_before_shows_only_the_running_version(sample):
-    assert [v["version"] for v in rn.unseen(_U(seen=None), running="1.2.0")] == ["1.2.0"]
+def test_an_account_from_before_is_shown_everything_from_the_first_tracked_version(sample):
+    # D-247: no seen_version means "has seen everything before FIRST_TRACKED" (1.0.10
+    # here, 5.0.0 for real): 1.0.9 is older and stays out, 2.0.0 isn't out yet.
+    got = rn.unseen(_U(seen=None), running="1.2.0")
+    assert [v["version"] for v in got] == ["1.2.0", "1.0.10"]     # 1.1.0 is admins-only
+    admin = rn.unseen(_U(seen=None, admin=True), running="1.2.0")
+    assert [v["version"] for v in admin] == ["1.2.0", "1.1.0", "1.0.10"]
     assert rn.unseen(None, running="1.2.0") == []
+
+
+def test_a_new_account_is_still_shown_nothing(sample):
+    # New accounts start at the running version (D-234), so D-247 doesn't touch them.
+    assert rn.unseen(_U(seen="1.2.0"), running="1.2.0") == []
+
+
+def test_the_real_floor_is_5_0_0(sample, monkeypatch):
+    monkeypatch.setattr(rn, "FIRST_TRACKED", "5.0.0")
+    p = sample
+    p.write_text("## 5.0.1\n\n### For everyone\n- Patch.\n\n## 5.0.0\n\n### For everyone\n- Big.\n\n"
+                 "## 4.9.0\n\n### For everyone\n- Old.\n", encoding="utf-8")
+    rn._cached.cache_clear()
+    got = rn.unseen(_U(seen=None), running="5.0.1")
+    assert [v["version"] for v in got] == ["5.0.1", "5.0.0"]
+
+
+def test_the_cap_keeps_the_newest_for_an_account_from_before(sample, monkeypatch):
+    monkeypatch.setattr(rn, "FIRST_TRACKED", "5.0.0")
+    sample.write_text("\n".join(f"## 5.0.{i}\n\n### For everyone\n- Item {i}.\n" for i in range(7)),
+                      encoding="utf-8")
+    rn._cached.cache_clear()
+    got = rn.unseen(_U(seen=None), running="5.0.6")
+    assert [v["version"] for v in got] == ["5.0.6", "5.0.5", "5.0.4", "5.0.3", "5.0.2"]
 
 
 def test_at_most_five_versions(sample, monkeypatch):
@@ -253,6 +283,13 @@ def test_the_api_lists_unseen_notes_and_shares_seen_with_the_web(people, sample,
     mine = client.get("/api/v1/release-notes?all=true", headers=_h(people["old"])).json()
     assert all(v["admins"] == [] for v in mine["versions"])
     assert "1.1.0" not in [v["version"] for v in mine["versions"]]
+    # D-247: the API gives an account from before 5.0 the same range as the web dialog.
+    with SessionLocal() as s:
+        s.get(User, people["old"]).seen_version = None
+        s.commit()
+    legacy = client.get("/api/v1/release-notes", headers=_h(people["old"])).json()
+    assert legacy["seen_version"] is None
+    assert [v["version"] for v in legacy["versions"]] == ["1.2.0", "1.0.10"]
 
 
 def test_the_api_routes_are_in_the_schema():

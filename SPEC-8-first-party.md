@@ -549,7 +549,12 @@ When the server is upgraded, each person sees once what changed for them
 - **Who has seen what.** `users.seen_version` is the last version whose notes
   the person closed. It's set to the running version when an account is created,
   so a new person isn't shown history. An existing account with none yet (the
-  first upgrade with this feature) is shown only the running version's notes.
+  first upgrade with this feature) was to be shown only the running version's
+  notes; D-247 amends that: such an account is treated as having seen everything
+  before 5.0.0, so it is shown every version from 5.0.0 up to the running one
+  (still newest first, at most five), because the column arrived in 5.0 and an
+  empty value can only mean an upgrade from 4.x, whose 5.0.0 notes carry the
+  upgrade steps.
 - **When it shows.** On the first full page load of the web app after the
   version changes, even in a session from before the upgrade (sessions last
   weeks, so waiting for a sign-in could mean never). It's a dialog over the page
@@ -1158,6 +1163,16 @@ pass the guardrails: no migration and no app release.
   the version changes, for every version since the person last closed them
   (`users.seen_version`), and on the About page. The apps read and dismiss the
   same notes through the API. See §14.
+  - *Amended by D-247 (owner, 2026-11-17):* an empty `seen_version` is read as
+    "has seen everything before 5.0.0", not "show only the running version".
+- **D-247 — An account upgrading from 4.x is shown the 5.0 notes (owner,
+  2026-11-17).** Amends D-234. `users.seen_version` is empty only for accounts
+  that predate 5.0 (new accounts start at the running version), so an empty value
+  means the person has seen everything before 5.0.0 and the dialog lists every
+  version from 5.0.0 up to the running one, newest first, capped at five like
+  any other. Someone going straight from 4.x to 5.0.1 therefore sees the 5.0.0
+  upgrade notes as well as 5.0.1's. New accounts and everyone with a
+  `seen_version` are unchanged. See §14.
 - **D-237 — Travel themes (owner, 2026-11-12; Winter added 2026-11-13).** A
   theme is a set of semantic-colour values with a light and a dark mode,
   shipped as a package (`design/themes/<id>/`) and generated into every
