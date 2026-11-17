@@ -17,6 +17,21 @@ How to write a section (the release PR does this; RELEASING.md):
 Run·dere was called Yonder until 4.4.0, so older notes use that name.
 -->
 
+## 5.0.1
+
+### For everyone
+- **The Places map stays where you are.** Picking a list, a kind or a search on the Map tab now filters the pins without zooming you back out.
+- **Long template names no longer stop a packing list.** A list made from several templates with long names is created as normal.
+- **The import preview matches the import.** If you renamed a list made by an earlier import, the preview now shows the list your places will really go into.
+
+### For admins
+- **Upgrading straight from 4.x?** Everyone now sees the 5.0.0 notes as well as this one, because they hold the upgrade steps.
+- **Turning AI on after 4.x:** set `TX_AI_URL` and `TX_AI_MODEL_CHAT` as well as `TX_AI_ENABLED=true`. An old `TX_OLLAMA_URL` only carries over if you had set it yourself.
+- **Settings → AI** now counts the captures waiting to be filled in by hand correctly.
+- **A failed AI call no longer saves the AI server's address with the capture.** It is in the server log instead.
+- **Without Photon,** the server no longer checks every map pin at each start.
+- **Demo servers** change theme every day, show more kinds of sample booking in Review and file the sample places into lists. Reseed with `python -m app.cli demo-seed --replace` after upgrading.
+
 ## 5.0.0 — 2026-11-17
 
 ### For everyone
@@ -37,7 +52,7 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 
 ### For admins
 - **Apps ask the server what it supports.** `/api/v1/auth/methods` lists the features this server offers, so the apps only show what works here.
-- **AI is now off unless you turn it on.** Set `TX_AI_ENABLED=true` to keep reading booking emails and running Discover's research with AI. Point `TX_AI_URL` at Ollama or any OpenAI-compatible server (LiteLLM, vLLM, a cloud provider). The old `TX_OLLAMA_URL` still works in 5.0, with a warning.
+- **AI is now off unless you turn it on.** Set `TX_AI_ENABLED=true` to keep reading booking emails and running Discover's research with AI. Point `TX_AI_URL` at Ollama or any OpenAI-compatible server (LiteLLM, vLLM, a cloud provider) and set `TX_AI_MODEL_CHAT`. A `TX_OLLAMA_URL` you set yourself is still read in 5.0, with a warning; the built-in default is not, so if you never set it, set `TX_AI_URL` and `TX_AI_MODEL_CHAT` or AI stays off.
 - **Settings → AI** shows what AI is used for, any configuration problems, a connection test and a log of calls (never their content).
 - **Tell everyone to retake the packing questionnaire** (Settings → Packing profile). Packing lists can't be generated until they do.
 - **Database migrations run on start.** Back up first as usual.
