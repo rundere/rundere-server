@@ -110,9 +110,16 @@ web server or share it.
 
 Pin a version tag rather than `latest` if you want reproducible rollbacks.
 
-**Upgrading to 5.0:** AI is now off unless `TX_AI_ENABLED=true`. To keep reading
-booking emails with your LLM, set it, and move `TX_OLLAMA_URL` / `TX_OLLAMA_MODEL`
-to `TX_AI_URL` / `TX_AI_MODEL_CHAT` (the old names still work in 5.0, with a warning).
+**Upgrading to 5.0:** AI is now off unless you turn it on. To keep reading
+booking emails and running Discover's research with your LLM, set
+`TX_AI_ENABLED=true`, `TX_AI_URL` (for Ollama, `http://ollama:11434`) and
+`TX_AI_MODEL_CHAT` (for example `qwen3:14b`), and `TX_AI_PROVIDER=openai` if the
+server is OpenAI-compatible. A `TX_OLLAMA_URL` you set explicitly in 4.x is still
+read in 5.0, with a warning, but only when it is set: the 4.13 example compose
+left it commented out and relied on the built-in default, and a built-in default
+is not read. If that was your setup, `TX_AI_ENABLED=true` alone leaves AI off
+(Settings → AI says "TX_AI_URL is empty"). Set `TX_AI_URL` and `TX_AI_MODEL_CHAT`
+to fix it. `TX_OLLAMA_URL` is removed in 5.1.
 See [SPEC-12](../SPEC-12-ai-providers.md).
 
 ## 8. A demo server
