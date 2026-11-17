@@ -141,6 +141,13 @@ def test_credentials_in_the_address_are_not_shown(cfg):
     assert ai.describe()["url"] == "http://litellm.test:4000/v1"
 
 
+def test_where_drops_userinfo_and_query():
+    userinfo = "me" + ":" + "pw" + "@"
+    e = Endpoint(provider="openai", url=f"http://{userinfo}litellm.test:4000/v1?key={KEY}", model="m")
+    assert e.where == "m at http://litellm.test:4000/v1"
+    assert "pw" not in e.where and KEY not in e.where
+
+
 def test_the_key_can_come_from_a_file(tmp_path):
     f = tmp_path / "ai_key"
     f.write_text(KEY + "\n")
@@ -228,6 +235,21 @@ def test_a_failed_extraction_call_never_carries_the_key(monkeypatch):
         x.extract("A booking.")
     assert "401" in str(ex.value)
     assert KEY not in str(ex.value) and KEY not in json.dumps(ex.value.attempts)
+
+
+def test_a_failed_call_reason_has_no_address_or_model(monkeypatch, caplog):
+    def refuse(req, timeout=None):
+        raise urllib.error.URLError(ConnectionRefusedError("refused"))
+    monkeypatch.setattr(client.urllib.request, "urlopen", refuse)
+    from extract.llm import ExtractionFailed, LLMExtractor
+    x = LLMExtractor(Endpoint(provider="openai", url="http://litellm.test:4000/v1", model="secret-model"))
+    with caplog.at_level("WARNING", logger="rundere.ai"):
+        with pytest.raises(ExtractionFailed) as ex:
+            x.extract("A booking.")
+    assert str(ex.value).startswith("AI call failed: ")
+    for leak in ("litellm.test", "secret-model", "http"):
+        assert leak not in str(ex.value)
+    assert "litellm.test" in caplog.text            # the address is for the log only
 
 
 def test_health_check_asks_the_right_path(monkeypatch):

@@ -38,6 +38,19 @@ log = logging.getLogger("rundere.ai")
 PROVIDERS = ("ollama", "openai")
 
 
+def shown_url(url: str) -> str:
+    """An address for display or logs: user:password@ and any ?query (where an
+    API key can ride) are dropped (house rule 6)."""
+    from urllib.parse import urlsplit, urlunsplit
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if ":" in host:                      # an IPv6 literal needs its brackets back
+        host = f"[{host}]"
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
+
+
 @dataclass(frozen=True)
 class Endpoint:
     """Where one feature's LLM calls go. `cloud` is the operator's word for it
@@ -59,8 +72,9 @@ class Endpoint:
 
     @property
     def where(self) -> str:
-        """For log lines: the model and the address, never the key."""
-        return f"{self.model} at {self.url}"
+        """For log lines only: the model and the address, never the key, any
+        user:password@ or query string. Never store it on a capture."""
+        return f"{self.model} at {shown_url(self.url)}"
 
 
 @dataclass
