@@ -6,7 +6,8 @@ what a person is shown:
 
 - `unseen(user)`: every version newer than the person's `seen_version`, up to the
   running one, newest first, at most `MAX_SHOWN`. An account with no
-  `seen_version` (from before 5.0) gets only the running version.
+  `seen_version` (from before 5.0) counts as having seen everything before
+  5.0.0, so it gets 5.0.0 up to the running version (D-247, amending D-234).
 - "For admins" items only for admins; a version with nothing left for the
   person is dropped, and if nothing is left at all the dialog doesn't show.
 - `mark_seen(user)` records the running version, from the web dialog or the apps
@@ -27,6 +28,7 @@ from markupsafe import Markup, escape
 from app.config import settings
 
 PATH = Path(__file__).with_name("release_notes.md")
+FIRST_TRACKED = "5.0.0"        # D-247: `seen_version` arrived here, so NULL means "from before it"
 MAX_SHOWN = 5                  # versions in the dialog; the rest are on the About page
 
 _HEAD = re.compile(r"^##\s+v?(\d+\.\d+\.\d+)(?:\s+[—-]\s+(\d{4}-\d{2}-\d{2}))?\s*$")
@@ -115,9 +117,12 @@ def unseen(user, running: str | None = None) -> list[dict]:
     seen = getattr(user, "seen_version", None)
     if seen and vkey(seen) >= vkey(running):
         return []
-    floor = vkey(seen) if seen else None
+    # D-247: no seen_version can only be an account from before 5.0 (the column
+    # arrived with 5.0, migration 0052; new accounts start at the running version),
+    # so it has seen everything before FIRST_TRACKED and is shown from there up.
+    # The newest MAX_SHOWN survive the cap below, as for anyone else.
     vs = [v for v in released(running)
-          if (vkey(v.version) > floor if floor is not None else v.version == running)]
+          if (vkey(v.version) > vkey(seen) if seen else vkey(v.version) >= vkey(FIRST_TRACKED))]
     return for_person(vs, user)[:MAX_SHOWN]
 
 
