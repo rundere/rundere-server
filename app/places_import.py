@@ -202,6 +202,11 @@ def run(session: Session, user, data: bytes, *, dry_run: bool = False) -> dict:
     owner_id = places_svc._owner_id(user)
     mine = {_fold(lst.name): lst for lst, _ in places_svc.lists(session, user)
             if lst.owner_id == owner_id}
+    # The same lists by `source`, because `create_list` hands back an existing list with
+    # the source `csv:<name>` even after the person renamed it; the preview has to find
+    # that list too, or it promises a list the real run won't make.
+    by_source = {lst.source: lst for lst, _ in places_svc.lists(session, user)
+                 if lst.owner_id == owner_id and lst.source}
     items: list[dict] = []
     lines: list[int] = []
     results: list[dict] = list(refused)
@@ -223,6 +228,8 @@ def run(session: Session, user, data: bytes, *, dry_run: bool = False) -> dict:
         key = _fold(name)
         if key not in lists_out:
             lst = mine.get(key)
+            if lst is None:
+                lst = by_source.get(places_svc._clean(LIST_SOURCE + name, 160))
             if lst is None and not dry_run:
                 lst = places_svc.create_list(session, user, name=name,
                                              source=LIST_SOURCE + name)
