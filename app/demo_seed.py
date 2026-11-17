@@ -14,8 +14,13 @@ way, one coming up and one in the past:
 
 The demo user's traveller is Jane Doe, who lives in central London and flies
 from Heathrow (British Airways, and a Ryanair hop home into Stansted). Her home
-profile is what keeps London out of Discover. Plus 13 saved places (YONDER-351) and two captures waiting in
-Review, for a trip that isn't planned yet.
+profile is what keeps London out of Discover. Plus 13 saved places (YONDER-351),
+filed into three place lists (Eat well, Rainy-day ideas, Japan next; D-213), and six
+captures waiting in Review for a Tokyo trip that isn't planned yet: a flight, a
+hotel and an event from web pages, a train and a dinner invite (.ics) from
+forwarded emails, and a walking tour from the Calendar channel. All are
+deterministic, no AI. The travel theme (D-237) also rotates through the manifest,
+one a day (YONDER-391).
 
 Everything is written through the app's own validated paths (the agent's
 `save_research_finding`, expenses, budget, journal, the packing generator and
@@ -29,8 +34,10 @@ banner already says this is sample data.
 `roll()` keeps it current without wiping anything. It finds how far the
 in-progress trip's start has drifted from where the seed puts it, shifts every
 seeded date by that many days, refreshes the weather and currency findings for
-the new dates, and regenerates the waiting captures. Running it twice changes
-nothing the second time. `start()` runs it at startup and then daily at 03:00 in
+the new dates, and regenerates the waiting captures. It also sets the day's theme
+(`rotate_theme`: the manifest's travel themes by date ordinal, so a restart never
+skips or repeats one; an unreadable manifest leaves the theme alone). Running it
+twice changes nothing the second time. `start()` runs it at startup and then daily at 03:00 in
 `TX_DEMO_TIMEZONE`.
 """
 from __future__ import annotations
@@ -560,6 +567,8 @@ def seed(session: Session, *, replace: bool = False, today: date | None = None) 
         _seed_journal(session, user, trips, today)
         _seed_places(session, user, trips, today)
         _seed_captures(session, user, today)
+        _seed_lists(session, user)
+        rotate_theme(session, today)
     log.info("demo seed written: %s", ", ".join(t.name for t in trips.values()))
     return {"seeded": True, "trips": [t.name for t in trips.values()]}
 
@@ -692,13 +701,53 @@ def _ld_page(doc: dict) -> str:
             "</head><body>Your booking (Run·dere demo sample).</body></html>")
 
 
+def _store_capture(session, user, payload: dict) -> None:
+    """Store one capture batch as the app's own channels do (`store_batch`), then
+    run the real extract stage. The channels used here are all deterministic:
+    JSON-LD, iCalendar and a Calendar event, so no AI is needed."""
+    from app.capture import _internal_key_id
+    from app.ingest import store_batch
+    from app.models import IngestBatch
+    from app.processing import process_batch
+    body = json.dumps(payload).encode("utf-8")
+    batch = store_batch(session, body, payload, _internal_key_id(session), user_id=user.id)
+    session.commit()
+    process_batch(session, session.get(IngestBatch, batch.id), None)
+
+
+def _email_payload(subject: str, html: str | None = None, ics: str | None = None) -> dict:
+    """What the email-forward channel stores (app/inbox.py): the raw message,
+    base64. An invented sender at example.com and an address on the .test TLD."""
+    import base64
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["From"] = "bookings@example.com"
+    msg["To"] = "traveller@example.test"
+    msg["Subject"] = subject
+    msg["Message-ID"] = "<demo-%s@example.com>" % subject.split()[0].lower()
+    msg.set_content("Your booking (Run·dere demo sample).")
+    if html:
+        msg.add_alternative(html, subtype="html")
+    if ics:
+        msg.add_attachment(ics.encode("utf-8"), maintype="text", subtype="calendar",
+                           filename="invite.ics", params={"method": "REQUEST"})
+    return {"capture_channel": "email", "subject": subject,
+            "raw_message_base64": base64.b64encode(msg.as_bytes()).decode("ascii"),
+            "capture_context": {"submitted_by": "email-forward", "via": "email"}}
+
+
 def _seed_captures(session, user, today):
-    """Two bookings for a trip that isn't planned yet, through the real capture
-    pipeline (deterministic JSON-LD, no AI), left waiting in Review."""
+    """Six bookings for a trip that isn't planned yet (Tokyo), through the real
+    capture pipeline and left waiting in Review. Each channel is deterministic,
+    so none needs AI: web pages with JSON-LD (a flight, a hotel, an event), a
+    forwarded email with JSON-LD (a train), a forwarded email carrying an .ics
+    invite (a dinner) and a Google Calendar event (a walking tour). Nothing new is
+    a flight: the rail operator and every venue are fictional."""
     from app.capture import _queue_web
     from app.models import IngestBatch
     from app.processing import process_batch
     dep = today + timedelta(days=90)
+    day = lambda n: (dep + timedelta(days=n)).isoformat()
     docs = [
         {"@context": "https://schema.org", "@type": "FlightReservation",
          "reservationNumber": "DEMO-TK9", "underName": {"@type": "Person", "name": "Jane Doe"},
@@ -708,19 +757,118 @@ def _seed_captures(session, user, today):
                             "departureAirport": {"@type": "Airport", "iataCode": "LHR"},
                             "departureTime": f"{dep.isoformat()}T19:15:00+01:00",
                             "arrivalAirport": {"@type": "Airport", "iataCode": "HND"},
-                            "arrivalTime": f"{(dep + timedelta(days=1)).isoformat()}T17:20:00+09:00"}},
+                            "arrivalTime": f"{day(1)}T17:20:00+09:00"}},
         {"@context": "https://schema.org", "@type": "LodgingReservation",
          "reservationNumber": "DEMO-TH4", "underName": {"@type": "Person", "name": "Jane Doe"},
          "reservationFor": {"@type": "LodgingBusiness", "name": "Shinjuku Hotel (sample)",
                             "address": {"@type": "PostalAddress", "addressLocality": "Tokyo",
                                         "addressCountry": "JP"}},
-         "checkinTime": f"{(dep + timedelta(days=1)).isoformat()}T16:00:00+09:00",
-         "checkoutTime": f"{(dep + timedelta(days=6)).isoformat()}T11:00:00+09:00"},
+         "checkinTime": f"{day(1)}T16:00:00+09:00",
+         "checkoutTime": f"{day(6)}T11:00:00+09:00"},
+        {"@context": "https://schema.org", "@type": "EventReservation",
+         "reservationNumber": "DEMO-EV7", "underName": {"@type": "Person", "name": "Jane Doe"},
+         "reservationFor": {"@type": "Event", "name": "Lantern Evening (sample)",
+                            "startDate": f"{day(3)}T18:30:00+09:00",
+                            "endDate": f"{day(3)}T21:00:00+09:00",
+                            "location": {"@type": "Place", "name": "Sample Garden, Tokyo"}}},
     ]
     for doc in docs:
         bid = _queue_web(session, _ld_page(doc), source_url=None, submitted_by="demo",
                          owner_user_id=user.id, title="Sample booking")
         process_batch(session, session.get(IngestBatch, bid), None)
+
+    # A forwarded email with schema.org markup: rail on a made-up operator.
+    train = {"@context": "https://schema.org", "@type": "TrainReservation",
+             "reservationNumber": "DEMO-RL2", "underName": {"@type": "Person", "name": "Jane Doe"},
+             "reservationFor": {"@type": "TrainTrip", "trainNumber": "D100",
+                                "provider": {"@type": "Organization",
+                                             "name": "Sample Rail (demo)"},
+                                "departureStation": {"@type": "TrainStation", "name": "Tokyo"},
+                                "departureTime": f"{day(4)}T09:10:00+09:00",
+                                "arrivalStation": {"@type": "TrainStation", "name": "Kyoto"},
+                                "arrivalTime": f"{day(4)}T11:35:00+09:00"}}
+    _store_capture(session, user, _email_payload("Rail booking (sample)", html=_ld_page(train)))
+    # A forwarded calendar invite (.ics): a dinner, read as an event.
+    stamp = day(5).replace("-", "")
+    ics = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Rundere demo//EN\r\nMETHOD:REQUEST\r\n"
+           "BEGIN:VEVENT\r\nUID:demo-dinner@example.com\r\n"
+           f"DTSTART;TZID=Asia/Tokyo:{stamp}T193000\r\nDTEND;TZID=Asia/Tokyo:{stamp}T213000\r\n"
+           "SUMMARY:Dinner at Izakaya Sample (sample)\r\n"
+           "LOCATION:Izakaya Sample (sample)\\, Tokyo\r\n"
+           "DESCRIPTION:Table for two. Booking code DEMO-DN3.\r\n"
+           "ORGANIZER:mailto:reservations@example.com\r\nSTATUS:CONFIRMED\r\n"
+           "END:VEVENT\r\nEND:VCALENDAR\r\n")
+    _store_capture(session, user, _email_payload("Dinner invite (sample)", ics=ics))
+    # A Google Calendar event, as the Calendar add-on sends it.
+    _store_capture(session, user, {
+        "capture_channel": "gcal",
+        "event": {"id": "demo-walk", "iCalUID": "demo-walk@example.com", "status": "confirmed",
+                  "summary": "Old Town walking tour (sample)",
+                  "location": "Sample Meeting Point, Tokyo",
+                  "start": {"dateTime": f"{day(2)}T10:00:00+09:00", "timeZone": "Asia/Tokyo"},
+                  "end": {"dateTime": f"{day(2)}T12:30:00+09:00", "timeZone": "Asia/Tokyo"},
+                  "organizer": {"email": "tours@example.com"}},
+        "capture_context": {"submitted_by": "demo"}})
+
+
+# Jane's place lists (D-213, D-236): name, emoji, description and the saved
+# places filed in each, by name. A place can sit in more than one list.
+PLACE_LISTS = [
+    ("Eat well", "🍽️", "Tables worth planning a day around",
+     ["Cervejaria Ramiro", "La Merenda", "Trattoria Da Enzo al 29", "Katz's Delicatessen",
+      "Pastelaria Versailles"]),
+    ("Rainy-day ideas", "☔", "Indoors, for when the forecast turns",
+     ["Musée Matisse", "Livraria Lello", "Clube de Fado", "Pastelaria Versailles"]),
+    ("Japan next", "🗾", "For the Tokyo trip that isn't planned yet",
+     ["Fushimi Inari Taisha", "Hoshinoya Kyoto"]),
+]
+
+
+def _seed_lists(session, user):
+    """File the saved places into lists with `places.create_list` and
+    `add_to_list`, the calls a person's own tapping makes."""
+    from app import places
+    by_name = {p.name: p.id for p in places.list_places(session, user)}
+    for name, emoji, description, members in PLACE_LISTS:
+        lst = places.create_list(session, user, name=name, emoji=emoji,
+                                 description=description)
+        for member in members:
+            if member in by_name:
+                places.add_to_list(session, user, lst.id, by_name[member])
+
+
+# YONDER-391: the demo walks through the manifest's travel themes, one a day,
+# so every visit can show a different one.
+def theme_for(today: date) -> str | None:
+    """The travel theme for `today`: the manifest's non-Base ids, indexed by the
+    date's ordinal, so a restart never skips or repeats a day. None when the
+    manifest offers no travel theme or can't be read: the account keeps what it
+    has (D-146, D-240)."""
+    try:
+        from app import themes
+        travel = [t for t in themes.ids() if t != themes.BASE]
+    except Exception:                                   # noqa: BLE001 - never block the roll
+        return None
+    return travel[today.toordinal() % len(travel)] if travel else None
+
+
+def rotate_theme(session: Session, today: date | None = None) -> str | None:
+    """Set the demo user's theme (`User.ui_theme`, D-237) to today's, checked
+    against the manifest as the account setter does. Returns the id set, or None."""
+    from app import themes
+    try:
+        user = _demo_user(session)
+        tid = theme_for(today or demo_today())
+        if tid is None or not themes.is_known(tid):
+            return None
+        if user.ui_theme != tid:
+            user.ui_theme = tid
+            session.commit()
+        return tid
+    except Exception:                                   # noqa: BLE001
+        session.rollback()
+        log.warning("demo theme rotation skipped", exc_info=True)
+        return None
 
 
 def _remove(session, user) -> None:
@@ -815,6 +963,7 @@ def roll(session: Session, today: date | None = None) -> dict:
     (D-198). Idempotent: a second run the same day finds no drift."""
     from app import demo
     from app import models as m
+    rotate_theme(session, today)          # daily, even when no date has drifted
     days = drift(session, today)
     if not days:
         return {"rolled": 0}
