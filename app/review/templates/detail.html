@@ -85,6 +85,10 @@
 </div>
 {% endif %}
 
+{% if manual %}
+{# No details yet: AI was off, or couldn't read it (SPEC-12 §6, D-228). #}
+{% include "_manual_entry.html" %}
+{% else %}
 <form hx-post="/review/item/{{ i.id }}/save?bucket={{ bucket }}"
       hx-target="#d-{{ i.id }}" hx-swap="innerHTML">
 <div class="detail-grid">
@@ -113,35 +117,7 @@
 
   <div class="pane">
     <h3>What we read from it — correct anything wrong</h3>
-    {% for f in i.payload | fields %}
-      <div class="field {% if f.missing %}missing{% endif %}">
-        <label for="{{ i.id }}-{{ loop.index }}">{{ f.label }}</label>
-        {% if not f.editable %}
-          <span class="v ro">{{ f.value or '—' }}</span>
-        {% elif f.kind == 'datetime' %}
-          <input id="{{ i.id }}-{{ loop.index }}" name="f:{{ f.path }}"
-                 type="text" inputmode="numeric"
-                 value="{{ f.value }}"
-                 placeholder="YYYY-MM-DD or YYYY-MM-DD 07:20"
-                 pattern="\d{4}-\d{2}-\d{2}([T ]\d{1,2}:?\d{2})?"
-                 title="Date, or date and time (07:20 or 0720). Leave the time off if the document doesn't give one.">
-        {% elif f.kind == 'select' %}
-          <select id="{{ i.id }}-{{ loop.index }}" name="f:{{ f.path }}">
-            {% for o in f.options %}
-              <option value="{{ o }}" {% if o == f.value %}selected{% endif %}>{{ f.labels[o] if f.labels and o in f.labels else o }}</option>
-            {% endfor %}
-          </select>
-        {% else %}
-          <input id="{{ i.id }}-{{ loop.index }}" name="f:{{ f.path }}" type="text"
-                 value="{{ f.value }}" placeholder="not stated in the document">
-        {% endif %}
-        {% if f.missing %}
-          <p class="hint">{{ f.hint or 'Needed before this can be logged. Leave the time off if the document really doesn’t give one.' }}</p>
-        {% elif f.kind == 'datetime' and f.precision == 'date' and f.value %}
-          <p class="hint quiet">Date only — no time was given.</p>
-        {% endif %}
-      </div>
-    {% endfor %}
+    {% with fields=(i.payload | fields), id_prefix=i.id %}{% include "_field_inputs.html" %}{% endwith %}
   </div>
 </div>
 
@@ -237,3 +213,4 @@
     until you log the batch.</span>
 </div>
 </form>
+{% endif %}

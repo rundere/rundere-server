@@ -12,9 +12,7 @@
           hx-get="/review/item/{{ i.id }}?bucket={{ bucket }}"
           hx-target="#d-{{ i.id }}"
           hx-swap="innerHTML"
-          onclick="this.classList.toggle('open');
-                   var d=document.getElementById('d-{{ i.id }}');
-                   d.hidden=!d.hidden;">
+          data-action="strip-toggle" data-detail="d-{{ i.id }}">
     <span class="stripe"></span>
     <span class="kind">{{ i.kind }}</span>
     <span class="body">

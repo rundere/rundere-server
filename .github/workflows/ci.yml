@@ -11,6 +11,8 @@
 # CI tests the pinned dependency set. A new upstream release then arrives as a
 # Dependabot or `uv lock` bump, instead of breaking an unrelated PR (pypdf 7.0.0
 # removed PdfWriter.add_js and failed a README-only PR).
+# The Dockerfile installs from the same lock on the same Python (3.12), so the
+# published image matches what these jobs tested.
 name: ci
 
 on:
@@ -39,6 +41,10 @@ jobs:
         run: |
           uv run python tests/validate.py | tail -1
           # e.g. "35/35 cases behaved as expected" — the regression contract.
+      # YONDER-387: a warning, never a failure, when the Android app's contract
+      # snapshot is behind the server. Breaking drift fails in pytest instead.
+      - name: Android contract staleness
+        run: uv run python scripts/schema_drift.py --warn-stale
 
   # YONDER-287: the pre-publish check (scripts/prepublish.py). A gate since
   # YONDER-295: the tree is clean, so any blocking finding fails the build. The

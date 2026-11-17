@@ -27,31 +27,6 @@
         ready, so all that's left is to run there. <span class="rd-dict-note">Formerly <b>Yonder</b>; renamed in 4.4.0.</span></p>
     </div>
   </div>
-  <script>
-  (function(){
-    // Plays the recorded pronunciation (design/audio: AAC for Safari/Chrome/Edge,
-    // Opus for browsers without AAC). If neither plays, the browser's voice says it.
-    var b = document.getElementById('rd-say'), a = document.getElementById('rd-say-audio');
-    var canSpeak = 'speechSynthesis' in window;
-    var canPlay = !!(a && a.canPlayType &&
-      (a.canPlayType('audio/mp4') || a.canPlayType('audio/webm; codecs=opus')));
-    if (!b || !(canPlay || canSpeak)) return;
-    function speak(){
-      if (!canSpeak) return;
-      var u = new SpeechSynthesisUtterance('Run there');
-      u.lang = 'en-US'; u.rate = 0.9;
-      window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
-    }
-    b.hidden = false;
-    b.addEventListener('click', function(){
-      if (!canPlay) return speak();
-      a.currentTime = 0;
-      var p = a.play();
-      if (p && p.catch) p.catch(speak);
-    });
-    if (a) a.addEventListener('error', function(){ canPlay = false; });
-  })();
-  </script>
 
   {# What it is, Run·dere-first (D-146): AdventureLog and AirTrail are optional extras. #}
   <p class="about-lead">
@@ -94,8 +69,12 @@
       <dt>Help</dt><dd><a href="https://rundere.app/support" target="_blank" rel="noopener">rundere.app/support</a></dd>
       {# AGPL-3.0 §13: anyone using this server over the network can get its source. #}
       <dt>Source code</dt><dd><a href="{{ repo_url }}" target="_blank" rel="noopener">{{ repo_url }}</a></dd>
+      {# Public, like the source: the developer notes for every release on GitHub. #}
+      <dt>GitHub releases</dt><dd><a href="{{ repo_url }}/releases" target="_blank" rel="noopener">{{ repo_url }}/releases</a></dd>
       <dt>License</dt><dd>GNU Affero General Public License v3.0</dd>
-      {% if signed_in %}<dt>Version</dt><dd class="mono">{{ version }}</dd>{% endif %}
+      {% if signed_in %}<dt>Version</dt><dd class="mono">{{ version }}</dd>
+      {# D-234: every version's notes, from the file that ships in the image. #}
+      <dt>Release notes</dt><dd><a href="/about/release-notes">What changed in each version</a></dd>{% endif %}
     </dl>
   </section>
 

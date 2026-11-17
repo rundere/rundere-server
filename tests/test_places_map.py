@@ -181,3 +181,57 @@ def test_the_in_memory_tile_cache_is_capped(monkeypatch):
     for i in range(5):
         maps._remember(f"tile-{i}", b"x")
     assert list(maps._MEMORY) == ["tile-2", "tile-3", "tile-4"]
+
+
+# ------------------------------------------------------------------ search on the Map (YONDER-368)
+
+MAP_ON = "https://tiles.example.test/{z}/{x}/{y}.png"
+
+
+def test_a_search_on_the_map_stays_on_the_map(monkeypatch):
+    monkeypatch.setattr(settings, "map_tile_url", MAP_ON)
+    u = _user("map_a")
+    _save(u, "Larkspur Cafe", 38.7100, -9.1400)
+    _save(u, "Sample Tower", 35.6586, 139.7454)
+    hx = {"hx-request": "true", "hx-target": "pl-body"}
+    part = client.get("/places?lens=map&q=larkspur", headers=hx).text
+    assert 'id="pl-map"' in part and 'data-q="larkspur"' in part
+    assert "1 place match" in part and 'class="pl-row' not in part     # no result list
+    # The lens rides along with the search box, so the next search stays here too.
+    assert '<input type="hidden" name="lens" value="map" form="pl-search">' in part
+    assert 'id="pl-search"' in client.get("/places?lens=map").text
+    # Anywhere else a search is still the result list.
+    assert 'id="pl-map"' not in client.get("/places?lens=atlas&q=larkspur", headers=hx).text
+
+
+def test_map_search_data_is_every_match_with_bounds():
+    u = _user("map_a")
+    _save(u, "Larkspur Cafe", 38.7100, -9.1400)
+    _save(u, "Larkspur Annex", 38.7300, -9.1500)
+    _save(u, "Sample Tower", 35.6586, 139.7454)
+    _save(u, "Larkspur Unpinned", None, None)
+    body = client.get("/places/map/data?q=larkspur").json()       # no view needed
+    assert {p["name"] for p in body["places"]} == {"Larkspur Cafe", "Larkspur Annex"}
+    assert body["bounds"] == [[38.71, -9.15], [38.73, -9.14]]
+    none = client.get("/places/map/data?q=nothing-like-this").json()
+    assert none == {"places": [], "bounds": None}
+
+
+def test_map_search_by_list_is_own_only(monkeypatch):
+    a, b = _user("map_a"), _user("map_b")
+    with SessionLocal() as s:
+        p, _ = places_svc.save(s, a, name="Larkspur Cafe", lat=38.71, lon=-9.14, source="web")
+        lst = places_svc.create_list(s, a, name="ExampleRamen")
+        places_svc.add_to_list(s, a, lst.id, p.id)
+        places_svc.save(s, b, name="Quince Garden", lat=38.71, lon=-9.14, source="web")
+    acting = {"u": a}
+    monkeypatch.setattr(scope, "user_of", lambda request: acting["u"])
+    got = client.get("/places/map/data?q=list:ExampleRamen").json()
+    assert [p["name"] for p in got["places"]] == ["Larkspur Cafe"]
+    assert client.get("/places/map/data?q=quince").json()["places"] == []
+    acting["u"] = b                                  # Ben has no such list
+    assert client.get("/places/map/data?q=list:ExampleRamen").json()["places"] == []
+    monkeypatch.setattr(settings, "map_tile_url", MAP_ON)
+    part = client.get("/places?lens=map&q=list:ExampleRamen",
+                      headers={"hx-request": "true", "hx-target": "pl-body"}).text
+    assert "You have no list called" in part and 'id="pl-map"' in part

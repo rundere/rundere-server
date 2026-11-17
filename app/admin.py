@@ -6,6 +6,7 @@ import wtforms
 from sqladmin import Admin, ModelView
 
 from app import models
+from planning import catalog as _catalog
 from discover.resolvers.language import PHRASE_KEYS as _PHRASE_KEYS
 
 
@@ -162,9 +163,11 @@ def mount_admin(app, engine) -> None:
         column_list = [models.PackingCatalogItem.id, models.PackingCatalogItem.label,
                        models.PackingCatalogItem.category, models.PackingCatalogItem.bag,
                        models.PackingCatalogItem.weight_g,
+                       models.PackingCatalogItem.volume_l,
                        models.PackingCatalogItem.enabled,
                        models.PackingCatalogItem.tags]
-        column_labels = {"id": "Item id", "weight_g": "Weight (g)"}
+        column_labels = {"id": "Item id", "weight_g": "Weight (g)",
+                         "volume_l": "Size (L)"}
         column_searchable_list = [models.PackingCatalogItem.id,
                                   models.PackingCatalogItem.label,
                                   models.PackingCatalogItem.category]
@@ -175,50 +178,36 @@ def mount_admin(app, engine) -> None:
         # Edit the human fields. `id` is auto-derived from the label on create
         # (its slug, e.g. "Car Phone Mount" -> car_phone_mount) — SQLAdmin drops
         # the PK from the create form, so listing it here would just insert NULL.
-        # `variants`/`updated_at` stay off the form.
-        form_columns = ["label", "category", "bag", "weight_g", "tags", "enabled"]
-        form_overrides = {"tags": LinesField, "category": wtforms.SelectField,
-                          "bag": wtforms.SelectField}
+        # `variants`/`updated_at` stay off the form. The seed fields (5.0,
+        # SPEC-5 §6.3) say which questionnaire answers put it in a new inventory.
+        form_columns = ["label", "category", "bag", "weight_g", "volume_l", "tags", "seed",
+                        "styles", "seed_qty", "minimal", "enabled"]
+        form_overrides = {"tags": LinesField, "seed": LinesField, "styles": LinesField,
+                          "category": wtforms.SelectField, "bag": wtforms.SelectField}
         form_args = {
             "tags": {"description": "One tag per line (e.g. modest, warm, formal)."},
-            "category": {"choices": [(c, c) for c in
-                                     ("clothing", "footwear", "toiletries", "tech",
-                                      "documents", "health", "activity")]},
+            # D-232: blank = the shipped estimate, else the category default.
+            "volume_l": {"description": "Rough packed size of one, in litres, for the "
+                                        "bag fit. Blank: the shipped estimate."},
+            "seed": {"description": "Questionnaire answers that seed it, one per line "
+                                    "(e.g. basics, care:hair, tech:camera). "
+                                    "Empty: never seeded, only suggested."},
+            "styles": {"description": "masc, fem or neutral, one per line. "
+                                      "Empty: every style."},
+            "seed_qty": {"description": "How many a new inventory starts with (1 if empty)."},
+            "minimal": {"description": "Footwear: kept for people who pack minimal footwear."},
+            # From the catalogue itself, so a new category ("gear", 5.0) shows.
+            "category": {"choices": [(c, c) for c in _catalog.categories()]},
             # Single-select on purpose: anything that fits carry-on also fits
             # checked, so carry-on is the safe default for a new item.
             "bag": {"choices": [("carry_on", "carry-on"), ("checked", "checked")],
                     "default": "carry_on"},
         }
 
-    class BagAdmin(ModelView, model=models.Bag):
-        name = "Bag"
-        name_plural = "Bag Inventory"
-        # The owner's actual bags (3 backpacks, a carry-on, a checked suitcase —
-        # with real capacities) — parallel to and independent from the packing
-        # catalog above (what goes IN a bag). Seeded empty on purpose (unlike the
-        # catalog, there's no universal default bag inventory). Once bags exist
-        # here, the per-trip packing item "bag" dropdown lists THESE instead of
-        # the generic carry-on/checked/backpack categories. Retire a bag you no
-        # longer own with `enabled` rather than deleting it — a PackingItem
-        # still pointing at a deleted (not just disabled) row falls back to
-        # showing the raw id, same as an orphaned PackingCatalogItem reference.
-        column_list = [models.Bag.label, models.Bag.kind, models.Bag.capacity,
-                       models.Bag.enabled]
-        column_searchable_list = [models.Bag.label, models.Bag.kind]
-        column_sortable_list = [models.Bag.kind, models.Bag.label]
-        column_default_sort = "kind"
-        page_size = 200
-        # `id` auto-derives from the label on create (its slug), same as the
-        # packing catalog — SQLAdmin drops the PK from the create form.
-        form_columns = ["label", "kind", "capacity", "enabled"]
-        form_overrides = {"kind": wtforms.SelectField}
-        form_args = {
-            "kind": {"choices": [("backpack", "backpack"), ("suitcase", "suitcase"),
-                                 ("personal_item", "personal item")],
-                     "default": "backpack"},
-            "capacity": {"description": 'Freeform, e.g. "40L" or "22in carry-on".'},
-        }
-
+    # NB: Bag has NO SQLAdmin view since 5.0 (SPEC-5 §6.6): bags belong to
+    # people and are edited on their Inventory page (Packing profile →
+    # Inventory). Pre-5.0 ownerless bags show on an admin's own Inventory page
+    # (scope.own_filter), so nothing is stranded.
     # NB: PackingProfile has NO SQLAdmin view on purpose — it's edited through the
     # structured form at /trips/settings/packing-profile (Administer → Packing
     # profile), not a raw-JSON table (D-86).
@@ -298,6 +287,6 @@ def mount_admin(app, engine) -> None:
     # by CLI); it never shows the key itself, only client name + status.
     for view in (SourceRuleAdmin, ApiKeyAdmin, TravelerIdentityAdmin,
                  RuleSettingAdmin,
-                 PackingCatalogItemAdmin, BagAdmin, PhrasebookPhraseAdmin,
+                 PackingCatalogItemAdmin, PhrasebookPhraseAdmin,
                  RegionalLanguageAdmin):
         admin.add_view(view)

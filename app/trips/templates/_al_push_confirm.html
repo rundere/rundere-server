@@ -11,7 +11,7 @@
     {% for iid in item_ids %}<input type="hidden" name="item_ids" value="{{ iid }}">{% endfor %}
     <input type="hidden" name="confirm" value="1">
     <div class="dialog-actions">
-      <button type="button" class="btn btn-ghost" onclick="document.getElementById('al-result').innerHTML=''">Cancel</button>
+      <button type="button" class="btn btn-ghost" data-clear="#al-result">Cancel</button>
       <button type="submit" class="btn btn-primary" hx-disabled-elt="this">Push anyway (overwrite)</button>
     </div>
   </form>

@@ -37,6 +37,18 @@ uv run python scripts/schema_drift.py                      # schema generated in
 uv run python scripts/schema_drift.py --openapi spec.json  # or a saved schema
 ```
 
+## When it's behind (YONDER-387)
+
+New optional server fields don't break the app, so they don't fail CI either.
+But a snapshot that falls well behind stops being a useful record of what the
+app knows. CI runs `scripts/schema_drift.py --warn-stale` after the tests. It
+never fails. It puts a warning on the run when the snapshot misses any operation
+the server has, or `STALE_FIELDS` (5) or more fields and enum values. When you
+see it, ask the app for a fresh `api/openapi.json` and copy it over.
+
+The snapshot is deliberately not regenerated from the server code. It has to stay
+the app's copy, or the check would compare the code with itself.
+
 ## When it fails
 
 - **The change wasn't meant to break the app:** fix the server change (make

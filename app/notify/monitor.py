@@ -72,17 +72,19 @@ def check_antivirus() -> tuple[bool, str] | None:
 
 
 def check_llm() -> tuple[bool, str] | None:
-    if not (settings.ollama_url or "").strip():
+    """The AI endpoint, when AI is on (YONDER-354): Ollama's /api/tags or an
+    OpenAI-compatible /models. None (not watched) when AI is off."""
+    from app import ai
+    llm = ai.configured()
+    if llm is None:
         return None
-    import urllib.request
+    from ai.client import list_models
     try:
-        req = urllib.request.Request(settings.ollama_url.rstrip("/") + "/api/tags",
-                                     headers={"User-Agent": f"Rundere/{settings.app_version}"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return (r.status == 200, "" if r.status == 200 else f"HTTP {r.status}")
+        status = list_models(llm, timeout=10)
+        return (status == 200, "" if status == 200 else f"HTTP {status}")
     except Exception as ex:
-        return False, f"can't reach Ollama ({type(ex).__name__}) — bookings that need " \
-                      "the LLM go to review instead of being read"
+        return False, f"can't reach the AI endpoint ({type(ex).__name__}) — bookings " \
+                      "that need AI go to review instead of being read"
 
 
 def check_searxng() -> tuple[bool, str] | None:

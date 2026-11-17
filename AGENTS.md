@@ -75,7 +75,9 @@ python3 rules.py --docs > RULES.md    # regenerate after ANY change to rules.py
    `JournalEntry.trip_id`). Delete routes clear dangling links.
 4. **Keep the pipeline invariants.**
    - Raw captures are content-addressed and kept for the life of their trip
-     plus 12 months; the hash stays as a tombstone (D-15, amended by D-196).
+     plus 12 months; the hash stays as a tombstone (D-15, amended by D-196),
+     except when the account is deleted, which removes them outright
+     (SPEC-13 §3.5, D-242).
    - Schema validation runs before rules.
    - Rules are toggleable (`enforce` / `audit` / `off`, D-25). Don't weaken a
      **critical** rule (RULE-01..07 encode real past failures).

@@ -34,6 +34,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app import account_deletion as deletion
 from app import authn
 from app.auth import RateLimiter, client_ip
 from app.config import settings
@@ -311,12 +312,23 @@ def reset_submit(request: Request, token: str, password: str = Form(...),
 
 # --------------------------------------------------------------------------- your account
 def _account_ctx(session: Session, user: User, **extra) -> dict:
-    from app import oauth, scope, support
+    from app import oauth, scope, support, themes
     return {"u": user, "smtp": email_configured(), "reset_note": reset_note(user),
             "support_on": scope.support_live(user), "support_until": support.until(user),
             "support_views": support.recent_views(session, user),
             "apps": oauth.connected_apps(session, user),
-            "pats": oauth.list_pats(session, user), "msg": "", "err": "", **extra}
+            "pats": oauth.list_pats(session, user),
+            # D-241: no export without accounts (sign-in off) or on a demo server.
+            "export_available": _export_available(),
+            # Account › Appearance (SPEC-8 §15): every theme in the manifest, never
+            # a fixed list (D-240); the stored id is checked if it's still offered.
+            "themes": themes.picker(), "current_theme": themes.resolve(user.ui_theme),
+            "msg": "", "err": "", **extra}
+
+
+def _export_available() -> bool:
+    from app import demo
+    return settings.auth_required and not demo.enabled()
 
 
 @router.get("/account", response_class=HTMLResponse)
@@ -374,6 +386,25 @@ def account_revoke_token(token_id: str, user: User = Depends(authn.current_user)
     if not oauth.revoke_pat(session, user, token_id):
         return RedirectResponse("/account?err=No+such+token", status_code=303)
     return RedirectResponse("/account?msg=Token+revoked", status_code=303)
+
+
+@router.post("/account/appearance")
+def account_set_appearance(ui_theme: str = Form(""), scenery: str = Form(""),
+                           user: User = Depends(authn.first_party_user),
+                           session: Session = Depends(get_session)):
+    """Your own theme and scenery switch (D-237, D-239), the web's twin of
+    PATCH /api/v1/auth/me, first-party only like it (a bearer token from a
+    connected app or an API token gets 403). Only the caller's own row is written. An unchecked box sends nothing, so scenery is
+    on only when the box was ticked."""
+    from app import themes
+    if not themes.is_known(ui_theme):
+        return RedirectResponse("/account?err=Choose+one+of+the+themes#appearance",
+                                status_code=303)
+    user = session.get(User, user.id)
+    user.ui_theme = ui_theme
+    user.scenery = scenery == "1"
+    session.commit()
+    return RedirectResponse("/account?msg=Appearance+saved#appearance", status_code=303)
 
 
 @router.post("/account/email")
@@ -533,6 +564,11 @@ def users_page(request: Request, msg: str = "", err: str = "", link: str = "",
         "me": admin, "registration_open": settings.auth_registration_open,
         "smtp": email_configured(), "smtp_summary": smtp_summary(),
         "msg": msg, "err": err, "link": link, "link_for": link_for,
+        # D-242: counts only; an admin can't see the trips (D-211).
+        "deletion_available": deletion.available(), "grace_days": deletion.GRACE_DAYS,
+        "deletion_preview": ({u.id: deletion.preview(session, u) for u in users
+                              if u.deletion_due_at is None}
+                             if deletion.available() else {}),
         "default_quota_mb": settings.document_quota_mb})
 
 
@@ -684,7 +720,12 @@ def users_toggle_admin(user_id: str, admin: User = Depends(authn.require_admin),
         return RedirectResponse("/users?err=No+such+user", status_code=303)
     if user.id == admin.id:
         return RedirectResponse("/users?err=You+can%27t+change+your+own+admin+role", status_code=303)
-    if user.is_admin and session.query(User).filter_by(is_admin=True).count() <= 1:
+    # An admin who is deactivated or waiting to be deleted (D-242) doesn't count:
+    # the server must keep one who can act. The admins are locked first so two
+    # changes at once can't both pass the count.
+    deletion.lock_admins(session)
+    deletion.lock_user(session, user.id)
+    if user.is_admin and deletion.usable_admins(session, without=user.id) == 0:
         return RedirectResponse("/users?err=Can%27t+remove+the+last+admin", status_code=303)
     user.is_admin = not user.is_admin
     _audit(session, user, admin, "admin_on" if user.is_admin else "admin_off")
@@ -701,6 +742,11 @@ def users_toggle_active(user_id: str, admin: User = Depends(authn.require_admin)
         return RedirectResponse("/users?err=No+such+user", status_code=303)
     if user.id == admin.id:
         return RedirectResponse("/users?err=You+can%27t+deactivate+yourself", status_code=303)
+    deletion.lock_admins(session)              # as above: count under the lock
+    deletion.lock_user(session, user.id)
+    if user.is_active and deletion.last_admin(session, user):
+        return RedirectResponse("/users?err=Can%27t+deactivate+the+last+active+admin",
+                                status_code=303)
     user.is_active = not user.is_active
     authn.end_sessions(session, user)          # kick out any live sessions on deactivate
     _audit(session, user, admin, "activated" if user.is_active else "deactivated")

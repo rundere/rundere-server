@@ -177,6 +177,8 @@ fields. Reading Google's parse is often more reliable than parsing the source em
 
 ## D-11 — Local inference only; cloud is a manual, audited escalation
 
+> **Amended by D-228** (5.0, [SPEC-12](SPEC-12-ai-providers.md)): AI is off unless the operator turns it on, and a cloud endpoint may serve Discovery. Email and file extraction still never goes to a cloud model unless the operator allows it separately.
+
 Local models are unreliable at emitting strict tool-call JSON — hence the mandatory schema
 validation gate and one retry before `needs_review`.
 
@@ -223,6 +225,7 @@ RULE-21 blocks a per-type rollup being rosier than its worst record.
 ## D-15 — Keep the original artifact forever (Paperless-ngx pattern)
 
 > **Status:** Amended by **D-196** (SPEC-8): raw captures are kept for the life of their trip plus 12 months; the content hash stays as a tombstone.
+> Amended by **D-242**: deleting an account deletes its captures' tombstones too (SPEC-13 §3.5).
 
 Store the raw `.eml`, SingleFile HTML, or `.ics` as immutable content-addressed files —
 not just parsed jsonb.

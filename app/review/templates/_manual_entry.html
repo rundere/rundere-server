@@ -1,0 +1,57 @@
+{# Manual entry (SPEC-12 §6, D-228): a capture with no details yet, because AI
+   is off or couldn't read it. The original on one side, the fields on the
+   other; saving runs the same schema gate and rules as an automatic read. #}
+<div class="detail-grid manual">
+  <div class="pane">
+    <h3>The original</h3>
+    <div class="doc">
+    {% if manual.original is none %}
+      <p class="why">There's no original to show for this one.</p>
+    {% elif manual.original.gone %}
+      <p class="why">The original was removed (12 months after its trip), so it can't be shown.</p>
+    {% else %}
+      {% if manual.original.facts %}
+      <dl>{% for k, v in manual.original.facts %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+      {% endif %}
+      {% if manual.original.text %}
+        <pre class="original-text">{{ manual.original.text }}</pre>
+        {% if manual.original.cut %}<p class="hint quiet">Only the start is shown.</p>{% endif %}
+      {% elif manual.original.unreadable %}
+        <p class="why">Its text couldn't be read here.</p>
+      {% endif %}
+    {% endif %}
+    </div>
+  </div>
+
+  <div class="pane">
+    <h3>Add the details by hand</h3>
+    <form hx-post="/review/item/{{ i.id }}/manual?bucket={{ bucket }}"
+          hx-target="#d-{{ i.id }}" hx-swap="innerHTML">
+      {% if manual.problems %}
+      <div class="violations">
+        <b>Not saved yet</b>
+        <ul>{% for p in manual.problems %}<li>{{ p }}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
+      <div class="field">
+        <label for="mt-{{ i.id }}">What is it?</label>
+        <select id="mt-{{ i.id }}" name="item_type"
+                hx-get="/review/item/{{ i.id }}/manual?bucket={{ bucket }}" hx-trigger="change"
+                hx-target="#mf-{{ i.id }}" hx-swap="innerHTML">
+          <option value="">Choose…</option>
+          {% for v, label in manual.types %}
+            <option value="{{ v }}" {% if v == manual.type %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div id="mf-{{ i.id }}">{% include "_manual_fields.html" %}</div>
+      <div class="actions">
+        <button type="submit" class="act primary">Save details</button>
+        <button type="button" class="act quiet"
+                hx-post="/review/item/{{ i.id }}/ignore?bucket={{ bucket }}"
+                hx-target="#queue-body" hx-swap="innerHTML"
+                hx-confirm="Ignore this item? It will never be logged.">Ignore this</button>
+      </div>
+    </form>
+  </div>
+</div>

@@ -266,3 +266,52 @@ if DEPS:
         assert public_error(BlockedURL("10.0.0.1 is private")) == "10.0.0.1 is private"
         leak = RuntimeError("(psycopg.errors.UndefinedColumn) SELECT secret FROM users")
         assert "SELECT" not in public_error(leak) and "log" in public_error(leak)
+
+
+if DEPS:
+    def test_admin_pages_take_a_web_session_only():
+        """SPEC-13 §3.7, D-242: an admin's app token, as a Bearer header or sent
+        as the session cookie, opens no admin page. Otherwise a stolen app token
+        could make a new admin with a password of its choosing, or reset
+        anyone's, and so reach around the web-only rule for deleting accounts."""
+        import uuid
+        tag = uuid.uuid4().hex[:6]
+        with SessionLocal() as s:
+            admin = authn.create_user(s, f"ah-admin-{tag}", "pw-correct-horse",
+                                      email=f"ah-admin-{tag}@example.test", is_admin=True)
+            other = authn.create_user(s, f"ah-other-{tag}", "pw-correct-horse",
+                                      email=f"ah-other-{tag}@example.test")
+            app_token, web_token = authn.issue_access_token(admin), authn.issue_web_token(admin)
+            oid = other.id
+        settings.auth_required = True
+        try:
+            for how, headers in (
+                    ("bearer", {"Authorization": f"Bearer {app_token}"}),
+                    ("cookie", {"Cookie": f"{settings.auth_cookie_name}={app_token}"})):
+                c = TestClient(app, follow_redirects=False)
+                r = c.post("/users/create", headers=headers,
+                           data={"username": f"ah-evil-{how}-{tag}", "password": "evil-pw-123456",
+                                 "email": f"ah-evil-{how}-{tag}@example.test", "is_admin": "1"})
+                assert r.status_code == 403, how
+                r = c.post(f"/users/{oid}/password", headers=headers,
+                           data={"password": "evil-pw-654321"})
+                assert r.status_code == 403, how
+                assert c.get("/users", headers=headers).status_code == 403, how
+                assert c.get("/settings/mail", headers=headers).status_code == 403, how
+            with SessionLocal() as s:
+                assert s.query(User).filter(User.username.like(f"ah-evil-%-{tag}")).count() == 0
+                assert authn.verify_password("pw-correct-horse",
+                                             s.get(User, oid).password_hash)
+            # The admin's own browser still reaches the pages.
+            web = TestClient(app, follow_redirects=False)
+            web.cookies.set(settings.auth_cookie_name, web_token)
+            assert web.get("/users").status_code == 200
+            assert web.get("/settings/mail").status_code == 200
+        finally:
+            settings.auth_required = False
+            with SessionLocal() as s:
+                s.query(RefreshToken).filter(RefreshToken.user_id.in_(
+                    [admin.id, oid])).delete(synchronize_session=False)
+                s.query(User).filter(User.id.in_([admin.id, oid])).delete(
+                    synchronize_session=False)
+                s.commit()

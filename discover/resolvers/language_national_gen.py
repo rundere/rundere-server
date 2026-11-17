@@ -23,12 +23,12 @@ from __future__ import annotations
 
 import logging
 
+from ai.client import Endpoint
 from discover.phrasegen import generate_phrasebook
 from discover.places import DerivedPlace
 from discover.resolvers.base import Finding, ResolverContext
 from discover.resolvers.language import (_SOURCE, _lang_name, build_language_body,
                                         national_language_codes)
-from discover.synth import DEFAULT_MODEL
 
 log = logging.getLogger("yonder.discovery.llm")
 
@@ -37,17 +37,16 @@ class NationalPhrasebookResolver:
     topic = "language"
     scope = "country"
 
-    def __init__(self, *, searxng_url: str | None, ollama_url: str | None,
-                 model: str = DEFAULT_MODEL, timeout: int = 600,
+    def __init__(self, *, searxng_url: str | None, llm: Endpoint | None,
+                 timeout: int = 600,
                  max_snippets: int = 12):
         self.searxng_url = searxng_url
-        self.ollama_url = ollama_url
-        self.model = model
+        self.llm = llm                           # None = no AI for Discover (D-228)
         self.timeout = timeout
         self.max_snippets = max_snippets
 
     def resolve(self, place: DerivedPlace, ctx: ResolverContext) -> Finding | None:
-        if not self.searxng_url or not self.ollama_url:
+        if not self.searxng_url or self.llm is None:
             return None                          # LLM tier not configured
         country = place.country
         if not country:
@@ -70,7 +69,7 @@ class NationalPhrasebookResolver:
         for code in gaps:
             gen = generate_phrasebook(
                 _lang_name(code), searxng_url=self.searxng_url,
-                ollama_url=self.ollama_url, model=self.model, timeout=self.timeout,
+                llm=self.llm, timeout=self.timeout,
                 max_snippets=self.max_snippets)
             if gen:
                 book, _results = gen

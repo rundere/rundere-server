@@ -136,9 +136,5 @@ def test_home_profiles_say_what_each_home_is_for(person):
     assert "starts a trip" in html and "isn't a trip" in html
 
 
-# ------------------------------------------------ packing profile Save (327)
-def test_packing_profile_can_be_saved_above_the_must_haves(person):
-    html = client.get("/trips/settings/packing-profile", cookies=_ck(person)).text
-    assert html.count(">Save profile</button>") == 2
-    assert html.index(">Save profile</button>") < html.index("Always pack these")
-    assert "Carry-on weight limit (kg)" in html and "checked bags aren't counted" in html
+# (packing profile Save above the must-haves, 327: the 5.0 page has no must-have
+# list; must-haves are on inventory items, tests/test_packing_settings.py.)

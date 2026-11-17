@@ -1,0 +1,86 @@
+{
+  "id": "coast",
+  "name": "Coast",
+  "description": "Dry-sand and deep-sea grounds, an ocean-blue accent and driftwood text.",
+  "version": 1,
+  "tags": [
+    "coast",
+    "beach",
+    "island",
+    "sea"
+  ],
+  "scene": {
+    "file": "scene.svg",
+    "title": "Coast floor: sea, headland lighthouse, palm and sand"
+  },
+  "modes": {
+    "light": {
+      "color": {
+        "bg": "#F3EEE4",
+        "surface": "#FFFDF8",
+        "surface-raised": "#FFFFFF",
+        "border": "#D8CCB8",
+        "border-subtle": "rgba(18,50,74,0.10)",
+        "text": "#12324A",
+        "text-secondary": "#5A4632",
+        "text-muted": "#6B5743",
+        "accent": "#0B5E8E",
+        "accent-hover": "#1471A6",
+        "on-accent": "#FFFFFF",
+        "highlight": "#8A5C08",
+        "success": "#1B7449",
+        "danger": "#C23B30",
+        "focus-ring": "#1471A6"
+      },
+      "effect": {
+        "shadow-raised": "0 4px 16px rgba(18, 50, 74, 0.10), inset 0 0 0 1px rgba(18, 50, 74, 0.08)",
+        "glow-color": "rgba(20, 113, 166, 0.35)"
+      },
+      "scene": {
+        "far": "#E8DECC",
+        "mid": "#E1D2BB",
+        "near": "#D8C5A8",
+        "feature": "#71A3BD",
+        "detail": "#CFB792",
+        "sun": "#D4C2A2",
+        "light": "#FDFCFA",
+        "star": "#F3EEE4",
+        "foam": "#B1CCDB"
+      }
+    },
+    "dark": {
+      "color": {
+        "bg": "#071C28",
+        "surface": "#0C2836",
+        "surface-raised": "#133647",
+        "border": "#1F4A5E",
+        "border-subtle": "rgba(200,225,235,0.14)",
+        "text": "#F1E9DC",
+        "text-secondary": "#D4C2A6",
+        "text-muted": "#B4A388",
+        "accent": "#5EC2E6",
+        "accent-hover": "#8FD6EF",
+        "on-accent": "#071C28",
+        "highlight": "#F2B544",
+        "success": "#4CC38A",
+        "danger": "#F2766B",
+        "focus-ring": "#8FD6EF"
+      },
+      "effect": {
+        "shadow-raised": "0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(241, 233, 220, 0.08)",
+        "glow-color": "rgba(143, 214, 239, 0.45)"
+      },
+      "scene": {
+        "far": "#252D2F",
+        "mid": "#383934",
+        "near": "#4E4639",
+        "feature": "#1A5A78",
+        "detail": "#65533F",
+        "sun": "#AFB0AA",
+        "light": "#CF9E40",
+        "star": "#888D8B",
+        "foam": "#5A8596"
+      }
+    }
+  }
+}

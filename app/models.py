@@ -22,6 +22,11 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+def _running_version() -> str:
+    from app.config import settings
+    return settings.app_version
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -226,6 +231,20 @@ class User(Base):
     document_quota_mb: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # D-234: the last version whose release notes this person closed. A new account
+    # starts at the running version, so it isn't shown history; NULL (accounts from
+    # before 5.0) is shown only the running version's notes.
+    seen_version: Mapped[str | None] = mapped_column(String(32), default=_running_version)
+    # D-237: the travel theme follows the account to every device (the light/dark
+    # mode stays per device, D-201). A string checked against the theme manifest,
+    # not an enum, so new packages need no migration (D-240). D-239: the scenery
+    # floor, on by default.
+    ui_theme: Mapped[str] = mapped_column(String(32), default="base", server_default="base")
+    scenery: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    # D-242: set while the account waits to be deleted (the pending marker). The
+    # account is locked from the moment it is set; the request itself is the
+    # `account_deletions` row.
+    deletion_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class UserIntegration(Base):
@@ -268,7 +287,9 @@ class AccountEvent(Base):
     __tablename__ = "account_events"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(String(36), index=True)      # the account
+    # The account. NULL once that account is deleted (D-242): the row stays as a
+    # count, without the person.
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     actor_id: Mapped[str | None] = mapped_column(String(36))          # who did it (None = CLI)
     action: Mapped[str] = mapped_column(String(32))
     detail: Mapped[str | None] = mapped_column(String(255))
@@ -780,6 +801,10 @@ class PackingPlan(Base):
     # is confirmable/adjustable. NULL/empty = auto-detect; carried forward across
     # plain re-generates so the choice sticks.
     manual_archetypes: Mapped[list | None] = mapped_column(JsonCol)
+    # 5.0 (SPEC-5 §6.10, D-232): the Bag ids picked for this trip, carried
+    # forward like manual_archetypes. NULL/empty = none picked, so the list
+    # suggests one.
+    bag_ids: Mapped[list | None] = mapped_column(JsonCol)
     context: Mapped[dict | None] = mapped_column(JsonCol)      # derived inputs snapshot
     warnings: Mapped[list | None] = mapped_column(JsonCol)
     tasks: Mapped[list | None] = mapped_column(JsonCol)        # in-trip actions
@@ -822,6 +847,10 @@ class PackingItem(Base):
     # the same durability `packed`/`removed` already get (D-63 review-survives-
     # regeneration), so e.g. a quantity tweak on a still-"draft" row sticks.
     edited: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 5.0 (SPEC-5 §6.6, D-231): the owned item this line is, a soft link to
+    # InventoryItem.id (no FK, house rule 3). NULL = a hand-typed line, a
+    # pre-5.0 line, or a "Suggested — not in your inventory" one.
+    inventory_item_id: Mapped[str | None] = mapped_column(String(36), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
@@ -853,9 +882,88 @@ class PackingCatalogItem(Base):
     weight_g: Mapped[int] = mapped_column(Integer, default=0)
     tags: Mapped[list | None] = mapped_column(JsonCol, default=list)
     variants: Mapped[dict | None] = mapped_column(JsonCol, default=dict)  # {masc,fem,neutral}
+    # 5.0 (SPEC-5 §6.3, D-229): which questionnaire answers seed this item into
+    # a new inventory, for which clothing styles, and how many. NULL `seed` =
+    # not yet filled from items.json (seed_catalog fills it once); [] = the
+    # owner cleared it, so no answer seeds it.
+    seed: Mapped[list | None] = mapped_column(JsonCol)
+    styles: Mapped[list | None] = mapped_column(JsonCol)      # NULL = every style
+    seed_qty: Mapped[int | None] = mapped_column(Integer)     # NULL = 1
+    minimal: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # 5.0 (D-232): rough packed size in litres. NULL = the items.json estimate,
+    # else the category default (planning.bags.volume_for).
+    volume_l: Mapped[float | None] = mapped_column(Float)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class InventoryItem(Base):
+    """Run·dere 5.0 — something a person owns and packs (SPEC-5 §6.6, D-127).
+
+    Packing lists draw only from here (D-231): the catalogue is the vocabulary,
+    the inventory is what this person actually has. Seeded by the packing
+    questionnaire (D-229), then edited by hand. Own-only, like the journal
+    (scope.own_filter): sharing a trip never shows someone's inventory.
+
+    `type_key` is the catalogue item it came from (PackingCatalogItem.id, a soft
+    link), so the engine can match a need to it; NULL for a hand-made item,
+    which the engine matches by `tags`. `kind`, `usage_rate`,
+    `reorder_threshold` and `reorder_url` are unused until 5.x (P14,
+    D-128/D-129): they're here so consumables don't need another migration."""
+    __tablename__ = "inventory_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    type_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    label: Mapped[str] = mapped_column(String(128))
+    category: Mapped[str] = mapped_column(String(16), index=True)
+    tags: Mapped[list | None] = mapped_column(JsonCol, default=list)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)       # how many owned
+    must_have: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # 5.0 (D-232): the person's own packed size in litres; NULL = the
+    # catalogue's estimate for its type_key, else the category default.
+    volume_l: Mapped[float | None] = mapped_column(Float)
+    brand: Mapped[str | None] = mapped_column(String(64))
+    notes: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    kind: Mapped[str | None] = mapped_column(String(12))           # consumable | durable
+    usage_rate: Mapped[dict | None] = mapped_column(JsonCol)
+    reorder_threshold: Mapped[int | None] = mapped_column(Integer)
+    reorder_url: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PackingTemplate(Base):
+    """Run·dere 5.0 — a person's own packing template (SPEC-5 §6.5, D-230):
+    "my beach kit". `type_key` is one of planning/data/templates.json's types,
+    which says when the engine suggests it; `keyword` is the trip word a
+    `custom` template matches. Own-only, like the inventory."""
+    __tablename__ = "packing_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    type_key: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    keyword: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PackingTemplateItem(Base):
+    """One line of a PackingTemplate: an inventory item, and optionally how
+    many (NULL = the engine's quantity). Soft links to both (house rule 3): it
+    carries no owner of its own and is reached only through its template, and
+    deleting either side removes the line."""
+    __tablename__ = "packing_template_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    template_id: Mapped[str] = mapped_column(String(36), index=True)
+    inventory_item_id: Mapped[str] = mapped_column(String(36), index=True)
+    quantity: Mapped[int | None] = mapped_column(Integer)
 
 
 class Bag(Base):
@@ -868,11 +976,17 @@ class Bag(Base):
     `id` is a slug from the label (same convention as PackingCatalogItem) so a
     PackingItem can soft-link to a specific bag via its own `bag` column
     (generic carry_on/checked/backpack until the owner has bags to assign,
-    then a real Bag.id) without a second column."""
+    then a real Bag.id) without a second column.
+
+    5.0 (SPEC-5 §6.6, P6): bags are the luggage part of a person's inventory,
+    owned by `user_id` and own-only (scope.own_filter). Rows from before 5.0
+    stay ownerless, so only admins see them. A new bag's id is a uuid, not
+    the label's slug: two people's "Carry-on" would otherwise collide, and a
+    slug could equal a generic value ("carry_on"). Older slug ids still work."""
     __tablename__ = "bags"
 
-    id: Mapped[str] = mapped_column(String(64), primary_key=True,
-                                    default=_slug_from_label)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
     label: Mapped[str] = mapped_column(String(64))          # "Osprey Farpoint 40"
     kind: Mapped[str] = mapped_column(String(16), default="backpack",
                                       index=True)            # backpack|suitcase|personal_item
@@ -1362,3 +1476,77 @@ class ServerSetting(Base):
     value: Mapped[str] = mapped_column(String(200), default="", server_default="")
     updated_by: Mapped[str | None] = mapped_column(String(36))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AiCall(Base):
+    """One call to the AI endpoint (SPEC-12 §6, D-228): which feature made it,
+    for whom, how long it took and whether it worked. Never the prompt, the
+    reply or the error text, which can echo travel emails. Kept 90 days
+    (app/retention.py)."""
+    __tablename__ = "ai_calls"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    feature: Mapped[str] = mapped_column(String(24), index=True)     # extraction, discover
+    function: Mapped[str] = mapped_column(String(64))                # travel_extraction, food, …
+    provider: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(120))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now,
+                                                 index=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    error: Mapped[str | None] = mapped_column(String(64))           # the class name only
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    out_tokens: Mapped[int | None] = mapped_column(Integer)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
+
+class ArchiveExport(Base):
+    """One build of a person's Run·dere archive (SPEC-13 §2.5, D-241). A
+    durable row, like a DiscoveryRun: the build runs in the background and a
+    restart mustn't lose track of it. Own-only: only `user_id` ever sees the
+    row or its file, at `<TX_EXPORT_DIR>/<user_id>/<id>.zip`; the id is random.
+    Not itself exported, and deleted with the account (app/ownership.py).
+
+    `status`: building | ready | failed | replaced (a newer build took its
+    place) | expired (the retention job removed the file after 7 days).
+    `error` is an exception's class name only, never its message."""
+    __tablename__ = "archive_exports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    status: Mapped[str] = mapped_column(String(12), default="building", index=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    size_bytes: Mapped[int | None] = mapped_column(Integer)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    format_version: Mapped[int] = mapped_column(Integer, default=1)
+    error: Mapped[str | None] = mapped_column(String(64))
+
+
+class AccountDeletion(Base):
+    """A request to delete an account (SPEC-13 §3.3, D-242). One row per
+    request; `users.deletion_due_at` is the lock, this is the record.
+
+    `status`: pending | cancelled | done. `requested_by` is who asked: the
+    person themself, an admin, or NULL for the operator's command line;
+    `by_admin` says which kind, and survives the ids being cleared. `choices`
+    holds the person's per-trip answers, `{trip_id: {"action": "hand" |
+    "delete", "to": user_id}}`, applied only when the purge runs (§3.4).
+
+    The row outlives the account so the mailbox step can be retried: once the
+    purge has run, `user_id` and `choices` are cleared and `mail_ids` holds
+    only the Message-IDs still to move to Trash (§3.5). Soft links, no foreign
+    keys (house rule 3)."""
+    __tablename__ = "account_deletions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    requested_by: Mapped[str | None] = mapped_column(String(36))
+    by_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    choices: Mapped[dict | None] = mapped_column(JsonCol)
+    mail_ids: Mapped[list | None] = mapped_column(JsonCol)

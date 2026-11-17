@@ -18,8 +18,9 @@ The channels are described in [capture.md](capture.md).
 **Extractor chain** (`extract/`, tried in order — D-10/D-27):
 `jsonld → ical → pdf → maps_url → web → llm`. Structured sources (schema.org JSON-LD
 in booking emails, `.ics` invites, Google's Maps URL formats) are parsed
-deterministically; free-form text falls through to a **local LLM** (Ollama,
-D-11) — nothing is sent to a cloud model.
+deterministically; free-form text falls through to an **LLM**, when AI is on: Ollama or any
+OpenAI-compatible server (SPEC-12). A cloud model never reads captures unless the operator
+allows it separately (D-228, amending D-11).
 
 **Item types recognised:** `flight`, `hotel`, `lodging`, `event`,
 `ground_transport`, `car_rental`, `train`, `ferry`.
@@ -55,10 +56,12 @@ app/            FastAPI service
   main.py         router wiring, the sign-in gate and security headers
   scope.py        per-user visibility: every read and write goes through it
   mcp_server.py   the built-in MCP server at /mcp; api_v1.py is the JSON API
+  ai.py           is AI on, and which endpoint each feature may use (D-228)
   cli.py          operational CLI: create-key, process, resolve, commit, ...
   processing.py, resolving.py, committing.py   the pipeline stages
 extract/        extractor chain, in try-order (D-10/D-27):
-                jsonld -> ical -> pdf -> maps_url -> web -> llm (Ollama, D-11)
+                jsonld -> ical -> pdf -> maps_url -> web -> llm (when AI is on, SPEC-12)
+ai/             client.py: one chat call for Ollama and OpenAI-compatible APIs
 resolve/        keys.py (A5 canonical keys), collections.py (A6 ladder)
 discover/       Discovery (v3.0-3.2): deterministic + LLM resolvers per topic,
                 location derivation, the durable run/finding pipeline

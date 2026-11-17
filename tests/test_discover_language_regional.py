@@ -16,6 +16,9 @@ from discover.resolvers.language_regional import RegionalLanguageResolver
 from discover.resolvers.base import ResolverContext
 from discover.search import SearchResult
 from discover.places import DerivedPlace
+from ai.client import Endpoint
+
+_LLM = Endpoint(provider="ollama", url="http://ollama.test:11434", model="m")   # where the faked calls would go
 
 
 def _ctx():
@@ -24,7 +27,7 @@ def _ctx():
 
 def _resolver(**kw):
     kw.setdefault("searxng_url", "http://searxng:8080")
-    kw.setdefault("ollama_url", "http://ollama:11434")
+    kw.setdefault("llm", _LLM)
     return RegionalLanguageResolver(**kw)
 
 
@@ -105,7 +108,7 @@ def test_none_for_unmapped_region(monkeypatch):
 
 def test_vetted_still_works_without_llm_endpoints():
     # No SearXNG/Ollama configured: vetted regional languages still resolve.
-    r = RegionalLanguageResolver(searxng_url=None, ollama_url=None)
+    r = RegionalLanguageResolver(searxng_url=None, llm=None)
     f = r.resolve(_place("IT", "Bolzano", "South Tyrol"), _ctx())
     assert f is not None and "Danke" in f.body_md
 

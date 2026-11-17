@@ -480,3 +480,44 @@ def notifications_check(request: Request, session: Session = Depends(get_session
     monitor.run_once(force=True)
     session.expire_all()
     return _notify_page(request, session, admin, msg="Checked everything just now.")
+
+
+# --------------------------------------------------------------------------- AI
+# Read-only (SPEC-12 §6, D-228): AI is configured in the environment, never
+# here, so this page shows what the server will do with it, tests the endpoint
+# and keeps the call log in view. The key is never shown.
+def _ai_context(session: Session) -> dict:
+    from app import ai
+    from app.capture import _ago
+    from app.models import TravelItem
+    waiting = [i for i in session.query(TravelItem).filter(TravelItem.extraction.is_(None))
+               if "ai_off" in ((i.review or {}).get("reasons") or [])
+               and (i.review or {}).get("action_taken") != "ignored"]
+    calls = ai.call_summary(session)
+    return {"ai": ai.describe(), "waiting": len(waiting), "week": calls["week"],
+            "recent": [{"when": _ago(c.started_at), "feature": c.feature,
+                        "function": c.function, "model": c.model, "ok": c.ok,
+                        "error": c.error, "seconds": round(c.duration_ms / 1000, 1),
+                        "tokens": (c.prompt_tokens, c.out_tokens)} for c in calls["recent"]],
+            "keep_days": ai.KEEP_CALLS_DAYS}
+
+
+def _ai_page(request: Request, session: Session, **flash) -> HTMLResponse:
+    return templates.TemplateResponse(request, "server_ai.html",
+                                      {**_ai_context(session), **flash})
+
+
+@router.get("/settings/ai", response_class=HTMLResponse)
+def server_ai(request: Request, session: Session = Depends(get_session)):
+    from app import authn
+    authn.require_admin(request)
+    return _ai_page(request, session)
+
+
+@router.post("/settings/ai/test", response_class=HTMLResponse)
+def server_ai_test(request: Request, session: Session = Depends(get_session)):
+    """List the models, then one tiny call (logged as admin_test)."""
+    from app import ai, authn
+    authn.require_admin(request)
+    ok, note = ai.test_connection()
+    return _ai_page(request, session, test_msg=note if ok else "", test_err="" if ok else note)

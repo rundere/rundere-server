@@ -56,3 +56,21 @@ def _email_gate_off(request):
         yield
     finally:
         authn.needs_email = real
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_upgrade_steps():
+    """The one-time upgrade steps (app/upgrade.py) would locate every test
+    activity against a live Photon in the background; their tests call
+    `upgrade.run` themselves."""
+    try:
+        from app import upgrade
+    except ImportError:                         # bare host without the app's deps
+        yield
+        return
+    real = upgrade.start
+    upgrade.start = lambda session_factory: False
+    try:
+        yield
+    finally:
+        upgrade.start = real

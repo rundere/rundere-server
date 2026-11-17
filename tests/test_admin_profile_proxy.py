@@ -128,7 +128,7 @@ if DEPS:
     def test_non_admin_cannot_act_for_anyone():
         def body(ids):
             client.post(f"/trips/settings/packing-profile?for={ids['PX Kid']}",
-                        headers=_h("px-sharer"), data={"bag_mode": "carry_on"})
+                        headers=_h("px-sharer"), data={"style": "neutral", "footwear": "varied"})
             with SessionLocal() as s:
                 assert s.query(PackingProfile).filter_by(traveler_id=ids["PX Kid"]).count() == 0
                 assert s.query(PackingProfile).filter_by(traveler_id=ids["PX Sharer"]).count() == 1
@@ -138,7 +138,7 @@ if DEPS:
         def body(ids):
             h = _h("px-admin")
             client.post(f"/trips/settings/packing-profile?for={ids['PX Kid']}", headers=h,
-                        data={"bag_mode": "checked"})
+                        data={"style": "neutral", "footwear": "varied"})
             client.post(f"/trips/settings/discovery-profile?for={ids['PX Kid']}", headers=h,
                         data={"allergies": "px-kid-nuts", "budget_ceiling": "0",
                               "mobility": "no_limits"})

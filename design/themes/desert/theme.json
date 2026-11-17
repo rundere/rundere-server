@@ -1,0 +1,86 @@
+{
+  "id": "desert",
+  "name": "Desert",
+  "description": "Sand and umber grounds, an agave-turquoise accent and a saffron signal.",
+  "version": 1,
+  "tags": [
+    "desert",
+    "arid",
+    "canyon",
+    "dunes"
+  ],
+  "scene": {
+    "file": "scene.svg",
+    "title": "Desert floor: mesas, dunes and saguaro"
+  },
+  "modes": {
+    "light": {
+      "color": {
+        "bg": "#F5EEE3",
+        "surface": "#FFFBF5",
+        "surface-raised": "#FFFFFF",
+        "border": "#DCCBB3",
+        "border-subtle": "rgba(74,50,30,0.12)",
+        "text": "#3A2A1C",
+        "text-secondary": "#5E4835",
+        "text-muted": "#735C49",
+        "accent": "#0F6464",
+        "accent-hover": "#147A7A",
+        "on-accent": "#FFFFFF",
+        "highlight": "#8A5508",
+        "success": "#2B7A4B",
+        "danger": "#B5382A",
+        "focus-ring": "#147A7A"
+      },
+      "effect": {
+        "shadow-raised": "0 4px 16px rgba(58, 42, 28, 0.10), inset 0 0 0 1px rgba(58, 42, 28, 0.08)",
+        "glow-color": "rgba(20, 122, 122, 0.35)"
+      },
+      "scene": {
+        "far": "#E8D7BF",
+        "mid": "#DFC6A5",
+        "near": "#D6B489",
+        "feature": "#889A75",
+        "detail": "#CA9F68",
+        "sun": "#D5C0A1",
+        "light": "#FDFCF9",
+        "star": "#F5EEE3",
+        "foam": "#BEC7B3"
+      }
+    },
+    "dark": {
+      "color": {
+        "bg": "#1E150E",
+        "surface": "#2A1E15",
+        "surface-raised": "#36281C",
+        "border": "#4E3A29",
+        "border-subtle": "rgba(230,210,180,0.14)",
+        "text": "#F2E6D6",
+        "text-secondary": "#D2BFA6",
+        "text-muted": "#B09B82",
+        "accent": "#5CC8C0",
+        "accent-hover": "#8ADBD4",
+        "on-accent": "#1E150E",
+        "highlight": "#E9B04A",
+        "success": "#5CC48A",
+        "danger": "#F27A66",
+        "focus-ring": "#8ADBD4"
+      },
+      "effect": {
+        "shadow-raised": "0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(242, 230, 214, 0.08)",
+        "glow-color": "rgba(138, 219, 212, 0.45)"
+      },
+      "scene": {
+        "far": "#3E2D1D",
+        "mid": "#543C27",
+        "near": "#6C4E32",
+        "feature": "#51693E",
+        "detail": "#85603E",
+        "sun": "#B7AB9E",
+        "light": "#CB9941",
+        "star": "#93887C",
+        "foam": "#818E6C"
+      }
+    }
+  }
+}

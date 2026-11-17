@@ -485,3 +485,44 @@ def require_journal(session, user, entry_id):
     if entry is None or not can_access_journal(user, entry):
         raise HTTPException(status_code=404, detail="journal entry not found")
     return entry
+
+
+# --------------------------------------------------------------------------- packing inventory
+# 5.0 (SPEC-5 §6.6, P15): a person's inventory, packing templates and bags are
+# own-only, like the journal (D-134): what someone owns isn't part of a trip,
+# so sharing a trip never shows it, and support access (D-211) doesn't reach
+# it either. An admin sees ownerless rows only (pre-5.0 bags), to clean them
+# up. Template lines carry no owner: reach them through their template.
+def own_filter(model, user):
+    """A predicate for `session.query(model).filter(...)` on a `user_id` table
+    (InventoryItem, PackingTemplate, Bag)."""
+    if unrestricted(user):
+        return true()
+    if user is None:
+        return false()
+    cond = model.user_id == user.id
+    if is_admin(user):
+        cond = or_(cond, model.user_id.is_(None))
+    return cond
+
+
+def can_access_own(user, row) -> bool:
+    if row is None:
+        return False
+    if unrestricted(user):
+        return True
+    if user is None:
+        return False
+    if row.user_id == user.id:
+        return True
+    return _admin_edits(user, row.user_id)             # ownerless only (D-211)
+
+
+def require_own(session, user, model, row_id):
+    """API-style guard: return the row or raise 404. Someone else's row 404s
+    exactly like a missing one, so ids don't leak."""
+    from fastapi import HTTPException
+    row = session.get(model, row_id)
+    if row is None or not can_access_own(user, row):
+        raise HTTPException(status_code=404, detail="not found")
+    return row

@@ -69,6 +69,7 @@ The same principle as SPEC-4.2 §2: a **thin client of `/api/v1`**. Every rule
 | D-224 | API instants carry a UTC offset; trip wall-clock times don't |
 | D-211, D-220 | Admins have no standing access, and accounts are private by default |
 | D-198 | The demo seed and the read-only demo server |
+| D-246 | Landscape views are a 5.0 deliverable: the main screens (Today, Trips and timeline, Capture, Inbox, Notebook, Settings) each get a landscape layout chosen by window size class, keeping every feature and the person's place on rotation; the scenery floor is a shorter band in compact-height landscape (SPEC-8) |
 
 ### 4.2 Build decisions (from the app's build plan; no new numbers)
 
@@ -132,7 +133,9 @@ The API is client-neutral: nothing above is Android-only.
 ## 7. Not in this phase
 
 Wear OS, home-screen widgets, the travel-day Live Update notification, and
-tablet-specific layouts beyond what Compose adapts on its own.
+tablet-only features (such as multi-window drag and drop). Landscape and
+wide-window layouts are required under D-246, and they adapt by window size
+class, not by device.
 
 ## 8. Open decisions for the owner
 

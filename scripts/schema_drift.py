@@ -25,6 +25,11 @@ WARN  — a nullable or defaulted response field is gone; a query parameter the
         app sends is gone; the 2xx status code changed.
 INFO  — new operations, new optional fields, new enum values.
 
+--warn-stale (CI, YONDER-387) never fails: it prints a GitHub Actions warning
+when the INFO lines say the snapshot is behind the server (any new operation,
+or STALE_FIELDS or more new fields and enum values), so a stale copy shows up on
+every PR without blocking one. Errors stay the pytest suite's job.
+
 Multipart bodies are skipped, and free-form objects and mixed unions match
 anything: the app reads them as raw JSON (the same rules as its gen_models.py).
 Exit code 1 when there are errors. Stdlib only.
@@ -33,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.request
 from pathlib import Path
@@ -218,6 +224,27 @@ def check(snapshot: dict, live: dict) -> list[tuple[str, str]]:
     return _Checker(snapshot, live).run()
 
 
+# YONDER-387: a soft check, not a strict "snapshot == code" one. The snapshot is
+# the app's copy (refreshed from the app, never generated here), so new optional
+# server fields are expected to run ahead of it for a while; the warning only
+# says when it is worth asking the app for a fresh copy.
+STALE_OPERATIONS = 1
+STALE_FIELDS = 5
+
+
+def staleness(findings: list[tuple[str, str]]) -> str | None:
+    """A one-line warning when the snapshot is behind the server, else None."""
+    info = [m for lvl, m in findings if lvl == "INFO"]
+    ops = sum(1 for m in info if m.endswith(": new operation"))
+    fields = len(info) - ops
+    if ops < STALE_OPERATIONS and fields < STALE_FIELDS:
+        return None
+    return (f"contracts/android/openapi.json is behind the server: {ops} new "
+            f"operation(s) and {fields} new field(s) or enum value(s) the snapshot "
+            "doesn't have. Ask the Android app for a fresh api/openapi.json "
+            "(scripts/sync-contract.sh) and copy it over byte for byte.")
+
+
 def load_spec(args) -> dict:
     if args.openapi:
         return json.loads(Path(args.openapi).read_text())
@@ -238,8 +265,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--url", help="a live Run·dere base URL (needs --token)")
     ap.add_argument("--token", default="")
     ap.add_argument("--quiet", action="store_true", help="errors and warnings only")
+    ap.add_argument("--warn-stale", action="store_true",
+                    help="only say whether the snapshot is behind; never fails")
     args = ap.parse_args(argv)
     findings = check(json.loads(Path(args.snapshot).read_text()), load_spec(args))
+    if args.warn_stale:
+        msg = staleness(findings)
+        if msg and os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::warning title=Android contract snapshot is behind::{msg}")
+        print(msg or "contracts/android/openapi.json is current.")
+        return 0
     for level, msg in findings:
         if not (args.quiet and level == "INFO"):
             print(f"{level:5} {msg}")

@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Packing profile{% endblock %}
 {% block content %}
+{% set own = not (acting and acting.is_other) %}
 
 <div class="card blueprint bp-trip-header">
   <h1 class="bp-h1">Packing profile</h1>
-  <p class="bp-trip-notes">Set these once — they shape every packing plan. After
-    changing them, re-generate a trip's plan to apply.</p>
+  <p class="bp-trip-notes">{% if taken and own %}Packing lists are built from your inventory,
+    and your templates add the kits a trip needs.{% else %}Tell Run·dere what you travel with.
+    Saving fills your inventory with those things, ready to rename, re-count or delete;
+    packing lists are built from your inventory.{% endif %}</p>
 </div>
 {% include "_acting_for.html" %}
-
 
 {% if no_traveller %}
 <div class="card blueprint yn-note-card yn-todo">
@@ -17,74 +19,93 @@
 </div>
 {% endif %}
 
-{% if saved %}
-<div class="card blueprint yn-note-card yn-todo yn-profile-saved">
-  <div class="bp-group-label">Saved ✓</div>
-  <p class="bp-trip-notes">Preferences saved. Re-generate a trip's packing plan to apply them.</p>
+{% if error %}
+<div class="card blueprint yn-note-card yn-todo" role="alert">
+  <p class="bp-trip-notes">{{ error }}</p>
 </div>
 {% endif %}
 
-<form method="post" action="/trips/settings/packing-profile{{ acting.qs if acting else '' }}"
+{% if saved %}
+<div class="card blueprint yn-note-card yn-todo yn-profile-saved" role="status">
+  <div class="bp-group-label">Saved ✓</div>
+  <p class="bp-trip-notes">{% if own %}Your answers didn't add anything new: your inventory
+    already has everything they match.{% else %}Preferences saved for {{ acting.traveler.display_name }}.{% endif %}</p>
+</div>
+{% endif %}
+
+{% if taken and own and inventory_count is defined %}
+<nav class="yn-pack-hub" aria-label="Your packing">
+  <a class="card blueprint yn-pack-tile" href="{{ base }}/inventory">
+    <span class="yn-pack-tile-title">Inventory</span>
+    <span class="yn-pack-tile-count">{{ inventory_count }} item{{ '' if inventory_count == 1 else 's' }}</span>
+    <span class="yn-help">{{ bag_count }} bag{{ '' if bag_count == 1 else 's' }}, and what you pack in them. Rename, re-count, mark must-haves.</span>
+  </a>
+  <a class="card blueprint yn-pack-tile" href="{{ base }}/templates">
+    <span class="yn-pack-tile-title">Templates</span>
+    <span class="yn-pack-tile-count">{{ template_count }}</span>
+    <span class="yn-help">Your kits for kinds of trips: beach, work, hiking…</span>
+  </a>
+</nav>
+{% elif not taken and own %}
+<div class="card blueprint yn-note-card yn-todo">
+  <p class="bp-trip-notes">Answer these once to start your inventory. Packing lists need it.</p>
+</div>
+{% endif %}
+
+<form method="post" action="{{ base }}{{ acting.qs if acting else '' }}"
       class="card blueprint yn-profile-card">
 
-  <div class="yn-form-grid">
-    <div class="field"><label>Luggage</label>
-      <select class="input" name="bag_mode">
-        {% for o in bag_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
-      </select></div>
-    <div class="field"><label>Carry-on weight limit (kg) <span class="yn-help">— carry-on only; checked bags aren't counted</span></label>
-      <input class="input" type="number" name="bag_weight_kg" value="{{ bag_weight_kg }}" min="0" step="1"></div>
-    <div class="field"><label>Laundry on the trip</label>
-      <select class="input" name="laundry_comfort">
-        {% for o in laundry_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
-      </select></div>
-    <div class="field"><label>Packing style</label>
-      <select class="input" name="packing_style">
-        {% for o in style_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
-      </select></div>
-    <div class="field"><label>Climate comfort</label>
-      <select class="input" name="climate_preference">
-        {% for o in climate_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
-      </select></div>
-    <div class="field"><label>Cultural dress</label>
-      <select class="input" name="cultural_strictness">
-        {% for o in strictness_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
-      </select></div>
-    <div class="field"><label>Clothing cut</label>
-      <select class="input" name="clothing_variant">
-        {% for o in variant_opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
-      </select></div>
-  </div>
-
-  <div class="field"><label>Constraints</label>
+  {% macro questions_block() %}
+  {% for q in questions %}
+  <fieldset class="field yn-question">
+    <legend>{{ loop.index }}. {{ q.text }}{% if q.help %} <span class="yn-help">— {{ q.help }}</span>{% endif %}</legend>
     <div class="yn-checkrow">
-      {% for c in constraints %}
-      <label class="yn-check"><input type="checkbox" name="style_constraints" value="{{ c.value }}" {% if c.checked %}checked{% endif %}> {{ c.label }}</label>
+      {% for o in q.options %}
+      {% if o.count is defined %}
+      <label class="yn-check yn-bag-count">
+        <input class="input" type="number" name="bags:{{ o.value }}" value="{{ o.count }}" min="0" max="9" aria-label="How many: {{ o.label }}">
+        {{ o.label }}</label>
+      {% elif q.kind == "one" %}
+      <label class="yn-check"><input type="radio" name="{{ q.key }}" value="{{ o.value }}" {% if o.checked %}checked{% endif %} required> {{ o.label }}</label>
+      {% elif o.always %}
+      <label class="yn-check"><input type="checkbox" checked disabled> {{ o.label }} <span class="yn-help">(always)</span></label>
+      {% else %}
+      <label class="yn-check"><input type="checkbox" name="{{ q.key }}" value="{{ o.value }}" {% if o.checked %}checked{% endif %}> {{ o.label }}</label>
+      {% endif %}
       {% endfor %}
     </div>
+  </fieldset>
+  {% endfor %}
+  {% endmacro %}
+
+  {% if taken %}
+  <h2 class="bp-group-label">How you pack</h2>
+  {% else %}
+  <h2 class="bp-group-label">What you travel with</h2>
+  {{ questions_block() }}
+  <h2 class="bp-group-label yn-profile-section">How you pack</h2>
+  {% endif %}
+  <div class="yn-form-grid">
+    {% for p in prefs %}
+    <div class="field"><label for="pp-{{ p.key }}">{{ p.label }}</label>
+      <select class="input" id="pp-{{ p.key }}" name="{{ p.key }}">
+        {% for o in p.opts %}<option value="{{ o.value }}" {% if o.selected %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+    {% endfor %}
   </div>
 
-  {# YONDER-327: the must-haves list is long; save the settings above without scrolling past it. #}
-  <div class="dialog-actions" style="justify-content:flex-start;margin:-4px 0 16px">
-    <button type="submit" class="btn btn-primary">Save profile</button>
-  </div>
-
-  <div class="field"><label>Always pack these <span class="yn-help">— your must-haves, added to every plan</span></label>
-    <div class="yn-musthave">
-      {% for g in must_groups %}
-      <div class="yn-musthave-group">
-        <div class="yn-musthave-cat">{{ g.label }}</div>
-        {% for it in g.rows %}
-        <label class="yn-check"><input type="checkbox" name="must_have_items" value="{{ it.id }}" {% if it.checked %}checked{% endif %}> {{ it.label }}</label>
-        {% endfor %}
-      </div>
-      {% endfor %}
-    </div>
-  </div>
+  {% if taken %}
+  {# Answered already: the questions fold away. Changing them adds whatever
+     newly matches, and never removes anything. #}
+  <details class="yn-profile-section yn-requestions">
+    <summary>What you travel with <span class="yn-help">— change your answers; anything new they match is added to your inventory</span></summary>
+    {{ questions_block() }}
+  </details>
+  {% endif %}
 
   <div class="dialog-actions">
     <a class="btn btn-ghost" href="/trips">Back to trips</a>
-    <button type="submit" class="btn btn-primary">Save profile</button>
+    <button type="submit" class="btn btn-primary">{% if taken or not own %}Save{% else %}Save and build my inventory{% endif %}</button>
   </div>
 </form>
 {% endblock %}

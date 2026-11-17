@@ -43,7 +43,11 @@ _WRITE_ALLOWED = {"/login", "/logout", "/api/v1/auth/login", "/api/v1/auth/refre
 _CLOSED_EXACT = {"/mcp", "/setup", "/register", "/forgot"}
 _CLOSED_PREFIX = ("/oauth/", "/oidc/", "/.well-known/oauth", "/ingest", "/reset/",
                   "/admin", "/users", "/settings/integrations", "/settings/mail",
-                  "/settings/notifications", "/account/tokens", "/account/connected-apps")
+                  "/settings/notifications", "/account/tokens", "/account/connected-apps",
+                  # D-241: no export on a demo server, nor the confirmation it needs.
+                  "/account/export", "/account/confirm",
+                  # D-242: nor account deletion.
+                  "/account/delete")
 _READ_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
@@ -120,7 +124,7 @@ def check_startup(session) -> None:
 # owner's network, which the demo's firewall blocks anyway. Blanking them here
 # makes every lookup fail at once instead of waiting out a timeout, and doesn't
 # rely on the compose file remembering to.
-_HOME_SERVICES = ("ollama_url", "photon_url", "searxng_url", "clamav_url",
+_HOME_SERVICES = ("ollama_url", "ai_url", "photon_url", "searxng_url", "clamav_url",
                   "adventurelog_url", "airtrail_url", "valhalla_url")
 
 

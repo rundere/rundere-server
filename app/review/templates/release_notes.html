@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Release notes{% endblock %}
+{% block content %}
+{# Every version's notes from the bundled file (SPEC-8 §14, D-234); admin items
+   only for admins. The same notes the What's new dialog shows after an upgrade. #}
+<div class="app">
+  <div class="ops">
+    <div class="ops-row">
+      <h1 class="pagetitle">Release notes</h1>
+      <div class="opsbtns"><a class="crosslink" href="/about">About Run·dere</a></div>
+    </div>
+  </div>
+  <div class="yn-wn-page">
+    <p class="yn-wn-lead">What changed in each version of Run·dere. This server runs
+      <span class="mono">{{ version }}</span>. The developer notes for each release are on
+      <a href="{{ repo_url }}/releases" target="_blank" rel="noopener">GitHub</a>.</p>
+    {% for v in notes %}
+    <section class="yn-wn-version" id="v{{ v.version }}">
+      <h3>{{ v.version }}{% if v.date %} <span class="yn-wn-date">{{ v.date }}</span>{% endif %}</h3>
+      {% if v.everyone %}<ul>{% for i in v.everyone %}<li>{{ render_note(i) }}</li>{% endfor %}</ul>{% endif %}
+      {% if v.admins %}
+      <h4>For admins</h4>
+      <ul>{% for i in v.admins %}<li>{{ render_note(i) }}</li>{% endfor %}</ul>
+      {% endif %}
+    </section>
+    {% else %}
+    <p class="yn-wn-lead">No release notes are bundled with this server.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

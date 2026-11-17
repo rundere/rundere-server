@@ -1,7 +1,32 @@
-FROM python:3.15-slim
+# The image runs what CI tests, so nothing reaches users untested: Python 3.12,
+# the version ci.yml sets up, and the exact dependency set in uv.lock. Change the Python minor here and in ci.yml together; Dependabot is
+# told to leave it alone (.github/dependabot.yml).
+#
+# Builder stage: export uv.lock to a hash-pinned requirements file and install
+# it into a venv. uv itself stays in this stage, so the final image carries only
+# the venv. The export needs no project source, so this layer is cached until
+# pyproject.toml or uv.lock changes. The uv tag is pinned (bump it like any
+# other dependency; Dependabot's docker ecosystem tracks it).
+FROM ghcr.io/astral-sh/uv:0.11.29 AS uv
+
+FROM python:3.12-slim AS builder
+COPY --from=uv /uv /bin/uv
+WORKDIR /build
+COPY pyproject.toml uv.lock ./
+# Production dependencies only (no [dev] extra: tests and scan tools run in CI,
+# never in the image, YONDER-293), exactly as locked; --locked fails the build
+# if uv.lock is out of date with pyproject.toml, and --require-hashes makes pip
+# refuse anything the lock does not list.
+RUN uv export --locked --no-dev --no-emit-project --format requirements-txt -o requirements.txt \
+ && python -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir --require-hashes -r requirements.txt
+
+FROM python:3.12-slim
 
 # No .pyc writes (the code is read-only to the app user) and unbuffered logs.
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /srv
 # WeasyPrint (timeline PDF export) renders through pango; slim ships no fonts,
 # so add DejaVu (Latin/Greek/Cyrillic + arrows and symbols).
@@ -16,10 +41,12 @@ COPY design/logo/ design/logo/
 COPY design/icons/ design/icons/
 COPY design/audio/ design/audio/
 COPY design/tokens/ design/tokens/
+COPY design/themes/ design/themes/
 COPY design/fonts/ design/fonts/
 # The capture guide shows these add-on files for the person to copy (SPEC-9 D-160).
 COPY capture/gmail-addon/ capture/gmail-addon/
 COPY capture/gcal-addon/ capture/gcal-addon/
+COPY ai/ ai/
 COPY resolve/ resolve/
 COPY extract/ extract/
 COPY adapters/ adapters/
@@ -30,9 +57,9 @@ COPY rules.py validation.py ./
 COPY schemas/ schemas/
 COPY alembic.ini .
 COPY alembic/ alembic/
-# Production dependencies only: the test and scan tools (the [dev] extra) run in
-# CI, never in the image (YONDER-293).
-RUN pip install --no-cache-dir .
+# The dependencies are already in the venv, from uv.lock; this installs only the
+# project itself (--no-deps, so pip cannot pull a version the lock did not pick).
+RUN pip install --no-cache-dir --no-deps .
 
 # The app's own unprivileged user; the entrypoint drops to it (YONDER-293).
 RUN groupadd --system --gid 10001 rundere \

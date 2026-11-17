@@ -65,7 +65,7 @@ val RundereLight = lightColorScheme(
     surfaceContainer = Color(0xFFFFFFFF),
     surfaceContainerHigh = Color(0xFFEEF1F5),
     surfaceContainerHighest = Color(0xFFE6EAF0),
-    outline = Color(0xFF8594A6),
+    outline = Color(0xFF8A99AB),
     outlineVariant = Color(0xFFCBD3DD),
 )
 

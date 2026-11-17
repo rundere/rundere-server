@@ -1,0 +1,1006 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "trips/<trip id>.json",
+  "description": "Run·dere archive, format 1 (SPEC-13 §2, D-241). Strict: adding a field means editing this schema in the same change (§2.3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "shared_with_me",
+    "my_role",
+    "name",
+    "start_date",
+    "end_date",
+    "notes",
+    "expense_currency",
+    "source",
+    "created_at",
+    "updated_at",
+    "travellers",
+    "timeline",
+    "expenses",
+    "planned_costs",
+    "rates",
+    "my_comments",
+    "discover",
+    "packing"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "shared_with_me": {
+      "type": "boolean"
+    },
+    "my_role": {
+      "enum": [
+        "owner",
+        "traveller",
+        "viewer"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "start_date": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "end_date": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "expense_currency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "created_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "updated_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "travellers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ref",
+          "name",
+          "is_me"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^t\\d+$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "is_me": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "starts_at",
+          "values",
+          "geo",
+          "for",
+          "from_capture",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "values": {
+            "type": "object"
+          },
+          "geo": {},
+          "for": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^t\\d+$"
+            }
+          },
+          "from_capture": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+          }
+        }
+      }
+    },
+    "expenses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "amount",
+          "currency",
+          "rate",
+          "rate_source",
+          "rate_date",
+          "spent_on",
+          "payer",
+          "split",
+          "category",
+          "activity_id",
+          "budget_item_id",
+          "notes",
+          "source",
+          "place",
+          "entered_by_me",
+          "shares",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "expense",
+              "settlement"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "rate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rate_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rate_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spent_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payer": {
+            "type": "string",
+            "pattern": "^t\\d+$"
+          },
+          "split": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "activity_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "budget_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "place": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "lat",
+              "lon",
+              "label",
+              "accuracy_m"
+            ],
+            "properties": {
+              "lat": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "lon": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "accuracy_m": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          },
+          "entered_by_me": {
+            "type": "boolean"
+          },
+          "shares": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "traveller",
+                "amount"
+              ],
+              "properties": {
+                "traveller": {
+                  "type": "string",
+                  "pattern": "^t\\d+$"
+                },
+                "amount": {
+                  "type": "string",
+                  "pattern": "^-?\\d+(\\.\\d+)?$"
+                }
+              }
+            }
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+          }
+        }
+      }
+    },
+    "planned_costs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "category",
+          "amount",
+          "currency",
+          "rate",
+          "rate_source",
+          "rate_date",
+          "status",
+          "start_date",
+          "end_date",
+          "place_key",
+          "activity_id",
+          "notes",
+          "sources",
+          "source",
+          "for",
+          "entered_by_me",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?\\d+(\\.\\d+)?$"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "rate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rate_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rate_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "place_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activity_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "title",
+                "url"
+              ],
+              "properties": {
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "for": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^t\\d+$"
+            }
+          },
+          "entered_by_me": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+          }
+        }
+      }
+    },
+    "rates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "currency",
+          "quote",
+          "rate_date",
+          "rate",
+          "as_of",
+          "source",
+          "fetched_at"
+        ],
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          },
+          "rate_date": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "as_of": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+          }
+        }
+      }
+    },
+    "my_comments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "expense_id",
+          "body",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "expense_id": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+          }
+        }
+      }
+    },
+    "discover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findings",
+        "excluded_places"
+      ],
+      "properties": {
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "topic",
+              "scope",
+              "place_key",
+              "status",
+              "body_md",
+              "data",
+              "sources",
+              "confidence",
+              "resolver",
+              "steer_note",
+              "generated_at",
+              "items"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "topic": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "place_key": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "body_md": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "data": {},
+              "sources": {},
+              "confidence": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "resolver": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "steer_note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "generated_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "topic",
+                    "place_key",
+                    "kind",
+                    "name",
+                    "neighbourhood",
+                    "address",
+                    "lat",
+                    "lon",
+                    "website",
+                    "what_to_get",
+                    "price_tier",
+                    "starts_on",
+                    "ends_on",
+                    "when_text",
+                    "venue",
+                    "details",
+                    "duration",
+                    "booking",
+                    "sources",
+                    "extra",
+                    "origin",
+                    "agent",
+                    "hidden",
+                    "hidden_reason",
+                    "edited",
+                    "activity_id",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "topic": {
+                      "type": "string"
+                    },
+                    "place_key": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "neighbourhood": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "address": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lat": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "lon": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "website": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "what_to_get": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "price_tier": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "starts_on": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ends_on": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "when_text": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "venue": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "details": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "duration": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "booking": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "sources": {},
+                    "extra": {},
+                    "origin": {
+                      "type": "string"
+                    },
+                    "agent": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "hidden": {
+                      "type": "boolean"
+                    },
+                    "hidden_reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "edited": {
+                      "type": "boolean"
+                    },
+                    "activity_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "created_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+                    },
+                    "updated_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "excluded_places": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "packing": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "plan",
+        "items"
+      ],
+      "properties": {
+        "plan": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "archetypes",
+            "manual_archetypes",
+            "bag_ids",
+            "context",
+            "warnings",
+            "tasks",
+            "generated_at",
+            "finished_at"
+          ],
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "archetypes": {},
+            "manual_archetypes": {},
+            "bag_ids": {},
+            "context": {},
+            "warnings": {},
+            "tasks": {},
+            "generated_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+            },
+            "finished_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+            }
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "item_key",
+              "label",
+              "category",
+              "quantity",
+              "bag",
+              "reason",
+              "source",
+              "swap_for",
+              "status",
+              "edited",
+              "inventory_item_id",
+              "created_at",
+              "updated_at"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "item_key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "integer"
+              },
+              "bag": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "swap_for": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "edited": {
+                "type": "boolean"
+              },
+              "inventory_item_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "created_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+              },
+              "updated_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

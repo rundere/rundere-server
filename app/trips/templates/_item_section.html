@@ -9,7 +9,7 @@
 <div class="yn-city-chips" role="tablist" aria-label="Cities">
   {% for c in s.cities %}
   <button type="button" role="tab" class="yn-city-chip" data-city="{{ c.key }}"
-          aria-selected="false" onclick="ynCity('{{ s.key }}', this.dataset.city)">
+          aria-selected="false" data-action="city" data-disc="{{ s.key }}">
     {{ c.label }} <span class="yn-disc-meta">{{ c.count }}</span></button>
   {% endfor %}
 </div>
@@ -27,7 +27,7 @@
       {% if c.sources %}
       <button type="button" class="btn btn-ghost bp-sm yn-src-toggle" aria-pressed="false"
               data-label="Sources ({{ c.sources | length }})"
-              onclick="ynSources(this)">Sources ({{ c.sources | length }})</button>
+              data-action="sources">Sources ({{ c.sources | length }})</button>
       {% endif %}
       {% if not read_only %}{# D-198 / YONDER-261: the demo doesn't offer what it refuses #}
       <button class="btn btn-ghost bp-sm"
@@ -82,7 +82,7 @@
           <td data-label="Why go">{{ i.details or "" }}</td>
           <td class="yn-item-actions">
             {% if i.on_timeline %}
-            <a class="yn-on-tl" href="#timeline" onclick="ynTab('timeline')">On timeline{% if i.on_timeline.when %} · {{ i.on_timeline.when }}{% endif %}</a>
+            <a class="yn-on-tl" href="#timeline" data-action="tab" data-tab="timeline">On timeline{% if i.on_timeline.when %} · {{ i.on_timeline.when }}{% endif %}</a>
             {% elif not i.hidden and not i.heads_up and not read_only %}
             <button class="btn btn-secondary bp-sm"
                     hx-get="/trips/{{ trip.id }}/discovery-item/{{ i.id }}/to-timeline"
@@ -118,7 +118,7 @@
     {% endfor %}
     {% if c.hidden %}
     <button type="button" class="btn btn-ghost bp-sm yn-hidden-toggle" aria-pressed="false"
-            onclick="ynShowHidden(this)">Show hidden ({{ c.hidden }})</button>
+            data-action="show-hidden">Show hidden ({{ c.hidden }})</button>
     {% endif %}
     {% if f.history %}
     <details class="yn-finding-history">

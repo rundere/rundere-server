@@ -1,14 +1,18 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+{# D-237: the travel theme is per account and rendered server-side, so there is
+   no flash and no CSP change; theme.js still owns only the mode (D-201). #}
+{% set tv = travel(request) %}
+<html lang="en" data-theme="dark" data-travel="{{ tv.id }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Inbox{% endblock %} · Run·dere</title>
 {# htmx without eval, and no page snapshots in localStorage, where they would
    outlive signing out (YONDER-293). #}
-<meta name="htmx-config" content='{"allowEval":false,"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
 <script src="{{ asset('/review/static/htmx.min.js') }}" defer></script>
 <script src="{{ asset('/review/static/rundere.js') }}" defer></script>
+<script src="{{ asset('/review/static/review_pages.js') }}" defer></script>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/brand/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/brand/icons/apple-touch-icon.png">
@@ -16,16 +20,7 @@
 <link rel="stylesheet" href="{{ asset('/brand/tokens/tokens.css') }}">
 <link rel="stylesheet" href="{{ asset('/brand/fonts/fonts.css') }}">
 <link rel="stylesheet" href="{{ asset('/review/static/theme.css') }}">
-<script>
-// Apply the saved theme BEFORE first paint so there is no light/dark flash.
-// No saved choice means dark, whatever the OS prefers (D-201).
-(function(){var t;try{t=localStorage.getItem('tx-theme');}catch(e){}
-  document.documentElement.setAttribute('data-theme',t||'dark');})();
-function txToggleTheme(){var r=document.documentElement,c=r.getAttribute('data-theme');
-  var n=c==='dark'?'light':(c==='light'?'dark':
-    (window.matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark'));
-  r.setAttribute('data-theme',n);try{localStorage.setItem('tx-theme',n);}catch(e){}}
-</script>
+<script src="{{ asset('/review/static/theme.js') }}"></script>{# no defer: before first paint #}
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--ui);
@@ -119,6 +114,8 @@ a{color:var(--accent)}
 .doc dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 12px}
 .doc dt{color:var(--ink-3);white-space:nowrap}
 .doc dd{margin:0;font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+.original-text{margin:10px 0 0;max-height:420px;overflow:auto;white-space:pre-wrap;
+  overflow-wrap:anywhere;font-family:var(--mono);font-size:12px;color:var(--ink-2)}
 .field{display:grid;grid-template-columns:128px 1fr;gap:6px 8px;align-items:center;padding:3px 0}
 .field>label{font-size:12px;color:var(--ink-3)}
 .field input,.field select,.field .v{font-family:var(--mono);font-size:13px;
@@ -350,6 +347,10 @@ a{color:var(--accent)}
 .mail-card{border:1px solid var(--line);border-radius:var(--rd-radius-card);padding:18px 20px;background:var(--surface)}
 .mail-dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;margin:12px 0;font-size:13.5px}
 .mail-dl dt{color:var(--ink-2)}.mail-dl dd{margin:0;word-break:break-word}
+.table-scroll{overflow-x:auto}
+.ai-calls{border-collapse:collapse;font-size:12.5px;width:100%}
+.ai-calls th,.ai-calls td{text-align:left;padding:4px 10px 4px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+.ai-calls th{color:var(--ink-3);font-weight:600}
 .mail-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .cap-admin{margin-top:28px;padding-top:16px;border-top:1px solid var(--line, rgba(127,127,127,.25))}
 .cap-copy{position:relative;margin:8px 0}
@@ -443,7 +444,7 @@ a{color:var(--accent)}
   flex-wrap:wrap}
 </style>
 </head>
-<body>
+<body class="rd-page{% if tv.scenery %} has-scenery{% endif %}"><div class="rd-shell">
 {% block appheader %}{% include "_appheader.html" %}{% endblock %}
 {% import "_settings_menu.html" as settings_menu with context %}
 {% if settings_menu.in_settings and not settings_menu.is_hub %}
@@ -454,30 +455,6 @@ a{color:var(--accent)}
 {# Sheets open here (design board: item detail and commit are sheets, never an
    inline expansion). Escape or a click on the backdrop closes one. #}
 <div id="modal-root"></div>
-<script>
-(function () {
-  function close() { var r = document.getElementById('modal-root'); if (r) r.innerHTML = ''; }
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && document.querySelector('#modal-root .rd-sheet')) close();
-  });
-  document.addEventListener('click', function (e) {
-    if (e.target.classList && e.target.classList.contains('rd-sheet-backdrop')) close();
-    if (e.target.closest && e.target.closest('[data-sheet-close]')) close();
-  });
-  // Focus the sheet when it opens, for keyboard and screen-reader users.
-  document.body.addEventListener('htmx:afterSwap', function (e) {
-    if (e.detail.target && e.detail.target.id === 'modal-root') {
-      var s = document.querySelector('#modal-root .rd-sheet'); if (s) s.focus();
-    }
-  });
-})();
-// Auto-hide the result toast a few seconds after it is swapped in OOB.
-document.body.addEventListener('htmx:oobAfterSwap', function(e){
-  var t = e.detail && e.detail.target;
-  if (!t || t.id !== 'toast') return;
-  clearTimeout(window.__toastTimer);
-  window.__toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 7000);
-});
-</script>
+</div>{% include "_scenery.html" %}
 </body>
 </html>

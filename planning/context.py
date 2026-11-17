@@ -9,7 +9,8 @@ TYPES, sharpened by keywords already present in the captured names/locations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
+from math import asin, cos, radians, sin, sqrt
 
 from planning import culture
 
@@ -58,6 +59,10 @@ class PlanningContext:
     international: bool = False
     profile: dict = field(default_factory=dict)
     culture: dict = field(default_factory=dict)
+    # 5.0 template signals (SPEC-5 §6.5): a flight of 6 hours or more, and the
+    # trip's own words (title, notes, activity names) for keyword templates.
+    long_flight: bool = False
+    text: str = ""
 
     def snapshot(self) -> dict:
         """A JSON-able copy for PackingPlan.context."""
@@ -68,7 +73,49 @@ class PlanningContext:
                 "climate_bands": sorted(self.climate_bands),
                 "temp_high_c": self.temp_high_c, "temp_low_c": self.temp_low_c,
                 "has_weather": self.has_weather, "international": self.international,
-                "culture": self.culture}
+                "culture": self.culture, "long_flight": self.long_flight}
+
+
+LONG_FLIGHT_HOURS = 6
+# Without times, a flight this far is about six hours gate to gate (750 km/h).
+_LONG_FLIGHT_KM = 4500
+
+
+def _when(raw) -> datetime | None:
+    try:
+        d = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return d if d.tzinfo else None          # wall-clock times can't be subtracted
+
+
+def _km(a: dict, b: dict) -> float | None:
+    try:
+        la1, lo1, la2, lo2 = map(radians, (a["lat"], a["lon"], b["lat"], b["lon"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    h = sin((la2 - la1) / 2) ** 2 + cos(la1) * cos(la2) * sin((lo2 - lo1) / 2) ** 2
+    return 6371 * 2 * asin(sqrt(h))
+
+
+def flight_hours(activity) -> float | None:
+    """A flight's time in the air, best first: its departure and arrival when
+    both carry a zone; the route's duration; else the distance between its
+    first and last points at 750 km/h. None when nothing says."""
+    v = activity.values or {}
+    dep, arr = _when(v.get("when") or activity.starts_at), _when(v.get("endWhen"))
+    if dep and arr and arr > dep:
+        return (arr - dep).total_seconds() / 3600
+    geo = activity.geo or {}
+    mins = (geo.get("route") or {}).get("duration_minutes")
+    if isinstance(mins, (int, float)) and mins > 0:
+        return mins / 60
+    pts = [p for p in (geo.get("points") or []) if isinstance(p, dict)]
+    if len(pts) >= 2:
+        km = _km(pts[0], pts[-1])
+        if km:
+            return km * LONG_FLIGHT_HOURS / _LONG_FLIGHT_KM
+    return None
 
 
 def _duration(start: str | None, end: str | None) -> int:
@@ -100,7 +147,8 @@ def _climate_bands(high: int | None, low: int | None,
 
 def derive_context(activities, derived_locations, weather_findings, *,
                    start_date: str | None, end_date: str | None,
-                   profile: dict, home_countries: set[str]) -> PlanningContext:
+                   profile: dict, home_countries: set[str],
+                   trip_text: str = "") -> PlanningContext:
     """Assemble the planning context.
 
     `derived_locations` is a discover.places.DerivedLocations; `weather_findings`
@@ -113,8 +161,12 @@ def derive_context(activities, derived_locations, weather_findings, *,
     ctx.international = any(c.upper() not in home_countries for c in ctx.countries)
     ctx.profile = dict(profile or {})
 
+    names = []
     for a in activities:
         t = a.type
+        if t == "flight" and (flight_hours(a) or 0) >= LONG_FLIGHT_HOURS:
+            ctx.long_flight = True
+        names.append(str((a.values or {}).get("name") or ""))
         if t in _TRANSPORT:
             ctx.transport.add(_TRANSPORT[t])
         if t in _TYPE_TAGS:
@@ -147,5 +199,6 @@ def derive_context(activities, derived_locations, weather_findings, *,
         ctx.temp_low_c = min(lows) if lows else None
         ctx.climate_bands = _climate_bands(ctx.temp_high_c, ctx.temp_low_c, rain)
 
+    ctx.text = " ".join([trip_text, *names]).lower()
     ctx.culture = culture.summarise(ctx.countries)
     return ctx

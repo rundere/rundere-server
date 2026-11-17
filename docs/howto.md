@@ -156,6 +156,10 @@ seconds from free public APIs; visa/safety/events/food and regional language
 take longer — they search the web through your self-hosted SearXNG and
 synthesize with your local Ollama model, so nothing leaves your network.
 
+The currency calculator converts from your **base currency** (set on your travel
+profile). The deployment's configured currencies (`TX_DISCOVERY_BASE_CURRENCIES`)
+are always shown too, so leaving your base currency blank just uses those.
+
 Every finding is reviewable: edit the text, re-run a single topic, or leave it
 as-is. Set your **Discovery profile** (**Administer → Discovery profile**) once
 — dietary restrictions, drink/activity interests, a budget ceiling, mobility

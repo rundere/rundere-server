@@ -23,6 +23,7 @@
   <form method="post" action="/account/support-notice" style="margin:0 0 0 auto">
     <button class="act tiny" type="submit">Got it</button></form></div>
 {% endif %}
+{% include "_whats_new.html" %}
 <header class="appbar">
   <a class="wordmark" href="/" style="text-decoration:none" aria-label="Run·dere home" title="Run·dere — say “run there”">
     <span class="rd-mark" aria-hidden="true"></span><span class="rd-wordmark" role="img" aria-label="Run·dere"></span>
@@ -53,6 +54,6 @@
     <button class="theme signout-btn" type="submit" title="Sign out {{ cu.username }}"
             aria-label="Sign out">{{ cu.username }} · sign out</button>
   </form>{% endif %}
-  <button class="theme" type="button" onclick="txToggleTheme()"
+  <button class="theme" type="button" data-theme-toggle
           title="Toggle light / dark" aria-label="Toggle theme">◐</button>
 </header>

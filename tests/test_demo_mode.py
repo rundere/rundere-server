@@ -103,6 +103,9 @@ if DEPS:
         assert (m["demo"], m["password"], m["oauth"], m["oauth_client_id"], m["sso"],
                 m["registration_open"]) == (True, True, False, None, False, False)
         assert m["oauth_clients"] == {"ios": None, "android": None}      # D-223
+        # D-244: a demo server has no export or deletion, so it doesn't say it does.
+        assert "themes" in m["capabilities"] and "trip_pdf_flags" in m["capabilities"]
+        assert not {"data_export", "account_delete"} & set(m["capabilities"])
         settings.demo_mode = False
         assert client.get("/api/v1/auth/methods").json()["demo"] is False
 
@@ -116,7 +119,7 @@ if DEPS:
         assert "Demo dinner" in page
         # Every tab shows (not a D-199 viewer)…
         for tab in ("discovery", "packing", "costs", "journal"):
-            assert f'data-tab="{tab}" onclick' in page, tab
+            assert f'data-tab="{tab}" data-action="tab"' in page, tab
         # …but nothing offers an edit.
         for control in ("+ Add activity", "Edit trip", "Run discovery", "Generate packing plan"):
             assert control not in page, control

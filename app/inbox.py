@@ -62,6 +62,10 @@ _PER_POLL = 50
 # Outcomes recorded per message (InboxMessage.outcome).
 CAPTURED, DUPLICATE, UNMATCHED, TOO_LARGE, RATE_LIMITED, UNREADABLE = (
     "captured", "duplicate", "unmatched", "too_large", "rate_limited", "unreadable")
+# D-242: mail for an account that is waiting to be deleted. Dropped, so it sits
+# in the dropped folder for the usual 30 days and can be forwarded again after a
+# cancel (SPEC-13 §3.3).
+ACCOUNT_LOCKED = "account_locked"
 # A read's counts that aren't recorded outcomes: replies the server sent without
 # a UID, and mail not sent to a forwarding address (left where it is, D-190).
 NO_UID, LEFT_ALONE = "no_uid", "left_alone"
@@ -75,6 +79,7 @@ COUNT_LABELS = {
     CAPTURED: "captured", DUPLICATE: "already captured",
     UNMATCHED: "dropped: unknown forwarding address", TOO_LARGE: "dropped: too large",
     RATE_LIMITED: "dropped: over the hourly limit", UNREADABLE: "unreadable",
+    ACCOUNT_LOCKED: "dropped: the account is waiting to be deleted",
     NO_UID: "skipped: the server's reply had no UID",
     LEFT_ALONE: "left alone: not sent to a forwarding address",
     NOT_FORWARDED: "dropped: not sent to a forwarding address",
@@ -272,11 +277,20 @@ def handle_message(session: Session, raw: bytes) -> list[Handled]:
 
     tokens = recipient_tokens(msg)
     owners = []
+    locked = False
     for token in tokens:
         row = session.query(InboxAddress).filter_by(token=token).one_or_none()
         user = session.get(User, row.user_id) if row is not None else None
+        if user is not None and user.is_active and user.deletion_due_at is not None:
+            locked = True
+            continue
         if user is not None and user.is_active and user.id not in {u.id for u in owners}:
             owners.append(user)
+    if not owners and locked:
+        # Recorded under a random key and with no user: nothing ties the row
+        # to the account, and the same email isn't a duplicate after a cancel.
+        _record(session, hashlib.sha256(uuid.uuid4().bytes).hexdigest(), ACCOUNT_LOCKED)
+        return [Handled(ACCOUNT_LOCKED)]
     if not owners:
         # D-162: dropped and counted, never an ownerless capture. No address,
         # sender or subject is kept — only that it happened.

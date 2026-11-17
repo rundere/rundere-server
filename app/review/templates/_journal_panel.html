@@ -26,7 +26,7 @@
       <div style="flex:1;min-width:160px">
         <label class="cap-lbl" for="jnl-trip">Trip (optional)</label>
         <select id="jnl-trip" name="trip_id" class="cap-input"
-                onchange="this.dataset.manual='1'">
+                data-mark-manual>
           {% with selected=default_trip %}{% include "_journal_trip_options.html" %}{% endwith %}
         </select>
       </div>
@@ -34,10 +34,6 @@
     </div>
     {# The zone it's written in, so the note's time reads as this clock did (D-224). #}
     <input type="hidden" name="captured_tz" id="jnl-tz">
-    <script>
-      try { document.getElementById('jnl-tz').value =
-              Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
-    </script>
   </form>
   {% endif %}
 

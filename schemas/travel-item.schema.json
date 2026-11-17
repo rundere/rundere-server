@@ -1581,7 +1581,8 @@
               "waypoint_ambiguous",
               "missing_capture_context",
               "missing_travel_date",
-              "collection_not_selected"
+              "collection_not_selected",
+              "ai_off"
             ]
           },
           "default": []

@@ -1,0 +1,86 @@
+{
+  "id": "forest",
+  "name": "Forest",
+  "description": "Lichen and forest-floor grounds, a pine accent, an ochre signal and teal success.",
+  "version": 1,
+  "tags": [
+    "forest",
+    "woodland",
+    "lake",
+    "countryside"
+  ],
+  "scene": {
+    "file": "scene.svg",
+    "title": "Forest floor: hills and two rows of pines"
+  },
+  "modes": {
+    "light": {
+      "color": {
+        "bg": "#F1F3EC",
+        "surface": "#FBFCF8",
+        "surface-raised": "#FFFFFF",
+        "border": "#CBD3C2",
+        "border-subtle": "rgba(23,38,28,0.10)",
+        "text": "#1A2A1F",
+        "text-secondary": "#435446",
+        "text-muted": "#56655A",
+        "accent": "#2F6A43",
+        "accent-hover": "#3A7F52",
+        "on-accent": "#FFFFFF",
+        "highlight": "#875307",
+        "success": "#16756A",
+        "danger": "#B0373F",
+        "focus-ring": "#3A7F52"
+      },
+      "effect": {
+        "shadow-raised": "0 4px 16px rgba(26, 42, 31, 0.10), inset 0 0 0 1px rgba(26, 42, 31, 0.08)",
+        "glow-color": "rgba(58, 127, 82, 0.35)"
+      },
+      "scene": {
+        "far": "#D6DECF",
+        "mid": "#C2CFBA",
+        "near": "#ACBEA3",
+        "feature": "#719379",
+        "detail": "#94AC89",
+        "sun": "#D1C3A7",
+        "light": "#FCFDFB",
+        "star": "#F1F3EC",
+        "foam": "#B1C4B5"
+      }
+    },
+    "dark": {
+      "color": {
+        "bg": "#0E1711",
+        "surface": "#15221A",
+        "surface-raised": "#1D2E23",
+        "border": "#2E4636",
+        "border-subtle": "rgba(200,220,200,0.14)",
+        "text": "#E7EEE4",
+        "text-secondary": "#B8C6B6",
+        "text-muted": "#93A493",
+        "accent": "#86CF94",
+        "accent-hover": "#A8DEB1",
+        "on-accent": "#0E1711",
+        "highlight": "#E9B04A",
+        "success": "#4CC3B0",
+        "danger": "#F2786E",
+        "focus-ring": "#A8DEB1"
+      },
+      "effect": {
+        "shadow-raised": "0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(231, 238, 228, 0.08)",
+        "glow-color": "rgba(168, 222, 177, 0.45)"
+      },
+      "scene": {
+        "far": "#1C2C21",
+        "mid": "#263A2B",
+        "near": "#314A36",
+        "feature": "#264D30",
+        "detail": "#3C5A42",
+        "sun": "#AAB2A9",
+        "light": "#C89941",
+        "star": "#858D85",
+        "foam": "#607D66"
+      }
+    }
+  }
+}

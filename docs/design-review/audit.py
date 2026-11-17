@@ -14,7 +14,7 @@ PAGES=[("login","/login",False),("register","/register",False),("forgot","/forgo
  ("users","/users",True),("about","/about",True),
  ("admin-home","/admin/",True),("admin-traveler","/admin/traveler-identity/list",True),("admin-rules","/admin/rule-setting/list",True),
  ("admin-source-rules","/admin/source-rule/list",True),("admin-api-keys","/admin/api-key/list",True),
- ("admin-packing-catalog","/admin/packing-catalog-item/list",True),("admin-bags","/admin/bag/list",True),
+ ("admin-packing-catalog","/admin/packing-catalog-item/list",True),
  ("admin-phrasebook","/admin/phrasebook-phrase/list",True),("admin-regional-lang","/admin/regional-language/list",True)]
 JS = r"""() => {
  const vis = e => { const r=e.getBoundingClientRect(), cs=getComputedStyle(e); return r.width>0&&r.height>0&&cs.visibility!=='hidden'&&cs.display!=='none'; };

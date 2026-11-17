@@ -43,7 +43,10 @@ if DEPS:
                  "assign_review_item_to_trip", "save_research", "save_city_guide",
                  "save_phrases", "add_item_to_timeline", "get_discovery_profile",
                  "save_safety", "list_saved_places", "save_places", "update_saved_place",
-                 "file_saved_place", "remove_saved_place", "list_expenses", "add_expense",
+                 "file_saved_place", "remove_saved_place", "import_places_csv",   # D-243
+                 "list_place_lists", "create_place_list", "update_place_list",   # D-236
+                 "delete_place_list", "set_saved_place_lists",
+                 "list_expenses", "add_expense",
                  "record_settlement", "delete_expense", "save_budget", "delete_budget_item",
                  "comment_on_expense"}
 
@@ -70,8 +73,15 @@ if DEPS:
             synchronize_session=False)
         s.query(OAuthGrant).filter(OAuthGrant.user_id.in_(uids)).delete(synchronize_session=False)
         s.query(AccountEvent).filter(AccountEvent.user_id.in_(uids)).delete(synchronize_session=False)
+        from app.models import Bag, InventoryItem, PackingProfile
+        for model in (InventoryItem, Bag):
+            s.query(model).filter(model.user_id.in_(uids)).delete(synchronize_session=False)
         s.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
-        s.query(TravelerIdentity).filter(TravelerIdentity.display_name.like("MX %")).delete(
+        mx = [t.id for t in s.query(TravelerIdentity).filter(
+            TravelerIdentity.display_name.like("MX %"))]
+        s.query(PackingProfile).filter(PackingProfile.traveler_id.in_(mx)).delete(
+            synchronize_session=False)
+        s.query(TravelerIdentity).filter(TravelerIdentity.id.in_(mx)).delete(
             synchronize_session=False)
         s.commit()
 
@@ -292,8 +302,18 @@ if DEPS:
 
     def test_packing_tools(client, w):
         tok = _tok(w["alice"])
+        # 5.0: no packing questionnaire yet → the gate's sentence (SPEC-5 §6.8)
+        good, err = call(client, tok, "generate_packing", trip_id=w["shared"])
+        assert not good and "Set up your packing profile first" in err and "409" in err
+        from planning.runner import answer_questionnaire
+        with SessionLocal() as s:
+            u = s.get(User, w["alice"])
+            answer_questionnaire(s, user_id=u.id, traveler_id=u.traveler_id, answers={
+                "style": "neutral", "footwear": "minimal", "clothing": [], "care": [],
+                "tech": [], "gear": [], "bags": {}})
+            s.commit()
         plan = ok(client, tok, "generate_packing", trip_id=w["shared"])
-        assert "items" in plan
+        assert "items" in plan and any(i["label"] == "Passport" for i in plan["items"])
         item = ok(client, tok, "add_packing_item", trip_id=w["shared"], label="MX bear spray",
                   category="activity", quantity=2)
         assert item["quantity"] == 2 and item["status"] == "draft"
@@ -827,13 +847,13 @@ if DEPS:
         try:
             p = ok(client, _tok(w["alice"]), "get_discovery_profile")
             assert p["food"]["dietary_restrictions"] == [{"key": "vegetarian", "label": "Vegetarian"}]
-            assert p["food"]["avoid_cuisines"] == ["sushi"] and p["food"]["allergies"] == "peanuts"
+            assert p["food"]["avoid_cuisines"] == ["Sushi"] and p["food"]["allergies"] == "peanuts"
             assert p["food"]["budget_ceiling"] == {"tier": 2, "label": "$$"}
             assert p["drink"]["interests"][0]["label"] == "Craft beer"
             assert p["practical"]["mobility"]["key"] == "moderate"
             assert p["blank"] is False and "Constraint-first" in p["how_to_use"]
             snap = ok(client, _tok(w["alice"]), "get_trip", trip_id=w["shared"])
-            assert snap["discovery_profile"]["food"]["avoid_cuisines"] == ["sushi"]
+            assert snap["discovery_profile"]["food"]["avoid_cuisines"] == ["Sushi"]
             # bob travels on the same trip but sees only his own (blank) profile
             bob = ok(client, _tok(w["bob"]), "get_trip", trip_id=w["shared"])
             assert bob["discovery_profile"]["blank"] is True

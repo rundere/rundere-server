@@ -9,8 +9,22 @@ ENTRY = ROOT / "docker-entrypoint.sh"
 
 
 def test_image_installs_production_dependencies_only():
-    assert "pip install --no-cache-dir .\n" in DOCKERFILE
+    # Exactly the locked set, without the dev extra, hash-checked; the project
+    # itself adds no dependency of its own choosing.
+    assert "uv export --locked --no-dev" in DOCKERFILE
+    assert "--require-hashes" in DOCKERFILE
+    assert "pip install --no-cache-dir --no-deps .\n" in DOCKERFILE
     assert ".[dev]" not in DOCKERFILE
+
+
+def test_image_runs_the_python_ci_tests():
+    """The image's Python is the one ci.yml sets up, so nothing ships untested."""
+    import re
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    versions = set(re.findall(r'python-version: "([0-9.]+)"', ci))
+    assert versions, "ci.yml sets no python-version"
+    bases = re.findall(r"^FROM python:([0-9.]+)-slim", DOCKERFILE, flags=re.M)
+    assert bases and set(bases) <= versions, (bases, versions)
 
 
 def test_app_runs_unprivileged_without_a_server_header():

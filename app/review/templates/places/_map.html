@@ -1,11 +1,17 @@
 {# The Map lens (SPEC-11 D-218). Drawn in the browser by places_map.js from
    /places/map/data; tiles come through /places/map/tiles, never from a tile server
    directly. The attribution is the configured one. #}
+{% if q %}
+  {% if notice %}<div class="cap-msg err">{{ notice }}</div>{% endif %}
+  <p class="pl-lead">{{ match_count }} place{{ 's' if match_count != 1 }} match “{{ q }}”{% if pinless_count %}; {{ pinless_count }} {{ 'has' if pinless_count == 1 else 'have' }} no pin yet, so {{ 'it is' if pinless_count == 1 else 'they are' }} not on the map{% endif %}.
+    Clear the search to see all your places.</p>
+{% else %}
 <p class="pl-lead">Your saved places around the area you are looking at. Zoom in to see single
   places; open one to see what to do there.</p>
+{% endif %}
 <div class="pl-map-wrap">
   <div id="pl-map" class="pl-map" role="region" aria-label="Map of your saved places"
-       data-tiles="/places/map/tiles/{z}/{x}/{y}.png" data-data="/places/map/data"
+       data-tiles="/places/map/tiles/{z}/{x}/{y}.png" data-data="/places/map/data" data-q="{{ q }}"
        data-attribution="{{ map_attribution }}"></div>
   <p id="pl-map-status" class="pl-map-status" role="status"></p>
 </div>

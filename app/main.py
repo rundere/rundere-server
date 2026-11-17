@@ -15,6 +15,7 @@ from app.config import settings
 from app.db import SessionLocal, engine
 from app.ingest import router as ingest_router
 from app.models import RuleSetting
+from app import authn as _authn  # noqa: E402
 
 log = logging.getLogger("yonder")
 
@@ -52,12 +53,35 @@ app.include_router(settings_router)
 app.include_router(oidc_router)
 app.include_router(oauth_router)
 
+# SPEC-13 (D-241): Account › Export my data, and the fresh confirmation its
+# download needs. Web only: neither has an /api/v1 or MCP counterpart.
+from app.archive_routes import router as archive_router  # noqa: E402
+from app.deletion_routes import router as deletion_router  # noqa: E402
+from app.confirm import router as confirm_router  # noqa: E402
+
+app.include_router(confirm_router)
+app.include_router(archive_router)
+app.include_router(deletion_router)
+
 # The JSON API (Phase 3). Every /api/v1/* route (except /api/v1/auth/*) requires
 # a bearer access token via Depends(authn.current_user) — always authenticated,
 # independent of TX_AUTH_REQUIRED — and is user-scoped through app/scope.py.
 from app.api_v1 import router as api_router  # noqa: E402
 
 app.include_router(api_router)
+
+# SPEC-5 §6.8: generating a packing list before the questionnaire is a 409
+# whose `detail` stays a plain string (today's apps decode and show it), with
+# a machine-readable `code` and the page to send people to.
+from fastapi.responses import JSONResponse  # noqa: E402
+
+from planning.runner import PackingProfileRequired  # noqa: E402
+
+
+@app.exception_handler(PackingProfileRequired)
+async def _packing_profile_required(request, exc: PackingProfileRequired):
+    return JSONResponse({"detail": exc.detail, "code": exc.code, "url": exc.url},
+                        status_code=exc.status_code)
 
 
 # --- Auth gate (SPEC-4 Workstream B) --------------------------------------
@@ -82,6 +106,13 @@ _PUBLIC_EXACT = {"/health", "/login", "/logout", "/favicon.ico",
 _PUBLIC_PREFIX = ("/ingest", "/review/static", "/trips/static", "/brand/",
                   "/api/v1/auth/", "/reset/", "/oidc/", "/oauth/", "/.well-known/")
 _ADMIN_PREFIX = ("/admin", "/users")
+
+
+@app.exception_handler(_authn.DeletionPending)
+async def _deletion_pending(request, exc):
+    """D-242: a locked account's 403 carries the flag the apps read."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": exc.detail, "deletion_pending": True}, status_code=403)
 
 
 def _is_public(path: str) -> bool:
@@ -140,6 +171,19 @@ async def auth_gate(request, call_next):
         msg = "admin only"
         return (JSONResponse({"detail": msg}, status_code=403) if is_api
                 else HTMLResponse(f"<h1>403 — {msg}</h1>", status_code=403))
+    # D-242: an account waiting to be deleted is locked. On the web it reaches one
+    # page (the due date, cancel, and the export); everything else leads there.
+    # Before the email and sharing questions, which a leaving account isn't asked.
+    if _authn.deletion_pending(user):
+        if not _authn.locked_out(user, path):
+            request.state.user = user
+            return await call_next(request)
+        if is_api:
+            return JSONResponse({"detail": _authn.DELETION_PENDING, "deletion_pending": True},
+                                status_code=403)
+        if request.headers.get("hx-request"):
+            return HTMLResponse("", status_code=403, headers={"HX-Redirect": "/account/delete"})
+        return RedirectResponse("/account/delete", status_code=303)
     # D-220: a local account without an email adds one first, at every visit
     # until it has. Browser only, like the sharing question below.
     from app.authn import needs_email
@@ -196,16 +240,25 @@ _SECURITY_HEADERS = {"X-Frame-Options": "DENY",
                      "X-Content-Type-Options": "nosniff",
                      "Referrer-Policy": "same-origin"}
 # Everything the pages use is served from here: no outside scripts, styles,
-# fonts or frames. Scripts and styles may still be inline (17 <script> blocks
-# and the onclick= handlers predate this; moving them out is a follow-up), but
-# never eval (htmx's eval features are off) and never from anywhere else; no
-# plugins, no <base> rewriting, and fetches only back to this server, so an
-# injected script has nowhere to send data.
-_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
+# fonts or frames. Scripts come only from this server's static files: no inline
+# <script> blocks and no on*= handlers (YONDER-303; tests/test_csp.py keeps it
+# that way), and never eval (htmx's eval features are off). Styles may still be
+# inline. No plugins, no <base> rewriting, and fetches only back to this server,
+# so an injected script has nowhere to send data.
+_CSP = ("default-src 'self'; script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
         "font-src 'self' data:; media-src 'self'; connect-src 'self'; "
         "object-src 'none'; base-uri 'none'; frame-src 'none'; "
         "worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'")
+# SQLAdmin's own templates (in the installed package) carry inline scripts, so
+# /admin alone keeps 'unsafe-inline' for scripts. It's admin-only and behind
+# sign-in; overriding the package's templates would have to be redone on every
+# SQLAdmin upgrade (owner's choice, 2026-11-07).
+_CSP_ADMIN = _CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'")
+
+
+def _csp_for(path: str) -> str:
+    return _CSP_ADMIN if path == "/admin" or path.startswith("/admin/") else _CSP
 
 
 @app.middleware("http")
@@ -215,7 +268,7 @@ async def security_headers(request, call_next):
         response.headers.setdefault(k, v)
     csp = response.headers.get("Content-Security-Policy")
     if csp is None:
-        response.headers["Content-Security-Policy"] = _CSP
+        response.headers["Content-Security-Policy"] = _csp_for(request.url.path)
     elif "frame-ancestors" not in csp:              # e.g. a download's own `sandbox`
         response.headers["Content-Security-Policy"] = csp + "; frame-ancestors 'none'"
     # Over https (the proxy says so), browsers should never fall back to http
@@ -329,12 +382,15 @@ from app.review.home import router as home_router  # noqa: E402
 from app.review.routes import inbox_router  # noqa: E402
 from app.review.routes import router as review_router  # noqa: E402
 from app.trips.routes import router as trips_router  # noqa: E402
+from app.trips.packing_settings import router as packing_settings_router  # noqa: E402
 from app.trips.costs import router as costs_router  # noqa: E402
 
 app.include_router(review_router)
 app.include_router(inbox_router)          # D-200: /inbox
 app.include_router(home_router)
 app.include_router(capture_router)
+# Before trips_router, so /{trip_id}/… patterns never meet the settings paths.
+app.include_router(packing_settings_router)
 app.include_router(trips_router)
 app.include_router(costs_router)
 app.include_router(journal_router)
@@ -365,7 +421,8 @@ async def _revalidate_static(request, call_next):
     """Static files revalidate (ETag) on every load instead of living on heuristic
     freshness, so a deploy reaches browsers even where a page links an unversioned URL."""
     resp = await call_next(request)
-    if request.url.path.startswith(("/review/static/", "/trips/static/", "/brand/tokens/", "/brand/fonts/")):
+    if request.url.path.startswith(("/review/static/", "/trips/static/", "/brand/tokens/", "/brand/fonts/",
+                                    "/brand/themes/")):
         resp.headers["Cache-Control"] = "no-cache"
     return resp
 
@@ -380,6 +437,8 @@ if (_DESIGN / "tokens").is_dir():     # D-161: the design tokens are the palette
     app.mount("/brand/tokens", StaticFiles(directory=str(_DESIGN / "tokens")), name="brand-tokens")
 if (_DESIGN / "fonts").is_dir():      # self-hosted brand fonts (no third-party CDN)
     app.mount("/brand/fonts", StaticFiles(directory=str(_DESIGN / "fonts")), name="brand-fonts")
+if (_DESIGN / "themes").is_dir():     # D-239: travel themes' scene SVGs, for the apps
+    app.mount("/brand/themes", StaticFiles(directory=str(_DESIGN / "themes")), name="brand-themes")
 if (_DESIGN / "audio").is_dir():
     app.mount("/brand/audio", StaticFiles(directory=str(_DESIGN / "audio")), name="brand-audio")
 
@@ -453,6 +512,8 @@ def startup() -> None:
             demo.check_startup(session)     # D-198: raises, and the app doesn't start
         seed_rule_settings(session)
         _warn_risky_auth_config()
+        from app import ai
+        ai.log_startup()                    # YONDER-354: on or off, and any config problem
         if settings.auth_required:
             try:
                 drift = ownerless_counts(session)
@@ -509,6 +570,12 @@ def startup() -> None:
         monitor.start()
     except Exception:                       # pragma: no cover
         log.exception("health monitor failed to start; admins get no alerts until it does")
+    try:
+        # One-time data steps after an upgrade, e.g. map-pin addresses (D-233).
+        from app import upgrade
+        upgrade.start(SessionLocal)
+    except Exception:                       # pragma: no cover
+        log.exception("upgrade steps failed to start; they run at the next start")
     _mount_admin()
 
 

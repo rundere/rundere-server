@@ -123,6 +123,9 @@ textarea.input { min-height: 72px; resize: vertical; }
 .dialog { width: min(440px, 100%); display: flex; flex-direction: column; gap: 10.2px;
   padding: 18px; border: 1px solid var(--color-divider); border-radius: var(--rd-radius-card);
   background: var(--color-bg); box-shadow: var(--shadow-lg); }
+/* A native <dialog> using .dialog: display:flex above would otherwise keep it
+   drawn on the page after it closes. */
+dialog.dialog:not([open]) { display: none; }
 .bp-dialog-tall { max-height: 82vh; overflow-y: auto; width: min(480px, 100%); }
 .dialog-title { font-family: var(--font-heading); font-weight: 500; font-size: 20px; }
 .dialog-body { display: flex; flex-direction: column; gap: 14px; }
@@ -291,13 +294,75 @@ details.bp-group[open] > summary.bp-group-label::before { transform: rotate(90de
   color: var(--color-text); cursor: pointer; }
 .yn-check input { width: 16px; height: 16px; }
 .yn-help { font-weight: 400; color: var(--color-neutral-600); font-size: 12px; }
-.yn-musthave { margin-top: 6px; max-height: 240px; overflow-y: auto;
-  border: 1px solid var(--color-neutral-300); border-radius: var(--radius-md);
-  padding: 10px 12px; display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 16px; }
-.yn-musthave-group { display: flex; flex-direction: column; gap: 4px; }
-.yn-musthave-cat { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
-  color: var(--color-neutral-600); font-weight: 600; margin: 6px 0 2px; }
+/* 5.0 packing profile, inventory and templates (SPEC-5 §6.1). */
+.yn-question { border: 0; padding: 0; margin: 0 0 16px; }
+.yn-question legend { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.yn-check.yn-bag-count input { width: 4.5em; height: auto; }
+.yn-pack-hub { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px; margin-bottom: 16px; }
+.yn-pack-tile { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px;
+  text-decoration: none; color: var(--color-text); }
+.yn-pack-tile:hover, .yn-pack-tile:focus-visible { border-color: var(--color-accent, currentColor); }
+.yn-pack-tile-title { font-weight: 600; font-size: 16px; }
+.yn-pack-tile-count { font-size: 24px; font-weight: 600; }
+.yn-page-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.yn-page-done { margin: 4px 0 24px; }
+.yn-requestions summary { cursor: pointer; font-weight: 600; margin-bottom: 10px; }
+.yn-inv-cat { padding: 14px 16px; }
+/* Bags sit apart from what goes in them: accent edge and tint, then a
+   divider before the item categories. */
+.yn-inv-bags { border-left: 3px solid var(--color-accent); background: var(--color-accent-100); }
+.yn-inv-heading { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
+.yn-bag-wrap { container-type: inline-size; }
+.yn-bag-grid { display: grid; grid-template-columns: minmax(0, 1fr) 9em 6em auto auto;
+  gap: 6px 10px; align-items: center; margin-top: 8px; }
+.yn-bag-head, .yn-bag-row, .yn-bag-edit { display: contents; }
+.yn-bag-head span { font-size: 12px; font-weight: 600; color: var(--color-neutral-600); }
+.yn-bag-h-cap { grid-column: 3 / -1; }
+.yn-bag-grid .input { width: 100%; min-width: 0; }
+.yn-bag-new .yn-bag-save { grid-column: 4; }
+/* Narrow card: each bag takes two lines (name, then type, capacity and the
+   buttons), and the heading has the same two-line shape. */
+@container (max-width: 500px) {
+  .yn-bag-grid { grid-template-columns: minmax(0, 1fr) 6em auto auto; }
+  .yn-bag-h-name, .yn-bag-name { grid-column: 1 / -1; }
+  .yn-bag-h-cap { grid-column: 2; }
+  .yn-bag-row .yn-bag-name { margin-top: 8px; }
+  .yn-bag-new .yn-bag-save { grid-column: 3; }
+}
+/* Phone: too narrow for the buttons beside type and capacity, so they drop
+   below; type and capacity keep a line of their own. */
+@container (max-width: 360px) {
+  .yn-bag-grid { grid-template-columns: minmax(0, 1fr) 6em; }
+  .yn-bag-save, .yn-bag-remove { justify-self: start; }
+  .yn-bag-row .yn-bag-save { grid-column: 1; }
+  .yn-bag-remove { grid-column: 2; justify-self: end; }
+  .yn-bag-new .yn-bag-save { grid-column: 1; }
+}
+.yn-inv-divider { margin: 28px 0 0; padding-top: 14px;
+  border-top: 2px solid var(--color-divider); }
+.yn-inv-row { display: flex; align-items: center; gap: 6px 10px;
+  padding: 6px 0; border-bottom: 1px solid var(--color-divider); }
+.yn-inv-row > form:last-child { flex: none; }      /* Delete stays beside its row */
+.yn-inv-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  flex: 1 1 260px; min-width: 0; }
+.yn-inv-add { margin-top: 10px; flex: none; }   /* the card is a flex column */
+.yn-inv-label { flex: 1 1 120px; min-width: 0; }
+.yn-inv-edit > select.input { width: auto; flex: 0 0 auto; }   /* the template page's Add box */
+/* Save as you go: a quiet "Saved ✓" that fades, in a slot wide enough that
+   the row doesn't jump when it appears. */
+.yn-row-save { min-width: 4.5em; font-size: 12px; color: var(--color-neutral-600); }
+.yn-saved { animation: yn-saved-fade 3s ease-in forwards; }
+@keyframes yn-saved-fade { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .yn-saved { animation: none; } }
+.yn-inv-qty { width: 5em; flex: 0 0 auto; }
+.yn-inv-vol { display: inline-flex; align-items: center; gap: 4px; font-size: 13px;
+  color: var(--color-neutral-600); }
+.yn-inv-cap { width: 8em; flex: 0 0 auto; }
+.yn-tpl-list { margin: 6px 0 0; padding-left: 18px; }
+.yn-tpl-list li { margin: 4px 0; }
+.yn-tpl-row { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 3px 0; max-width: 520px; }
 
 /* ---- planning: packing list ---- */
 .yn-note-card { padding: 12px 16px; }
@@ -346,6 +411,9 @@ span.yn-pack-check:hover { border-color: var(--color-neutral-400); }
   padding: 4px 6px; }
 .yn-pack-row.yn-omitted { opacity: .7; }
 .yn-pack-row.yn-omitted .yn-pack-label { text-decoration: line-through; }
+/* 5.0 (D-231): a suggestion is an offer, not something left out, so it reads
+   plainly; the dashed edge says it isn't yours yet. */
+.yn-pack-row.yn-suggested { border-left: 2px dashed var(--color-divider); }
 .yn-pack-add { display: flex; align-items: center; gap: 8px; padding: 10px 16px;
   border-top: 1px dashed var(--color-neutral-300); }
 .yn-pack-add input[type="hidden"] { display: none; }   /* not a flex item / no gap */
@@ -442,6 +510,10 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-arch-x:hover { color: var(--color-text); }
 .yn-arch-add { width: auto; min-height: 30px; padding: 3px 8px; font-size: 13px; }
 .yn-arch-note { font-size: 12px; margin-top: 2px; }
+/* Bags for this trip (5.0, D-232): the fill rides in the chip. */
+.yn-bag-fill { font-size: 12px; color: var(--color-neutral-600); margin-left: 2px; }
+.yn-arch-chip.yn-bag-over { border-color: var(--rd-danger); }
+.yn-bag-over .yn-bag-fill, .yn-bag-warn { color: var(--rd-danger); }
 
 /* Discovery running panel (3.2) */
 .yn-run-live { display: inline-flex; align-items: center; gap: 6px;
@@ -528,6 +600,20 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
 .yn-menu { position: relative; display: inline-block; }
 .yn-menu > summary { list-style: none; }
 .yn-menu > summary::-webkit-details-marker { display: none; }
+/* D-233: the Export PDF choices. */
+.yn-menu-list.yn-pdf-form { min-width: 280px; gap: 8px; padding: 10px 12px; }
+.yn-pdf-form fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.yn-pdf-form legend { font-weight: 600; margin-bottom: 4px; }
+.yn-pdf-form label { display: flex; gap: 8px; align-items: center; min-height: 28px; }
+.yn-pdf-topics { display: flex; flex-direction: column; gap: 2px; padding-left: 26px; }
+.yn-pdf-form fieldset:has(input[name="discover"]:not(:checked)) .yn-pdf-topics { display: none; }
+.yn-pdf-hint { margin: 0; font-size: 13px; color: var(--color-neutral-600); max-width: 280px; white-space: normal; }
+@media (max-width: 760px) {
+  /* A sheet along the bottom on a phone: anchored under the button it would
+     run off the left edge. */
+  .yn-menu-list.yn-pdf-form { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px;
+    min-width: 0; z-index: 50; max-height: calc(100vh - 32px); overflow-y: auto; }
+}
 .yn-menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
   display: flex; flex-direction: column; min-width: 160px; padding: 4px;
   background: var(--color-bg); border: 1px solid var(--color-divider); border-radius: var(--rd-radius-control);
@@ -754,3 +840,24 @@ details.yn-finding[open] > summary .yn-finding-caret { transform: rotate(90deg);
    (Figtree), not a heading (YONDER-202 re-audit). */
 .yn-view-only-badge { font-family: var(--rd-font-body); font-size: 12px; font-weight: 600;
   vertical-align: middle; }
+
+/* ---- Discovery profile: the cuisine modal (YONDER-328) ---- */
+.yn-profile-section { margin: 22px 0 6px; padding-top: 14px; border-top: 1px solid var(--color-divider); }
+.yn-subfield { display: block; margin-top: 10px; }
+.yn-cuisine-summary { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px;
+  font-size: 14px; color: var(--color-text); }
+.yn-cuisine-summary span:empty { display: none; }
+.yn-cuisine-dialog { width: min(640px, calc(100% - 32px)); max-height: 86vh; overflow-y: auto;
+  color: var(--color-text); }
+.yn-cuisine-dialog::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
+.yn-cuisine-list { display: flex; flex-direction: column; gap: 14px; }
+.yn-cuisine-group { border: 0; margin: 0; padding: 0; }
+.yn-cuisine-group legend { font-weight: 600; font-size: 13px; padding: 0 0 6px;
+  color: var(--color-neutral-600); }
+.yn-cuisine-row { display: grid; grid-template-columns: minmax(120px, 1fr) repeat(3, auto);
+  gap: 6px 16px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--color-divider); }
+.yn-cuisine-name { font-size: 14px; }
+@media (max-width: 520px) {
+  .yn-cuisine-row { grid-template-columns: 1fr 1fr 1fr; }
+  .yn-cuisine-name { grid-column: 1 / -1; font-weight: 500; }
+}

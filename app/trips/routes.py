@@ -392,11 +392,21 @@ def _detail_context(session: Session, trip: Trip, user=None) -> dict:
         **_push_state(trip, al),
         **_travelers_context(session, trip.id),
         **_discovery_context(session, trip.id, user.id if user else None),
-        **_packing_context(session, trip.id, user.id if user else None),
+        **_packing_context(session, trip.id, user),
         **_sharing_context(session, trip, user),
         **_costs_context(session, trip, user),
         "journal": _journal_context(session, trip, user),
+        "pdf_topics": _pdf_topics(session, trip, user),
     }
+
+
+def _pdf_topics(session: Session, trip: Trip, user) -> list[dict]:
+    """The Discover topic boxes under Export PDF (D-233): the person's own,
+    so none for a viewer, who gets no Discover section anyway."""
+    if not scope.can_edit_trip(session, user, trip):
+        return []
+    from app.trips import pdf               # pdf imports this module
+    return pdf.briefing_topics(session, trip.id, user)
 
 
 def _inbox_waiting(session: Session, trip: Trip, user) -> int:
@@ -717,7 +727,9 @@ def timeline_pdf(trip_id: str, request: Request, download: bool = False,
         return HTMLResponse("<p class='bp-empty'>That trip no longer exists.</p>",
                             status_code=404)
     from app.trips import pdf
-    return pdf.pdf_response(session, trip, download=download)
+    return pdf.pdf_response(session, trip, download=download,
+                            sections=pdf.sections_from_query(request.query_params),
+                            user=scope.user_of(request))
 
 
 @router.post("/{trip_id}/share", response_class=HTMLResponse)
@@ -780,7 +792,7 @@ def unshare_trip(trip_id: str, request: Request, user_id: str = Form(""),
 @router.get("/{trip_id}/derived-locations", response_class=HTMLResponse)
 def derived_locations(trip_id: str, request: Request,
                       session: Session = Depends(get_session)):
-    """The Refine Discovery sheet (D-68; renamed from "What Yonder found",
+    """The Refine places sheet (D-68; "What Yonder found", then Refine Discovery,
     YONDER-264): show the destination set Discovery
     DERIVED from this trip's own activities (D-62) — with per-place provenance
     and the places that couldn't be verified — so the operator sees the
@@ -1215,10 +1227,11 @@ def _resolvers():
         open_meteo_archive_url=settings.open_meteo_archive_url)
 
 
-def _llm_resolvers():
+def _llm_resolvers(user_id: str | None = None):
     from discover.resolvers import build_llm
-    return build_llm(searxng_url=settings.searxng_url, ollama_url=settings.ollama_url,
-                     model=settings.ollama_model, timeout=settings.llm_timeout_seconds)
+    from app import ai
+    return build_llm(searxng_url=settings.searxng_url, llm=ai.endpoint(ai.DISCOVER, user_id),
+                     timeout=settings.llm_timeout_seconds)
 
 
 def _discovery_section(request: Request, session: Session, trip: Trip) -> HTMLResponse:
@@ -1287,7 +1300,7 @@ def start_discovery(session: Session, trip: Trip, user, *, topic: str | None = N
         ident = _traveler_of(session, user)
         profile = _discovery_profile_row(session, ident, uid is None)
         dj.launch(trip.id, resolve_airport=_airport_resolver(), geocoder=_photon(),
-                  det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(),
+                  det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(uid),
                   home_profiles=load_homes_for_user(session, uid),
                   excluded=_excluded_keys(session, trip.id, uid),
                   discovery_profile=(profile.values if profile else None),
@@ -1591,14 +1604,12 @@ def currency_calculator(trip_id: str, fid: str, request: Request,
     today = rates_svc.today()
     shown = [c for c in currencies if c != q]
     stale = bool(q) and any(trip_dates.get(c, "") < today for c in shown)
-    import json as _json
     return templates.TemplateResponse(request, "_calculator.html", {
         "request": request, "trip_id": trip_id, "fid": fid,
-        # Inside a <script>: escape <, > and & so no value can close the tag
-        # (YONDER-293; currency codes were free text from the edit form).
-        "currencies": currencies, "per_pivot_json": Markup(
-            _json.dumps(per_pivot).replace("<", "\\u003c").replace(">", "\\u003e")
-            .replace("&", "\\u0026")),
+        # The template puts these in a single-quoted data- attribute through
+        # |tojson, which escapes < > & ' so no value can leave it (YONDER-293;
+        # currency codes were free text from the edit form; YONDER-303).
+        "currencies": currencies, "per_pivot": per_pivot,
         "as_of": as_of or "—",
         "trip_dates": sorted(trip_dates.items()), "trip_currency": q,
         "can_update": stale and scope.can_edit_trip(session, scope.user_of(request), trip),
@@ -1640,38 +1651,18 @@ def calculator_refresh(trip_id: str, fid: str, request: Request,
 
 # ----------------------------------------------------------------- planning (3.1)
 
-from app.models import (PackingItem, PackingPlan, PackingProfile,   # noqa: E402
-                        DiscoveryProfile, Bag)
+from app.models import (PackingItem, PackingPlan,   # noqa: E402
+                        DiscoveryProfile, Bag, InventoryItem, PackingTemplate)
 
-# The Packing Profile form — closed vocabularies rendered as dropdowns/checkboxes
-# (D-86) so the owner never hand-writes JSON. label pairs are (value, human text).
-PROFILE_SELECTS = {
-    "bag_mode": [("one_bag", "One bag only"), ("carry_on", "Carry-on"),
-                 ("checked", "Checked + carry-on")],
-    "laundry_comfort": [("none", "No laundry — pack the whole trip"),
-                        ("hand_wash", "Hand wash on the trip"),
-                        ("machine", "Machine / laundromat")],
-    "packing_style": [("minimalist", "Minimalist"), ("balanced", "Balanced"),
-                      ("prepared", "Prepared for anything")],
-    "climate_preference": [("runs_cold", "I run cold"), ("neutral", "Neutral"),
-                           ("runs_hot", "I run hot")],
-    "cultural_strictness": [("strict", "Follow local norms strictly"),
-                            ("flexible", "Flexible — suggest, don't enforce")],
-    "clothing_variant": [("neutral", "Neutral"), ("masc", "Masculine cuts"),
-                         ("fem", "Feminine cuts")],
-}
-PROFILE_CONSTRAINTS = [("no_heels", "No heels"),
-                       ("modest_dress", "Always dress modestly"),
-                       ("business_casual_only", "Business-casual only")]
-_PACK_CAT_ORDER_FULL = ["clothing", "footwear", "toiletries", "tech", "documents",
-                        "health", "activity"]
-
+# Packing categories in the order a list shows them.
 PACK_CAT_ORDER = ["documents", "health", "clothing", "footwear", "toiletries",
-                  "tech", "activity"]
+                  "tech", "activity", "gear"]
 PACK_CAT_LABELS = {"documents": "Documents", "health": "Health",
                    "clothing": "Clothing", "footwear": "Footwear",
                    "toiletries": "Toiletries", "tech": "Tech",
-                   "activity": "Activity gear"}
+                   "activity": "Activity gear",
+                   # 5.0: packing cubes and other organisers (SPEC-5 §6.3).
+                   "gear": "Bags and organisers"}
 
 # ---- Discovery Profile vocabularies (3.2, SPEC-3.2 §2.2) --------------------
 # Constraint-first (D-87): dietary/dislikes/budget/mobility SUBTRACT or bound;
@@ -1699,13 +1690,23 @@ DISCOVERY_MOBILITY = [("no_limits", "No limits"),
 
 
 DISCOVERY_NOTES_MAX = 2000
+_ACTIVITY_KEYS = frozenset(k for k, _ in DISCOVERY_ACTIVITIES)
+
+
+def effective_activities(keys) -> list[str]:
+    """The activity interests a search adds. Every one ticked means the generic
+    mix, the same as none (YONDER-328, 5.0 plan decision 4): new profiles start
+    all ticked, and twelve extra query sets on every run would only slow it."""
+    keys = [k for k in keys or [] if k in _ACTIVITY_KEYS]
+    return [] if set(keys) >= _ACTIVITY_KEYS else keys
 
 
 def _discovery_default() -> dict:
-    """A blank profile — "show me everything, no constraints" (SPEC-3.2 §2.2)."""
+    """A blank profile — "show me everything, no constraints" (SPEC-3.2 §2.2).
+    Cuisines are discover/cuisines.py keys (YONDER-328)."""
     return {
-        "food": {"dietary_restrictions": [], "cuisine_dislikes": [],
-                 "allergies": "", "budget_ceiling": 0},
+        "food": {"dietary_restrictions": [], "cuisine_dislikes": [], "cuisine_likes": [],
+                 "allergies": "", "budget_ceiling": 0, "prefer_local": False},
         "drink": {"interests": []},
         "activity": {"interests": []},
         "practical": {"mobility": "no_limits"},
@@ -1717,8 +1718,9 @@ PACK_BAG_OPTS = [("backpack", "backpack"), ("carry_on", "carry-on"),
 _PACK_BAG_LABELS = dict(PACK_BAG_OPTS)
 
 
-def _bag_inventory(session: Session) -> list[Bag]:
-    return (session.query(Bag).filter(Bag.enabled.is_(True))
+def _bag_inventory(session: Session, user) -> list[Bag]:
+    # 5.0 (SPEC-5 §6.6): bags are the person's own, never another traveller's.
+    return (session.query(Bag).filter(Bag.enabled.is_(True), scope.own_filter(Bag, user))
             .order_by(Bag.kind, Bag.label).all())
 
 
@@ -1726,31 +1728,42 @@ def _bag_option_label(b: Bag) -> str:
     return f"{b.label} · {b.capacity}" if b.capacity else b.label
 
 
-def _bag_options(session: Session) -> list[dict]:
-    """The per-item bag dropdown's choices: the owner's real bag inventory
-    (Admin → Bag Inventory) once they have one, else the generic carry-on /
-    checked / backpack categories — the zero-setup default, same DB-is-truth
-    -else-fallback pattern as the packing catalog (D-84)."""
-    rows = _bag_inventory(session)
+def _latest_plan(session: Session, trip_id: str, user_id=None) -> PackingPlan | None:
+    return (session.query(PackingPlan)
+            .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
+            .order_by(PackingPlan.generated_at.desc()).first())
+
+
+def _bag_options(session: Session, user, trip_id: str | None = None) -> list[dict]:
+    """The per-item bag dropdown's choices: the bags picked for this trip
+    (D-232), else the owner's real bag inventory (Packing profile → Inventory)
+    once they have one, else the generic carry-on / checked / backpack
+    categories — the zero-setup default, same DB-is-truth-else-fallback
+    pattern as the packing catalog (D-84)."""
+    rows = _bag_inventory(session, user)
+    if rows and trip_id:
+        plan = _latest_plan(session, trip_id, user.id if user else None)
+        picked = set((plan.bag_ids if plan else None) or [])
+        rows = [b for b in rows if b.id in picked] or rows
     if rows:
         return [{"value": b.id, "label": _bag_option_label(b)} for b in rows]
     return [{"value": v, "label": t} for v, t in PACK_BAG_OPTS]
 
 
-def _bag_valid_values(session: Session) -> set[str]:
+def _bag_valid_values(session: Session, user) -> set[str]:
     """Everything a `bag` field may legally be set to: the generic values
     (always valid, so old rows/tests keep working even once an inventory
     exists) plus any currently-enabled Bag id."""
-    return set(_PACK_BAG_LABELS) | {b.id for b in _bag_inventory(session)}
+    return set(_PACK_BAG_LABELS) | {b.id for b in _bag_inventory(session, user)}
 
 
-def _bag_label_lookup(session: Session) -> dict[str, str]:
+def _bag_label_lookup(session: Session, user) -> dict[str, str]:
     """id/generic-value -> display label, for rendering an item's CURRENT
     bag even if it's since been disabled/deleted, or is a legacy generic
     value no longer offered once a real inventory exists — never silently
     mislabel a row just because it fell out of the active option list."""
     lookup = dict(_PACK_BAG_LABELS)
-    for b in session.query(Bag).all():           # incl. disabled: still label it
+    for b in session.query(Bag).filter(scope.own_filter(Bag, user)):   # incl. disabled
         lookup[b.id] = _bag_option_label(b)
     return lookup
 
@@ -1771,20 +1784,83 @@ def _pack_identity(request):
     return (u.id if u else None), (getattr(u, "traveler_id", None) if u else None)
 
 
-def _packing_context(session: Session, trip_id: str, user_id=None) -> dict:
+def _packing_for(session: Session, user) -> str:
+    """Whose list this is: lists are always one person's (D-123, SPEC-5 §6.7.8)."""
+    from app.models import TravelerIdentity
+    if user is not None:
+        t = session.get(TravelerIdentity, user.traveler_id) if user.traveler_id else None
+        return t.display_name if t else user.username
+    t = session.query(TravelerIdentity).filter_by(kind="self").first()
+    return t.display_name if t else ""
+
+
+def _litres(v: float) -> str:
+    return f"{v:.0f} L" if v >= 10 else f"{v:.1f} L".replace(".0 L", " L")
+
+
+def _packing_bags_context(session: Session, plan, items: list, user) -> dict:
+    """Bags for this trip and what fits (SPEC-5 §6.10, D-232): the picked
+    bags' fill, the bags to add, and with none picked, a suggestion."""
+    from planning import bags as bagfit
+    from planning.runner import bag_infos, fit_lines, load_profile, picked_bags
+    uid = user.id if user else None
+    mine = bag_infos(session, uid)
+    picked = picked_bags(session, plan, uid)
+    lines = fit_lines(session, items, uid)
+    rep = bagfit.fit(lines, picked)
+    fills = [{"id": f.bag.id, "label": f.bag.label,
+              "used": _litres(f.used), "over": f.over,
+              "capacity": _litres(f.bag.capacity) if f.bag.capacity else "",
+              "usable": _litres(bagfit.usable(f.bag)) if f.bag.capacity else ""}
+             for f in rep.fills]
+    suggestion = None
+    if not picked and lines and mine:
+        prof = load_profile(session, getattr(user, "traveler_id", None),
+                            owner=user is None)
+        found = bagfit.suggest(rep.total, mine,
+                               one_bag=prof.get("packing_style") == "one_bag")
+        if found:
+            suggestion = {"ids": ",".join(b.id for b in found),
+                          "label": " + ".join(
+                              f"{b.label} ({_litres(b.capacity)})" for b in found)}
+        elif any(b.capacity for b in mine):
+            suggestion = {"ids": "", "label": ""}      # none of them holds it
+    picked_ids = {b.id for b in picked}
+    return {
+        # A hand-added line goes where a checked-bag item would (§6.10.4).
+        "packing_bag_default": bagfit.assign("checked", picked) or "checked",
+        "packing_bags": mine,
+        "packing_bag_fills": fills,
+        "packing_bag_add": [{"id": b.id, "label": b.label} for b in mine
+                            if b.id not in picked_ids],
+        "packing_bag_total": _litres(rep.total) if lines else "",
+        "packing_bag_elsewhere": _litres(rep.elsewhere) if rep.elsewhere >= 0.5 else "",
+        "packing_bag_suggestion": suggestion,
+        "packing_bags_no_capacity": bool(mine) and not any(b.capacity for b in mine),
+    }
+
+
+def _packing_context(session: Session, trip_id: str, user=None) -> dict:
+    user_id = user.id if user else None
     items = (session.query(PackingItem)
              .filter(PackingItem.trip_id == trip_id,
                      PackingItem.user_id == user_id).all())
     plan = (session.query(PackingPlan)
             .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == user_id)
             .order_by(PackingPlan.generated_at.desc()).first())
-    from planning.engine import all_archetypes as _all_archetypes
-    _all_arch = _all_archetypes()
+    from planning.runner import PROFILE_REQUIRED, PROFILE_URL, profile_ready
+    # Since 5.0 a plan's "archetypes" are the person's templates it applied
+    # (D-230); the picker offers their other templates.
     chosen_arch = (plan.archetypes if plan else None) or []
     chosen_ids = {a.get("id") for a in chosen_arch}
+    own_templates = (session.query(PackingTemplate)
+                     .filter(PackingTemplate.user_id == user_id)
+                     .order_by(PackingTemplate.name).all())
     included = [i for i in items if i.status in ("draft", "packed")]
     omitted = [i for i in items if i.status == "omitted"]
-    bag_labels = _bag_label_lookup(session)
+    suggested = sorted((i for i in items if i.status == "suggested"),
+                       key=lambda i: (i.category, i.label.lower()))
+    bag_labels = _bag_label_lookup(session, user)
     grouped: dict[str, list] = {}
     for i in included:
         grouped.setdefault(i.category, []).append(i)
@@ -1802,13 +1878,21 @@ def _packing_context(session: Session, trip_id: str, user_id=None) -> dict:
     return {
         "packing_cats": cats,
         "packing_omitted": [_packing_item_view(i, bag_labels) for i in omitted],
-        "packing_bag_options": _bag_options(session),
+        "packing_bag_options": _bag_options(session, user, trip_id),
+        **_packing_bags_context(session, plan, items, user),
         "packing_has": bool(included),
         "packing_warnings": (plan.warnings if plan else None) or [],
         "packing_tasks": (plan.tasks if plan else None) or [],
         "packing_archetypes": chosen_arch,
-        "packing_archetype_options": [a for a in _all_arch
-                                      if a["id"] not in chosen_ids],
+        "packing_archetype_options": [{"id": t.id, "label": t.name} for t in own_templates
+                                      if t.id not in chosen_ids],
+        "packing_suggested": [_packing_item_view(i, bag_labels) for i in suggested],
+        # SPEC-5 §6.8: no saved questionnaire, no list; an older plan stays
+        # readable under the same message.
+        "packing_needs_profile": not profile_ready(
+            session, getattr(user, "traveler_id", None), owner=user is None),
+        "packing_profile_msg": PROFILE_REQUIRED, "packing_profile_url": PROFILE_URL,
+        "packing_for": _packing_for(session, user),
         "packing_manual": bool(plan and plan.manual_archetypes),
         "packing_when": plan.generated_at.strftime("%Y-%m-%d %H:%M")
         if plan and plan.generated_at else "",
@@ -1826,10 +1910,14 @@ def generate_packing_plan_route(trip_id: str, request: Request,
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
+    from planning.runner import PackingProfileRequired
     uid, tid = _pack_identity(request)
-    generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
-                  user_id=uid, traveler_id=tid)
+    try:
+        generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                      geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
+                      user_id=uid, traveler_id=tid)
+    except PackingProfileRequired:
+        pass                        # the section says so, with the link (§6.8)
     return _redirect(f"/trips/{trip_id}")
 
 
@@ -1845,45 +1933,104 @@ def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
                                 ids: list[str]) -> HTMLResponse:
     from app.resolving import load_homes_for_user
     from planning.runner import generate_plan
+    from planning.runner import PackingProfileRequired
     uid, tid = _pack_identity(request)
-    generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                  geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
-                  manual_archetypes=ids, user_id=uid, traveler_id=tid)
+    try:
+        generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                      geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
+                      manual_archetypes=ids, user_id=uid, traveler_id=tid)
+    except PackingProfileRequired:
+        pass
     return templates.TemplateResponse(request, "_packing_section.html",
         {"request": request, "trip": {"id": trip.id},
-         **_packing_context(session, trip.id, uid)})
+         **_packing_context(session, trip.id, scope.user_of(request))})
 
 
-@router.post("/{trip_id}/pack/archetypes/add", response_class=HTMLResponse)
-def add_archetype_route(trip_id: str, request: Request, archetype_id: str = Form(""),
-                        session: Session = Depends(get_session)):
-    """Add a trip type to the packing plan and re-generate with the operator's
-    explicit set (auto-detection stays as the starting suggestion)."""
+@router.post("/{trip_id}/pack/templates/add", response_class=HTMLResponse)
+def add_pack_template_route(trip_id: str, request: Request, template_id: str = Form(""),
+                            session: Session = Depends(get_session)):
+    """Apply one of the person's templates to this trip's list and re-generate
+    with their explicit set (SPEC-5 §6.7.3; what the trip suggests is the
+    starting point). Only their own templates (§6.6)."""
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    valid = {a["id"] for a in _pack_all_archetypes()}
-    ids = _current_archetype_ids(session, trip_id, _pack_identity(request)[0])
-    if archetype_id in valid and archetype_id not in ids:
-        ids.append(archetype_id)
+    uid = _pack_identity(request)[0]
+    mine = {t for (t,) in session.query(PackingTemplate.id)
+            .filter(PackingTemplate.user_id == uid)}
+    ids = _current_archetype_ids(session, trip_id, uid)
+    if template_id in mine and template_id not in ids:
+        ids.append(template_id)
     return _regenerate_with_archetypes(request, session, trip, ids)
 
 
-@router.post("/{trip_id}/pack/archetypes/remove", response_class=HTMLResponse)
-def remove_archetype_route(trip_id: str, request: Request, archetype_id: str = Form(""),
-                           session: Session = Depends(get_session)):
-    """Remove a trip type and re-generate. Removing the last one resets to
-    auto-detection on the next generate."""
+@router.post("/{trip_id}/pack/templates/remove", response_class=HTMLResponse)
+def remove_pack_template_route(trip_id: str, request: Request, template_id: str = Form(""),
+                               session: Session = Depends(get_session)):
+    """Take a template off this trip's list and re-generate. Taking the last one
+    off goes back to what the trip suggests on the next generate."""
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    ids = [i for i in _current_archetype_ids(session, trip_id, _pack_identity(request)[0]) if i != archetype_id]
+    ids = [i for i in _current_archetype_ids(session, trip_id, _pack_identity(request)[0])
+           if i != template_id]
     return _regenerate_with_archetypes(request, session, trip, ids)
 
 
-def _pack_all_archetypes():
-    from planning.engine import all_archetypes
-    return all_archetypes()
+def _set_trip_bags(request: Request, session: Session, trip: Trip,
+                   ids: list[str]) -> HTMLResponse:
+    """Store the trip's picked bags and put the lines in them, without
+    re-generating (SPEC-5 §6.10.1). No list yet: generate one with them."""
+    from planning.runner import (PackingProfileRequired, bag_infos, generate_plan,
+                                 reassign_bags)
+    uid, tid = _pack_identity(request)
+    mine = {b.id for b in bag_infos(session, uid)}
+    ids = list(dict.fromkeys(i for i in ids if i in mine))
+    plan = _latest_plan(session, trip.id, uid)
+    if plan is None:
+        from app.resolving import load_homes_for_user
+        try:
+            generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                          geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
+                          bag_ids=ids, user_id=uid, traveler_id=tid)
+        except PackingProfileRequired:
+            pass
+    else:
+        plan.bag_ids = ids or None
+        reassign_bags(session, plan, uid, tid)
+        session.commit()
+    return templates.TemplateResponse(request, "_packing_section.html",
+        {"request": request, "trip": {"id": trip.id},
+         **_packing_context(session, trip.id, scope.user_of(request))})
+
+
+def _current_bag_ids(session: Session, trip_id: str, user_id=None) -> list[str]:
+    plan = _latest_plan(session, trip_id, user_id)
+    return list((plan.bag_ids if plan else None) or [])
+
+
+@router.post("/{trip_id}/pack/bags/add", response_class=HTMLResponse)
+def add_pack_bag_route(trip_id: str, request: Request, bag_id: str = Form(""),
+                       session: Session = Depends(get_session)):
+    """Pick one of the person's bags for this trip (D-232). `bag_id` may be
+    several, comma-separated: "Use it" on a suggested pair."""
+    trip = scope.trip_or_none(session, request, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    ids = _current_bag_ids(session, trip_id, _pack_identity(request)[0])
+    ids += [b.strip() for b in bag_id.split(",") if b.strip()]
+    return _set_trip_bags(request, session, trip, ids)
+
+
+@router.post("/{trip_id}/pack/bags/remove", response_class=HTMLResponse)
+def remove_pack_bag_route(trip_id: str, request: Request, bag_id: str = Form(""),
+                          session: Session = Depends(get_session)):
+    trip = scope.trip_or_none(session, request, trip_id)
+    if trip is None:
+        return HTMLResponse("", status_code=404)
+    ids = [i for i in _current_bag_ids(session, trip_id, _pack_identity(request)[0])
+           if i != bag_id]
+    return _set_trip_bags(request, session, trip, ids)
 
 
 def _pack_count_oob(session: Session, trip_id: str, category: str, user_id=None) -> str:
@@ -1900,12 +2047,25 @@ def _pack_count_oob(session: Session, trip_id: str, category: str, user_id=None)
             f'hx-swap-oob="true">{packed}/{len(rows)}</span>')
 
 
+def _pack_fit_oob(session: Session, trip_id: str, user) -> str:
+    """The bag fit, out-of-band, so a quantity or bag change on one row keeps
+    "About 31 L of your 40 L" honest without re-rendering the list (D-232)."""
+    uid = user.id if user else None
+    items = (session.query(PackingItem)
+             .filter(PackingItem.trip_id == trip_id, PackingItem.user_id == uid).all())
+    ctx = _packing_bags_context(session, _latest_plan(session, trip_id, uid), items, user)
+    return templates.env.get_template("_packing_bags.html").render(
+        trip={"id": trip_id}, oob=True, read_only=False, **ctx)
+
+
 def _pack_item_row(request: Request, trip_id: str, session: Session,
                    i: PackingItem) -> HTMLResponse:
+    user = scope.user_of(request)
     row_html = templates.env.get_template("_packing_item.html").render(
-        trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
-        packing_bag_options=_bag_options(session))
-    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category, i.user_id))
+        trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session, user)),
+        packing_bag_options=_bag_options(session, user, trip_id))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, i.category, i.user_id)
+                        + _pack_fit_oob(session, trip_id, user))
 
 
 # NB: these three (qty/bag/label) MUST be registered before the generic
@@ -1934,14 +2094,14 @@ def packing_item_qty(trip_id: str, item_id: str, request: Request,
 def packing_item_bag(trip_id: str, item_id: str, request: Request,
                      bag: str = Form(...), session: Session = Depends(get_session)):
     """Which bag this line goes in — a specific bag from the owner's inventory
-    (Admin → Bag Inventory) once they have one, else the generic backpack /
+    (Packing profile → Inventory) once they have one, else the generic backpack /
     carry-on / checked categories — set per item, per trip, independent of the
     catalog's default load-out."""
     i = session.get(PackingItem, item_id)
     uid = _pack_identity(request)[0]
     if i is None or i.trip_id != trip_id or i.user_id != uid:
         return HTMLResponse("", status_code=404)
-    if bag not in _bag_valid_values(session):
+    if bag not in _bag_valid_values(session, scope.user_of(request)):
         return HTMLResponse("", status_code=400)
     i.bag = bag
     i.edited = True
@@ -1968,6 +2128,24 @@ def packing_item_label(trip_id: str, item_id: str, request: Request,
     return _pack_item_row(request, trip_id, session, i)
 
 
+def _own_suggestion(session: Session, i: PackingItem, uid) -> None:
+    """"Add to inventory" on a suggested line (SPEC-5 §6.7.4, D-231): the
+    person now owns it, so it joins their inventory and the line becomes an
+    ordinary one, keyed as the owned item so a re-generate finds it."""
+    from planning import catalog
+    type_key = i.item_key.split(":", 1)[1] if i.item_key.startswith("suggest:") else None
+    it = catalog.items(session).get(type_key or "") or {}
+    row = InventoryItem(user_id=uid, type_key=type_key, label=i.label,
+                        category=i.category, tags=list(it.get("tags") or []),
+                        quantity=max(1, i.quantity or 1))
+    session.add(row)
+    session.flush()
+    i.inventory_item_id = row.id
+    i.item_key = f"inv:{row.id}"
+    i.status = "draft"
+    i.source = "inventory"
+
+
 @router.post("/{trip_id}/pack-item/{item_id}/{action}", response_class=HTMLResponse)
 def packing_item_action(trip_id: str, item_id: str, action: str, request: Request,
                         session: Session = Depends(get_session)):
@@ -1986,21 +2164,26 @@ def packing_item_action(trip_id: str, item_id: str, action: str, request: Reques
         i.status = "removed"
     elif action in ("restore", "keep"):        # keep = bring back an omitted item
         i.status = "draft"
+    elif action == "own" and i.status == "suggested":
+        _own_suggestion(session, i, uid)
     else:
         return HTMLResponse("", status_code=400)
     category = i.category
     session.commit()
 
-    if action in ("keep", "restore"):
+    if action in ("keep", "restore", "own"):
         trip = scope.trip_or_none(session, request, trip_id)
         return templates.TemplateResponse(request, "_packing_section.html",
                                           {"request": request, "trip": trip,
-                                           **_packing_context(session, trip_id, uid)})
+                                           **_packing_context(session, trip_id,
+                                                              scope.user_of(request))})
+    user = scope.user_of(request)
     row_html = "" if action == "remove" else templates.env.get_template(
         "_packing_item.html").render(
-            trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session)),
-            packing_bag_options=_bag_options(session))
-    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category, uid))
+            trip_id=trip_id, i=_packing_item_view(i, _bag_label_lookup(session, user)),
+            packing_bag_options=_bag_options(session, user, trip_id))
+    return HTMLResponse(row_html + _pack_count_oob(session, trip_id, category, uid)
+                        + _pack_fit_oob(session, trip_id, user))
 
 
 @router.post("/{trip_id}/pack-item/add", response_class=HTMLResponse)
@@ -2016,7 +2199,7 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
         return HTMLResponse("", status_code=404)
     label = label.strip()[:128]
     if (category not in PACK_CAT_LABELS or not label
-            or bag not in _bag_valid_values(session)):
+            or bag not in _bag_valid_values(session, scope.user_of(request))):
         return HTMLResponse("", status_code=400)
     uid = _pack_identity(request)[0]
     item = PackingItem(trip_id=trip_id, user_id=uid,
@@ -2027,7 +2210,8 @@ def packing_item_add(trip_id: str, request: Request, category: str = Form(...),
     session.add(item)
     session.commit()
     return templates.TemplateResponse(request, "_packing_section.html",
-        {"request": request, "trip": trip, **_packing_context(session, trip_id, uid)})
+        {"request": request, "trip": trip,
+         **_packing_context(session, trip_id, scope.user_of(request))})
 
 
 def _profile_row(session: Session, traveler_id=None, owner: bool = False):
@@ -2037,108 +2221,8 @@ def _profile_row(session: Session, traveler_id=None, owner: bool = False):
     return profile_row(session, traveler_id, owner=owner)
 
 
-def _profile_form_ctx(request: Request, session: Session, saved: bool = False) -> dict:
-    from planning.engine import default_profile
-    from planning import catalog
-    from app.acting import acting_for
-    acting = acting_for(session, request)
-    tid = acting.traveler.id if acting.traveler else None
-    row = _profile_row(session, tid, owner=acting.owner_mode)
-    values = {**default_profile(), **((row.values if row else None) or {})}
-    bag = values.get("bag") or {}
-    items = catalog.items(session)
-    by_cat: dict[str, list] = {}
-    for iid, it in items.items():
-        by_cat.setdefault(it.get("category", "activity"), []).append(
-            (iid, it.get("label", iid)))
-    chosen_must = set(values.get("must_have_items") or [])
-    groups = []
-    for cat in _PACK_CAT_ORDER_FULL:
-        rows = sorted(by_cat.get(cat, []), key=lambda p: p[1])
-        if rows:
-            groups.append({"label": PACK_CAT_LABELS.get(cat, cat),
-                           "rows": [{"id": i, "label": l, "checked": i in chosen_must}
-                                    for i, l in rows]})
-
-    def opts(field):
-        cur = values.get(field)
-        return [{"value": v, "label": t, "selected": v == cur}
-                for v, t in PROFILE_SELECTS[field]]
-    chosen_cons = set(values.get("style_constraints") or [])
-    return {
-        "request": request, "saved": saved, "acting": acting,
-        "no_traveller": tid is None and not acting.owner_mode,
-        "bag_opts": [{"value": v, "label": t,
-                      "selected": v == bag.get("mode", "carry_on")}
-                     for v, t in PROFILE_SELECTS["bag_mode"]],
-        "bag_weight_kg": bag.get("weight_kg", 10),
-        "laundry_opts": opts("laundry_comfort"), "style_opts": opts("packing_style"),
-        "climate_opts": opts("climate_preference"),
-        "strictness_opts": opts("cultural_strictness"),
-        "variant_opts": opts("clothing_variant"),
-        "constraints": [{"value": v, "label": t, "checked": v in chosen_cons}
-                        for v, t in PROFILE_CONSTRAINTS],
-        "must_groups": groups,
-    }
-
-
-@router.get("/settings/packing-profile", response_class=HTMLResponse)
-def edit_packing_profile(request: Request, session: Session = Depends(get_session)):
-    """The structured Packing Profile editor (D-86) — a standalone page in the
-    Administer nav (a global preference, like Home Profiles), dropdowns +
-    checkboxes, no JSON. 2-segment static path so `/{trip_id}` doesn't capture it."""
-    return templates.TemplateResponse(request, "packing_profile.html",
-                                      _profile_form_ctx(request, session))
-
-
-@router.post("/settings/packing-profile", response_class=HTMLResponse)
-def save_packing_profile(request: Request,
-                         bag_mode: str = Form("carry_on"),
-                         bag_weight_kg: str = Form("10"),
-                         laundry_comfort: str = Form("none"),
-                         packing_style: str = Form("balanced"),
-                         climate_preference: str = Form("neutral"),
-                         cultural_strictness: str = Form("strict"),
-                         clothing_variant: str = Form("neutral"),
-                         style_constraints: list[str] = Form(default=[]),
-                         must_have_items: list[str] = Form(default=[]),
-                         session: Session = Depends(get_session)):
-    try:
-        weight = int(float(bag_weight_kg))
-    except (TypeError, ValueError):
-        weight = 10
-    values = {
-        "bag": {"mode": bag_mode, "weight_kg": weight},
-        "laundry_comfort": laundry_comfort, "packing_style": packing_style,
-        "climate_preference": climate_preference,
-        "cultural_strictness": cultural_strictness,
-        "clothing_variant": clothing_variant,
-        "style_constraints": style_constraints,
-        "must_have_items": must_have_items,
-    }
-    # Save to the CURRENT user's OWN profile (D-123: tied to their traveller),
-    # creating it if missing — never overwrite another traveller's or the shared
-    # default when this user has their own.
-    from app.acting import acting_for, audit_if_other
-    acting = acting_for(session, request)          # self, or an admin acting for someone
-    traveler_id = acting.traveler.id if acting.traveler else None
-    if traveler_id is None and not acting.owner_mode:
-        # Signed in but no traveller linked: nowhere of their own to save it —
-        # and never into the owner's unassigned row.
-        return templates.TemplateResponse(request, "packing_profile.html",
-                                          _profile_form_ctx(request, session))
-    audit_if_other(session, request, acting, "packing profile")
-    own = _profile_row(session, traveler_id, owner=acting.owner_mode)
-    if own is None:
-        session.add(PackingProfile(values=values, traveler_id=traveler_id))
-    else:
-        own.traveler_id = traveler_id   # claims a pre-4.1 unassigned row for self
-        own.values = values
-    session.commit()
-    # Re-render the page with a saved banner; the plan applies the new profile on
-    # the next Re-generate.
-    return templates.TemplateResponse(request, "packing_profile.html",
-                                      _profile_form_ctx(request, session, saved=True))
+# The packing profile page (5.0: questionnaire, inventory, templates) lives in
+# app/trips/packing_settings.py.
 
 
 def _zones() -> list[tuple[str, str]]:
@@ -2280,6 +2364,7 @@ def discovery_profile_public(session: Session, traveler: TravelerIdentity | None
     with its label, their free-text notes for agents, the rows they hid as
     "not my thing" (`user_id`'s, across trips), and how to apply it all. Only
     ever the caller's own."""
+    from discover import cuisines
     from discover.items import dislikes as hidden_dislikes
     row = _discovery_profile_row(session, traveler, owner)
     d = _discovery_default()
@@ -2299,13 +2384,19 @@ def discovery_profile_public(session: Session, traveler: TravelerIdentity | None
     out = {
         "food": {
             "dietary_restrictions": tagged(food.get("dietary_restrictions"), diet_l),
-            "avoid_cuisines": list(food.get("cuisine_dislikes") or []),
+            # Labels, as before 5.0 (the apps read this); likes are additive.
+            "avoid_cuisines": [cuisines.label(k) for k in food.get("cuisine_dislikes") or []],
+            "liked_cuisines": [cuisines.label(k) for k in food.get("cuisine_likes") or []],
             "allergies": food.get("allergies") or "",
+            "prefer_local_food": bool(food.get("prefer_local")),
             "budget_ceiling": {"tier": budget,
                                "label": dict(DISCOVERY_BUDGET).get(budget, "No limit")},
         },
         "drink": {"interests": tagged(drink.get("interests"), drink_l)},
-        "activity": {"interests": tagged(activity.get("interests"), act_l)},
+        "activity": {"interests": tagged(effective_activities(activity.get("interests")), act_l),
+                     # every interest ticked: the generic mix, like none
+                     "all_interests": bool(activity.get("interests"))
+                     and not effective_activities(activity.get("interests"))},
         "practical": {"mobility": {"key": mob,
                                    "label": dict(DISCOVERY_MOBILITY).get(mob, mob)}},
         "travel": {"nationality": traveler.nationality if traveler else None,
@@ -2315,14 +2406,19 @@ def discovery_profile_public(session: Session, traveler: TravelerIdentity | None
     }
     out["blank"] = row is None or not any([
         food.get("dietary_restrictions"), food.get("cuisine_dislikes"),
-        food.get("allergies"), budget, drink.get("interests"),
-        activity.get("interests"), mob != "no_limits", out["notes"]])
+        food.get("cuisine_likes"), food.get("allergies"), food.get("prefer_local"), budget,
+        drink.get("interests"),
+        effective_activities(activity.get("interests")), mob != "no_limits", out["notes"]])
     out["how_to_use"] = (
         "Constraint-first: every recommendation must fit the dietary restrictions; "
-        "never recommend the avoided cuisines; stay at or under the budget ceiling "
+        "never recommend the avoided cuisines, and include some of the liked ones; "
+        "with `prefer_local_food` true, lead with the destination's own dishes and "
+        "the places locals rate, even when that cuisine is on the avoid list; "
+        "stay at or under the budget ceiling "
         "(1–4, $–$$$$; 0 = no limit); flag — don't exclude — anything that may "
         "involve a listed allergen. Interests ADD places (breweries, museums, …) on "
-        "top of the usual mix; they never narrow it. Respect mobility for activities. "
+        "top of the usual mix; they never narrow it (`all_interests` true means "
+        "every activity was ticked: use the usual mix). Respect mobility for activities. "
         "`notes` is the person in their own words — likes, dislikes, past "
         "favourites; follow it like the rest. `not_my_thing` lists places and "
         "events they hid as not their thing: don't suggest those again, and steer "
@@ -2343,9 +2439,17 @@ def _discovery_form_ctx(request: Request, session: Session,
     drink = {**d["drink"], **(v.get("drink") or {})}
     activity = {**d["activity"], **(v.get("activity") or {})}
     practical = {**d["practical"], **(v.get("practical") or {})}
+    from discover import cuisines
     diet = set(food.get("dietary_restrictions") or [])
     drinks = set(drink.get("interests") or [])
-    acts = set(activity.get("interests") or [])
+    # A new profile starts with every activity ticked, which searches the usual
+    # mix (effective_activities); drinks start unticked (YONDER-328).
+    acts = set(activity.get("interests") or []) if row else set(_ACTIVITY_KEYS)
+    likes, dislikes = set(food.get("cuisine_likes") or []), set(food.get("cuisine_dislikes") or [])
+    cuisine_groups = [{"key": g["key"], "label": g["label"], "cuisines": [
+        {"key": c["key"], "label": c["label"],
+         "pref": "like" if c["key"] in likes else "dislike" if c["key"] in dislikes
+         else "neutral"} for c in g["cuisines"]]} for g in cuisines.groups()]
     budget = food.get("budget_ceiling") or 0
     mob = practical.get("mobility") or "no_limits"
     return {
@@ -2353,8 +2457,12 @@ def _discovery_form_ctx(request: Request, session: Session,
         "no_traveller": trav is None and not owner,
         "dietary": [{"value": k, "label": t, "checked": k in diet}
                     for k, t in DISCOVERY_DIETARY],
-        "cuisine_dislikes": ", ".join(food.get("cuisine_dislikes") or []),
+        "cuisine_groups": cuisine_groups,
+        "cuisine_likes_text": ", ".join(cuisines.label(k) for k in food.get("cuisine_likes") or []),
+        "cuisine_dislikes_text": ", ".join(cuisines.label(k)
+                                           for k in food.get("cuisine_dislikes") or []),
         "allergies": food.get("allergies") or "",
+        "prefer_local_food": bool(food.get("prefer_local")),
         "budget_opts": [{"value": k, "label": t, "checked": k == budget}
                         for k, t in DISCOVERY_BUDGET],
         "drinks": [{"value": k, "label": t, "checked": k in drinks}
@@ -2378,10 +2486,10 @@ def edit_discovery_profile(request: Request, session: Session = Depends(get_sess
 
 
 @router.post("/settings/discovery-profile", response_class=HTMLResponse)
-def save_discovery_profile(request: Request,
+async def save_discovery_profile(request: Request,
                            dietary_restrictions: list[str] = Form(default=[]),
-                           cuisine_dislikes: str = Form(""),
                            allergies: str = Form(""),
+                           prefer_local_food: str = Form(""),
                            budget_ceiling: str = Form("0"),
                            drink_interests: list[str] = Form(default=[]),
                            activity_interests: list[str] = Form(default=[]),
@@ -2396,17 +2504,25 @@ def save_discovery_profile(request: Request,
         budget = 0
     # Interests are closed vocabularies (they map to query templates) — filter to
     # known keys so the blob stays clean. Dietary allows custom strings (D-93), so
-    # it is not filtered. Cuisine dislikes are free text, split on commas.
+    # it is not filtered. Cuisines are the vocabulary's keys, one radio group
+    # each (cuisine:<key> = like | neutral | dislike; YONDER-328).
+    from discover import cuisines
     drinks_ok = {k for k, _ in DISCOVERY_DRINKS}
     acts_ok = {k for k, _ in DISCOVERY_ACTIVITIES}
     mob_ok = {k for k, _ in DISCOVERY_MOBILITY}
-    dislikes = [c.strip() for c in cuisine_dislikes.split(",") if c.strip()]
+    form = await request.form()
+    prefs = {k[8:]: str(v) for k, v in form.multi_items() if k.startswith("cuisine:")}
+    likes = cuisines.keys_only(k for k, v in prefs.items() if v == "like")
+    dislikes = cuisines.keys_only(k for k, v in prefs.items() if v == "dislike")
     values = {
         "food": {
             "dietary_restrictions": [d.strip() for d in dietary_restrictions if d.strip()],
             "cuisine_dislikes": dislikes,
+            "cuisine_likes": likes,
             "allergies": allergies.strip(),
             "budget_ceiling": budget,
+            # Try the destination's own food, past the dislikes (YONDER-328).
+            "prefer_local": bool(prefer_local_food),
         },
         "drink": {"interests": [x for x in drink_interests if x in drinks_ok]},
         "activity": {"interests": [x for x in activity_interests if x in acts_ok]},

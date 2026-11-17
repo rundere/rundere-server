@@ -1,0 +1,32 @@
+{# The template page's item list and its Add box: the Add button redraws just
+   this (POST /templates/add-item, htmx), with the new thing ticked and the
+   cursor back in the box (htmx keeps focus on the same id). With scripts off,
+   the button saves the template and comes back here. #}
+<div id="tpl-items">
+  {% if not cats %}<p class="yn-help">Your inventory is empty. <a href="{{ base }}">Answer the questionnaire</a> or add an item below.</p>{% endif %}
+  {% for c in cats %}
+  <fieldset class="field yn-question">
+    <legend>{{ c.label }}</legend>
+    {% for r in c.rows %}
+    <div class="yn-tpl-row">
+      <label class="yn-check"><input type="checkbox" name="item" value="{{ r.id }}" {% if r.checked %}checked{% endif %}> {{ r.label }}</label>
+      <input class="input yn-inv-qty" type="number" name="qty:{{ r.id }}" value="{{ r.qty }}" min="1" max="99"
+             placeholder="usual" aria-label="How many {{ r.label }} for this template (you own {{ r.owned }})">
+    </div>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+
+  <fieldset class="field yn-question">
+    <legend>Add something you don't have in your inventory yet <span class="yn-help">— it joins your inventory too</span></legend>
+    <div class="yn-inv-edit">
+      <input class="input yn-inv-label" id="tpl-add-label" name="add_label" maxlength="128" placeholder="e.g. Snorkel set" aria-label="New item">
+      <select class="input" name="add_category" aria-label="Category">
+        {% for v, t in cat_opts %}<option value="{{ v }}" {% if v == (add_category or "activity") %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+      <button type="submit" name="then" value="add" class="btn btn-secondary bp-sm"
+              hx-post="{{ base }}/templates/add-item" hx-target="#tpl-items" hx-swap="outerHTML">Add</button>
+    </div>
+    {% if add_note %}<p class="yn-help" role="status">{{ add_note }}</p>{% endif %}
+  </fieldset>
+</div>

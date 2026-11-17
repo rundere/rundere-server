@@ -28,5 +28,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # The image's Python minor matches the one CI tests (3.12, ci.yml), so no
+    # PR moves it to a newer minor or major; change both together by hand.
+    # Patch-level and digest updates still arrive.
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: "chore(image)"

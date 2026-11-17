@@ -17,10 +17,10 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import authn
+from app import authn, confirm
 from app.api_v1 import Instant  # D-224: instants carry their offset
 from app.auth import RateLimiter, client_ip
 from app.config import settings
@@ -81,6 +81,12 @@ class UserOut(BaseModel):
     # their "now" runs on (D-187).
     base_currency: str | None = None
     timezone: str | None = None
+    # Appearance (SPEC-8 §15). The theme is per account (D-237): the stored id,
+    # the theme to draw (D-240: the server resolves; unknown ids fall back to
+    # base) and whether the scenery floor shows (D-239). Own payload only.
+    ui_theme: str = "base"
+    resolved_theme: str = "base"
+    scenery: bool = True
 
 
 class TokenOut(BaseModel):
@@ -123,7 +129,17 @@ def _user_public(u: User) -> dict:
             "reset_note": reset_note(u),
             # The web asks for it at every visit; the app should too (SPEC-4.2 §3.3).
             "email_required": authn.needs_email(u),
-            "support_until": _support_until(u)}
+            "support_until": _support_until(u),
+            **_appearance(u)}
+
+
+def _appearance(u: User) -> dict:
+    """The person's theme fields (D-237, D-239, D-240)."""
+    from app import themes
+    stored = getattr(u, "ui_theme", None) or themes.BASE
+    scenery = getattr(u, "scenery", None)
+    return {"ui_theme": stored, "resolved_theme": themes.resolve(stored),
+            "scenery": True if scenery is None else bool(scenery)}
 
 
 # --------------------------------------------------------------------------- web
@@ -188,9 +204,13 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
 
 
 @router.post("/logout")
-def logout():
+def logout(request: Request):
+    # The session ends on the server too, not just in this browser, and the
+    # fresh confirmation goes with it (SPEC-13 §4.1).
+    authn.sign_out_web_token(request.cookies.get(settings.auth_cookie_name))
     resp = RedirectResponse("/login", status_code=303)
     authn.clear_session_cookie(resp)
+    confirm.clear(resp)
     return resp
 
 
@@ -202,6 +222,26 @@ class LoginBody(BaseModel):
 
 class RefreshBody(BaseModel):
     refresh: str
+
+
+class SignInRefused(BaseModel):
+    """Why the API issued no tokens. `deletion_pending` is true when the account
+    is locked, waiting to be deleted (D-242): the app says so and links to
+    `<server>/account/delete`, where the person can cancel or export."""
+    detail: str
+    deletion_pending: bool = False
+
+
+def _deletion_pending_response() -> JSONResponse:
+    from app import oauth
+    return JSONResponse({"detail": oauth.DELETION_PENDING, "deletion_pending": True},
+                        status_code=403)
+
+
+_REFUSED = {403: {"model": SignInRefused,
+                  "description": "No tokens: password sign-in is off on this address, or "
+                                 "the account is waiting to be deleted "
+                                 "(`deletion_pending`)."}}
 
 
 class AuthMethodsOut(BaseModel):
@@ -223,6 +263,9 @@ class AuthMethodsOut(BaseModel):
     # controls (every trip also reports can_edit=false).
     demo: bool = False
     version: str
+    # D-244: what this server can do, by stable name (app/capabilities.py). An
+    # app gates a feature on a name, not on the version or a 404.
+    capabilities: list[str] = []
 
 
 @router.get("/api/v1/auth/methods", response_model=AuthMethodsOut)
@@ -232,7 +275,7 @@ def api_auth_methods(request: Request):
     (_login_options, YONDER-164). The host is the one the request was made to —
     never a forwarded or proxy-supplied identity header. An older server
     answers 404, which the app reads as "password only"."""
-    from app import demo, oauth, oidc
+    from app import capabilities, demo, oauth, oidc
     from app.config import settings
     from app.db import SessionLocal
     if demo.enabled():
@@ -240,7 +283,8 @@ def api_auth_methods(request: Request):
         return {"password": True, "oauth": False, "oauth_client_id": None,
                 "oauth_clients": dict.fromkeys(oauth.APP_CLIENT_PLATFORMS), "sso": False,
                 "sso_name": None, "sso_forced": False, "registration_open": False,
-                "demo": True, "version": settings.app_version}
+                "demo": True, "version": settings.app_version,
+                "capabilities": capabilities.current()}
     forced = oidc.forced_on(request)
     sso = oidc.offered_on(request)
     with SessionLocal() as session:
@@ -254,10 +298,11 @@ def api_auth_methods(request: Request):
             "sso_name": settings.oidc_display_name if sso else None,
             "sso_forced": forced,
             "registration_open": settings.auth_registration_open and not forced,
-            "version": settings.app_version}
+            "version": settings.app_version,
+            "capabilities": capabilities.current()}
 
 
-@router.post("/api/v1/auth/login", response_model=TokenOut)
+@router.post("/api/v1/auth/login", response_model=TokenOut, responses=_REFUSED)
 def api_login(body: LoginBody, request: Request, session: Session = Depends(get_session)):
     from app import oidc
     from app.config import settings
@@ -270,6 +315,10 @@ def api_login(body: LoginBody, request: Request, session: Session = Depends(get_
     if user is None:
         login_failed(request, body.username)
         return JSONResponse({"detail": "invalid credentials"}, status_code=401)
+    if authn.deletion_pending(user):
+        # D-242: said only once the password has been verified, so it tells a
+        # stranger nothing about which accounts are pending.
+        return _deletion_pending_response()
     from datetime import datetime, timezone
     user.last_login_at = datetime.now(timezone.utc)
     session.commit()
@@ -278,10 +327,14 @@ def api_login(body: LoginBody, request: Request, session: Session = Depends(get_
             "token_type": "bearer", "expires_in": _access_ttl(), "user": _user_public(user)}
 
 
-@router.post("/api/v1/auth/refresh", response_model=TokenOut)
+@router.post("/api/v1/auth/refresh", response_model=TokenOut, responses=_REFUSED)
 def api_refresh(body: RefreshBody, request: Request, session: Session = Depends(get_session)):
     user = authn.consume_refresh_token(session, body.refresh)   # validates + rotates
     if user is None:
+        if authn.refresh_owner_pending(session, body.refresh):
+            # D-242: the holder of a refresh token of a locked account learns why
+            # it stopped working. Still no tokens.
+            return _deletion_pending_response()
         return JSONResponse({"detail": "invalid or expired refresh token"}, status_code=401)
     refresh = authn.create_refresh_token(session, user, request.headers.get("user-agent"))
     return {"access": authn.issue_access_token(user), "refresh": refresh,
@@ -296,6 +349,38 @@ def api_logout(body: RefreshBody, session: Session = Depends(get_session)):
 
 @router.get("/api/v1/auth/me", response_model=UserOut)
 def api_me(user: User = Depends(authn.current_user)):
+    return _user_public(user)
+
+
+class AppearanceBody(BaseModel):
+    """Both optional: send only what changes."""
+    ui_theme: str | None = Field(None, max_length=32, description=(
+        "A theme id from GET /api/v1/themes (e.g. base, desert). Unknown ids are "
+        "rejected with 422."))
+    scenery: bool | None = Field(None, description="Show the scenery floor (D-239).")
+
+
+@router.patch("/api/v1/auth/me", response_model=UserOut)
+def api_set_appearance(body: AppearanceBody, user: User = Depends(authn.first_party_user),
+                       session: Session = Depends(get_session)):
+    """Set your own theme and scenery switch (SPEC-8 §15, D-237, D-239). The
+    theme is checked against the manifest, never a fixed list, so a new theme
+    package is selectable without a release (D-240). Only ever the caller's own
+    row: there is no user id to name. No admin default (Q-T1). First-party only,
+    like the sharing and email setters: the theme shows on the person's own
+    surfaces (the web and the apps), so only those change it, never a
+    connected app or an API token, which may still read it."""
+    from app import themes
+    user = session.get(User, user.id)
+    if body.ui_theme is not None:
+        if not themes.is_known(body.ui_theme):
+            return JSONResponse({"detail": f"unknown theme {body.ui_theme!r}; see "
+                                 "GET /api/v1/themes"}, status_code=422)
+        user.ui_theme = body.ui_theme
+    if body.scenery is not None:
+        user.scenery = body.scenery
+    session.commit()
+    session.refresh(user)
     return _user_public(user)
 
 

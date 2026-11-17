@@ -3,12 +3,12 @@
    panel polls as on the Capture Hub. Guides, files and directions links stay on
    the Capture Hub (D-221). Self-contained (closes itself), because trip pages use a
    different layout from the Inbox's. #}
-<div class="rd-sheet-backdrop" id="capsheet" onclick="if (event.target === this) this.remove()">
+<div class="rd-sheet-backdrop" id="capsheet" data-remove-on-backdrop>
 <div class="rd-sheet" role="dialog" aria-modal="true" aria-labelledby="capsheet-title" tabindex="-1">
   <div class="rd-sheet-head">
     <h2 id="capsheet-title">Capture</h2>
     <button type="button" class="rd-sheet-x" aria-label="Close"
-            onclick="document.getElementById('capsheet').remove()">×</button>
+            data-dismiss="#capsheet">×</button>
   </div>
   <div class="rd-sheet-body capsheet-body">
     <p class="why">Paste a booking link or the text of a confirmation. Run·dere reads it and
@@ -26,13 +26,4 @@
     <div id="capsheet-result"></div>
   </div>
 </div>
-<script>
-(function () {
-  var s = document.getElementById('capsheet');
-  document.addEventListener('keydown', function esc(e) {
-    if (e.key === 'Escape' && document.getElementById('capsheet')) { s.remove(); document.removeEventListener('keydown', esc); }
-  });
-  var t = document.getElementById('capsheet-content'); if (t) t.focus();
-})();
-</script>
 </div>

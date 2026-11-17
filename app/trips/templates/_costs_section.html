@@ -6,7 +6,7 @@
 <span id="sec-costs" class="yn-anchor"></span>
 <div class="bp-timeline-head">
   <div class="yn-sec-title">
-    <button class="yn-sec-caret" type="button" onclick="ynSec(this)" aria-label="Collapse Costs">▾</button>
+    <button class="yn-sec-caret" type="button" data-action="sec" aria-label="Collapse Costs">▾</button>
     <h2 class="bp-h2">Costs</h2>
   </div>
   {% if costs.can_edit and costs.has_roster %}
@@ -26,9 +26,9 @@
 {# Plan | Actual, in the order the work happens (YONDER-223); which one opens
    follows the trip's dates (D-188, costs.default_sub). #}
 <div class="yn-subtabs" role="tablist" aria-label="Plan or actual">
-  <button type="button" role="tab" class="yn-subtab" data-sub="plan" onclick="ynCostsSub('plan')">
+  <button type="button" role="tab" class="yn-subtab" data-sub="plan" data-action="costs-sub" data-costs-sub="plan">
     Plan{% if costs.planned %} · {{ costs.planned }}{% endif %}</button>
-  <button type="button" role="tab" class="yn-subtab" data-sub="actual" onclick="ynCostsSub('actual')">
+  <button type="button" role="tab" class="yn-subtab" data-sub="actual" data-action="costs-sub" data-costs-sub="actual">
     Actual{% if costs.total %} · {{ costs.total }}{% endif %}</button>
 </div>
 
@@ -48,7 +48,7 @@
     <form class="yn-costs-currency" hx-post="/trips/{{ trip.id }}/costs/currency"
           hx-target="#costs-section" hx-swap="outerHTML">
       <label class="bp-muted" for="costs-cur">Show totals in</label>
-      <select id="costs-cur" class="input" name="currency" required onchange="ynMoreCurrencies(this)">
+      <select id="costs-cur" class="input" name="currency" required data-action-change="more-currencies">
         {% for code, label in costs.currency_choices.suggested %}<option value="{{ code }}" {% if code == costs.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
         <option value="__more">Other currency…</option>
       </select>

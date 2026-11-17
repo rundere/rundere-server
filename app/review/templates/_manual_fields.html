@@ -1,0 +1,8 @@
+{# The fields for the chosen type (manual entry); swapped in when the type changes. #}
+{% if manual.fields %}
+  {% with fields=manual.fields, id_prefix="m-" ~ i.id %}{% include "_field_inputs.html" %}{% endwith %}
+  <p class="hint quiet">Saving checks it the way an automatic read is checked, then the
+    review rules say if anything else is needed.</p>
+{% else %}
+  <p class="why">Choose what this is to see its fields.</p>
+{% endif %}

@@ -317,7 +317,10 @@ if DEPS:
         import re
         settings.auth_required = True
         try:
-            h = _bearer("side-admin", admin=True)
+            _bearer("side-admin", admin=True)               # creates the admin
+            with SessionLocal() as s:
+                u = s.query(User).filter_by(username="side-admin").one()
+                h = {"Cookie": f"{settings.auth_cookie_name}={authn.issue_web_token(u)}"}
             for path, label in [("/account", "Account"),
                                 ("/trips/settings/travel-profile", "Travel profile"),
                                 ("/review/home", "Home profiles"),

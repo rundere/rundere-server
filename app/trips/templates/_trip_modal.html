@@ -1,5 +1,6 @@
-<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
-  <div class="dialog blueprint" onclick="event.stopPropagation()">
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root"
+     hx-trigger="click target:.dialog-backdrop">{# a click on the backdrop itself, not the dialog #}
+  <div class="dialog blueprint">
     <div class="dialog-title">{{ title }}</div>
     {% if error %}<div class="bp-error">{{ error }}</div>{% endif %}
     <form class="dialog-body" hx-post="{{ action }}" hx-target="#modal-root" hx-swap="innerHTML">

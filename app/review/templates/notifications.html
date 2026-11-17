@@ -82,7 +82,7 @@
             <form method="post" action="/settings/notifications/{{ t.id }}/toggle" style="display:inline">
               <button class="act tiny" type="submit">{{ 'Turn off' if t.enabled else 'Turn on' }}</button></form>
             <form method="post" action="/settings/notifications/{{ t.id }}/delete" style="display:inline"
-                  onsubmit="return confirm('Remove “{{ t.name }}”? Its credentials are deleted.');">
+                  data-confirm="Remove “{{ t.name }}”? Its credentials are deleted.">
               <button class="act tiny" type="submit">Remove</button></form>
           </td>
         </tr>

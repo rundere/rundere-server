@@ -196,8 +196,8 @@ if DEPS:
                 s.add(PackingItem(trip_id=tid, user_id=u.id, item_key="clothing:socks",
                                   label=lbl, category="clothing", status="draft"))
             s.commit()
-            rows_a = [r for c in _packing_context(s, tid, ua.id)["packing_cats"] for r in c["rows"]]
-            rows_b = [r for c in _packing_context(s, tid, ub.id)["packing_cats"] for r in c["rows"]]
+            rows_a = [r for c in _packing_context(s, tid, ua)["packing_cats"] for r in c["rows"]]
+            rows_b = [r for c in _packing_context(s, tid, ub)["packing_cats"] for r in c["rows"]]
             assert [r["label"] for r in rows_a] == ["A-socks"]     # only A's line
             assert [r["label"] for r in rows_b] == ["B-socks"]     # only B's line
 

@@ -5,16 +5,19 @@ import urllib.error
 import pytest
 
 import discover.synth as synth
+from ai.client import ChatReply, Endpoint
+
+_LLM = Endpoint(provider="ollama", url="http://ollama.test:11434", model="m")   # where the faked calls would go
 
 
 def _call():
     return synth.synthesize_json("prompt", {"type": "object"},
-                                 base_url="http://ollama:11434", model="m")
+                                 llm=_LLM)
 
 
-def _reply(content, **extra):
-    return lambda *a, **k: {"message": {"content": content, **extra},
-                            "done_reason": "stop", "eval_count": 9}
+def _reply(content, thinking=""):
+    return lambda *a, **k: ChatReply(content=content, thinking=thinking,
+                                     finish_reason="stop", out_tokens=9)
 
 
 def test_returns_parsed_object(monkeypatch):

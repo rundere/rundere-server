@@ -17,7 +17,7 @@ from typing import Annotated, Any
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query, Request, Response,
                      UploadFile)
-from pydantic import AfterValidator, BaseModel
+from pydantic import AfterValidator, BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import (authn, expenses as expenses_svc, journal as journal_svc,
@@ -188,6 +188,9 @@ class PackingItemOut(BaseModel):
 
 
 class PackingOut(BaseModel):
+    # Whose list this is, for the apps' "Packing list for <name>" label: lists
+    # are always the caller's own (D-123, SPEC-5 §6.7.8).
+    for_name: str | None = None
     generated_at: Instant = None
     archetypes: Any = None
     warnings: Any = None
@@ -634,18 +637,23 @@ def _packing_item_out(i: PackingItem) -> PackingItemOut:
                           status=i.status, reason=i.reason)
 
 
-def _packing_out(session: Session, trip_id: str, uid: str) -> "PackingOut | None":
+def _packing_out(session: Session, trip_id: str, user) -> "PackingOut | None":
+    uid = user.id
     plan = (session.query(PackingPlan)
             .filter(PackingPlan.trip_id == trip_id, PackingPlan.user_id == uid)
             .order_by(PackingPlan.generated_at.desc()).first())
+    # 5.0 "suggested" lines (things the person doesn't own, SPEC-5 §6.7.4) are
+    # web-only for now: today's apps know draft and packed (§6.8).
     items = (session.query(PackingItem)
              .filter(PackingItem.trip_id == trip_id, PackingItem.user_id == uid,
-                     PackingItem.status != "removed").all())
+                     PackingItem.status.notin_(("removed", "suggested"))).all())
     # Surface packing when there's a plan OR any items (a user may add a custom
     # line before ever generating a plan).
     if plan is None and not items:
         return None
-    return PackingOut(generated_at=plan.generated_at if plan else None,
+    from app.trips.routes import _packing_for
+    return PackingOut(for_name=_packing_for(session, user) or None,
+                      generated_at=plan.generated_at if plan else None,
                       archetypes=plan.archetypes if plan else None,
                       warnings=plan.warnings if plan else None,
                       tasks=plan.tasks if plan else None,
@@ -709,7 +717,7 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
     discovery_profile = my_discovery_profile(session, user)
 
     # packing — PER-USER (D-123)
-    packing = _packing_out(session, trip.id, user.id)
+    packing = _packing_out(session, trip.id, user)
 
     # linked captures (light) — visible because the user can see this trip
     from app.review.summary import headline as _headline, kind_label as _kind
@@ -793,6 +801,93 @@ def api_docs(user=Depends(authn.current_user)):
     return get_swagger_ui_html(openapi_url="/api/v1/openapi.json", title="Run·dere API")
 
 
+# --------------------------------------------------------------------------- themes
+class ThemeSceneOut(BaseModel):
+    title: str = ""
+    light_url: str = Field(description="Fixed-colour scenery floor for light mode (SVG).")
+    dark_url: str = Field(description="Fixed-colour scenery floor for dark mode (SVG).")
+    # D-245: for apps that can't draw a fetched SVG (iOS). Transparent PNGs of the
+    # same scenes at 2x and 3x of the SVG's 1440x240 points (2880x480, 4320x720).
+    light_png_url: str | None = Field(None, description="Light scene, PNG at 2x.")
+    dark_png_url: str | None = Field(None, description="Dark scene, PNG at 2x.")
+    light_png_3x_url: str | None = Field(None, description="Light scene, PNG at 3x.")
+    dark_png_3x_url: str | None = Field(None, description="Dark scene, PNG at 3x.")
+
+
+class ThemeOut(BaseModel):
+    id: str
+    name: str
+    kind: str = Field(description="base or travel.")
+    version: int = Field(description="Bumped when the theme's values change; refresh "
+                                     "a cached copy when it differs.")
+    description: str = ""
+    tags: list[str] = []
+    modes: dict = Field(default_factory=dict,
+                        description="light and dark: color, effect and scene colours, "
+                                    "by semantic role.")
+    scene: ThemeSceneOut | None = Field(None, description="None for Base (no scenery).")
+
+
+class ThemesOut(BaseModel):
+    version: int
+    themes: list[ThemeOut]
+
+
+@router.get("/themes", response_model=ThemesOut)
+def api_themes(request: Request, user=Depends(authn.current_user)):
+    """Every theme the server offers, from the generated manifest (SPEC-8 §15,
+    D-240): palettes per mode, scene colours and the fixed-colour scene files.
+    The apps draw a theme newer than their build from this; one they can't fully
+    draw is used without scenery (D-146). Set yours with PATCH /auth/me."""
+    from app import themes
+    from app.config import settings
+    return themes.manifest(settings.public_base_url or str(request.base_url))
+
+
+# --------------------------------------------------------------------------- release notes
+class ReleaseNotesVersionOut(BaseModel):
+    version: str
+    date: str | None = Field(None, description="YYYY-MM-DD; none for a version not out yet.")
+    everyone: list[str] = Field(description="Short Markdown items: **bold**, `code` and "
+                                            "[links](https://…) only.")
+    admins: list[str] = Field(description="Setup notes for admins; always empty for "
+                                          "anyone else.")
+
+
+class ReleaseNotesOut(BaseModel):
+    running_version: str
+    seen_version: str | None = Field(None, description="The last version whose notes the "
+                                                       "caller closed, on any device.")
+    versions: list[ReleaseNotesVersionOut]
+
+
+@router.get("/release-notes", response_model=ReleaseNotesOut)
+def api_release_notes(all: Annotated[bool, Query(
+                          description="Every released version, newest first, instead of "
+                                      "only the ones the caller hasn't seen.")] = False,
+                      user=Depends(authn.current_user)):
+    """What changed in each version (SPEC-8 §14, D-234). By default only what the
+    caller hasn't seen yet, newest first and at most five, the same as the web's
+    What's new dialog: show it, then POST /release-notes/seen. `seen_version` is
+    shared with the web, so nobody is shown the same notes twice."""
+    from app import release_notes
+    from app.config import settings
+    vs = (release_notes.for_person(release_notes.released(), user) if all
+          else release_notes.unseen(user))
+    return {"running_version": settings.app_version,
+            "seen_version": getattr(user, "seen_version", None), "versions": vs}
+
+
+@router.post("/release-notes/seen", status_code=204)
+def api_release_notes_seen(user=Depends(authn.current_user),
+                           session: Session = Depends(get_session)):
+    """The caller has seen the notes up to the running version (D-234)."""
+    from app import release_notes
+    if user is not None and getattr(user, "id", None) is not None:
+        release_notes.mark_seen(session, user)
+    return Response(status_code=204)
+
+
 # --------------------------------------------------------------------------- read
 @router.get("/dashboard", response_model=DashboardOut)
 def api_dashboard(now: Annotated[str | None, Query(
@@ -858,14 +953,23 @@ def api_trip_snapshot(trip_id: str, user=Depends(authn.current_user),
 
 @router.get("/trips/{trip_id}/timeline.pdf",
             responses={200: {"content": {"application/pdf": {}}}})
-def api_trip_timeline_pdf(trip_id: str, download: bool = False,
+def api_trip_timeline_pdf(trip_id: str, download: bool = False, times: bool = True,
+                          addresses: bool = True, maps: bool = True, details: bool = True,
+                          packing: bool = False, discover: bool = False,
+                          topic: list[str] | None = Query(None),
                           user=Depends(authn.current_user),
                           session: Session = Depends(get_session)):
     """The trip timeline as a shareable PDF itinerary — identical to the web
-    export (server-rendered)."""
+    export (server-rendered). The flags choose what goes in (SPEC-8 §13,
+    D-233); left out, each keeps the PDF older app builds already get.
+    `packing` and `discover` add the caller's own list and Discover research,
+    never for a viewer; repeat `topic` to keep only those Discover topics."""
     trip = scope.require_trip(session, user, trip_id)       # 404 if not visible
     from app.trips import pdf
-    return pdf.pdf_response(session, trip, download=download)
+    sections = pdf.Sections(times=times, addresses=addresses, maps=maps, details=details,
+                            packing=packing, discover=discover,
+                            topics=pdf.pick_topics(topic or [], explicit=topic is not None))
+    return pdf.pdf_response(session, trip, download=download, sections=sections, user=user)
 
 
 @router.get("/review", response_model=ReviewListOut)
@@ -1592,7 +1696,20 @@ def api_delete_activity(trip_id: str, activity_id: str,
     return None
 
 
-@router.post("/trips/{trip_id}/packing/generate", response_model=PackingOut)
+# SPEC-5 §6.8: before the questionnaire this is a 409 with `code` and `url`
+# beside the string `detail`; listed so the apps' schemas carry it.
+_PROFILE_REQUIRED_409 = {409: {"description": "No packing profile yet: send the person to `url`.",
+                               "content": {"application/json": {"schema": {
+                                   "type": "object",
+                                   "properties": {"detail": {"type": "string"},
+                                                  "code": {"type": "string",
+                                                           "enum": ["packing_profile_required"]},
+                                                  "url": {"type": "string"}},
+                                   "required": ["detail", "code", "url"]}}}}}
+
+
+@router.post("/trips/{trip_id}/packing/generate", response_model=PackingOut,
+             responses=_PROFILE_REQUIRED_409)
 def api_generate_packing(trip_id: str, user=Depends(authn.current_user),
                          session: Session = Depends(get_session)):
     """Generate/regenerate the CALLER's own packing plan (per-user, D-123)."""
@@ -1603,7 +1720,7 @@ def api_generate_packing(trip_id: str, user=Depends(authn.current_user),
     generate_plan(session, trip, resolve_airport=_airport_resolver(), geocoder=_photon(),
                   home_profiles=load_home_profiles(session, user.traveler_id),
                   user_id=user.id, traveler_id=user.traveler_id)
-    return _packing_out(session, trip.id, user.id) or PackingOut(items=[])
+    return _packing_out(session, trip.id, user) or PackingOut(items=[])
 
 
 @router.patch("/trips/{trip_id}/packing-items/{item_id}", response_model=PackingItemOut)
@@ -2113,6 +2230,10 @@ class SavedPlaceIn(BaseModel):
     country_code: str | None = None
     # Re-add a place the person removed earlier.
     revive: bool = False
+    # Sorting it as it's saved (D-236), so a place shared from the phone lands
+    # where it belongs in one call. The app maps its own categories to a kind.
+    activity_type: str | None = None       # a new or revived place only; never replaces one
+    list_ids: list[str] | None = None      # the caller's lists to put it in, as well as any it's in
 
 
 class SavedPlaceBatchIn(BaseModel):
@@ -2177,7 +2298,9 @@ def api_place_save(body: SavedPlaceIn, response: Response, user=Depends(authn.cu
                    session: Session = Depends(get_session)):
     """Save a place for the caller. Safe to repeat or retry (an offline outbox, a
     double tap): 201 when it was added, 200 when it was already there or had been
-    filed or removed, with `outcome` saying which."""
+    filed or removed, with `outcome` saying which. `activity_type` and `list_ids`
+    sort it as it's saved (D-236)."""
+    _check_sorting(session, user, [body])
     try:
         place, outcome = places_svc.save(
             session, user, url=body.url, name=body.name, lat=body.lat, lon=body.lon,
@@ -2189,9 +2312,37 @@ def api_place_save(body: SavedPlaceIn, response: Response, user=Depends(authn.cu
         raise HTTPException(400, str(exc))
     if outcome not in (places_svc.CREATED, places_svc.REVIVED):
         response.status_code = 200
+    if place.status != places_svc.DISMISSED:
+        _sort_saved(session, user, place.id, outcome, body)
+        session.refresh(place)
     suggested = (places_svc.suggest_trip(session, fileable_trips(session, user), place)
                  if place.status != places_svc.DISMISSED else None)
     return _place_out(place, suggested, outcome, session=session)
+
+
+def _check_sorting(session: Session, user, items: list[SavedPlaceIn]) -> None:
+    """Refuse a save that names a list that isn't the caller's, or a kind that
+    doesn't exist, before anything is saved (D-236)."""
+    from app.trips import types as activity_types
+    for item in items:
+        for list_id in item.list_ids or []:
+            places_svc.require_list(session, user, list_id)
+        if item.activity_type and activity_types.get_type(item.activity_type).key \
+                != item.activity_type:
+            raise HTTPException(400, f"unknown activity_type: {item.activity_type}")
+
+
+def _sort_saved(session: Session, user, place_id: str, outcome: str,
+                item: SavedPlaceIn) -> None:
+    """Apply a save's `activity_type` and `list_ids` (D-236). The kind is set only
+    on a place this save added or brought back: one already saved keeps the kind
+    the person may have chosen (YONDER-314). Lists are added to, never replaced,
+    so saving a place again into another list keeps it in the first."""
+    if item.activity_type and outcome in (places_svc.CREATED, places_svc.REVIVED):
+        places_svc.update_place(session, user, place_id, activity_type=item.activity_type)
+    if item.list_ids:
+        on = places_svc.lists_for(session, [place_id]).get(place_id, [])
+        places_svc.set_lists(session, user, place_id, on + item.list_ids)
 
 
 @router.post("/places/batch", response_model=SavedPlaceBatchOut)
@@ -2200,20 +2351,110 @@ def api_place_batch(body: SavedPlaceBatchIn, user=Depends(authn.current_user),
     """Save many places in one call. Each item is judged and committed on its own:
     a bad item is reported, not fatal, and sending the same list again adds
     nothing. Use `dry_run` first to see what would happen."""
+    return save_batch(session, user, body, source="api")
+
+
+class PlaceImportRow(BaseModel):
+    line: int = Field(description="The row's line in the file (the header is line 1).")
+    outcome: str = Field(description="created, revived, duplicate, near_duplicate, "
+                                     "already_filed, removed_earlier or error.")
+    id: str | None = None
+    name: str | None = None
+    list: str | None = Field(None, description="The list it joins (or would join).")
+    existing_status: str | None = None
+    error: str | None = None
+
+
+class PlaceImportList(BaseModel):
+    name: str
+    id: str | None = Field(None, description="None on a dry run for a list it would make.")
+    outcome: str = Field(description="created, would_create or existing.")
+
+
+class PlaceImportOut(BaseModel):
+    dry_run: bool
+    rows: int
+    counts: dict[str, int]
+    results: list[PlaceImportRow]
+    lists: list[PlaceImportList]
+    warnings: list[str]
+
+
+@router.post("/places/import", response_model=PlaceImportOut)
+def api_place_import(file: UploadFile = File(..., description="A Run·dere places CSV (D-243)."),
+                     dry_run: bool = Form(False), user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """Import places from a CSV file: a header row naming the columns (`name`,
+    `url`, `address`, `lat`, `lon`, `list`, `kind`, `notes`, `todo`, `priority`,
+    `country`), then one place per row (SPEC-11 D-243). Up to 2 MB and 5,000
+    rows. Each row is judged on its own, importing the same file again adds
+    nothing, and `dry_run` writes nothing, not even a list. The file isn't kept."""
+    from app import places_import
+    data = file.file.read(places_import.MAX_BYTES + 1)
+    try:
+        return places_import.run(session, user, data, dry_run=dry_run)
+    except places_import.UnreadableFile as exc:
+        raise HTTPException(400, str(exc))
+
+
+def save_batch(session: Session, user, body: SavedPlaceBatchIn, *, source: str) -> dict:
+    """Save a batch and sort each saved place by its `activity_type` and `list_ids`
+    (D-236). Shared by the API and MCP so both honour every field they accept."""
+    _check_sorting(session, user, body.places)
     try:
         out = places_svc.save_many(
             session, user, [p.model_dump() for p in body.places], dry_run=body.dry_run,
             enrich=body.enrich, revive=body.revive,
-            allow_near_duplicates=body.allow_near_duplicates, source="api")
+            allow_near_duplicates=body.allow_near_duplicates, source=source)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    if not body.dry_run:
+        for r in out["results"]:
+            if r.get("id") and r["outcome"] in _SORTABLE:
+                _sort_saved(session, user, r["id"], r["outcome"], body.places[r["index"]])
     return out
+
+
+# A batch item that ended up as a live place in the library; the rest weren't saved.
+_SORTABLE = ("created", "revived", "duplicate", "near_duplicate")
 
 
 def fileable_trips(session: Session, user) -> list:
     """The trips this person can file a saved place into (the same filing rule as
     captures, scope.filing_trip_filter)."""
     return session.query(Trip).filter(scope.filing_trip_filter(session, user)).all()
+
+
+class PlaceSuggestionOut(BaseModel):
+    kind: str = Field(description="chip, kind, list, city or country.")
+    label: str = Field(description="What to show, e.g. \"Restaurant\" or \"Lisbon, Portugal\".")
+    insert: str = Field(description="The text that replaces q[start:end], e.g. "
+                                    "`list:\"Date night\"`.")
+    count: int | None = Field(None, description="How many of the caller's places it "
+                                                "matches; none for a chip.")
+    complete: bool = Field(description="Add a space after it; false for a chip that "
+                                       "still wants its value, like `kind:`.")
+
+
+class PlaceSuggestOut(BaseModel):
+    start: int
+    end: int
+    items: list[PlaceSuggestionOut]
+
+
+@router.get("/places/suggest", response_model=PlaceSuggestOut)
+def api_place_suggest(q: Annotated[str, Query(max_length=500,
+                                              description="The search box as typed.")] = "",
+                      cursor: Annotated[int | None, Query(
+                          ge=0, description="Where the caret is in q; the end when omitted.")] = None,
+                      user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Suggestions for the Places search box as the person types (SPEC-11, D-235):
+    the place kinds after `kind:`, the caller's own lists after `list:`, the
+    cities and countries they've saved after `city:` and `country:`, and the
+    chips themselves before a colon. Replace `q[start:end]` with an item's
+    `insert`, then a space when it's `complete`. Own-only (D-166)."""
+    return places_svc.suggest(session, user, q, cursor)
 
 
 @router.get("/places", response_model=list[SavedPlaceOut])
@@ -2253,6 +2494,104 @@ def api_place_delete(place_id: str, user=Depends(authn.current_user),
                      session: Session = Depends(get_session)):
     places_svc.delete_place(session, user, place_id)
     return None
+
+
+class PlaceListOut(BaseModel):
+    """One of the caller's lists (D-213)."""
+    id: str
+    name: str
+    emoji: str | None = None
+    description: str | None = None
+    position: int = 0
+    count: int = Field(0, description="How many library places it holds.")
+    created_at: Instant = None
+    updated_at: Instant = None
+
+
+class PlaceListIn(BaseModel):
+    name: str
+    emoji: str | None = None
+    description: str | None = None
+
+
+class PlaceListPatch(BaseModel):
+    """Only the fields sent change. Lists are shown by `position`, then age."""
+    name: str | None = None
+    emoji: str | None = None
+    description: str | None = None
+    position: int | None = None
+
+
+class PlaceListsIn(BaseModel):
+    list_ids: list[str] = Field(description="Every list the place should be in; "
+                                            "[] takes it out of them all.")
+
+
+def _list_out(lst, count: int) -> PlaceListOut:
+    return PlaceListOut(id=lst.id, name=lst.name, emoji=lst.emoji,
+                        description=lst.description, position=lst.position or 0,
+                        count=count, created_at=lst.created_at, updated_at=lst.updated_at)
+
+
+def _one_list_out(session: Session, user, list_id: str) -> PlaceListOut:
+    for lst, n in places_svc.lists(session, user):
+        if lst.id == list_id:
+            return _list_out(lst, n)
+    raise HTTPException(404, "list not found")
+
+
+@router.get("/places/lists", response_model=list[PlaceListOut])
+def api_place_lists(user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """The caller's lists in their order, each with how many places it holds. A
+    place's `list_ids` point here. Own-only (D-166, D-213): nobody else's lists
+    ever appear, admins' included."""
+    return [_list_out(lst, n) for lst, n in places_svc.lists(session, user)]
+
+
+@router.post("/places/lists", response_model=PlaceListOut, status_code=201)
+def api_place_list_create(body: PlaceListIn, user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """A new list, at the end of the caller's lists."""
+    try:
+        lst = places_svc.create_list(session, user, name=body.name, emoji=body.emoji,
+                                     description=body.description)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return _one_list_out(session, user, lst.id)
+
+
+@router.patch("/places/lists/{list_id}", response_model=PlaceListOut)
+def api_place_list_update(list_id: str, body: PlaceListPatch,
+                          user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """Rename a list, change its emoji or description, or move it (`position`)."""
+    try:
+        places_svc.update_list(session, user, list_id, **body.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return _one_list_out(session, user, list_id)
+
+
+@router.delete("/places/lists/{list_id}", status_code=204)
+def api_place_list_delete(list_id: str, user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """Delete a list. Its places stay in the library (D-213)."""
+    places_svc.delete_list(session, user, list_id)
+    return None
+
+
+@router.put("/places/{place_id}/lists", response_model=SavedPlaceOut)
+def api_place_set_lists(place_id: str, body: PlaceListsIn,
+                        user=Depends(authn.current_user),
+                        session: Session = Depends(get_session)):
+    """Sort a place: make the lists it's in exactly `list_ids` (D-236). Safe to
+    repeat. Every list must be the caller's; one that isn't 404s and nothing
+    changes. A place in no list and on no trip is Unsorted."""
+    places_svc.set_lists(session, user, place_id, body.list_ids)
+    p = places_svc.require_place(session, user, place_id)
+    return _place_out(p, places_svc.suggest_trip(session, fileable_trips(session, user), p),
+                      session=session)
 
 
 def file_place(session: Session, user, place_id: str, trip_id: str,

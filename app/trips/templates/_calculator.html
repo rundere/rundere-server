@@ -1,5 +1,6 @@
-<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
-  <div class="dialog blueprint" onclick="event.stopPropagation()">
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root"
+     hx-trigger="click target:.dialog-backdrop">{# a click on the backdrop itself, not the dialog #}
+  <div class="dialog blueprint">
     <div class="dialog-title">Currency calculator</div>
     <div class="dialog-body">
       {% if currencies|length < 2 %}
@@ -26,29 +27,9 @@
               hx-post="/trips/{{ trip_id }}/finding/{{ fid }}/calculator/update-rates"
               hx-target="#modal-root">Update rates for today</button>
       {% endif %}
-      <script>
-      (function(){
-        var perPivot = {{ per_pivot_json }};
-        var amt = document.getElementById('yn-cc-amt');
-        var from = document.getElementById('yn-cc-from');
-        var to = document.getElementById('yn-cc-to');
-        var out = document.getElementById('yn-cc-out');
-        function conv(){
-          var a = parseFloat(amt.value); if (isNaN(a)) a = 0;
-          var f = perPivot[from.value], t = perPivot[to.value];
-          if (!f || !t) { out.textContent = '—'; return; }
-          var r = a / f * t;
-          out.textContent = r.toLocaleString(undefined, {maximumFractionDigits: 2}) + ' ' + to.value;
-        }
-        [amt, from, to].forEach(function(el){
-          el.addEventListener('input', conv); el.addEventListener('change', conv);
-        });
-        document.getElementById('yn-cc-swap').addEventListener('click', function(){
-          var tmp = from.value; from.value = to.value; to.value = tmp; conv();
-        });
-        conv();
-      })();
-      </script>
+      {# Rates for trip_detail.js (YONDER-303). An attribute, not a JSON <script>: htmx drops
+         every <script> from swapped content. Single quotes: |tojson escapes ' inside. #}
+      <div hidden id="yn-cc-rates" data-rates='{{ per_pivot|tojson }}'></div>
       {% endif %}
       <div class="dialog-actions">
         <button type="button" class="btn btn-primary" hx-get="/trips/close" hx-target="#modal-root">Close</button>

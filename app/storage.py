@@ -10,7 +10,7 @@ what to run.
 Checked, when they exist (a missing folder is created later by the code that
 uses it):
 - a SQLite database file and its folder (SQLite writes a journal beside it);
-- every FOLDER under the artifacts, documents and tile-cache folders: new files
+- every FOLDER under the artifacts, documents, export and tile-cache folders: new files
   land in them, content-addressed subfolders included;
 - every file in the tile cache, where an expired tile is rewritten in place.
 Stored artifacts and documents are written once and only read after that, so
@@ -59,6 +59,8 @@ def problems() -> list[Path]:
     roots = [Path(settings.artifacts_dir), tiles]
     if (settings.documents_dir or "").strip():
         roots.append(Path(settings.documents_dir.strip()))
+    if (settings.export_dir or "").strip():      # the default is under artifacts
+        roots.append(Path(settings.export_dir.strip()))
     for root in roots:
         if root.is_dir():
             for folder in _folders(root):

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}AI{% endblock %}
+{% block content %}
+{# AI, read-only (SPEC-12 §6, D-228): configured with TX_AI_* in the environment,
+   shown here with a test and the call log. The key is never shown, and the log
+   holds no prompts or replies. #}
+<div class="app">
+  <div class="ops"><div class="ops-row"><span class="pagetitle">AI</span></div></div>
+  <div class="mail-wrap">
+
+  <section class="mail-card">
+    <h2 class="cap-h">Status</h2>
+    {% if test_msg %}<div class="saved-note">{{ test_msg }}</div>{% endif %}
+    {% if test_err %}<div class="violations">{{ test_err }}</div>{% endif %}
+    {% if not ai.enabled %}
+      <p class="why"><b>Off.</b> Captures are read by the structured readers (booking
+        markup, calendar files, PDFs with text, map links); anything else waits in your
+        inbox for its details to be added by hand. Discover shows its findings that need
+        no AI. To turn AI on, set <code>TX_AI_ENABLED=true</code> with
+        <code>TX_AI_PROVIDER</code>, <code>TX_AI_URL</code> and <code>TX_AI_MODEL_CHAT</code>;
+        see <code>docs/configuration.md</code>.</p>
+    {% elif not ai.provider %}
+      <p class="why"><b>On, but not usable yet.</b> Fix what's listed below and restart.</p>
+    {% else %}
+      <dl class="mail-dl">
+        <dt>Endpoint</dt><dd><code>{{ ai.url }}</code> ({{ ai.provider }})</dd>
+        <dt>Model</dt><dd><code>{{ ai.model }}</code></dd>
+        <dt>Where it runs</dt><dd>{{ 'cloud' if ai.cloud else 'local' }}</dd>
+        <dt>Reading captures</dt><dd>{% if ai.features.extraction %}<span class="pill ok">on</span>{% else %}<span class="pill warn">off</span> (a cloud endpoint reads captures only with <code>TX_AI_CLOUD_EXTRACTION=true</code>){% endif %}</dd>
+        <dt>Discover</dt><dd>{% if ai.features.discover %}<span class="pill ok">on</span>{% else %}<span class="pill warn">off</span>{% endif %}</dd>
+      </dl>
+      <div class="mail-actions">
+        <form method="post" action="/settings/ai/test">
+          <button class="act" type="submit">Test connection</button>
+        </form>
+      </div>
+      <p class="hint quiet">Test connection asks the endpoint for its models, then makes one
+        tiny call. It shows in the log below as <code>admin_test</code>.</p>
+    {% endif %}
+    {% if ai.problems %}
+      <ul class="hint">{% for p in ai.problems %}<li>{{ p }}</li>{% endfor %}</ul>
+    {% endif %}
+    <p class="why">Waiting for details by hand because AI was off:
+      <b>{{ waiting }}</b> capture{{ '' if waiting == 1 else 's' }}.</p>
+  </section>
+
+  <section class="mail-card">
+    <h2 class="cap-h">Calls</h2>
+    <p class="why">Every call to the endpoint, kept {{ keep_days }} days: when, what for, how
+      long, and whether it worked. Never what was sent or what came back.</p>
+    {% if week %}
+      <dl class="mail-dl">
+        {% for w in week %}
+          <dt>{{ w.feature }}</dt><dd>{{ w.calls }} in the last 7 days{% if w.failed %},
+            {{ w.failed }} failed{% endif %} · {{ w.avg_s }} s on average</dd>
+        {% endfor %}
+      </dl>
+    {% endif %}
+    {% if recent %}
+      <div class="table-scroll">
+      <table class="ai-calls">
+        <thead><tr><th>When</th><th>For</th><th>Call</th><th>Model</th><th>Took</th><th>Tokens in / out</th><th>Result</th></tr></thead>
+        <tbody>
+        {% for c in recent %}
+          <tr>
+            <td>{{ c.when }}</td><td>{{ c.feature }}</td><td>{{ c.function }}</td>
+            <td><code>{{ c.model }}</code></td><td>{{ c.seconds }} s</td>
+            <td>{{ c.tokens[0] if c.tokens[0] is not none else '—' }} / {{ c.tokens[1] if c.tokens[1] is not none else '—' }}</td>
+            <td>{% if c.ok %}<span class="pill ok">ok</span>{% else %}<span class="pill warn">{{ c.error or 'failed' }}</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    {% else %}
+      <p class="hint quiet">No calls yet.</p>
+    {% endif %}
+  </section>
+
+  </div>
+</div>
+{% endblock %}

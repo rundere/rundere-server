@@ -23,6 +23,71 @@ _DIR = Path(__file__).resolve().parent / "data"
 # Quantity formulas the engine knows how to compute (duration/laundry/style aware).
 FORMULAS = {"tops", "bottoms", "underwear", "socks", "sleepwear"}
 
+# 5.0 (SPEC-5 §6.2–6.3, D-229): the questionnaire's answers, and the catalogue
+# `seed` tags each one seeds a person's inventory from. Kept apart from the
+# descriptive `tags` the engine matches needs on. An item with no `seed` is
+# vocabulary only: it can be suggested ("not in your inventory") or added by
+# hand, but no answer puts it in an inventory.
+QUESTIONNAIRE = {
+    "style": ["masc", "fem", "neutral"],
+    "clothing": ["basics", "smart", "formal", "outdoor", "swim", "cold", "modest"],
+    "footwear": ["minimal", "varied"],
+    "care": ["toiletries", "skincare", "hair", "shaving", "makeup", "eyewear",
+             "sun", "meds"],
+    "gear": ["daypack", "backpack", "carry_on", "checked", "personal_item",
+             "cubes", "compression", "toiletry_bag"],
+    "tech": ["phone", "laptop", "tablet", "camera", "headphones", "watch",
+             "adapter", "car"],
+}
+# Answers that are always on (the form shows them ticked and fixed).
+ALWAYS = {"clothing": "basics", "care": "toiletries", "tech": "phone"}
+# Q5 bags become the person's Bag rows, not inventory items (§6.3).
+BAG_ANSWERS = {"daypack", "backpack", "carry_on", "checked", "personal_item"}
+STYLES = ("masc", "fem", "neutral")
+
+
+def seed_tags() -> set[str]:
+    """Every `seed` tag an item may carry."""
+    tags = {"essential"} | set(QUESTIONNAIRE["clothing"])
+    for group, prefix in (("care", "care"), ("tech", "tech")):
+        tags |= {f"{prefix}:{k}" for k in QUESTIONNAIRE[group]}
+    tags |= {f"gear:{k}" for k in QUESTIONNAIRE["gear"] if k not in BAG_ANSWERS}
+    return tags
+
+
+def answer_tags(answers: dict) -> set[str]:
+    """The seed tags a set of questionnaire answers selects (always-on included)."""
+    tags = {"essential"}
+    clothing = set(answers.get("clothing") or []) | {ALWAYS["clothing"]}
+    care = set(answers.get("care") or []) | {ALWAYS["care"]}
+    tech = set(answers.get("tech") or []) | {ALWAYS["tech"]}
+    tags |= clothing
+    tags |= {f"care:{k}" for k in care}
+    tags |= {f"tech:{k}" for k in tech}
+    tags |= {f"gear:{k}" for k in answers.get("gear") or [] if k not in BAG_ANSWERS}
+    return tags
+
+
+def seed_for(answers: dict, catalog: dict | None = None) -> dict[str, int]:
+    """`{item_id: quantity}` the questionnaire seeds (SPEC-5 §6.3): every item
+    whose `seed` tags meet the answers, kept to the chosen style; footwear
+    under "minimal" only where the item is marked `minimal`."""
+    catalog = catalog if catalog is not None else seed_items()
+    style = answers.get("style") or "neutral"
+    minimal = answers.get("footwear") == "minimal"
+    want = answer_tags(answers)
+    out: dict[str, int] = {}
+    for iid, it in catalog.items():
+        if not set(it.get("seed") or []) & want:
+            continue
+        # Generic / mixed is the union: it seeds every style's items.
+        if style != "neutral" and style not in (it.get("styles") or STYLES):
+            continue
+        if minimal and it.get("category") == "footwear" and not it.get("minimal"):
+            continue
+        out[iid] = int(it.get("seed_qty") or 1)
+    return out
+
 
 def _load(name: str) -> dict:
     with open(_DIR / name, encoding="utf-8") as fh:
@@ -37,6 +102,16 @@ def _items_doc() -> dict:
 @lru_cache(maxsize=1)
 def _arch_doc() -> dict:
     return _load("archetypes.json")
+
+
+@lru_cache(maxsize=1)
+def _templates_doc() -> dict:
+    return _load("templates.json")
+
+
+def template_types() -> list[dict]:
+    """The packing template types (SPEC-5 §6.5, D-230), in display order."""
+    return _templates_doc()["types"]
 
 
 def seed_items() -> dict:
@@ -56,9 +131,16 @@ def items(session=None) -> dict:
         PackingCatalogItem.enabled.is_(True)).all()
     if not rows:
         return seed_items()
+    shipped = seed_items()
+    # volume_l (D-232): the owner's figure, else the shipped estimate; None
+    # leaves it to the category default (planning.bags.volume_for).
     return {r.id: {"label": r.label, "category": r.category, "bag": r.bag,
                    "weight_g": r.weight_g or 0, "tags": r.tags or [],
-                   "variants": r.variants or {}} for r in rows}
+                   "variants": r.variants or {}, "seed": r.seed or [],
+                   "styles": r.styles or [], "seed_qty": r.seed_qty or 1,
+                   "minimal": bool(r.minimal),
+                   "volume_l": r.volume_l if r.volume_l is not None
+                   else (shipped.get(r.id) or {}).get("volume_l")} for r in rows}
 
 
 def item(item_id: str, session=None) -> dict | None:
@@ -67,6 +149,11 @@ def item(item_id: str, session=None) -> dict | None:
 
 def categories() -> list[str]:
     return _items_doc()["_meta"]["categories"]
+
+
+def volume_defaults() -> dict[str, float]:
+    """Litres per category for an item with no estimate of its own (D-232)."""
+    return _items_doc()["_meta"]["volume_defaults"]
 
 
 def archetypes() -> list[dict]:
@@ -93,19 +180,32 @@ def label_for(item_id: str, variant: str = "neutral", session=None) -> str:
     return variants.get(variant) or variants.get("neutral") or it.get("label", item_id)
 
 
+def _seed_fields(it: dict) -> dict:
+    return {"seed": it.get("seed", []), "styles": it.get("styles") or None,
+            "seed_qty": it.get("seed_qty"), "minimal": bool(it.get("minimal"))}
+
+
 def seed_catalog(session) -> None:
     """Insert any catalog item missing from the DB (JSON = defaults, DB = truth) —
     same idempotent seed contract as seed_rule_settings. Owner edits and deletions
-    are never overwritten; only genuinely-new item ids are added."""
+    are never overwritten; only genuinely-new item ids are added.
+
+    5.0 (migration 0050): rows from before the seed columns existed have
+    `seed` NULL, and get the questionnaire fields from items.json once. A row
+    whose `seed` is set, even to [], is the owner's and is left alone."""
     from app.models import PackingCatalogItem
-    have = {r.id for r in session.query(PackingCatalogItem.id).all()}
+    rows = {r.id: r for r in session.query(PackingCatalogItem).all()}
     for iid, it in seed_items().items():
-        if iid in have:
-            continue
-        session.add(PackingCatalogItem(
-            id=iid, label=it.get("label", iid), category=it["category"],
-            bag=it.get("bag", "carry_on"), weight_g=it.get("weight_g", 0),
-            tags=it.get("tags", []), variants=it.get("variants", {})))
+        row = rows.get(iid)
+        if row is None:
+            session.add(PackingCatalogItem(
+                id=iid, label=it.get("label", iid), category=it["category"],
+                bag=it.get("bag", "carry_on"), weight_g=it.get("weight_g", 0),
+                tags=it.get("tags", []), variants=it.get("variants", {}),
+                **_seed_fields(it)))
+        elif row.seed is None:
+            for k, v in _seed_fields(it).items():
+                setattr(row, k, v)
     session.commit()
 
 
@@ -144,5 +244,56 @@ def validate() -> list[str]:
             problems.append(f"item:{iid}: missing label")
         if it.get("bag") not in ("carry_on", "checked"):
             problems.append(f"item:{iid}: bad bag '{it.get('bag')}'")
+        # 5.0 seed fields (SPEC-5 §6.3).
+        for t in it.get("seed") or []:
+            if t not in seed_tags():
+                problems.append(f"item:{iid}: unknown seed tag '{t}'")
+        styles = it.get("styles")
+        if styles is not None and (not styles or not set(styles) <= set(STYLES)):
+            problems.append(f"item:{iid}: bad styles {styles}")
+        q = it.get("seed_qty", 1)
+        if not isinstance(q, int) or isinstance(q, bool) or not 1 <= q <= 10:
+            problems.append(f"item:{iid}: bad seed_qty {q!r}")
+        if "minimal" in it and (it.get("category") != "footwear"
+                                or not isinstance(it["minimal"], bool)):
+            problems.append(f"item:{iid}: `minimal` is a footwear flag")
+        for k in (it.get("variants") or {}):
+            if k not in STYLES:
+                problems.append(f"item:{iid}: unknown variant '{k}'")
+        v = it.get("volume_l")
+        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))
+                              or not 0 < v <= 50):
+            problems.append(f"item:{iid}: bad volume_l {v!r}")
+
+    for c in cats - set(volume_defaults()):
+        problems.append(f"category '{c}' has no volume default")
+
+    # Every seed tag an answer can select seeds at least one item.
+    used = {t for it in seed_items().values() for t in it.get("seed") or []}
+    for t in sorted(seed_tags() - used):
+        problems.append(f"seed tag '{t}' seeds nothing")
+
+    # Template types (SPEC-5 §6.5): known archetypes, modifiers, items and tags.
+    arch_ids = {a["id"] for a in doc["archetypes"]}
+    keys = set()
+    for t in template_types():
+        k = t.get("key")
+        if not k or k in keys or not t.get("label"):
+            problems.append(f"template:{k}: missing or duplicate key/label")
+        keys.add(k)
+        when = t.get("suggest_when") or {}
+        for a in when.get("archetypes") or []:
+            if a not in arch_ids:
+                problems.append(f"template:{k}: unknown archetype '{a}'")
+        for m in when.get("modifiers") or []:
+            if m not in doc["modifiers"]:
+                problems.append(f"template:{k}: unknown modifier '{m}'")
+        pre = t.get("pretick") or {}
+        for i in pre.get("items") or []:
+            if i not in known:
+                problems.append(f"template:{k}: unknown item '{i}'")
+        for tag in pre.get("seed") or []:
+            if tag not in seed_tags():
+                problems.append(f"template:{k}: unknown seed tag '{tag}'")
 
     return problems

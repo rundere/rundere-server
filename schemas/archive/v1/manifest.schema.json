@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "manifest.json",
+  "description": "Run·dere archive, format 1 (SPEC-13 §2, D-241). Strict: adding a field means editing this schema in the same change (§2.3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "format_version",
+    "server_version",
+    "exported_at",
+    "username",
+    "files",
+    "not_included"
+  ],
+  "properties": {
+    "format": {
+      "const": "rundere-archive"
+    },
+    "format_version": {
+      "const": 1
+    },
+    "server_version": {
+      "type": "string"
+    },
+    "exported_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "username": {
+      "type": "string"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "section",
+          "sha256",
+          "bytes",
+          "count"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "section": {
+            "enum": [
+              "readme",
+              "account",
+              "traveller",
+              "discovery",
+              "packing",
+              "trip",
+              "places",
+              "journal",
+              "documents",
+              "document"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "count": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "not_included": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

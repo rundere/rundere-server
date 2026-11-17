@@ -492,6 +492,256 @@ Since D-146 that no longer holds.
   trip beyond today's **Date not set** group (YONDER-207, and scheduling hints in
   YONDER-208). That comes in a later release.
 
+## 13. The trip PDF: sections and addresses (D-233)
+
+The trip PDF is a printable backup for before and during a trip, and it's often
+handed to someone else: a house-sitter, a driver, family (YONDER-311). So the
+person chooses what goes in. Agreed with the owner on 2026-11-10.
+
+- **Choices**, made under the Export PDF button on the trip page and passed as
+  query flags on `GET /trips/{id}/timeline.pdf` and
+  `GET /api/v1/trips/{id}/timeline.pdf`. A flag left out keeps today's PDF, so
+  older app builds get exactly what they got before.
+
+  | Flag | Default | What it controls |
+  |---|---|---|
+  | `times` | on | Clock times: the time column, "Check-in"/"Check-out" rows and every date-time field. Off prints the days and what happens on each, but not *when*. Knowing when someone is out is the risky part of a handout. |
+  | `addresses` | on | Every address: typed ones (a stay's or restaurant's address, a tour's location, a venue, a car-rental desk), the address found on the map (below), airport addresses, and "Open map" links. |
+  | `maps` | on | The trip map, the per-drive route maps and the "Getting there" flight map. They're the bulk of the file. |
+  | `details` | on | The rest of each item's fields: confirmation codes, phone numbers, seats, notes. |
+  | `packing` | off | The downloader's **own** packing list (D-123), grouped by bag, without "Suggested" or "Not needed" lines. |
+  | `discover` | off | The downloader's own Discover research (D-123, 4.1): a section per topic. Under it the form offers a box for each topic the person has research in (weather, currency, plugs, visa, safety, events, food, language, AI research; packing is its own section), all ticked; unticking one leaves it out. The form and the API send them as repeated `topic=` values; a request that names none gets every topic. |
+
+  The timeline itself (the days, each item's title, and who it's for) is always
+  in. A viewer (D-199) gets neither packing nor Discover, whatever they ask.
+- **Addresses come from what's already stored.** Typed addresses print as they
+  are. When an item was located by name only (a restaurant, a tour), locating
+  keeps the street address Photon returned on its map pin, as Run·dere-owned
+  data (rule 5). Making the PDF never looks anything up. An airport's address is
+  its name, city and country from the bundled table (D-147). A pin dropped from a
+  map link has no address unless one was typed.
+- A found address is labelled **Address (from the map)**, so nobody mistakes it
+  for one the booking gave.
+- **Upgrading:** pins made before this keep no address until they're located
+  again. The server does that once by itself after upgrading (`app/upgrade.py`):
+  two minutes after start it runs `locate-activities`, which redoes only the pins
+  that lack an address, and records it in `server_settings` so it doesn't run
+  again. If it fails it runs at the next start. So does it when pins stayed
+  unlocated because no geocoder was configured or reachable (D-146): it is
+  recorded only once Photon answers or there was nothing to locate, and the
+  operator can run `python -m app.cli locate-activities` instead. The PDF never
+  fills a missing address in itself; it prints what the pins hold.
+
+## 14. What's new after an upgrade (D-234)
+
+When the server is upgraded, each person sees once what changed for them
+(YONDER-367). Agreed with the owner on 2026-11-11.
+
+- **The notes are hand-written and ship in the image.** `app/release_notes.md`
+  has one section per version, newest first, in plain language for the people
+  using Run·dere: what they'll notice, not the PR list. Each section has
+  `### For everyone` and, when needed, `### For admins` (setup steps such as an
+  environment variable or a one-time command). The release PR writes the section
+  (RELEASING.md). A test fails if the version in `app/config.py` has no section,
+  so no release ships without notes; a patch with nothing to say writes "Fixes
+  and small improvements". Nothing is fetched at run time (D-146). The
+  auto-generated GitHub release notes stay, for developers.
+- **Who has seen what.** `users.seen_version` is the last version whose notes
+  the person closed. It's set to the running version when an account is created,
+  so a new person isn't shown history. An existing account with none yet (the
+  first upgrade with this feature) is shown only the running version's notes.
+- **When it shows.** On the first full page load of the web app after the
+  version changes, even in a session from before the upgrade (sessions last
+  weeks, so waiting for a sign-in could mean never). It's a dialog over the page
+  listing every version newer than `seen_version` up to the running one, newest
+  first, at most five, then "See all release notes". **Got it**, Esc or the close
+  button records the running version as seen. If those versions have nothing to
+  show this person (admin-only notes for a non-admin), it records them silently.
+  Not on the demo server (D-198), and not on htmx partials.
+- **Admins see more.** `For admins` items show only to admins (`users.is_admin`),
+  in the same dialog, under their own heading.
+- **About links to all of it.** The About page gets a **Release notes** link to
+  `/about/release-notes` (every version from the bundled file, admin items to
+  admins only; signed in only), and a **GitHub releases** row, next to Source
+  code, that every visitor sees.
+- **The apps.** `GET /api/v1/release-notes` returns the versions the caller
+  hasn't seen (`?all=1` for every version), and `POST /api/v1/release-notes/seen`
+  records the running version. `seen_version` is the same column, so someone who
+  reads the notes on the web isn't shown them again in the app, or the other way
+  round. Each version comes as `{version, date, everyone: [...], admins: [...]}`;
+  `admins` is empty for a non-admin. Items are short Markdown strings (bold,
+  links, code). The iOS and Android apps show them in their 5.0 updates.
+
+## 15. Travel themes and scenery (D-237–D-240)
+
+Five travel themes ship in 5.0 on top of Base: **Desert, Coast, Forest, Metro
+and Winter**, each with a light and a dark mode, and each with a landscape
+"scenery floor". Agreed with the owner on 2026-11-12 (Winter added 2026-11-13).
+The design source is the Run·dere design system's Travel themes proposal; this
+section is what the code has to do.
+
+### What a theme is (D-237)
+
+- **Colours only.** A theme overrides the 15 semantic `rd-*` colours,
+  `rd-shadow-raised` and a new glow colour, for one light and one dark mode.
+  Type, spacing, radius, motion, components and what highlight, success and
+  danger mean don't change. The web already reads only semantic tokens (D-161),
+  so a theme is one CSS block per mode.
+- **Two axes.** The **theme** is per account (`users.ui_theme`, default `base`)
+  and follows the person to every device. The **mode** (dark, light, match
+  device) stays per device (`tx-theme` on the web, D-201; app storage on iOS and
+  Android). Signed-out pages (auth card, About) and the trip PDF stay Base.
+- **Themes are packages, not an enum.** Each is a folder, `design/themes/<id>/`:
+  `theme.json` (id, name, description, version, `light` and `dark` palettes, the
+  scene colours, and `tags` such as `desert`, `coast`, `forest`, `urban`,
+  `snow`) plus `scene.svg`. Base stays in `design/tokens/tokens.json`.
+- **One generator.** `scripts/build_tokens.py` writes `tokens.css`,
+  `RundereTheme.swift`, `RundereTheme.kt`, the fixed-colour scene exports and a
+  `themes.json` manifest from the packages. CI fails when the outputs are stale
+  (like `uv lock --check`). This replaces editing the four mirrors by hand.
+- **Guardrails, checked in CI for every theme and mode:**
+  1. text, text-secondary, text-muted, accent, highlight, success and danger are
+     at least 4.5:1 on bg, surface and surface-raised; on-accent is at least
+     4.5:1 on accent and accent-hover;
+  2. accent, highlight, success and danger differ by lightness or hue family;
+  3. one accent, and highlight stays an amber/gold signal in every theme, so
+     "next up" reads the same everywhere.
+- **Web.** `tokens.css` gains `:root[data-travel="<id>"][data-theme="dark|light"]`
+  blocks. The base templates render `data-travel` server-side, so there is no
+  flash and no CSP change; `theme.js` still handles only the mode. Two fixes
+  come with it: the Places map cluster's `color:#fff` becomes `--rd-on-accent`,
+  and the hard-coded Beacon-blue focus glow and `--rd-glow` read a per-theme
+  `--rd-glow-color`.
+- **API.** `GET /api/v1/auth/me` (and the `user` of every token response)
+  returns `ui_theme`, `resolved_theme` and `scenery`; `PATCH /api/v1/auth/me`
+  sets `ui_theme` and `scenery` (first-party only: the web and the apps, not
+  connected apps or API tokens), and rejects an unknown id with 422. `ui_theme` is a string
+  checked against the manifest; an unknown or removed theme falls back to
+  `base`. It is the person's own preference: only they read or write it. The
+  same fields go into `contracts/ios` and `contracts/android`.
+- **Apps.** iOS replaces the `static let` colours with an `RDPalette` looked up
+  by theme id and injected through the SwiftUI environment; Android's
+  `RundereTheme()` takes a theme id as well as `darkTheme`. Neither hard-codes
+  a closed list of themes. Both cache the last theme for the first frame and
+  refresh it from `/me`. On Android, dynamic colour stays opt-in and wins over
+  a travel theme when on.
+- **Accessibility.** When the OS asks for forced colours or high contrast, Base
+  applies. Each release gets a screenshot pass of Trips, Review, Places and
+  Account in all ten theme and mode combinations.
+
+Starting values (light / dark). The theme packages become the source of truth
+once they exist.
+
+| Role | Desert | Coast | Forest | Metro | Winter |
+|---|---|---|---|---|---|
+| `rd-bg` | `#F5EEE3` / `#1E150E` | `#F3EEE4` / `#071C28` | `#F1F3EC` / `#0E1711` | `#F2F2F0` / `#121316` | `#EEF3F9` / `#11142A` |
+| `rd-surface` | `#FFFBF5` / `#2A1E15` | `#FFFDF8` / `#0C2836` | `#FBFCF8` / `#15221A` | `#FFFFFF` / `#1B1C20` | `#FAFCFF` / `#181C37` |
+| `rd-surface-raised` | `#FFFFFF` / `#36281C` | `#FFFFFF` / `#133647` | `#FFFFFF` / `#1D2E23` | `#FFFFFF` / `#25262B` | `#FFFFFF` / `#212645` |
+| `rd-border` | `#DCCBB3` / `#4E3A29` | `#D8CCB8` / `#1F4A5E` | `#CBD3C2` / `#2E4636` | `#CFCFCB` / `#3A3C43` | `#C5D2E3` / `#353B62` |
+| `rd-border-subtle` | `rgba(74,50,30,0.12)` / `rgba(230,210,180,0.14)` | `rgba(18,50,74,0.10)` / `rgba(200,225,235,0.14)` | `rgba(23,38,28,0.10)` / `rgba(200,220,200,0.14)` | `rgba(30,30,32,0.10)` / `rgba(220,220,225,0.14)` | `rgba(20,36,64,0.10)` / `rgba(210,215,245,0.14)` |
+| `rd-text` | `#3A2A1C` / `#F2E6D6` | `#12324A` / `#F1E9DC` | `#1A2A1F` / `#E7EEE4` | `#1C1D20` / `#ECECEE` | `#15233D` / `#ECEEFA` |
+| `rd-text-secondary` | `#5E4835` / `#D2BFA6` | `#5A4632` / `#D4C2A6` | `#435446` / `#B8C6B6` | `#45474D` / `#BDBEC4` | `#3D4F6E` / `#BCC1DE` |
+| `rd-text-muted` | `#735C49` / `#B09B82` | `#6B5743` / `#B4A388` | `#56655A` / `#93A493` | `#5C5E65` / `#9A9CA3` | `#526382` / `#9CA2C4` |
+| `rd-accent` | `#0F6464` / `#5CC8C0` | `#0B5E8E` / `#5EC2E6` | `#2F6A43` / `#86CF94` | `#AD2766` / `#FF7AB6` | `#4A50B5` / `#AAB2FF` |
+| `rd-accent-hover` | `#147A7A` / `#8ADBD4` | `#1471A6` / `#8FD6EF` | `#3A7F52` / `#A8DEB1` | `#C3347A` / `#FFA3CB` | `#5A61C7` / `#C6CBFF` |
+| `rd-on-accent` | `#FFFFFF` / `#1E150E` | `#FFFFFF` / `#071C28` | `#FFFFFF` / `#0E1711` | `#FFFFFF` / `#121316` | `#FFFFFF` / `#11142A` |
+| `rd-highlight` | `#8A5508` / `#E9B04A` | `#8A5C08` / `#F2B544` | `#875307` / `#E9B04A` | `#855A08` / `#F5C542` | `#855A08` / `#F2B544` |
+| `rd-success` | `#2B7A4B` / `#5CC48A` | `#1B7449` / `#4CC38A` | `#16756A` / `#4CC3B0` | `#1C774C` / `#4CC38A` | `#1C774C` / `#4CC38A` |
+| `rd-danger` | `#B5382A` / `#F27A66` | `#C23B30` / `#F2766B` | `#B0373F` / `#F2786E` | `#B3341C` / `#FF7F5C` | `#B5303F` / `#F57A82` |
+| `rd-focus-ring` | `#147A7A` / `#8ADBD4` | `#1471A6` / `#8FD6EF` | `#3A7F52` / `#A8DEB1` | `#C3347A` / `#FFA3CB` | `#5A61C7` / `#C6CBFF` |
+
+Desert pairs sand and umber with an agave-turquoise accent; Coast, dry sand and
+deep sea with an ocean-blue accent and driftwood secondary text; Forest, lichen
+and forest floor with a pine accent, with success moved to teal; Metro,
+concrete and asphalt with a neon-rose accent (owner, 2026-11-13), with danger moved toward
+orange-red; Winter, snow and blue-hour indigo with a periwinkle accent (kept
+more violet than Base's Beacon blue) and a berry-red danger.
+
+### The mark (D-238)
+
+In a travel theme the mark and wordmark ink in `rd-text`, so they sit on the
+theme's grounds. This amends the design README's "Silver 100 on dark, Night 800
+on light", which still holds for Base. The mark never takes the accent, and the
+glow stays dark-grounds-only.
+
+### The scenery floor (D-239)
+
+- **One landscape per theme**, drawn as flat shapes: Desert has mesas, dunes and
+  saguaro; Coast, sea and sand with a headland lighthouse and a palm; Forest,
+  hills and two rows of pines; Metro, a skyline whose windows and street lamps
+  light up at night; Winter, snowy peaks and pines, a ski chalet with lit
+  windows and a snowman.
+- **It's the floor, never the wallpaper.** On the web it's the last element of
+  the page, full width, keeping the scene's 6:1 shape (at least 96px and at
+  most 320px tall), cropped to the middle of the scene on narrow screens
+  (`xMidYMax slice`). A fixed 150px floor sliced the top off the art on any
+  window wider than about 900px (YONDER-372, found on NEXT). It's never `position: fixed`
+  and never behind text. The page shell becomes a full-height column so the
+  floor sits at the window's foot on short pages.
+- **Token-coloured.** The scene is one inline SVG whose fills use nine
+  `rd-scene-*` colours (far, mid, near, feature, detail, sun, light, star,
+  foam), so the same file draws day and night. CI checks that far, mid and near
+  stay under 2.5:1 against `rd-bg` and feature stays at about 3:1 or less; sun
+  and the lit points are exempt.
+- **Apps.** Fixed-colour exports per mode: vector image sets with Any/Dark
+  appearances on iOS, VectorDrawables with `drawable-night` on Android. They
+  show under Today's content, in empty states and at the end of a trip's
+  timeline: never behind list rows, the tab or navigation bar, or the Capture
+  button. In compact-height landscape (a phone on its side) the floor is a
+  shorter band, sized to fit, under the same rules (D-246).
+- **The person controls it.** `users.scenery` (default on) is a switch in
+  Account › Appearance. Base themes have no scenery, and it's off in print and
+  with forced colours.
+- **Not in 5.0:** motion (a later, Reduce-Motion-aware option), photos and
+  per-destination scenes.
+
+### Selection modes and new themes (D-240)
+
+5.0 ships fixed themes only, but builds the two things that let the server
+choose later without a client change:
+
+- **`resolved_theme`.** The server turns `ui_theme` into a concrete theme on
+  every request; pages render `data-travel="{{ resolved_theme }}"` and the apps
+  draw `resolved_theme`. In 5.0 it equals `ui_theme`.
+- **`GET /api/v1/themes`** returns the manifest (id, name, version, palettes,
+  scene colours and scene files per mode), so the apps can fetch a theme newer
+  than their build. An app that can't draw part of a newer theme uses its
+  palette without scenery (D-146).
+
+After 5.0, `ui_theme` may also hold a mode:
+
+- `random` (**Surprise me**): one travel theme per person per day, seeded by
+  user and date, so pages don't change between loads.
+- `next-trip` (**Match my next trip**): the current or next trip's own
+  `trips.theme` if the person set one, otherwise a suggestion from the trip's
+  destination: first the theme `tags` against what Run·dere already knows about
+  the place (Photon's place class, the bundled airport and city data), then the
+  configured LLM when AI is on (D-228). With neither, the person's fallback
+  theme applies. Suggestions come from places only, never from the people on
+  the trip, and the person can always change them.
+
+New themes after 5.0 (Jungle, Savanna, a sci-fi Orbit, …) are new packages that
+pass the guardrails: no migration and no app release.
+
+### What the server can do (D-244) and scenes as PNG (D-245)
+
+- **Capabilities.** `GET /api/v1/auth/methods` (unauthenticated, so an app reads
+  it before and after sign-in) returns `capabilities`, a list of stable lowercase
+  names from `app/capabilities.py`: `trip_pdf_flags`, `release_notes`,
+  `places_suggest`, `places_lists`, `themes`, `theme_scene_png`, and where the
+  web has them, `data_export` and `account_delete`. An app gates a feature on its
+  name, not on a 404 or the version. Names are only ever added; an unknown name
+  is ignored. A name is absent when the feature doesn't work on that server (no
+  export or deletion with sign-in off or on a demo server). The list is on
+  `/auth/methods` only, not on `/auth/me`.
+- **Scene PNGs.** `/api/v1/themes` adds `light_png_url`, `dark_png_url` (2x,
+  2880×480) and `light_png_3x_url`, `dark_png_3x_url` (4320×720) to each
+  theme's `scene`: transparent, same drawing as the SVG. iOS can't draw a
+  fetched SVG, so a theme newer than the build still shows its scenery without an
+  app release. `scripts/build_tokens.py` renders them (`scripts/scene_png.py`,
+  Pillow only) beside the SVGs as `scene-<mode>@<n>x.png`; `--check` fails when
+  one is missing or its SVG changed. Android keeps using the SVG.
+
 ## Build order
 
 1. **D-149 stopgap and its test** (YONDER-191): a possible leak today.
@@ -506,6 +756,9 @@ Since D-146 that no longer holds.
 
 ## Open questions
 
+- ~~**Metro's accent**~~: neon rose (owner, 2026-11-13; D-237).
+- **A server default theme** (D-237): should an admin be able to set the theme
+  new accounts start with? Today it is `base` for everyone.
 - ~~**Base URL scope**~~ — per user, with an admin allowlist for LAN hosts (D-186).
 - ~~**Airport dataset**~~ — mwgg/Airports, refreshed each release (D-186).
 - **Thumbnails for photo references:** about 20 KB each. Leaning no for v1
@@ -774,6 +1027,9 @@ Since D-146 that no longer holds.
     account. A person with an account sets up their own.
   - The web, the JSON API, MCP and the iOS app follow the same rule; the user payload gains
     `support_until` (null = until turned off).
+  - *Amended by D-242 (SPEC-13, proposed):* a person will be able to delete their own
+    account; admins keep deleting other accounts. SPEC-13 D-241 (built) adds the export
+    of a person's own data, which admins don't get for anyone else.
 - **D-205 — Legacy machine access is retired (YONDER-292; owner, 2026-10-19).** Every
   credential and endpoint that remains is one to defend, so what the built-in ones replaced
   goes.
@@ -888,3 +1144,59 @@ Since D-146 that no longer holds.
   date, and they are skipped at commit until one is set. An undated item's
   identity uses its stops or place and its capture, not a date. Display and
   management beyond **Date not set** is later (YONDER-207). See §12.
+- **D-233 — The trip PDF's sections are the downloader's choice (YONDER-311;
+  owner, 2026-11-10).** Times, addresses, maps and booking details are on by
+  default and each can be left out; the person's own packing list and Discover
+  research can be added, topic by topic. An unset flag keeps today's PDF. Addresses are only
+  what Run·dere already holds: typed, the street address Photon gave when the
+  item was located (kept on the pin and labelled "from the map"), or the bundled
+  airport table. Making the PDF looks nothing up; instead the server fills the
+  addresses of older pins once after upgrading. See §13.
+- **D-234 — Each person sees what changed after an upgrade (YONDER-367; owner,
+  2026-11-11).** Hand-written notes ship in the image (`app/release_notes.md`),
+  everyone's and admins' apart. They're shown once, on the first page load after
+  the version changes, for every version since the person last closed them
+  (`users.seen_version`), and on the About page. The apps read and dismiss the
+  same notes through the API. See §14.
+- **D-237 — Travel themes (owner, 2026-11-12; Winter added 2026-11-13).** A
+  theme is a set of semantic-colour values with a light and a dark mode,
+  shipped as a package (`design/themes/<id>/`) and generated into every
+  platform, so new themes need no code change. The theme is per account
+  (`users.ui_theme`, a manifest-checked string, default `base`); the mode stays
+  per device (D-201). Base stays the default; 5.0 ships Desert, Coast, Forest,
+  Metro and Winter. Every theme passes the contrast guardrails in CI. See §15.
+- **D-238 — The mark inks in `rd-text` in travel themes (owner, 2026-11-12).**
+  Amends the logo colour rule for travel themes only; Base is unchanged. See
+  §15.
+- **D-239 — Each travel theme has a scenery floor (owner, 2026-11-12).** One
+  token-coloured landscape at the foot of web pages and at the end of Today,
+  empty states and the trip timeline in the apps. Never behind content, not
+  animated in 5.0, and switchable per account (`users.scenery`, default on).
+  See §15.
+  - *Amended by D-246 (owner, 2026-11-14, recorded 2026-11-15):* the apps show
+    the floor in compact-height landscape too, as a shorter band, instead of
+    hiding it.
+- **D-240 — The server resolves the theme (owner, 2026-11-12).** `/me` returns
+  `resolved_theme` and `/api/v1/themes` serves the manifest from 5.0. After
+  5.0, `ui_theme` may be `random` (Surprise me: one theme per person per day)
+  or `next-trip` (Match my next trip: the trip's own theme, else a suggestion
+  from its destination, never from its people). See §15.
+- **D-244 — Capabilities on `/auth/methods` (owner, 2026-11-14).** The server lists
+  what it can do by stable name so a build keeps working across releases. Names
+  are added, never renamed. See §15.
+- **D-245 — Theme scenes also ship as PNG (owner, 2026-11-14).** `/themes` gives
+  each scene at 2x and 3x as PNG so an app that can't draw a fetched SVG can show a
+  new theme's scenery. See §15.
+- **D-246 — The mobile apps have landscape views (owner, 2026-11-14 and
+  2026-11-15).** Portrait and landscape are both supported orientations on iOS
+  and Android, on phones as well as tablets, and landscape is a 5.0 deliverable,
+  not just allowed. The main screens (Today, Trips and a trip's timeline,
+  Capture, Inbox, Notebook and Settings) each get a landscape view that uses the
+  width rather than stretching the portrait layout: side-by-side panes and a
+  list beside its detail where there is room, wider forms and sheets otherwise.
+  Layout follows the window's size class, not the device, so split screen and
+  resizable windows get the same views. Nothing may be landscape-only, both
+  orientations keep the same features, and rotating never loses what the person
+  was typing or where they were. The scenery floor shows in compact-height
+  landscape as a shorter band (amends D-239). The API is unaffected. See
+  SPEC-4.2 §5 and SPEC-4.3 §4.1.

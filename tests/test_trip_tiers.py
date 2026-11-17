@@ -163,7 +163,7 @@ if DEPS:
         assert stranger.status_code == 404
         v, o = viewer.text, owner.text
         assert "View only" in v and "View only" not in o
-        tab = 'data-tab="{}" onclick'.format                         # the tab button itself
+        tab = 'data-tab="{}" data-action="tab"'.format                         # the tab button itself
         for control in ("+ Add activity", "Edit trip", "Run discovery", tab("discovery"),
                         tab("packing"), tab("costs"), tab("journal"), "Add guest", "/delete"):
             assert control in o, control

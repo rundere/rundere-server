@@ -102,7 +102,7 @@
       <ol class="cap-steps">
         <li>Show your browser's bookmarks bar (Chrome, Edge, Firefox: <b>Ctrl/⌘ + Shift + B</b>).</li>
         <li>Drag this button onto the bar:
-          <p><a class="act primary bm" href="{{ bookmarklet|safe }}" onclick="return false">Capture to Run·dere</a></p></li>
+          <p><a class="act primary bm" href="{{ bookmarklet|safe }}" data-no-click>Capture to Run·dere</a></p></li>
         <li>Open a booking confirmation page and click the bookmark. A Run·dere tab opens, you may be asked to sign in,
           and it names the site the page came from: click <b>Capture it</b> and the page is captured and read.</li>
         <li><b>Check it works:</b> that tab ends with a card for what was found, with <b>Open in Inbox</b>.</li>
@@ -202,7 +202,7 @@
             <span class="muted">· since {{ c.since.strftime('%Y-%m-%d') if c.since else '—' }}{% if c.last_used_at %} · last used {{ c.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span></span>
           {% if c.kind == 'grant' %}
           <form method="post" action="/account/connected-apps/{{ c.id }}/revoke"
-                onsubmit="return confirm('Disconnect {{ c.name }}? It loses access straight away.');">
+                data-confirm="Disconnect {{ c.name }}? It loses access straight away.">
             <input type="hidden" name="next" value="/capture/setup?tab={{ tab }}">
             <button class="act tiny" type="submit">Disconnect</button>
           </form>
@@ -249,7 +249,7 @@
             <span class="muted">· since {{ c.since.strftime('%Y-%m-%d') if c.since else '—' }}{% if c.last_used_at %} · last used {{ c.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span></span>
           {% if c.kind == 'grant' %}
           <form method="post" action="/account/connected-apps/{{ c.id }}/revoke"
-                onsubmit="return confirm('Disconnect {{ c.name }}? It loses access straight away.');">
+                data-confirm="Disconnect {{ c.name }}? It loses access straight away.">
             <input type="hidden" name="next" value="/capture/setup?tab={{ tab }}">
             <button class="act tiny" type="submit">Disconnect</button>
           </form>
@@ -266,14 +266,4 @@
     </section>
   </div>
 </div>
-<script>
-  document.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-copy]'); if (!b) return;
-    var el = document.getElementById(b.getAttribute('data-copy')); if (!el) return;
-    var done = function () { var t = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = t; }, 1500); };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(el.textContent).then(done, function () {});
-    }
-  });
-</script>
 {% endblock %}

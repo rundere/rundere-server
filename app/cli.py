@@ -7,9 +7,16 @@
     python -m app.cli create-user <username> [--admin] [--password PW]  # 4.0 auth
     python -m app.cli set-password <username> [--password PW]
     python -m app.cli set-email <username> <email>     # blank "" clears it
-    python -m app.cli make-admin <username> [--revoke]
+    python -m app.cli make-admin <username> [--revoke [--force]]
+                                                      # D-242: --revoke refuses to remove the
+                                                      # last usable admin unless --force
     python -m app.cli link-traveler <username> <traveler_id>
     python -m app.cli list-users
+    python -m app.cli delete-account <username> [--dry-run] [--now] [--cancel]
+                                                      # D-242: lock the account and delete it
+                                                      # in 7 days. --dry-run: counts per table,
+                                                      # changes nothing. --now: skip the 7 days.
+                                                      # --cancel: clear a pending deletion
     python -m app.cli oauth-client create <name> --redirect <uri> [--redirect <uri>…] [--confidential]
                                                       # pre-register an OAuth client (e.g. for
                                                       # claude.ai's advanced settings); prints
@@ -77,7 +84,7 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         create-user <username> [--admin] [--password PW] [--email E] [--traveler ID]
         set-password <username> [--password PW]
         set-email   <username> <email>   ("" clears)
-        make-admin  <username> [--revoke]
+        make-admin  <username> [--revoke [--force]]
         link-traveler <username> <traveler_id>
         list-users
     """
@@ -165,6 +172,15 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         return 0
 
     if cmd == "make-admin":
+        # D-242 (SPEC-13 §3.1): the same last-admin guard the web routes use.
+        # An admin locked for deletion or deactivated doesn't count, so
+        # revoking the only other one would leave nobody. --force overrides.
+        from app import account_deletion as deletion
+        if ("--revoke" in args and "--force" not in args and user.is_admin
+                and deletion.usable_admins(session, without=user.id) == 0):
+            print(f"refusing: no other usable admin would remain (the others are inactive "
+                  f"or waiting to be deleted); use --force to revoke {username!r} anyway")
+            return 1
         user.is_admin = "--revoke" not in args
         session.commit()
         print(f"{username!r} is now {'a regular user' if '--revoke' in args else 'an admin'}")
@@ -184,6 +200,70 @@ def _user_cmd(session, cmd: str, args: list[str]) -> int:
         return 0
 
     return 2
+
+
+def _delete_account_cmd(session, args: list[str]) -> int:
+    """D-242 (SPEC-13 §3.6): the operator's way to delete an account, and the
+    way out for an account whose owner can't sign in. Whoever has a shell on
+    the server has the database anyway, so `--now` gives away nothing new."""
+    from app import account_deletion as deletion, account_purge
+    from app.models import User
+
+    names = [a for a in args if not a.startswith("--")]
+    if len(names) != 1:
+        print("usage: delete-account <username> [--dry-run] [--now] [--cancel]")
+        return 2
+    user = session.query(User).filter_by(username=names[0]).one_or_none()
+    if user is None:
+        print(f"no user {names[0]!r}")
+        return 1
+    if "--cancel" in args:
+        try:
+            deletion.cancel(session, user, actor=None, operator=True)
+        except deletion.Refused as why:
+            print(why)
+            return 1
+        print(f"{user.username} will not be deleted")
+        return 0
+    if deletion.last_admin(session, user):
+        print(f"{user.username} is the only active admin; make someone else an admin first")
+        return 1
+    if "--dry-run" in args:
+        # The real purge, rolled back: the counts are what a run would do today.
+        rec = deletion.record(session, user)
+        try:
+            res = account_purge.purge(session, user.id, choices=rec.choices if rec else None)
+        finally:
+            session.rollback()
+        print(f"dry run for {res.username}: nothing was changed")
+        print(f"  trips deleted: {res.trips_deleted}, handed to someone else: {res.trips_handed}")
+        for table, n in sorted(res.counts.items()):
+            print(f"  {table:28} {n}")
+        print(f"  folders to remove: {len(res.folders)}, emails to move to Trash: "
+              f"{len(res.mail_ids)}")
+        return 0
+    if "--now" in args:
+        uid, name = user.id, user.username
+        session.rollback()
+        res = deletion.delete_now(SessionLocal, uid)
+        if res is None:
+            print(f"{name} was not deleted")
+            return 1
+        print(f"deleted {name}: {res.trips_deleted} trip(s) deleted, "
+              f"{res.trips_handed} handed to someone else")
+        return 0
+    if deletion.pending(user):
+        print(f"{user.username} is already waiting to be deleted on "
+              f"{user.deletion_due_at:%Y-%m-%d}; --now deletes it today, --cancel clears it")
+        return 1
+    try:
+        rec = deletion.request(session, user, actor=None, operator=True)
+    except deletion.Refused as why:
+        print(why)
+        return 1
+    print(f"{user.username} is locked and will be deleted on {rec.due_at:%Y-%m-%d} "
+          "(--cancel clears it, --now deletes it today)")
+    return 0
 
 
 def _oauth_client_cmd(session, args: list[str]) -> int:
@@ -296,6 +376,8 @@ def main(argv: list[str]) -> int:
         elif cmd in ("create-user", "set-password", "set-email", "make-admin", "list-users",
                      "link-traveler"):
             return _user_cmd(session, cmd, args)
+        elif cmd == "delete-account":
+            return _delete_account_cmd(session, args)
         elif cmd == "oauth-client":
             return _oauth_client_cmd(session, args)
         elif cmd in ("demo-seed", "demo-roll"):
@@ -342,18 +424,14 @@ def main(argv: list[str]) -> int:
             print(("dry run: " if "--dry-run" in args else "") +
                   " ".join(f"{k}={v}" for k, v in report.summary().items()))
         elif cmd == "process":
-            from app.config import settings
+            from app import ai
             from app.processing import process_pending
-            llm = None
-            if "--no-llm" not in args:
-                from extract.llm import OllamaExtractor
-                llm = OllamaExtractor(settings.ollama_url, settings.ollama_model,
-                                      settings.llm_timeout_seconds)
+            llm = None if "--no-llm" in args else ai.extractor()
             limit = int(args[args.index("--limit") + 1]) if "--limit" in args else 0
             summary = process_pending(session, llm, limit=limit)
             print(f"extracted={summary['extracted']} "
                   f"needs_review={summary['needs_review']}"
-                  + (" (llm disabled)" if llm is None else f" (model={llm.model})"))
+                  + (" (no AI)" if llm is None else f" (model={llm.llm.model})"))
         elif cmd == "resolve":
             from app.config import settings
             from app.integrations import ClientCache

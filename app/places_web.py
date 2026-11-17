@@ -92,6 +92,19 @@ def _atlas_ctx(session: Session, user, continent: str, country: str, city: str) 
             "boards": places_svc.atlas(session, user)}
 
 
+def search_filters(session: Session, user, q: str) -> tuple[dict, str | None]:
+    """`places.search` arguments for a search box query, with a `list:` chip
+    resolved to the person's own list; a notice instead when there's no such list."""
+    f = places_svc.parse_query(q)
+    name = f.pop("list_name", None)
+    if name:
+        lst = places_svc.list_by_name(session, user, name)
+        if lst is None:
+            return f, f"You have no list called “{name}”."
+        f["list_id"] = lst.id
+    return f, None
+
+
 def _body_ctx(request: Request, session: Session) -> dict:
     """Everything the lens area shows, from the URL alone."""
     user = scope.user_of(request)
@@ -101,16 +114,21 @@ def _body_ctx(request: Request, session: Session) -> dict:
     unsorted = places_svc.unsorted(session, user)
     ctx = {"request": request, "q": q, "lens": lens, "unsorted_count": len(unsorted),
            "map_enabled": map_enabled(), "map_attribution": settings.map_tile_attribution,
-           "kinds": places_svc.place_type_options(), "err": qp.get("err", "")}
-    if q:                                           # a search overrides the lens
-        f = places_svc.parse_query(q)
-        name = f.pop("list_name", None)
-        if name:
-            lst = places_svc.list_by_name(session, user, name)
-            f["list_id"] = lst.id if lst else None
-            if lst is None:
-                return {**ctx, "lens": "search", "rows": [],
-                        "notice": f"You have no list called “{name}”."}
+           "kinds": places_svc.place_type_options(), "err": qp.get("err", ""),
+           # D-235: the kind chips under the search box, and which one the search holds.
+           "kind_chips": [{"word": places_svc.kind_word(o["value"]), "label": o["label"]}
+                          for o in places_svc.place_type_options()],
+           "active_kind": places_svc.kind_word(places_svc.parse_query(q).get("kind") or "")}
+    if q:
+        f, notice = search_filters(session, user, q)
+        if lens == "map" and ctx["map_enabled"]:
+            # YONDER-368: on the Map a search narrows the pins and stays on the map;
+            # the browser draws the matches from /places/map/data?q=….
+            found = [] if notice else places_svc.search(session, user, limit=1000, **f)
+            return {**ctx, "notice": notice, "match_count": len(found),
+                    "pinless_count": sum(p.lat is None for p in found)}
+        if notice:                                  # elsewhere a search overrides the lens
+            return {**ctx, "lens": "search", "rows": [], "notice": notice}
         found = places_svc.search(session, user, limit=200, **f)
         return {**ctx, "lens": "search", "rows": _rows(session, user, found)}
     lists = places_svc.lists(session, user)
@@ -176,6 +194,67 @@ def _sheet(request: Request, session: Session, place_id: str, notice: dict | Non
            "where": where, "can_lookup": place_lookup._default_geocoder() is not None}
     return templates.TemplateResponse(request, "places/_place_sheet.html", ctx,
                                       headers=headers or {})
+
+
+@router.get("/suggest")
+def places_suggest(request: Request, q: str = "", cursor: int | None = None,
+                   session: Session = Depends(get_session)):
+    """Suggestions for the search box (D-235), for places_suggest.js. The same
+    service as GET /api/v1/places/suggest; declared before the /{place_id}
+    catch-all. JSON, drawn with textContent, so no name is ever treated as HTML."""
+    from fastapi.responses import JSONResponse
+    found = places_svc.suggest(session, scope.user_of(request), q[:500],
+                               None if cursor is None else max(0, cursor))
+    return JSONResponse(found, headers={"Cache-Control": "private, no-store"})
+
+
+# --------------------------------------------------------------------------- import a file (D-243)
+@router.get("/import", response_class=HTMLResponse)
+def import_page(request: Request):
+    """The Import page: a template to download, and one form with Preview and
+    Import. Declared before the /{place_id} catch-all."""
+    from app import places_import
+    return templates.TemplateResponse(request, "places/import.html", {
+        "max_mb": places_import.MAX_BYTES // (1024 * 1024), "max_rows": places_import.MAX_ROWS,
+        "columns": list(places_import.COLUMNS)})
+
+
+@router.get("/import/template.csv")
+def import_template():
+    """A CSV with the header row and a few invented places, to fill in."""
+    from app import places_import
+    return Response(places_import.TEMPLATE, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="rundere-places.csv"'})
+
+
+@router.post("/import", response_class=HTMLResponse)
+async def import_file(request: Request, session: Session = Depends(get_session)):
+    """Preview (`dry_run`) or import the chosen file, and show what each row did.
+    Only the result area is swapped, so the same file stays chosen for Import
+    after a Preview; nothing is kept between the two (D-153)."""
+    from fastapi.concurrency import run_in_threadpool
+
+    from app import places_import
+    form = await request.form()
+    upload = form.get("file")
+    dry_run = form.get("action") != "import"
+
+    def work():
+        ctx = {"dry_run": dry_run}
+        if upload is None or not getattr(upload, "filename", ""):
+            return templates.TemplateResponse(request, "places/_import_result.html",
+                                              {**ctx, "error": "Choose a CSV file first."})
+        data = upload.file.read(places_import.MAX_BYTES + 1)
+        try:
+            out = places_import.run(session, scope.user_of(request), data, dry_run=dry_run)
+        except places_import.UnreadableFile as exc:
+            msg = str(exc)
+            return templates.TemplateResponse(request, "places/_import_result.html",
+                                              {**ctx, "error": msg[:1].upper() + msg[1:] + "."})
+        return templates.TemplateResponse(
+            request, "places/_import_result.html", {**ctx, "out": out},
+            headers={} if dry_run else _CHANGED)
+    return await run_in_threadpool(work)
 
 
 @router.get("/{place_id}", response_class=HTMLResponse)

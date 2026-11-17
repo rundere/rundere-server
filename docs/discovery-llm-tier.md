@@ -195,7 +195,7 @@ finishes.
   extracted `_discovery_section.html`. The route threads the DiscoveryProfile
   (`values`) and the `self` traveller's nationality into the run's
   `ResolverContext`. The LLM endpoints come from config (`TX_SEARXNG_URL`,
-  `TX_OLLAMA_URL`); if SearXNG/Ollama are unreachable the resolvers return None
+  `TX_AI_*`, SPEC-12); if SearXNG or the AI endpoint are unreachable the resolvers return None
   and the run simply carries the deterministic findings.
 
 `_render_md` (the finding-body renderer) grew to match the richer LLM output:

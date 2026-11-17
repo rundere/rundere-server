@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import IngestBatch, TravelItem
-from extract.llm import PROMPT_VERSION, OllamaExtractor
+from extract.llm import PROMPT_VERSION, LLMExtractor
 from extract.pipeline import extract_ingest_payload
 
 log = logging.getLogger("yonder.processing")
@@ -39,7 +39,7 @@ def _source(batch: IngestBatch, payload: dict) -> dict:
 
 
 def process_batch(session: Session, batch: IngestBatch,
-                  llm: OllamaExtractor | None) -> str:
+                  llm: LLMExtractor | None) -> str:
     """Runs the chain for one batch; returns the new batch status."""
     from app.config import settings
     from extract.filescan import Scanner
@@ -47,6 +47,8 @@ def process_batch(session: Session, batch: IngestBatch,
     if (payload or {}).get("capture_channel") == "file":    # YONDER-179: bytes from the store
         from app import documents
         payload = documents.pipeline_payload(session, payload)
+    if isinstance(llm, LLMExtractor):              # the call log names whose capture it was
+        llm = llm.for_user(batch.user_id)
     result = extract_ingest_payload(payload, llm=llm,
                                     scanner=Scanner(settings.clamav_url))   # YONDER-243
     now = datetime.now(timezone.utc).isoformat()
@@ -80,12 +82,18 @@ def process_batch(session: Session, batch: IngestBatch,
     else:
         session.add(TravelItem(
             batch_id=batch.id,
+            # Its owner must see it to fix it: without this a failed capture
+            # was visible to admins only (YONDER-186 closes ownerless rows).
+            owner_id=batch.user_id,
             item_type=None,
             schema_version="1.4.0",
             artifact_sha256=batch.artifact_sha256,
             source=src,
             extraction=None,
-            review={"required": True, "reasons": result.reasons,
+            # "ai_off" first, so review leads with "add the details by hand"
+            # (D-228); the sentences after it say what was tried.
+            review={"required": True,
+                    "reasons": (["ai_off"] if result.ai_off else []) + result.reasons,
                     "llm_attempts": result.llm_attempts[-1:] if result.llm_attempts else []},
             status={"extract": "needs_review", "resolve": "skipped",
                     "airtrail": "skipped", "adventurelog": {}},
@@ -97,7 +105,7 @@ def process_batch(session: Session, batch: IngestBatch,
     return batch.status
 
 
-def process_pending(session: Session, llm: OllamaExtractor | None,
+def process_pending(session: Session, llm: LLMExtractor | None,
                     limit: int = 0, progress=None, batch_filter=None) -> dict:
     """Process every received batch (oldest first). Per-batch commit: one bad
     batch never blocks the rest, and a crash mid-run loses nothing.

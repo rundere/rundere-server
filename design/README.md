@@ -8,8 +8,11 @@ as-is, and don't invent new colours, fonts or logo variants.
   (private to the owner — ask for access if you can't open it). Boards: Logo, Color,
   Typography, Foundations & components, Web dashboard, iOS guidelines + screens,
   iPadOS split view, Android guidelines + screens.
-- **Tokens source of truth:** [`tokens/tokens.json`](tokens/tokens.json). The CSS,
-  Swift and Kotlin files are hand-kept mirrors; change all four in one commit.
+- **Tokens source of truth:** [`tokens/tokens.json`](tokens/tokens.json) for Base. The CSS,
+  Swift and Kotlin files are hand-kept mirrors of Base; change all four in one commit.
+- **Travel themes** (SPEC-8 §15, D-237) are packages in [`themes/`](themes/README.md).
+  `scripts/build_tokens.py` generates their part of `tokens.css`, `RundereThemes.swift`,
+  `RundereThemes.kt`, the scene exports and `themes/themes.json`. Don't edit those by hand.
 
 ```
 design/
@@ -17,7 +20,8 @@ design/
 ├── icons/    favicons, PWA icons, iOS app icon master, Android adaptive layers
 ├── fonts/    self-hosted Outfit, Figtree, JetBrains Mono (woff2, Latin + Latin-ext) + fonts.css
 ├── audio/    rundere.m4a + rundere.webm — the name, spoken (pronunciation button)
-└── tokens/   tokens.json · tokens.css · RundereTheme.swift · RundereTheme.kt
+├── tokens/   tokens.json · tokens.css · RundereTheme.swift · RundereTheme.kt · RundereThemes.swift/.kt (generated)
+└── themes/   one package per travel theme (theme.json + scene.svg) · themes.json (generated)
 ```
 
 ---
@@ -47,6 +51,7 @@ for dark grounds) and `-night` (#0F2135, for light grounds).
 - Glow (`filter: drop-shadow(0 0 14px rgba(169,204,255,.55))`) only on dark grounds, only on the mark.
 - Colours: Silver 100 on dark, Night 800 on light. Beacon 300 is allowed for the iOS dark
   app icon only. Never Runway or status colours.
+  In a travel theme (5.0) the mark inks in that theme's `rd-text` instead (SPEC-8 D-238).
 - Clear space = 2× fuselage width on every side. Minimum sizes: 16px (use `-16`), lockup 96px wide.
 - Switch files by size (don't just scale down the full mark): ≥ 64px full · 24–63px `-32` · 16px `-16`.
 - Don't typeset the wordmark: use the outlined SVG. Never swap the dot for a hyphen or period.
@@ -97,7 +102,7 @@ Use semantic tokens in UI code, never the ramp values directly:
 | `border` | #22405F | #CBD3DD |
 | `text` | #E6EAF0 | #0F2135 |
 | `text-secondary` | #AAB6C4 | #44536A |
-| `text-muted` | #8594A6 | #5E6E82 |
+| `text-muted` | #8A99AB | #5E6E82 |
 | `accent` | #7FB2FF | #1F57B0 |
 | `on-accent` | #0A1624 | #FFFFFF |
 | `highlight` | #F2B544 | #8A5C08 |

@@ -116,6 +116,6 @@ if DEPS:
         html = client.get(f"/trips/{tid}").text
         assert "What Run·dere found" not in html
         disc = html[html.index('id="discovery-section"'):]
-        assert "Refine Discovery" in disc[:3000]
+        assert "Refine places" in disc[:3000]
         sheet = client.get(f"/trips/{tid}/derived-locations").text
-        assert "Refine Discovery · RD trip" in sheet
+        assert "Refine places · RD trip" in sheet

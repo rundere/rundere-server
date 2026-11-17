@@ -369,7 +369,10 @@ if DEPS:
         tid, p, ck, _ = _setup()
         client.post(f"/trips/{tid}/costs", cookies=ck["Ana"], data=_form(p, currency="USD"))
         modal = client.get(f"/trips/{tid}/costs/new", cookies=ck["Ana"]).text
-        assert 'data-trip-cur="USD"' in modal and "' = ? ' + trip" in modal
+        assert 'data-trip-cur="USD"' in modal and 'data-action-change="more-currencies rate-label"' in modal
+        # The label itself is written by trip_detail.js (YONDER-303: no inline scripts).
+        js = (Path(__file__).resolve().parent.parent / "app/trips/static/trip_detail.js").read_text()
+        assert '" = ? " + trip' in js
 
     def test_plan_and_actual_tabs_always_show():
         tid, p, ck, _ = _setup()
@@ -508,7 +511,7 @@ if DEPS:
     def test_plan_comes_before_actual():
         tid, p, ck, _ = _setup()
         html = client.get(f"/trips/{tid}/costs", cookies=ck["Ana"]).text
-        assert html.index('data-sub="plan" onclick') < html.index('data-sub="actual" onclick')
+        assert html.index('data-costs-sub="plan"') < html.index('data-costs-sub="actual"')
 
     def test_opens_on_plan_before_the_trip_and_actual_once_it_starts():
         tid, p, ck, _ = _setup()                          # trip starts 2031-05-01

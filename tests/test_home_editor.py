@@ -159,7 +159,7 @@ def test_lookup_result_fragment_fills_fields():
                                      "iata": "YYZ", "lat": 43.6759,
                                      "lon": -79.6294, "country": "CA",
                                      "source": "AirTrail"}).body.decode()
-        assert "set('hp-lat'" in html and "set('hp-country'" in html
+        assert 'class="hp-found"' in html and '"lat":' in html and '"country":' in html
         assert "43.6759" in html and "YYZ" in html
     _skip_or(run)
 

@@ -64,7 +64,8 @@ research_* prompts are step-by-step research kits for these. Dates are
 ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM local time for timeline items).
 Saved places are the user's Places Library: Maps places they kept, with what to
 do there. capture_url saves one from a link, save_places pushes a whole list (try
-dry_run first; it is safe to repeat), list_saved_places searches them (by words,
+dry_run first; it is safe to repeat), import_places_csv imports a Run·dere CSV
+file the user gives you (a dry run by default), list_saved_places searches them (by words,
 country, city or priority) and file_saved_place puts one on a trip, undated if
 the user hasn't decided when. A place stays in the library after filing and can
 go on other trips too.
@@ -89,7 +90,7 @@ def _run(fn, /, **kwargs) -> Any:
         raise ToolError("not signed in")
     with SessionLocal() as session:
         user = session.get(User, uid)
-        if user is None or not user.is_active:
+        if user is None or not user.is_active or user.deletion_due_at is not None:
             raise ToolError("this Run·dere account is not active")
         try:
             return jsonable_encoder(fn(session=session, user=user, **kwargs))
@@ -132,7 +133,7 @@ def get_trip(trip_id: TripId) -> dict[str, Any]:
 
 @mcp.tool()
 def list_discovery_places(trip_id: TripId) -> dict[str, Any]:
-    """The places Discovery researches on this trip for the user (Refine Discovery):
+    """The places Discovery researches on this trip for the user (Refine places):
     each with its `key`, where it came from, `is_home` (never researched),
     `home_country` (local topics skipped) and `excluded` (the user chose to skip
     it). Check before researching; skip what the user doesn't want with
@@ -498,8 +499,8 @@ def list_saved_places(
         limit: Annotated[int, Field(ge=1, le=500)] = 100) -> dict[str, Any]:
     """The user's Places Library: Google/Apple Maps places they kept, with what to do
     there (`todo`), `priority`, where it is (`locality`, `country_code`), the trips
-    it is already on (`trip_ids`) and a `suggested_trip_id` (a hint, never a
-    decision). Every filter is optional; with none, newest first. Removed places
+    it is already on (`trip_ids`), the lists it is in (`list_ids`, named by
+    list_place_lists) and a `suggested_trip_id` (a hint, never a decision). Every filter is optional; with none, newest first. Removed places
     are not listed."""
     def _list(session, user):
         trips = api_v1.fileable_trips(session, user)
@@ -537,13 +538,95 @@ def save_places(places: Annotated[list[api_v1.SavedPlaceIn], Field(
     read from a Takeout export, after choosing the ones worth keeping. Safe to run
     twice: each place is saved at most once, a place already saved or removed is
     skipped and reported, and one bad entry never stops the rest. Each place may
-    carry `todo` (what to do there) and `priority` (someday or must). Returns
+    carry `todo` (what to do there), `priority` (someday or must), `activity_type`
+    (a kind from list_activity_types, set only on a place this call adds) and
+    `list_ids` (lists from list_place_lists to put it in, D-236); a list that
+    isn't the user's refuses the whole call before anything is saved. Returns
     `counts` and one `results` row per place, in order, with an `outcome`:
     created, revived, duplicate, near_duplicate, removed_earlier or error (with a
     reason)."""
-    return _run(lambda session, user: places_svc.save_many(
-        session, user, [p.model_dump() for p in places], dry_run=dry_run, enrich=enrich,
-        revive=revive, allow_near_duplicates=allow_near_duplicates, source="mcp"))
+    return _run(lambda session, user: api_v1.save_batch(
+        session, user, api_v1.SavedPlaceBatchIn(
+            places=places, dry_run=dry_run, enrich=enrich, revive=revive,
+            allow_near_duplicates=allow_near_duplicates), source="mcp"))
+
+
+@mcp.tool()
+def import_places_csv(csv_text: Annotated[str, Field(
+                          description="The whole CSV file as text, header row first. Columns, "
+                                      "any order: name, url, address, lat, lon, list, kind, "
+                                      "notes, todo, priority, country. Each row needs a name or "
+                                      "a full Maps url; repeat a row to put it in two lists.")],
+                      dry_run: Annotated[bool, Field(
+                          description="Report what each row would do and write nothing, not "
+                                      "even a list. Use it first.")] = True) -> dict[str, Any]:
+    """Import the user's places from a Run·dere CSV (SPEC-11 D-243), up to 5,000
+    rows: the same import as the web page's Import button. Lists named in the
+    `list` column are matched to the user's own lists by name, or made. Nothing is
+    looked up, so a row without lat/lon comes in without a pin. Safe to run twice.
+    Defaults to a dry run; call again with dry_run false once the user agrees.
+    Returns `counts`, one `results` row per file line, the `lists` it used or
+    makes, and `warnings` about the file."""
+    from app import places_import
+    return _run(lambda session, user: places_import.run(
+        session, user, csv_text.encode("utf-8"), dry_run=dry_run))
+
+
+# Lists (D-213, D-236): own-only like the rest of the library.
+ListId = Annotated[str, Field(description="List id (from list_place_lists)")]
+
+
+@mcp.tool()
+def list_place_lists() -> list[dict[str, Any]]:
+    """The user's own lists of saved places ("Want to go", "Ramen to try"), in their
+    order, with how many places each holds. A place's `list_ids` point here."""
+    return _run(api_v1.api_place_lists)
+
+
+@mcp.tool()
+def create_place_list(name: str, emoji: str | None = None,
+                      description: str | None = None) -> dict[str, Any]:
+    """Make a new list at the end of the user's lists. Check list_place_lists first:
+    a list with the same name is not merged with this one."""
+    return _run(api_v1.api_place_list_create,
+                body=api_v1.PlaceListIn(name=name, emoji=emoji, description=description))
+
+
+@mcp.tool()
+def update_place_list(list_id: ListId, name: str | None = None, emoji: str | None = None,
+                      description: str | None = None,
+                      position: Annotated[int | None, Field(
+                          description="Where it sorts among the lists; lower comes first")] = None,
+                      ) -> dict[str, Any]:
+    """Rename a list, change its emoji or description, or move it. Only the fields
+    you pass change."""
+    fields = {k: v for k, v in (("name", name), ("emoji", emoji), ("description", description),
+                                ("position", position)) if v is not None}
+    return _run(api_v1.api_place_list_update, list_id=list_id,
+                body=api_v1.PlaceListPatch(**fields))
+
+
+@mcp.tool()
+def delete_place_list(list_id: ListId) -> dict[str, Any]:
+    """Delete one of the user's lists. Its places stay saved; they only leave the list.
+    Confirm with the user first."""
+    def _rm(session, user):
+        places_svc.delete_list(session, user, list_id)
+        return {"ok": True, "list_id": list_id}
+    return _run(_rm)
+
+
+@mcp.tool()
+def set_saved_place_lists(place_id: Annotated[str, Field(description="Saved place id")],
+                          list_ids: Annotated[list[str], Field(
+                              description="Every list it should be in (from "
+                                          "list_place_lists); [] takes it out of all of them")],
+                          ) -> dict[str, Any]:
+    """Sort a saved place into the user's lists: afterwards it is in exactly
+    `list_ids` (D-236). To add one list, pass the place's current `list_ids` plus
+    the new one. A place in no list and on no trip is Unsorted."""
+    return _run(api_v1.api_place_set_lists, place_id=place_id,
+                body=api_v1.PlaceListsIn(list_ids=list_ids))
 
 
 @mcp.tool()

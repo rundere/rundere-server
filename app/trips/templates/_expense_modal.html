@@ -1,7 +1,8 @@
 {# Add / edit one expense (YONDER-212). Location is shown, never captured or
    edited here — the iOS app records it (D-183 decides who sees it). #}
-<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root">
-  <div class="dialog blueprint bp-dialog-tall" onclick="event.stopPropagation()">
+<div class="dialog-backdrop" hx-get="/trips/close" hx-target="#modal-root"
+     hx-trigger="click target:.dialog-backdrop">{# a click on the backdrop itself, not the dialog #}
+  <div class="dialog blueprint bp-dialog-tall">
     <div class="dialog-title">{% if expense is none %}Add expense{% elif settlement %}Settle-up{% else %}Expense{% endif %}</div>
     {% if error %}<div class="bp-error">{{ error }}</div>{% endif %}
     <form class="dialog-body"
@@ -30,7 +31,7 @@
           {# Only the currencies that matter for this trip (YONDER-213); the full
              list is one pick away under "Other currency…". #}
           <select id="ex-cur" class="input" name="currency" required
-                  onchange="ynMoreCurrencies(this); ynRateLabel()">
+                  data-action-change="more-currencies rate-label">
             {% if not form.currency %}<option value="" selected disabled>Choose…</option>{% endif %}
             {% for code, label in cc.suggested %}<option value="{{ code }}" {% if code == form.currency %}selected{% endif %}>{{ label }}</option>{% endfor %}
             {% if form.currency and form.currency not in known %}<option value="{{ form.currency }}" selected>{{ form.currency }}</option>{% endif %}
@@ -150,18 +151,3 @@
     {% endif %}
   </div>
 </div>
-<script>
-  // "1 CAD = ? USD", and no rate at all when the expense is in the trip's own
-  // currency (or the trip has none yet: the first expense sets it). YONDER-220.
-  function ynRateLabel() {
-    var f = document.getElementById('ex-rate-field');
-    var cur = document.getElementById('ex-cur');
-    if (!f || !cur) return;
-    var trip = f.getAttribute('data-trip-cur'), c = cur.value;
-    var need = trip && c && c !== '__more' && c !== trip;
-    f.hidden = !need;
-    if (need) document.getElementById('ex-rate-label').textContent =
-      'Exchange rate · 1 ' + c + ' = ? ' + trip;
-  }
-  ynRateLabel();
-</script>
