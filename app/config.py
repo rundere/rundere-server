@@ -306,7 +306,7 @@ class Settings(BaseSettings):
     # no Android client; the iOS one is unaffected.
     oauth_android_redirect_uris: str = "https://rundere.app/auth/callback"
 
-    app_version: str = "5.0.0"
+    app_version: str = "5.0.1"
 
     # Docker secrets (YONDER-293): each secret below may be read from a file
     # (TX_JWT_SECRET_FILE=/run/secrets/jwt, …) instead of the environment, where
