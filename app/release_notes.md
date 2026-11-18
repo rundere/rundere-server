@@ -17,7 +17,7 @@ How to write a section (the release PR does this; RELEASING.md):
 Run·dere was called Yonder until 4.4.0, so older notes use that name.
 -->
 
-## 5.0.1
+## 5.0.1 - 2026-11-17
 
 ### For everyone
 - **The Places map stays where you are.** Picking a list, a kind or a search on the Map tab now filters the pins without zooming you back out.
