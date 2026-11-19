@@ -90,6 +90,11 @@ def _fields(payload: dict) -> list[dict]:
         if not airport:
             text_field_p("address", "address")
         text_field_p("city", "city")
+        if not airport:
+            # The schema keeps a place's state (`region`) but the form never
+            # showed it, so a reviewer couldn't tell Arlington VA from TX.
+            text_field_p("state / region", "region")
+            text_field_p("postcode", "postcode")
         text_field_p("country", "country")
 
     if t == "flight":
@@ -223,7 +228,7 @@ def _apply_edit(payload: dict, path: str, raw: str, kind: str) -> bool:
     # may be wrong: drop coordinates the geocoder guessed (never ones the
     # document or link stated) so the re-resolve locates the new text, and the
     # drive distance built from them.
-    if leaf in {"name", "address", "city", "region", "country"} \
+    if leaf in {"name", "address", "city", "region", "postcode", "country"} \
             and node.get("geocode_source") == "photon":
         for k in ("lat", "lon", "geocode_source"):
             node.pop(k, None)

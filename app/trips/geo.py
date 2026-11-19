@@ -50,7 +50,7 @@ _POINTS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
     "lodging": (("place", ("address", "name")),),
     "dining": (("place", ("address", "name")),),
     "tour": (("place", ("location", "name")),),
-    "event": (("place", ("venue", "name")),),
+    "event": (("place", ("address", "venue", "name")),),
     "note": (),
 }
 _AIRPORT_TYPES = {"flight"}
@@ -64,6 +64,10 @@ def fingerprint(atype: str, values: dict) -> str:
         keys.update(tried)
     if atype in ("lodging", "dining"):
         keys.add("name")
+    if atype == "event" and not (values or {}).get("address"):
+        # Events gained an Address (D-248). Leave it out of the digest while
+        # it's empty, so events from before keep their pins un-redone.
+        keys.discard("address")
     picked = {k: (values or {}).get(k) or "" for k in sorted(keys)}
     raw = json.dumps([atype, picked], sort_keys=True, ensure_ascii=False)
     # A change detector, not a security hash (YONDER-293): same digest as before.

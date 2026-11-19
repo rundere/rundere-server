@@ -91,7 +91,9 @@ def build_format_schema(schema: dict) -> dict:
     # codes that WERE printed in the document (e.g. an itinerary table
     # "Toronto YYZ Frankfurt FRA") were silently dropped, leaving every multi-leg
     # flight un-keyable. Required-but-nullable forces a conscious choice.
-    place_always = {"address", "city", "country", "iata"}
+    # region and postcode joined in 5.0.2 (D-248): captures arrived with a city
+    # and no state, so a bare "Arlington" could be read as Texas.
+    place_always = {"address", "city", "region", "postcode", "country", "iata"}
 
     variants = []
     for item_type in ("flight", "ground_transport", "lodging", "event"):
@@ -163,7 +165,8 @@ def _require_place_fields(node, fields: set[str]) -> None:
             _require_place_fields(value, fields)
 
 
-PROMPT_VERSION = "v3"   # v3: mode "taxi" (owner, 2026-10-12)
+PROMPT_VERSION = "v4"   # v4: place region + postcode always asked for (D-248)
+                        # v3: mode "taxi" (owner, 2026-10-12)
 
 SYSTEM_PROMPT = """You extract travel bookings from documents (emails, tickets, invoices) into strict JSON.
 
@@ -180,7 +183,7 @@ Rules — every one of these exists because of a real past failure:
 - booking_reference: the confirmation/booking/PNR code (check the subject line), or null.
 - Every item MUST include the detail object named by its item_type: item_type "flight" requires a "flight" object, "lodging" requires "lodging", "event" requires "event", and train/bus/car-rental items are item_type "ground_transport" and require a "ground_transport" object (set its mode).
 - A taxi, or a ride-hailing trip (Uber, Lyft, Bolt, Grab, a car service), is item_type "ground_transport" with mode "taxi": the pickup is departure.place, the drop-off arrival.place, and the company is provider.name. A taxi has no service number; a vehicle, driver or trip count is not one.
-- ADDRESSES MATTER. For hotels, venues, stations and rental desks, fill place.address with the full street address printed in the document (street number and name), place.city with the city, place.region with the state/province, and place.country with its 2-letter code. These are almost always printed — you need them to physically get there — and they are what locates the booking on a map. Do not put the street address in place.name; name is the property/venue name.
+- ADDRESSES MATTER. For hotels, venues, stations and rental desks, fill place.address with the full street address printed in the document (street number and name), place.city with the city, place.region with the state/province, place.postcode with the postal/ZIP code, and place.country with its 2-letter code. These are almost always printed — you need them to physically get there — and they are what locates the booking on a map. Do not put the street address in place.name; name is the property/venue name.
 - travelers: passenger/guest names exactly as printed (raw_name).
 - cost: total amount + 3-letter currency code, only if the document states them.
 - The document may be a forwarded email; extract the underlying booking, not the forwarder.

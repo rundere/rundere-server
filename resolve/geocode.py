@@ -38,6 +38,18 @@ class GeocodeResult:
         return self.confidence == "verified"
 
 
+_SETTLEMENTS = {"city", "town", "village", "hamlet", "locality"}
+
+
+def _feature_city(props: dict) -> str | None:
+    """The town a Photon feature is in. When the feature IS a town, its own name
+    comes before its county: Photon's hit for Arlington, Texas carries
+    county "Tarrant County", and the trip showed that as a city."""
+    own = props.get("name") if props.get("type") in _SETTLEMENTS else None
+    return (props.get("city") or own or props.get("locality")
+            or props.get("county") or props.get("name"))
+
+
 def _looks_like_address(s: str | None) -> bool:
     """True when a single string is itself a full postal address — a comma to
     separate its parts AND a digit (street number or postal code). Google Maps
@@ -179,8 +191,7 @@ class PhotonGeocoder:
                     if len(coords) != 2:
                         continue
                     lon, lat = coords[0], coords[1]
-                    got_city = (props.get("city") or props.get("locality")
-                                or props.get("county") or props.get("name"))
+                    got_city = _feature_city(props)
                     got_country = props.get("countrycode")
 
                     # Reject anything contradicting the document. This is the
@@ -236,8 +247,7 @@ class PhotonGeocoder:
             if len(coords) != 2:
                 continue
             lon, lat = coords[0], coords[1]
-            city = (props.get("city") or props.get("locality")
-                    or props.get("county") or props.get("name"))
+            city = _feature_city(props)
             street_level = bool(props.get("housenumber") or props.get("street"))
             return GeocodeResult(
                 lat=float(lat), lon=float(lon),

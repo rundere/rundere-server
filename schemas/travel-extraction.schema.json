@@ -361,6 +361,13 @@
             "null"
           ]
         },
+        "postcode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Postal / ZIP code as printed."
+        },
         "country": {
           "type": [
             "string",

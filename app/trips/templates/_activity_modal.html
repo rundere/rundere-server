@@ -13,7 +13,7 @@
         <select class="input" name="activity_kind" required
                 hx-get="/trips/{{ trip_id }}/activity/fields"
                 hx-target="#activity-fields" hx-swap="innerHTML"
-                hx-trigger="change" hx-include="this">
+                hx-trigger="change" hx-include="closest form">{# D-248: the entered values come along #}
           {# D-209: no default type; the person chooses, so a Maps link is never read as a flight. #}
           <option value="" {% if not type %}selected{% endif %}>Choose a type…</option>
           {% for opt in type_options %}
