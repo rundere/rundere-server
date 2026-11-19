@@ -17,6 +17,18 @@ How to write a section (the release PR does this; RELEASING.md):
 Run·dere was called Yonder until 4.4.0, so older notes use that name.
 -->
 
+## 5.0.2 — 2026-11-18
+
+### For everyone
+- **Captured events keep their whole venue.** An event from an email or calendar now shows the venue's name and its full address on your timeline, not just the city.
+- **Events have a Venue name and an Address.** When you add or edit an event there are now two fields, the same as hotels and restaurants have.
+- **Captures include the state and postcode.** Review shows State / region and Postcode for every place, so you can tell one Arlington from another.
+- **Discover finds the right town.** Discover now uses each booking's map pin, so a town that shares its name with one in another state is no longer researched in the wrong place.
+- **Changing an activity's type keeps what you entered.** Switching an Event to a Tour (or any other type) keeps its name, time, place and notes. Switch back and the rest comes back too.
+
+### For admins
+- **Existing events keep their short venue** until someone edits them. To clear a wrong city from Discover, run Discover again on the trips it affects.
+
 ## 5.0.1 - 2026-11-17
 
 ### For everyone
