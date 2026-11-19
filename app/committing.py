@@ -461,6 +461,26 @@ def _label(place: dict | None) -> str | None:
             or place.get("raw") or None)
 
 
+def _venue_line(place: dict | None) -> str | None:
+    """The whole venue for an event's single Venue field: name, street, city and
+    state, not just the city. _label() picks the city first, which suits an
+    airport but turned "Quincy Hall, 4001 Fairfax Dr, Arlington, VA" into a bare
+    "Arlington". Discover then placed that in Texas (Tarrant County)."""
+    if not isinstance(place, dict):
+        return None
+    from resolve.geocode import _looks_like_address
+    from resolve.routing import stop_address
+    whole = (place.get("name") or place.get("raw") or "").strip()
+    if _looks_like_address(whole):
+        return whole            # a calendar LOCATION / maps pick is already complete
+    line = stop_address(place) or _label(place)
+    region = (place.get("region") or "").strip()
+    if line and region and region.lower() not in line.lower() and \
+            (place.get("address") or place.get("city")):
+        line = f"{line}, {region}"
+    return line or None
+
+
 def _capture_source(session: Session, item: TravelItem) -> str | None:
     """What the timeline's Source field says for a capture: the email's subject
     or the captured page's address. Maps captures carry their link in the Map
@@ -560,7 +580,7 @@ def _yonder_activity(payload: dict) -> tuple[str, dict]:
     if t == "event":
         ev = payload.get("event") or {}
         values = {"when": _local(ev.get("start")), "name": ev.get("title") or "Event",
-                  "venue": _label(ev.get("venue"))}
+                  "venue": _venue_line(ev.get("venue"))}
         return "event", {k: v for k, v in values.items() if v}
 
     # Anything else (incl. note): a plain note carrying whatever text we have.

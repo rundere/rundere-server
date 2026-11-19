@@ -90,6 +90,10 @@ def _fields(payload: dict) -> list[dict]:
         if not airport:
             text_field_p("address", "address")
         text_field_p("city", "city")
+        if not airport:
+            # The schema keeps a place's state (`region`) but the form never
+            # showed it, so a reviewer couldn't tell Arlington VA from TX.
+            text_field_p("state / region", "region")
         text_field_p("country", "country")
 
     if t == "flight":

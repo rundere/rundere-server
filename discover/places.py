@@ -42,6 +42,7 @@ class PlaceRef:
     geo: dict = field(default_factory=dict)   # geocode_place input (place kind)
     freeform: str = ""         # user-typed address/place to try if strict geocode
                                # can't verify (manual entry has no structured city)
+    point: tuple[float, float] | None = None   # where the timeline already put it
 
 
 @dataclass
@@ -126,13 +127,15 @@ def _extract(activity) -> list[PlaceRef]:
     t = activity.type
     v = activity.values or {}
     refs: list[PlaceRef] = []
+    point = _stored_point(activity) if t in _SINGLE_PLACE else None
 
     def add(fname: str, kind: str, raw, geo: dict | None = None,
             freeform: str | None = None) -> None:
         raw = (raw or "").strip()
         if raw and not is_placeholder(raw):
             refs.append(PlaceRef(activity.id, t, fname, kind, raw, geo or {},
-                                 (freeform or "").strip()))
+                                 (freeform or "").strip(),
+                                 point if kind == "place" else None))
 
     if t == "flight":
         add("from", "airport", v.get("from"))
@@ -180,6 +183,22 @@ def _extract(activity) -> list[PlaceRef]:
     return refs
 
 
+# One place per activity, so the timeline's stored point (app/trips/geo.py,
+# role "place") is the place this ref names.
+_SINGLE_PLACE = {"lodging", "dining", "tour", "event"}
+
+
+def _stored_point(activity) -> tuple[float, float] | None:
+    """The located point the timeline map already shows for this activity. It
+    was usually placed from the capture's own coordinates, so it is better
+    evidence than re-geocoding a short text like a bare "Arlington"."""
+    for p in ((getattr(activity, "geo", None) or {}).get("points") or []):
+        if p.get("role") == "place" and p.get("lat") is not None \
+                and p.get("lon") is not None:
+            return float(p["lat"]), float(p["lon"])
+    return None
+
+
 def _resolve(ref: PlaceRef, resolve_airport: Callable, geocoder) -> DerivedPlace | None:
     if ref.kind == "airport":
         ap = resolve_airport(ref.raw)
@@ -187,6 +206,19 @@ def _resolve(ref: PlaceRef, resolve_airport: Callable, geocoder) -> DerivedPlace
             return DerivedPlace(country=_iso(ap.country), city=ap.municipality,
                                 lat=ap.lat, lon=ap.lon)
         return None
+    # The point on the map wins: ask which town it is in. A name-only lookup
+    # took a bare "Arlington" to Arlington, Texas (Tarrant County) on a
+    # Virginia trip. No reverse lookup (Photon down) falls through as before.
+    reverse = getattr(geocoder, "reverse", None)
+    if ref.point is not None and reverse is not None:
+        try:
+            hit = reverse(*ref.point)
+        except Exception:
+            hit = None
+        if hit and hit.get("country_code") and hit.get("locality"):
+            return DerivedPlace(country=_iso(hit["country_code"]), city=hit["locality"],
+                                lat=ref.point[0], lon=ref.point[1],
+                                region=hit.get("region"))
     res = geocoder.geocode_place(ref.geo)
     if res is not None and res.usable and (res.country or res.city):
         return DerivedPlace(country=_iso(res.country), city=res.city,
