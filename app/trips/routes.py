@@ -3388,19 +3388,59 @@ def activity_from_link(trip_id: str, request: Request,
     return form(atype, values, from_link=True, kept_mine=True)
 
 
+# Changing an activity's type reshapes the same record; it doesn't start a new
+# one (D-248, owner 2026-11-18). A value moves to the new type under its own key,
+# or under the key that means the same thing there. An event's Venue becomes a
+# tour's Location, and a carrier stays the carrier. Values the new type has no
+# field for travel along hidden, so switching back restores them.
+_CARRY_FROM: dict[str, tuple[str, ...]] = {
+    "address": ("location",),
+    "location": ("address", "venue"),
+    "provider": ("operator", "company"),
+    "operator": ("provider", "company"),
+    "company": ("provider", "operator"),
+    "from": ("pickupLocation", "departurePort"),
+    "to": ("dropoffLocation", "arrivalPort"),
+    "pickupLocation": ("from", "departurePort"),
+    "dropoffLocation": ("to", "arrivalPort"),
+    "departurePort": ("from", "pickupLocation"),
+    "arrivalPort": ("to", "dropoffLocation"),
+}
+
+
+def _carried_values(t: activity_types.ActivityType, posted) -> tuple[dict, dict]:
+    """(values for type `t`'s fields, the rest to keep hidden) from the form as
+    it stood under the previous type. Only activity field names are read, so
+    the picker, Map link and travellers never leak in."""
+    every = {f["key"] for typ in activity_types.all_types() for f in typ.fields}
+    every.discard("mapLink")                     # it sits outside the field block
+    had = {k: v for k in every if (v := (posted.get(k) or "").strip())}
+    mine = {f["key"] for f in t.fields}
+    values = {k: v for k, v in had.items() if k in mine}
+    used = set(values)
+    for key in mine - set(values):
+        src = next((k for k in _CARRY_FROM.get(key, ()) if had.get(k) and k not in used), None)
+        if src:
+            values[key] = had[src]
+            used.add(src)
+    stash = {k: v for k, v in had.items() if k not in mine and k not in used}
+    return values, stash
+
+
 @router.get("/{trip_id}/activity/fields", response_class=HTMLResponse)
 def activity_fields(trip_id: str, request: Request, activity_kind: str = ""):
-    """Re-render just the dynamic field block when the type dropdown changes.
-    Switching type starts from empty inputs (as in the design) — the contract
-    for what a flight vs a hotel carries is different, so old values would be
-    meaningless under the new type. The Map link sits outside this block, so it
-    stays (D-209). The selector is `activity_kind`, NOT `type`,
-    because a detail field (lodging's sub-type) is itself named `type` and would
-    otherwise shadow the selector in the posted form (Starlette .get() returns the
-    LAST duplicate) — silently saving every manual lodging as a flight."""
+    """Re-render just the dynamic field block when the type dropdown changes,
+    keeping what was entered (D-248; until 5.0.2 it started empty and lost it).
+    The Map link sits outside this block, so it stays (D-209). The selector is
+    `activity_kind`, NOT `type`, because a detail field (lodging's sub-type) is
+    itself named `type` and would otherwise shadow the selector in the posted
+    form (Starlette .get() returns the LAST duplicate) — silently saving every
+    manual lodging as a flight."""
     t = _type_or_none(activity_kind)
+    values, stash = _carried_values(t, request.query_params) if t else ({}, {})
     return templates.TemplateResponse(request, "_activity_fields.html", {
-        "request": request, "fields": _modal_fields(t, {}) if t else []})
+        "request": request, "fields": _modal_fields(t, values) if t else [],
+        "stash": stash})
 
 
 @router.get("/{trip_id}/activity/{activity_id}/edit", response_class=HTMLResponse)

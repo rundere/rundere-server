@@ -13,3 +13,6 @@
   </div>
   {% endif %}
 {% endfor %}
+{# D-248: values the chosen type has no field for, kept so switching back restores them #}
+{% for k, v in (stash or {}).items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">
+{% endfor %}
