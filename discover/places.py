@@ -172,8 +172,10 @@ def _extract(activity) -> list[PlaceRef]:
             {"name": v.get("name"), "raw": v.get("name") or v.get("address"),
              "address": v.get("address")}, freeform=v.get("address"))
     elif t == "event":
-        add("venue", "place", v.get("venue"),
-            {"name": v.get("venue"), "raw": v.get("venue")}, freeform=v.get("venue"))
+        add("venue", "place", v.get("venue") or v.get("address"),
+            {"name": v.get("venue"), "raw": v.get("venue") or v.get("address"),
+             "address": v.get("address")},
+            freeform=v.get("address") or v.get("venue"))
     elif t == "cruise":
         for f in ("departurePort", "arrivalPort"):
             val = v.get(f)

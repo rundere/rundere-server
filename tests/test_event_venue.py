@@ -26,29 +26,54 @@ def _event(venue: dict) -> dict:
 
 # ------------------------------------------------------------------ commit
 
-def test_event_venue_keeps_name_street_city_and_state():
+def test_event_keeps_venue_name_and_full_address():
     _, values = build_yonder_activity(_event({
-        "name": "Example Hall", "address": "100 Sample Street",
-        "city": "Arlington", "region": "VA", "country": "US"}))
-    assert values["venue"] == "Example Hall, 100 Sample Street, Arlington, VA"
+        "name": "Example Hall", "address": "100 Sample Street", "city": "Arlington",
+        "region": "VA", "postcode": "22203", "country": "US"}))
+    assert values["venue"] == "Example Hall"
+    assert values["address"] == "100 Sample Street, Arlington, VA 22203"
 
 
-def test_event_venue_that_is_already_a_full_address_is_kept_as_is():
+def test_event_venue_that_is_a_full_address_splits_name_from_address():
     whole = "Example Hall, 100 Sample St, Arlington, VA 22203, USA"
     _, values = build_yonder_activity(_event({
         "name": whole, "raw": whole, "address": "100 Sample Street",
         "city": "Arlington", "region": "VA"}))
-    assert values["venue"] == whole
+    assert values["venue"] == "Example Hall"
+    assert values["address"] == "100 Sample St, Arlington, VA 22203, USA"
 
 
-def test_event_venue_with_only_a_city_adds_its_state():
+def test_event_with_only_a_city_has_an_address_of_city_and_state():
     _, values = build_yonder_activity(_event({"city": "Lynchburg", "region": "VA"}))
-    assert values["venue"] == "Lynchburg, VA"
+    assert "venue" not in values
+    assert values["address"] == "Lynchburg, VA"
 
 
 def test_event_venue_name_only_is_unchanged():
     _, values = build_yonder_activity(_event({"name": "Example Arena"}))
-    assert values["venue"] == "Example Arena"
+    assert values["venue"] == "Example Arena" and "address" not in values
+
+
+def test_lodging_address_keeps_city_state_and_postcode():
+    _, values = build_yonder_activity({"item_type": "lodging", "lodging": {
+        "property_name": "Example Inn", "place": {
+            "name": "Example Inn", "address": "5 Sample Road", "city": "Forest",
+            "region": "VA", "postcode": "24551"}}})
+    assert values["address"] == "5 Sample Road, Forest, VA 24551"
+
+
+def test_event_subtitle_and_map_search_use_venue_and_address():
+    from app.trips.types import get_type, map_query
+    v = {"name": "Happy Hour", "venue": "Example Hall", "address": "100 Sample St, Arlington, VA"}
+    assert get_type("event").subtitle(v) == "Example Hall · 100 Sample St, Arlington, VA"
+    assert map_query("event", v) == "Example Hall, 100 Sample St, Arlington, VA"
+
+
+def test_event_pin_fingerprint_unchanged_until_an_address_is_added():
+    from app.trips.geo import fingerprint
+    old = {"name": "Happy Hour", "venue": "Arlington"}
+    assert fingerprint("event", old) == fingerprint("event", {**old, "address": ""})
+    assert fingerprint("event", old) != fingerprint("event", {**old, "address": "1 Sample St"})
 
 
 # ------------------------------------------------------------------ Discover
@@ -117,10 +142,19 @@ def test_a_street_feature_still_uses_its_city_then_county():
 
 # ------------------------------------------------------------------ review form
 
-def test_review_form_shows_the_venue_state():
+def test_review_form_shows_the_venue_state_and_postcode():
     from app.review.routes import _fields
     paths = {f["path"] for f in _fields(_event({"city": "Arlington", "region": "VA"}))}
-    assert "/event/venue/region" in paths
+    assert {"/event/venue/region", "/event/venue/postcode"} <= paths
+
+
+def test_schemas_and_llm_grammar_carry_postcode():
+    import json
+    for name in ("travel-item", "travel-extraction"):
+        s = json.loads((ROOT / "schemas" / f"{name}.schema.json").read_text())
+        assert '"postcode"' in json.dumps(s), name
+    from extract import llm
+    assert "place.postcode" in llm.SYSTEM_PROMPT
 
 
 def test_review_form_has_no_state_for_an_airport():

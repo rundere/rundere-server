@@ -373,6 +373,22 @@ points that share one parser (`extract/place_url.py`) and one category table:
   Address and category come from Photon only when it finds a hit within 250 m of the link's own
   pin whose name matches (the wrong-branch trap, resolve/geocode.py); name-only links are never
   looked up.
+- **D-248 — A captured place keeps its whole address, and an activity keeps its values when its
+  type changes (YONDER-400; owner, 2026-11-18).** A captured happy hour at a named venue in
+  Arlington, Virginia reached the timeline as a bare "Arlington". Discover looked that up by
+  name, filed the trip under Arlington, Texas and labelled it "Tarrant County".
+  - *A place carries a postcode.* The place schema gains `postcode`. The extraction grammar
+    asks for `region` and `postcode` on every place (required but nullable, as D-29 does for
+    address/city/country), and the review form shows State / region and Postcode.
+  - *An event has a Venue name and an Address*, as lodging and dining have. A capture fills both.
+    Lodging and event addresses keep street, city, state and postcode, never the city alone.
+  - *Discover places an activity by the pin it already has.* A lodging, event, dining or tour
+    with a stored map point is placed by reverse-geocoding that point. A text lookup is only
+    the fallback. A town found by Photon is named by itself, not its county.
+  - *Changing an activity's type reshapes the same entry.* Values move to the new type under
+    the same key or the key that means the same thing (Venue → Location, Operator → Company,
+    From → Pick-up). Values the new type has no field for stay hidden in the form, so switching
+    back restores them. Saving keeps the same record.
 
 ## 8. Open questions
 
