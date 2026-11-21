@@ -340,3 +340,53 @@ if DEPS:
             assert "Administration" not in plain and "/admin/rule-setting" not in plain
         finally:
             settings.auth_required = False
+
+    def test_link_traveller_by_existing_name_reuses_it():
+        # Typing a name that's already on the roster (any case) links that
+        # traveller instead of a 500 on the unique name (fix for 5.0.3).
+        hdr = _bearer("link-admin", admin=True)
+        with SessionLocal() as s:
+            t = TravelerIdentity(display_name="Robin Example", kind="guest")
+            s.add(t)
+            s.commit()
+            tid = t.id
+            uid = s.query(User).filter_by(username="link-admin").one().id
+        _bearer("link-target")
+        with SessionLocal() as s:
+            target = s.query(User).filter_by(username="link-target").one().id
+        try:
+            r = client.post(f"/users/{target}/traveler", headers=hdr,
+                            data={"traveler_id": "none", "new_traveler": " robin example "},
+                            follow_redirects=False)
+            assert r.status_code == 303 and "msg=" in r.headers["location"]
+            # …and on create, the same
+            r = client.post("/users/create", headers=hdr,
+                            data={"username": "link-created", "password": "pw", "email": "",
+                                  "is_admin": "", "traveler_id": "none",
+                                  "new_traveler": "Robin Example"}, follow_redirects=False)
+            assert r.status_code == 303 and "msg=" in r.headers["location"]
+            with SessionLocal() as s:
+                assert s.get(User, target).traveler_id == tid
+                assert s.query(User).filter_by(username="link-created").one().traveler_id == tid
+                assert s.query(TravelerIdentity).filter(
+                    TravelerIdentity.display_name.ilike("robin example")).count() == 1
+                assert s.get(User, uid).traveler_id is None
+        finally:
+            with SessionLocal() as s:
+                s.query(User).filter(User.username.in_(
+                    ["link-target", "link-created"])).delete(synchronize_session=False)
+                s.commit()
+            _del_travelers("Robin Example")
+
+    def test_resolve_traveler_never_reuses_without_opt_in():
+        # Self-service callers don't opt in (D-204): an existing name is refused,
+        # never quietly handed over.
+        import pytest
+        with SessionLocal() as s:
+            s.add(TravelerIdentity(display_name="Sam Sample", kind="guest"))
+            s.commit()
+        try:
+            with SessionLocal() as s, pytest.raises(ValueError):
+                authn.resolve_traveler(s, traveler_id=None, new_name="SAM SAMPLE")
+        finally:
+            _del_travelers("Sam Sample")
