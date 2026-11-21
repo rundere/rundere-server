@@ -604,7 +604,13 @@ def resolve_traveler(session, *, traveler_id: str | int | None,
     `reuse_existing=True` and get that traveller back: typing the name is the
     same as picking it. Self-service never does (D-204: linking to an existing
     traveller is admin-only), so there it's a ValueError; those callers refuse
-    the name first with a message (`_claim_problem`)."""
+    the name first with a message (`_claim_problem`).
+
+    A generic guest (a trip's quick-added headcount placeholder, D-100) that
+    gets an account is a real person now, so reusing one clears `generic`;
+    otherwise discovery, packing, profiles and capture matching would keep
+    skipping them. That's also how an admin reaches one: the picker hides
+    generic guests, so typing the name is the only way to link them."""
     if new_name and new_name.strip():
         name = new_name.strip()
         existing = session.query(TravelerIdentity).filter(
@@ -612,6 +618,9 @@ def resolve_traveler(session, *, traveler_id: str | int | None,
         if existing is not None:
             if not reuse_existing:
                 raise ValueError("a traveller with that name already exists")
+            if existing.generic:
+                existing.generic = False
+                session.commit()
             return existing.id
         traveler = TravelerIdentity(display_name=name, kind=kind)
         session.add(traveler)

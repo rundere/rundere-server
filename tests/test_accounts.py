@@ -390,3 +390,30 @@ if DEPS:
                 authn.resolve_traveler(s, traveler_id=None, new_name="SAM SAMPLE")
         finally:
             _del_travelers("Sam Sample")
+
+    def test_link_account_to_generic_guest_makes_them_real():
+        # A companion quick-added on a trip is a generic guest (D-100), hidden
+        # from the picker. Typing their name links them and clears the flag, so
+        # their account is a real traveller for discovery and packing.
+        hdr = _bearer("guest-admin", admin=True)
+        _bearer("guest-user")
+        with SessionLocal() as s:
+            t = TravelerIdentity(display_name="Jo Placeholder", kind="guest", generic=True)
+            s.add(t)
+            s.commit()
+            tid = t.id
+            uid = s.query(User).filter_by(username="guest-user").one().id
+        try:
+            assert "Jo Placeholder" not in client.get("/users", headers=hdr).text
+            r = client.post(f"/users/{uid}/traveler", headers=hdr,
+                            data={"traveler_id": "none", "new_traveler": "Jo Placeholder"},
+                            follow_redirects=False)
+            assert r.status_code == 303 and "msg=" in r.headers["location"]
+            with SessionLocal() as s:
+                assert s.get(User, uid).traveler_id == tid
+                assert s.get(TravelerIdentity, tid).generic is False
+        finally:
+            with SessionLocal() as s:
+                s.query(User).filter_by(username="guest-user").delete()
+                s.commit()
+            _del_travelers("Jo Placeholder")
