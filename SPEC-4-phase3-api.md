@@ -38,7 +38,16 @@ layer and `app/scope.py`, so the API and the HTMX UI never disagree.
 the user can EDIT (owner/traveller/admin; not the review/commit pipeline). All
 gated by `require_trip(edit=True)` (404 if not visible, 403 for a view-only
 share):
+- `POST /api/v1/trips` — a new hand-made trip, owned by the caller (D-121), with
+  the caller's own traveller on its roster (YONDER-404). Any signed-in user
+  (no trip to check yet).
 - `PATCH /api/v1/trips/{id}` — name/dates/notes.
+- `GET /api/v1/trips/{id}/travelers` — the roster, plus `available` (who can be
+  added) for an editor only; `POST …/travelers` adds a saved traveller
+  (`traveler_id`) or quick-adds a D-100 guest (`name`); `DELETE
+  …/travelers/{tid}` removes one and their activity tags. Same rules as the web's
+  Who's traveling, through `app/trips/who.py` (YONDER-404). Adding someone with
+  an account makes them an editor of the trip (D-199).
 - `POST /api/v1/trips/{id}/activities`, `PATCH …/activities/{aid}`,
   `DELETE …/activities/{aid}` — add/edit/remove a timeline item (a location, an
   event); `starts_at` follows `values.when`, reusing the activity-type registry.

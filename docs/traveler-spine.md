@@ -80,6 +80,10 @@ after the trip header). It reads `TripTraveler` and renders the linked
   (`POST /trips/{id}/travelers/new`) — see below.
 - **Remove.** `POST /trips/{id}/travelers/{traveler_id}/remove`.
 - **Manage.** Links to the SQLAdmin travellers list (`/admin/traveler-identity/list`).
+- **API.** The apps do the same through `GET`/`POST /api/v1/trips/{id}/travelers`
+  and `DELETE /api/v1/trips/{id}/travelers/{traveler_id}` (YONDER-404). Both
+  surfaces share `add_to_roster`, `quick_add_guest` and `remove_from_roster` in
+  `app/trips/who.py`.
 
 All mutations swap just `#travelers-section` via HTMX — no page reload.
 `delete_trip` explicitly sweeps `trip_travelers` (SQLite does not enforce
