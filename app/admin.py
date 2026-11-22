@@ -132,9 +132,9 @@ def mount_admin(app, engine) -> None:
         # AirTrail mapping) are NOT shown here; each user edits their own at
         # Travel profile (/trips/settings/travel-profile). D-35: exactly one row
         # is kind="self".
-        # `generic` (D-100) is a roster flag, not a personal attribute: it's
-        # how an admin turns a trip's quick-added placeholder guest into a
-        # real traveller, who then shows up in the Users picker for linking.
+        # `generic` (D-100) is a roster flag, not a personal attribute. D-249:
+        # this is where an admin promotes a trip's quick-added placeholder guest
+        # to a real traveller, who then shows up in the Users picker.
         column_list = [models.TravelerIdentity.display_name,
                        models.TravelerIdentity.kind,
                        models.TravelerIdentity.generic]

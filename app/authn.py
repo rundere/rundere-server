@@ -593,6 +593,16 @@ def set_user_email(session, user: User, email: str | None) -> str | None:
     return None
 
 
+class PlaceholderGuest(ValueError):
+    """The traveller is a trip's placeholder guest (D-100). D-249: promote them
+    on Manage travellers first; an account never links to one."""
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(
+            f"{name} is a placeholder guest added from a trip. Untick Placeholder "
+            "guest for them under Manage travellers, then link the account here.")
+
+
 def resolve_traveler(session, *, traveler_id: str | int | None,
                      new_name: str | None, kind: str = "guest",
                      reuse_existing: bool = False) -> int | None:
@@ -606,11 +616,9 @@ def resolve_traveler(session, *, traveler_id: str | int | None,
     traveller is admin-only), so there it's a ValueError; those callers refuse
     the name first with a message (`_claim_problem`).
 
-    A generic guest (a trip's quick-added headcount placeholder, D-100) that
-    gets an account is a real person now, so reusing one clears `generic`;
-    otherwise discovery, packing, profiles and capture matching would keep
-    skipping them. That's also how an admin reaches one: the picker hides
-    generic guests, so typing the name is the only way to link them."""
+    A placeholder guest (D-100) is never linked, by name or by id: it raises
+    PlaceholderGuest. D-249: an admin promotes them on Manage travellers
+    (untick Placeholder guest), then links the account on the Users page."""
     if new_name and new_name.strip():
         name = new_name.strip()
         existing = session.query(TravelerIdentity).filter(
@@ -619,8 +627,7 @@ def resolve_traveler(session, *, traveler_id: str | int | None,
             if not reuse_existing:
                 raise ValueError("a traveller with that name already exists")
             if existing.generic:
-                existing.generic = False
-                session.commit()
+                raise PlaceholderGuest(existing.display_name)
             return existing.id
         traveler = TravelerIdentity(display_name=name, kind=kind)
         session.add(traveler)
@@ -629,6 +636,9 @@ def resolve_traveler(session, *, traveler_id: str | int | None,
         return traveler.id
     if traveler_id in (None, "", "none"):
         return None
+    picked = session.get(TravelerIdentity, int(traveler_id))
+    if picked is not None and picked.generic:
+        raise PlaceholderGuest(picked.display_name)
     return int(traveler_id)
 
 

@@ -56,7 +56,8 @@ def _travelers(session: Session) -> list[TravelerIdentity]:
     """The de-duplicated traveller roster surfaced to the admin for user↔traveller
     linking (D-124) — the ONLY user-entered item an admin sees in the UI. Names
     are already unique in the schema; generic placeholder guests (roster stand-ins,
-    not real people) are excluded from selection."""
+    not real people) are excluded from selection until promoted on Manage
+    travellers (D-249)."""
     return (session.query(TravelerIdentity)
             .filter(TravelerIdentity.generic.is_(False))
             .order_by(TravelerIdentity.display_name).all())
@@ -192,9 +193,14 @@ def setup_submit(request: Request, username: str = Form(...), password: str = Fo
             request, "setup.html", {"travelers": _travelers(session), "error": problem,
                                     "username": username}, status_code=400)
     # The first traveller is the account holder → 'self' if a brand-new one.
-    tid = authn.resolve_traveler(session, traveler_id=traveler_id,
-                                 new_name=new_traveler, kind="self",
-                                 reuse_existing=True)
+    try:
+        tid = authn.resolve_traveler(session, traveler_id=traveler_id,
+                                     new_name=new_traveler, kind="self",
+                                     reuse_existing=True)
+    except authn.PlaceholderGuest as e:                      # D-249
+        return templates.TemplateResponse(
+            request, "setup.html", {"travelers": _travelers(session), "error": str(e),
+                                    "username": username}, status_code=400)
     user = authn.create_user(session, username, password, email=email or None,
                              is_admin=True, traveler_id=tid)
     resp = RedirectResponse("/", status_code=303)
@@ -594,8 +600,11 @@ def users_create(request: Request, username: str = Form(...), password: str = Fo
         return RedirectResponse("/users?err=That+username+is+taken", status_code=303)
     if email.strip() and authn.email_in_use(session, email):
         return RedirectResponse("/users?err=That+email+is+already+in+use", status_code=303)
-    tid = authn.resolve_traveler(session, traveler_id=traveler_id, new_name=new_traveler,
-                                 reuse_existing=True)    # admin: typing a name = picking it
+    try:
+        tid = authn.resolve_traveler(session, traveler_id=traveler_id, new_name=new_traveler,
+                                     reuse_existing=True)    # admin: typing a name = picking it
+    except authn.PlaceholderGuest as e:                      # D-249: promote them first
+        return RedirectResponse(f"/users?err={quote_plus(str(e))}", status_code=303)
     authn.create_user(session, username, password, email=email or None,
                       is_admin=bool(is_admin), traveler_id=tid)
     return RedirectResponse(f"/users?msg=Created+{username.strip()}", status_code=303)
@@ -766,9 +775,12 @@ def users_link_traveler(user_id: str, traveler_id: str = Form("none"),
     user = _u(session, user_id)
     if user is None:
         return RedirectResponse("/users?err=No+such+user", status_code=303)
-    user.traveler_id = authn.resolve_traveler(session, traveler_id=traveler_id,
-                                              new_name=new_traveler,
-                                              reuse_existing=True)  # admin: as picking it
+    try:
+        user.traveler_id = authn.resolve_traveler(session, traveler_id=traveler_id,
+                                                  new_name=new_traveler,
+                                                  reuse_existing=True)  # admin: as picking it
+    except authn.PlaceholderGuest as e:                      # D-249: promote them first
+        return RedirectResponse(f"/users?err={quote_plus(str(e))}", status_code=303)
     _audit(session, user, admin, "traveller_linked", str(user.traveler_id or ""))
     session.commit()
     _notify_private(user, "changed which traveller your account is linked to")

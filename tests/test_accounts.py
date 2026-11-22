@@ -391,10 +391,11 @@ if DEPS:
         finally:
             _del_travelers("Sam Sample")
 
-    def test_link_account_to_generic_guest_makes_them_real():
-        # A companion quick-added on a trip is a generic guest (D-100), hidden
-        # from the picker. Typing their name links them and clears the flag, so
-        # their account is a real traveller for discovery and packing.
+    def test_placeholder_guest_is_promoted_on_travellers_then_linked():
+        # D-249: a companion quick-added on a trip is a placeholder guest
+        # (D-100), hidden from the picker. The Users page won't link one, by
+        # name or by id; it points to Manage travellers. Once promoted there
+        # (generic cleared), the account links as usual.
         hdr = _bearer("guest-admin", admin=True)
         _bearer("guest-user")
         with SessionLocal() as s:
@@ -405,15 +406,31 @@ if DEPS:
             uid = s.query(User).filter_by(username="guest-user").one().id
         try:
             assert "Jo Placeholder" not in client.get("/users", headers=hdr).text
-            r = client.post(f"/users/{uid}/traveler", headers=hdr,
-                            data={"traveler_id": "none", "new_traveler": "Jo Placeholder"},
-                            follow_redirects=False)
-            assert r.status_code == 303 and "msg=" in r.headers["location"]
+            for data in ({"traveler_id": "none", "new_traveler": "jo placeholder"},
+                         {"traveler_id": str(tid), "new_traveler": ""}):
+                r = client.post(f"/users/{uid}/traveler", headers=hdr, data=data,
+                                follow_redirects=False)
+                assert r.status_code == 303 and "Manage+travellers" in r.headers["location"]
+            r = client.post("/users/create", headers=hdr, follow_redirects=False,
+                            data={"username": "guest-created", "password": "pw", "email": "",
+                                  "is_admin": "", "traveler_id": "none",
+                                  "new_traveler": "Jo Placeholder"})
+            assert "err=" in r.headers["location"]
+            with SessionLocal() as s:
+                assert s.get(User, uid).traveler_id is None
+                assert s.get(TravelerIdentity, tid).generic is True
+                assert s.query(User).filter_by(username="guest-created").count() == 0
+                s.get(TravelerIdentity, tid).generic = False      # promoted on Travellers
+                s.commit()
+            assert "Jo Placeholder" in client.get("/users", headers=hdr).text
+            r = client.post(f"/users/{uid}/traveler", headers=hdr, follow_redirects=False,
+                            data={"traveler_id": str(tid), "new_traveler": ""})
+            assert "msg=" in r.headers["location"]
             with SessionLocal() as s:
                 assert s.get(User, uid).traveler_id == tid
-                assert s.get(TravelerIdentity, tid).generic is False
         finally:
             with SessionLocal() as s:
-                s.query(User).filter_by(username="guest-user").delete()
+                s.query(User).filter(User.username.in_(
+                    ["guest-user", "guest-created"])).delete(synchronize_session=False)
                 s.commit()
             _del_travelers("Jo Placeholder")

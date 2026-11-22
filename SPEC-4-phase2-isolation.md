@@ -169,6 +169,16 @@ reserved).
   AirTrail connection, D-150/YONDER-322 — notes) move to a
   **user-facing self-editor** at `/trips/settings/travel-profile` ("Travel
   profile") — each user edits their own, never the admin. (owner, 2026-08-28)
+  *Amended by D-249: the roster view also shows and edits "Placeholder guest".*
+- **D-249 — A trip's guest becomes a user in two steps: promote on Travellers,
+  then link on Users.** A companion quick-added on a trip is a placeholder guest
+  (D-100). The admin Travellers roster (Manage travellers) is where an admin
+  promotes them: it shows and edits **Placeholder guest** (`generic`), a roster
+  flag, not a personal attribute, so D-124 still holds. The Users page picker
+  keeps excluding placeholder guests, and the Users page never links an account
+  to one, by name or by id. It says to promote them on Manage travellers first.
+  A typed name that matches a real traveller links that traveller. It never
+  mints a duplicate. (owner, 2026-11-21, YONDER-403)
 
 ## Decisions (D-119–D-121)
 
