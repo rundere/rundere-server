@@ -259,6 +259,22 @@ def add_packing_item(trip_id: TripId,
                 body=api_v1.PackingItemIn(label=label, category=category, quantity=quantity))
 
 
+@mcp.tool()
+def update_packing_item(trip_id: TripId,
+                        item_id: Annotated[str, Field(description="Packing item id (get_trip's packing)")],
+                        label: Annotated[str | None, Field(description="New name")] = None,
+                        quantity: Annotated[int | None, Field(ge=1, le=99)] = None,
+                        bag: Annotated[str | None, Field(
+                            description="Bag it goes in: one of the user's bag ids, or "
+                                        "carry_on, checked, backpack")] = None,
+                        ) -> dict[str, Any]:
+    """Rename one of the user's own packing lines, change how many, or move it to
+    another bag. Only what you pass changes. To check it off use
+    set_packing_status (YONDER-410)."""
+    return _run(api_v1.api_update_packing_item, trip_id=trip_id, item_id=item_id,
+                body=api_v1.PackingItemPatch(label=label, quantity=quantity, bag=bag))
+
+
 # --------------------------------------------------------------------------- expenses
 Amount = Annotated[str, Field(description="Decimal amount, e.g. \"42.50\"")]
 
@@ -308,6 +324,63 @@ def add_expense(trip_id: TripId, amount: Amount,
                             rate=rate, activity_id=activity_id,
                             budget_item_id=budget_item_id, notes=notes, source="mcp")
     return _run(api_v1.api_add_expense, trip_id=trip_id, body=body)
+
+
+@mcp.tool()
+def update_expense(trip_id: TripId,
+                   expense_id: Annotated[str, Field(description="Expense id from list_expenses")],
+                   amount: Annotated[str | None, Field(description="Decimal amount, e.g. \"42.50\"")] = None,
+                   currency: Annotated[str | None, Field(description="ISO-4217 code")] = None,
+                   payer_id: Annotated[int | None, Field(description="Traveller id who paid")] = None,
+                   title: Annotated[str | None, Field(description="What it was")] = None,
+                   spent_on: Date = None,
+                   traveler_ids: Annotated[list[int] | None, Field(
+                       description="Split equally between these travellers instead")] = None,
+                   shares: Annotated[dict[int, str] | None, Field(
+                       description="Exact split instead: {traveler_id: amount}")] = None,
+                   category: Literal["food", "lodging", "transport", "activities", "shopping",
+                                     "fees", "other"] | None = None,
+                   rate: Annotated[str | None, Field(
+                       description="Trip-currency units per 1 unit of `currency`")] = None,
+                   activity_id: Annotated[str | None, Field(
+                       description="Timeline item it belongs to; \"\" unlinks it")] = None,
+                   budget_item_id: Annotated[str | None, Field(
+                       description="The planned item it paid for; \"\" unlinks it")] = None,
+                   notes: Annotated[str | None, Field(description="Notes")] = None,
+                   ) -> dict[str, Any]:
+    """Correct an expense. Only what you pass changes; a new amount, currency or
+    split recomputes the shares. Needs edit access (YONDER-410)."""
+    fields = {"amount": amount, "currency": currency, "payer_id": payer_id, "title": title,
+              "spent_on": spent_on, "category": category, "rate": rate,
+              "activity_id": activity_id, "budget_item_id": budget_item_id, "notes": notes}
+    patch = {k: v for k, v in fields.items() if v is not None}
+    if shares:
+        patch.update(split="exact", shares=shares)
+    elif traveler_ids is not None:
+        patch.update(split="equal", traveler_ids=traveler_ids)
+    return _run(api_v1.api_update_expense, trip_id=trip_id, expense_id=expense_id,
+                body=api_v1.ExpensePatch(**patch))
+
+
+@mcp.tool()
+def set_trip_currency(trip_id: TripId,
+                      currency: Annotated[str, Field(description="ISO-4217 code, e.g. CAD")],
+                      ) -> dict[str, Any]:
+    """Change the currency the trip's balances are shown in. Costs convert again
+    from the trip's rates; rates someone typed in were against the old currency,
+    so they're cleared. Tell the user before doing it. Needs edit access."""
+    return _run(api_v1.api_set_expense_currency, trip_id=trip_id,
+                body=api_v1.ExpenseCurrencyIn(currency=currency))
+
+
+@mcp.tool()
+def refresh_rate(trip_id: TripId,
+                 code: Annotated[str, Field(description="Currency to fetch, ISO-4217, e.g. EUR")],
+                 date: Date = None) -> dict[str, Any]:
+    """Fetch one currency's exchange rate into the trip's currency for a day
+    (default today), then convert the user's costs in it that had no rate yet.
+    Costs that already have a rate keep it. Needs edit access."""
+    return _run(api_v1.api_refresh_rate, trip_id=trip_id, code=code, date=date)
 
 
 @mcp.tool()
@@ -369,6 +442,35 @@ def save_budget(trip_id: TripId,
 
 
 @mcp.tool()
+def update_budget_item(trip_id: TripId,
+                       item_id: Annotated[str, Field(description="Planned item id from "
+                                                                 "list_expenses' plan")],
+                       amount: Annotated[str | None, Field(description="Decimal amount")] = None,
+                       currency: Annotated[str | None, Field(description="ISO-4217 code")] = None,
+                       title: Annotated[str | None, Field(description="What it's for")] = None,
+                       category: Annotated[str | None, Field(description="Category")] = None,
+                       traveler_ids: Annotated[list[int] | None, Field(
+                           description="Who it's for (traveller ids)")] = None,
+                       start_date: Annotated[str | None, Field(
+                           description="YYYY-MM-DD; \"\" clears it")] = None,
+                       end_date: Annotated[str | None, Field(
+                           description="YYYY-MM-DD; \"\" clears it")] = None,
+                       notes: Annotated[str | None, Field(description="Notes")] = None,
+                       keep: Annotated[bool, Field(
+                           description="true keeps a draft estimate as it is, with no "
+                                       "other change")] = False,
+                       ) -> dict[str, Any]:
+    """Edit a planned cost (a budget line). Only what you pass changes. Editing a
+    draft estimate keeps it: it becomes the user's (status "kept"), the same as
+    on the web. Only edit what the user asked for. Needs edit access (YONDER-410)."""
+    fields = {"amount": amount, "currency": currency, "title": title, "category": category,
+              "traveler_ids": traveler_ids, "start_date": start_date, "end_date": end_date,
+              "notes": notes, "status": "kept" if keep else None}
+    return _run(api_v1.api_update_budget_item, trip_id=trip_id, item_id=item_id,
+                body=api_v1.BudgetItemPatch(**{k: v for k, v in fields.items() if v is not None}))
+
+
+@mcp.tool()
 def delete_budget_item(trip_id: TripId,
                        item_id: Annotated[str, Field(description="Planned item id from "
                                                                "list_expenses' plan")],
@@ -388,6 +490,18 @@ def comment_on_expense(trip_id: TripId,
     (a question about the split, a correction). Only post what the user asked you to."""
     return _run(api_v1.api_add_expense_comment, trip_id=trip_id, expense_id=expense_id,
                 body=api_v1.ExpenseCommentIn(body=body))
+
+
+@mcp.tool()
+def delete_expense_comment(trip_id: TripId,
+                           expense_id: Annotated[str, Field(description="Expense id")],
+                           comment_id: Annotated[str, Field(
+                               description="Comment id from list_expenses")],
+                           ) -> dict[str, Any]:
+    """Delete one of the user's own comments on an expense (YONDER-410)."""
+    _run(api_v1.api_delete_expense_comment, trip_id=trip_id, expense_id=expense_id,
+         comment_id=comment_id)
+    return {"ok": True, "deleted": comment_id}
 
 
 @mcp.tool()
@@ -448,6 +562,44 @@ def attach_journal_entry(entry_id: Annotated[str, Field(description="Journal ent
     """Attach a journal entry to a trip (or detach it with trip_id null)."""
     return _run(api_v1.api_journal_update, entry_id=entry_id,
                 body=api_v1.JournalPatch(trip_id=trip_id, attach_trip=True))
+
+
+@mcp.tool()
+def duplicate_journal_entry(entry_id: Annotated[str, Field(description="Journal entry id")],
+                            trip_id: Annotated[str | None, Field(
+                                description="Trip for the copy; null = not attached")] = None,
+                            ) -> dict[str, Any]:
+    """Copy one of the user's journal entries, for example to put the same note on
+    another trip (D-133). The copy is independent (YONDER-410)."""
+    return _run(api_v1.api_journal_duplicate, entry_id=entry_id,
+                body=api_v1.JournalDuplicate(trip_id=trip_id))
+
+
+@mcp.tool()
+def delete_journal_entry(entry_id: Annotated[str, Field(description="Journal entry id")],
+                         ) -> dict[str, Any]:
+    """Delete one of the user's journal entries. It can't be undone, so only when
+    the user asks for that entry to go (YONDER-410)."""
+    _run(api_v1.api_journal_delete, entry_id=entry_id)
+    return {"ok": True, "deleted": entry_id}
+
+
+# --------------------------------------------------------------------------- documents
+@mcp.tool()
+def list_documents() -> dict[str, Any]:
+    """The user's captured files (PDF, .ics, .eml), newest first: name, type,
+    size, trip, and when the stored copy is removed, plus how much of their
+    quota they use. Files themselves aren't returned (YONDER-410)."""
+    return _run(api_v1.api_documents)
+
+
+@mcp.tool()
+def delete_document(doc_id: Annotated[str, Field(description="File id from list_documents")],
+                    ) -> dict[str, Any]:
+    """Delete one of the user's stored files now. What was extracted from it (the
+    capture, the timeline items) stays. Only when the user asks (YONDER-410)."""
+    _run(api_v1.api_document_delete, doc_id=doc_id)
+    return {"ok": True, "deleted": doc_id}
 
 
 # --------------------------------------------------------------------------- capture + review
