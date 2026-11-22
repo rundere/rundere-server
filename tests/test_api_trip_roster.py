@@ -177,3 +177,27 @@ if DEPS:
         assert client.delete(f"{url}/{owner_tid}", headers=_h(viewer)).status_code == 403
         with SessionLocal() as s:
             assert s.query(TripTraveler).filter_by(trip_id=tid).count() == 1
+
+    def test_web_new_trip_links_the_creator_not_the_deployment_owner():
+        # The web's New trip used to put the deployment's kind=self traveller on
+        # every trip, which made anyone's hand-made trip editable by the owner
+        # (D-199). Now it's the creator's own traveller, as on the API.
+        from app.config import settings
+        boss_t = _traveller("Ro Deployment Self", kind="self")
+        boss = _user("ro-boss", boss_t)
+        me = _user("ro-webuser", _traveller("Ro Owner"))
+        was = settings.auth_required
+        settings.auth_required = True
+        try:
+            r = client.post("/trips", headers=_h(me), follow_redirects=False,
+                            data={"name": "Ro web trip", "start": "", "end": "", "notes": ""})
+            assert r.status_code in (200, 303), r.text
+        finally:
+            settings.auth_required = was
+        with SessionLocal() as s:
+            trip = s.query(Trip).filter_by(name="Ro web trip").one()
+            assert trip.owner_id == me.id
+            on = {r.traveler_id for r in s.query(TripTraveler).filter_by(trip_id=trip.id)}
+            assert on == {s.get(User, me.id).traveler_id} and boss_t not in on
+            tid = trip.id
+        assert client.get(f"/api/v1/trips/{tid}", headers=_h(boss)).status_code == 404

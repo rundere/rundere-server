@@ -1514,28 +1514,19 @@ def api_update_trip(trip_id: str, body: TripPatch,
 @router.post("/trips", response_model=TripSummary, status_code=201)
 def api_create_trip(body: TripIn, user=Depends(authn.current_user),
                     session: Session = Depends(get_session)):
-    """A hand-made trip (YONDER-404), as the web's New trip. Owned by its
-    creator (D-121), who goes on its roster when they have a traveller (§11.2:
-    you're on your own trip by default)."""
+    """A hand-made trip (YONDER-404), as the web's New trip. Always owned by
+    the signed-in caller (D-121; `current_user` is never None), who goes on its
+    roster when they have a traveller (§11.2: you're on your own trip)."""
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(422, "a trip needs a name")
-    trip = Trip(source="manual", owner_id=user.id if user is not None else None,
-                name=name[:200], start_date=body.start_date or None,
-                end_date=body.end_date or None,
+    trip = Trip(source="manual", owner_id=user.id, name=name[:200],
+                start_date=body.start_date or None, end_date=body.end_date or None,
                 notes=(body.notes or "").strip() or None)
     session.add(trip)
     session.flush()
-    from app.trips import who
-    mine = (session.get(TravelerIdentity, user.traveler_id)
-            if user is not None and user.traveler_id is not None else None)
-    if mine is not None:
-        who.add_to_roster(session, trip.id, mine)
-    elif scope.unrestricted(user):
-        # Auth off: the single user is the deployment's `self` traveller, as
-        # the web does it.
-        from app.trips.routes import _auto_link_self
-        _auto_link_self(session, trip.id)
+    from app.trips.routes import _link_creator
+    _link_creator(session, trip.id, user)
     session.commit()
     if trip.start_date or trip.end_date:
         # It may be the trip a waiting capture needs (YONDER-222).
