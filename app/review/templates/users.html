@@ -29,6 +29,20 @@
             <td>{% if support.get(u.id) %}<span title="They let admins view their trips and Inbox, read-only (D-211)">on</span>{% else %}<span title="Admins see only what they're invited into">off</span>{% endif %}</td>
           </tr>
           <tr><td colspan="6" style="padding-top:0">
+            {% if requests.get(u.id) %}{% set rt = requests[u.id] %}
+            {# D-250: they asked to be this traveller. Link promotes a placeholder guest too. #}
+            <div class="saved-note" style="margin:4px 0 8px">Wants to be linked to
+              <strong>{{ rt.display_name }}</strong>{% if rt.generic %} (a guest added from a trip;
+              linking makes them a real traveller){% endif %}{% if u.link_requested_at %}
+              · asked {{ u.link_requested_at.strftime("%-d %b %Y") }}{% endif %}
+              <div class="rowacts" style="margin-top:6px;gap:8px">
+                <form method="post" action="/users/{{ u.id }}/traveler/approve" style="display:inline">
+                  <button class="act tiny primary" type="submit">Link</button></form>
+                <form method="post" action="/users/{{ u.id }}/traveler/dismiss" style="display:inline">
+                  <button class="act tiny" type="submit">Dismiss</button></form>
+              </div>
+            </div>
+            {% endif %}
             <div class="rowacts" style="flex-wrap:wrap;gap:8px">
               <form method="post" action="/users/{{ u.id }}/admin" style="display:inline">
                 <button class="act tiny" type="submit">{{ "Revoke admin" if u.is_admin else "Make admin" }}</button></form>
