@@ -48,6 +48,10 @@ places, the user's Discover findings, their discovery profile and packing).
 Each trip has `my_role`: owner, traveller or admin can change it; viewer means it
 was shared with the user to view only, so don't try to change it (writes are
 refused) — offer to research or summarise instead.
+create_trip makes a new trip the user owns, with them on it. Who's travelling:
+list_trip_travelers (and who can be added), add_trip_traveler (someone saved, or
+a new guest by name) and remove_trip_traveler. Anyone added who has a Run·dere
+login can then see and edit the trip, so add only who the user asks for.
 Timeline items take a `type` from list_activity_types and a `values` object with
 that type's field keys. Research with the user's preferences: get_trip's
 `discovery_profile` (also get_discovery_profile) gives dietary restrictions,
@@ -162,6 +166,51 @@ def update_trip(trip_id: TripId,
     Needs edit access (owner or traveller on it)."""
     body = api_v1.TripPatch(name=name, start_date=start_date, end_date=end_date, notes=notes)
     return _run(api_v1.api_update_trip, trip_id=trip_id, body=body)
+
+
+@mcp.tool()
+def create_trip(name: Annotated[str, Field(description="Trip name")],
+                start_date: Date = None, end_date: Date = None,
+                notes: Annotated[str | None, Field(description="Trip notes")] = None,
+                ) -> dict[str, Any]:
+    """Create a trip. The user owns it, and their own traveller goes on it. Use
+    the returned `id` with add_activity and add_trip_traveler (YONDER-404)."""
+    body = api_v1.TripIn(name=name, start_date=start_date, end_date=end_date, notes=notes)
+    return _run(api_v1.api_create_trip, body=body)
+
+
+@mcp.tool()
+def list_trip_travelers(trip_id: TripId) -> dict[str, Any]:
+    """Who's travelling on a trip (`travelers`: id, name, role, `has_account`),
+    and who can be added (`available`, only when the user can edit the trip)."""
+    return _run(api_v1.api_trip_roster, trip_id=trip_id)
+
+
+@mcp.tool()
+def add_trip_traveler(trip_id: TripId,
+                      traveler_id: Annotated[int | None, Field(
+                          description="Someone saved: an id from list_trip_travelers' "
+                                      "`available`")] = None,
+                      name: Annotated[str | None, Field(
+                          description="Or a new guest's name (a headcount placeholder, "
+                                      "skipped by Discover and packing)")] = None,
+                      ) -> dict[str, Any]:
+    """Put someone on the trip: pass traveler_id OR name, not both. Safe to
+    repeat. Someone added who has a Run·dere login can see and edit the trip,
+    so only add who the user asked for. Needs edit access. Returns the roster."""
+    return _run(api_v1.api_add_trip_traveler, trip_id=trip_id,
+                body=api_v1.RosterAddIn(traveler_id=traveler_id, name=name))
+
+
+@mcp.tool()
+def remove_trip_traveler(trip_id: TripId,
+                         traveler_id: Annotated[int, Field(
+                             description="A traveller id from list_trip_travelers")],
+                         ) -> dict[str, Any]:
+    """Take someone off the trip; their tags on its activities go too. Safe to
+    repeat. Needs edit access. Returns the roster."""
+    _run(api_v1.api_remove_trip_traveler, trip_id=trip_id, traveler_id=traveler_id)
+    return _run(api_v1.api_trip_roster, trip_id=trip_id)
 
 
 @mcp.tool()
