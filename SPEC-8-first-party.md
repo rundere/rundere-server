@@ -733,7 +733,8 @@ pass the guardrails: no migration and no app release.
 - **Capabilities.** `GET /api/v1/auth/methods` (unauthenticated, so an app reads
   it before and after sign-in) returns `capabilities`, a list of stable lowercase
   names from `app/capabilities.py`: `trip_pdf_flags`, `release_notes`,
-  `places_suggest`, `places_lists`, `themes`, `theme_scene_png`, and where the
+  `places_suggest`, `places_lists`, `themes`, `theme_scene_png`, `trip_create`
+  (`POST /trips`), `trip_roster` (`/trips/{id}/travelers`), and where the
   web has them, `data_export` and `account_delete`. An app gates a feature on its
   name, not on a 404 or the version. Names are only ever added; an unknown name
   is ignored. A name is absent when the feature doesn't work on that server (no
