@@ -34,6 +34,8 @@ if DEPS:
     settings.auth_cookie_secure = False
 
     ALL_TOOLS = {"list_trips", "get_trip", "update_trip", "dashboard",
+                 "create_trip", "list_trip_travelers", "add_trip_traveler",   # YONDER-404
+                 "remove_trip_traveler",
                  "list_discovery_places", "set_discovery_place",   # YONDER-264
                  "list_activity_types", "add_activity", "update_activity",
                  "delete_activity", "generate_packing", "set_packing_status",
@@ -256,6 +258,31 @@ if DEPS:
             assert t.notes == "bring boots" and t.start_date == "2027-06-01"
         d = ok(client, tok, "dashboard")
         assert "counts" in d and "trip_count" in d
+
+    def test_create_trip_and_roster_tools(client, w):
+        """YONDER-404: an agent can create a trip (the user's own, with them on
+        it) and manage who's on it, through the same rules as /api/v1."""
+        tok = _tok(w["alice"])
+        trip = ok(client, tok, "create_trip", name="MX Agent Trip", start_date="2027-09-01",
+                  end_date="2027-09-05")
+        assert trip["owner_id"] == w["alice"] and trip["can_edit"] is True
+        tid = trip["id"]
+        roster = ok(client, tok, "list_trip_travelers", trip_id=tid)
+        assert [t["id"] for t in roster["travelers"]] == [w["ta"]]
+        assert w["tb"] in [a["id"] for a in roster["available"]]
+        roster = ok(client, tok, "add_trip_traveler", trip_id=tid, traveler_id=w["tb"])
+        assert {t["id"] for t in roster["travelers"]} == {w["ta"], w["tb"]}
+        roster = ok(client, tok, "add_trip_traveler", trip_id=tid, name="MX Agent Guest")
+        guest = next(t for t in roster["travelers"] if t["display_name"] == "MX Agent Guest")
+        assert guest["has_account"] is False
+        roster = ok(client, tok, "remove_trip_traveler", trip_id=tid, traveler_id=w["tb"])
+        assert w["tb"] not in {t["id"] for t in roster["travelers"]}
+        good, err = call(client, tok, "add_trip_traveler", trip_id=tid)
+        assert not good and "422" in err
+        good, err = call(client, tok, "create_trip", name="  ")
+        assert not good and "422" in err
+        # bob was taken off, so the trip is alice's alone again
+        assert tid not in [t["id"] for t in ok(client, _tok(w["bob"]), "list_trips")["trips"]]
 
     def test_get_trip_credits_open_meteo_weather(client, w):
         """Open-Meteo's weather is CC BY 4.0: get_trip hands the agent the
@@ -574,6 +601,9 @@ if DEPS:
                              "payer_id": w["ta"]}),
             ("record_settlement", {"trip_id": p, "from_id": w["ta"], "to_id": w["tb"],
                                    "amount": "5"}),
+            ("list_trip_travelers", {"trip_id": p}),
+            ("add_trip_traveler", {"trip_id": p, "traveler_id": w["ta"]}),
+            ("remove_trip_traveler", {"trip_id": p, "traveler_id": w["tb"]}),
         ]
         for name, args in attempts:
             good, err = call(client, tok, name, **args)
@@ -612,6 +642,11 @@ if DEPS:
             assert not good and "403" in err
             good, err = call(client, tok, "add_activity", trip_id=w["carols"], type="note",
                              values={"title": "x"})
+            assert not good and "403" in err
+            # the roster too: a viewer sees nobody to add and can't add anyone
+            assert ok(client, tok, "list_trip_travelers", trip_id=w["carols"])["available"] == []
+            good, err = call(client, tok, "add_trip_traveler", trip_id=w["carols"],
+                             name="MX Sneaky Guest")
             assert not good and "403" in err
             assert ok(client, tok, "get_review_item", item_id=cap_id)
             good, err = call(client, tok, "assign_review_item_to_trip", item_id=cap_id,

@@ -553,6 +553,23 @@ def _auto_link_self(session: Session, trip_id: str) -> None:
                                  role="self"))
 
 
+def _link_creator(session: Session, trip_id: str, user) -> None:
+    """Put a new trip's creator on its roster (§11.2: you're on your own trip).
+    Their own traveller, never the deployment's `self` one: being on the roster
+    makes a linked account an editor (D-199), so linking `self` handed the
+    deployment owner every user's hand-made trips (YONDER-404). Auth off there's
+    one user, who is the `self` traveller. A user with no traveller yet goes on
+    no roster; they own the trip anyway (D-121)."""
+    if user is None:
+        if scope.unrestricted(user):
+            _auto_link_self(session, trip_id)
+        return
+    ident = (session.get(TravelerIdentity, user.traveler_id)
+             if user.traveler_id is not None else None)
+    if ident is not None:
+        who.add_to_roster(session, trip_id, ident)
+
+
 def _travelers_context(session: Session, trip_id: str) -> dict:
     rows = (session.query(TripTraveler)
             .filter(TripTraveler.trip_id == trip_id).all())
@@ -2598,7 +2615,7 @@ def create_trip(request: Request, name: str = Form(""), start: str = Form(""),
     _save_trip_fields(trip, name, start, end, notes, adventurelog_collection_id)
     session.add(trip)
     session.flush()                       # need trip.id for the self-traveller link
-    _auto_link_self(session, trip.id)     # §11.2 — you're on your own trip by default
+    _link_creator(session, trip.id, _u)   # §11.2: you're on your own trip
     session.commit()
     _recheck_waiting(session, trip, _u)
     return _redirect("/trips")
@@ -2674,10 +2691,7 @@ def add_traveler(trip_id: str, request: Request, traveler_id: str = Form(""),
     except (TypeError, ValueError):
         tid = 0
     ident = session.get(TravelerIdentity, tid) if tid else None
-    if ident is not None and session.get(
-            TripTraveler, {"trip_id": trip_id, "traveler_id": tid}) is None:
-        role = "self" if ident.kind == "self" else "companion"
-        session.add(TripTraveler(trip_id=trip_id, traveler_id=tid, role=role))
+    if ident is not None and who.add_to_roster(session, trip_id, ident):
         session.commit()
     return _travelers_section(request, session, trip_id)
 
@@ -2694,22 +2708,7 @@ def add_guest(trip_id: str, request: Request, name: str = Form(""),
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
-    label = name.strip()
-    if label:
-        ident = (session.query(TravelerIdentity)
-                 .filter(TravelerIdentity.display_name == label).first())
-        if ident is None:
-            # generic=True: a placeholder person, ignored by discovery/planning
-            # (D-100). Reusing an existing identity never flips its flag.
-            ident = TravelerIdentity(display_name=label, kind="guest",
-                                     generic=True)
-            session.add(ident)
-            session.flush()               # need ident.id for the link
-        if session.get(TripTraveler, {"trip_id": trip_id,
-                                      "traveler_id": ident.id}) is None:
-            role = "self" if ident.kind == "self" else "companion"
-            session.add(TripTraveler(trip_id=trip_id, traveler_id=ident.id,
-                                     role=role))
+    if who.quick_add_guest(session, trip_id, name) is not None:
         session.commit()
     return _travelers_section(request, session, trip_id)
 
@@ -2721,11 +2720,7 @@ def remove_traveler(trip_id: str, traveler_id: int, request: Request,
     access to the trip, like adding one (YONDER-293: it had no check at all)."""
     if scope.trip_or_none(session, request, trip_id) is None:
         return HTMLResponse("", status_code=404)
-    row = session.get(TripTraveler,
-                      {"trip_id": trip_id, "traveler_id": traveler_id})
-    if row is not None:
-        session.delete(row)
-        who.remove_from_trip(session, trip_id, traveler_id)
+    if who.remove_from_roster(session, trip_id, traveler_id):
         session.commit()
     return _travelers_section(request, session, trip_id)
 

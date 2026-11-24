@@ -72,7 +72,8 @@ end every token: changing or resetting your password, "sign out everywhere"
 
 | Area | Tools |
 |---|---|
-| Trips | `list_trips`, `get_trip` (timeline with `traveler_ids`, travellers, places, your Discover findings + packing, captures), `update_trip`, `dashboard` |
+| Trips | `list_trips`, `get_trip` (timeline with `traveler_ids`, travellers, places, your Discover findings + packing, captures), `create_trip` (yours, with you on it), `update_trip`, `dashboard` |
+| Who's travelling | `list_trip_travelers` (and who can be added), `add_trip_traveler` (someone saved, or a new guest by name), `remove_trip_traveler`. Anyone added with a login can see and edit the trip. |
 | Timeline | `list_activity_types`, `add_activity`, `update_activity` (values merged), `delete_activity`. `traveler_ids: []` = everyone. |
 | Packing (yours) | `generate_packing`, `set_packing_status`, `add_packing_item` |
 | Journal (yours) | `create_journal_entry`, `list_journal_entries`, `get_journal_entry`, `update_journal_entry`, `attach_journal_entry` |

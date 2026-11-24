@@ -454,6 +454,34 @@ class AssignTripIn(BaseModel):
     trip_id: str
 
 
+class TripIn(BaseModel):
+    """A new hand-made trip (YONDER-404), the web's New trip form."""
+    name: str
+    start_date: str | None = None
+    end_date: str | None = None
+    notes: str | None = None
+
+
+class RosterAddIn(BaseModel):
+    """Who to put on a trip: an existing traveller by `traveler_id` (one of the
+    roster's `available`), or a new guest by `name` (the web's "+ Add new").
+    Send exactly one."""
+    traveler_id: int | None = None
+    name: str | None = None
+
+
+class TravelerChoiceOut(BaseModel):
+    id: int
+    display_name: str
+
+
+class RosterOut(BaseModel):
+    """A trip's roster. `available` is who can be added (everyone not on it,
+    the web's "Add someone you've saved…"), and only for an editor."""
+    travelers: list[TravelerOut] = []
+    available: list[TravelerChoiceOut] = []
+
+
 class TripPatch(BaseModel):
     name: str | None = None
     start_date: str | None = None
@@ -593,6 +621,21 @@ def _trip_summary(session: Session, t: Trip, user) -> TripSummary:
                        my_role=scope.trip_role(session, user, t) or "viewer")
 
 
+def _roster_travelers(session: Session, trip_id: str) -> list[TravelerOut]:
+    """The trip's travellers with their names, as the snapshot and the roster
+    endpoints return them."""
+    roster = session.query(TripTraveler).filter_by(trip_id=trip_id).all()
+    with_login = _traveler_ids_with_accounts(session, [tt.traveler_id for tt in roster])
+    out = []
+    for tt in roster:
+        ident = session.get(TravelerIdentity, tt.traveler_id)
+        out.append(TravelerOut(id=tt.traveler_id,
+                               display_name=ident.display_name if ident else "—",
+                               role=tt.role, kind=ident.kind if ident else "guest",
+                               has_account=tt.traveler_id in with_login))
+    return out
+
+
 def _traveler_ids_with_accounts(session: Session, traveler_ids: list[int]) -> set[int]:
     """Which of these roster people have a Run·dere account (User.traveler_id, D-112)."""
     if not traveler_ids:
@@ -672,16 +715,7 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
     tags = who.activity_map(session, [a.id for a in acts])
     activities = [_activity_out(a, tags.get(a.id)) for a in acts]
 
-    # travellers (+ resolved names)
-    travelers = []
-    roster = session.query(TripTraveler).filter_by(trip_id=trip.id).all()
-    with_login = _traveler_ids_with_accounts(session, [tt.traveler_id for tt in roster])
-    for tt in roster:
-        ident = session.get(TravelerIdentity, tt.traveler_id)
-        travelers.append(TravelerOut(id=tt.traveler_id,
-                                     display_name=ident.display_name if ident else "—",
-                                     role=tt.role, kind=ident.kind if ident else "guest",
-                                     has_account=tt.traveler_id in with_login))
+    travelers = _roster_travelers(session, trip.id)
 
     # materialized places (lat/lon) — the map/offline source
     places = []
@@ -1475,6 +1509,87 @@ def api_update_trip(trip_id: str, body: TripPatch,
         _recheck_waiting(session, trip, user)
     session.refresh(trip)
     return _trip_summary(session, trip, user)
+
+
+@router.post("/trips", response_model=TripSummary, status_code=201)
+def api_create_trip(body: TripIn, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """A hand-made trip (YONDER-404), as the web's New trip. Always owned by
+    the signed-in caller (D-121; `current_user` is never None), who goes on its
+    roster when they have a traveller (§11.2: you're on your own trip)."""
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(422, "a trip needs a name")
+    trip = Trip(source="manual", owner_id=user.id, name=name[:200],
+                start_date=body.start_date or None, end_date=body.end_date or None,
+                notes=(body.notes or "").strip() or None)
+    session.add(trip)
+    session.flush()
+    from app.trips.routes import _link_creator
+    _link_creator(session, trip.id, user)
+    session.commit()
+    if trip.start_date or trip.end_date:
+        # It may be the trip a waiting capture needs (YONDER-222).
+        from app.trips.routes import _recheck_waiting
+        _recheck_waiting(session, trip, user)
+    session.refresh(trip)
+    return _trip_summary(session, trip, user)
+
+
+def _roster_out(session: Session, trip: Trip, user) -> RosterOut:
+    from app.trips import who
+    available: list[TravelerChoiceOut] = []
+    if scope.can_edit_trip(session, user, trip):
+        on = set(who.roster_ids(session, trip.id))
+        available = [TravelerChoiceOut(id=t.id, display_name=t.display_name)
+                     for t in session.query(TravelerIdentity)
+                     .order_by(TravelerIdentity.display_name).all() if t.id not in on]
+    return RosterOut(travelers=_roster_travelers(session, trip.id), available=available)
+
+
+@router.get("/trips/{trip_id}/travelers", response_model=RosterOut)
+def api_trip_roster(trip_id: str, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """Who's travelling, and who an editor can add (YONDER-404)."""
+    trip = scope.require_trip(session, user, trip_id)
+    return _roster_out(session, trip, user)
+
+
+@router.post("/trips/{trip_id}/travelers", response_model=RosterOut)
+def api_add_trip_traveler(trip_id: str, body: RosterAddIn,
+                          user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """Put someone on the trip (YONDER-404), as the web's Who's traveling: an
+    existing traveller, or a new guest by name (a D-100 placeholder).
+    Idempotent. Needs edit access: a person with an account on the roster can
+    edit the trip (D-199)."""
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    from app.trips import who
+    name = (body.name or "").strip()
+    if (body.traveler_id is None) == (not name):
+        raise HTTPException(422, "send traveler_id or name, not both")
+    if body.traveler_id is not None:
+        ident = session.get(TravelerIdentity, body.traveler_id)
+        if ident is None:
+            raise HTTPException(404, "traveller not found")
+        who.add_to_roster(session, trip.id, ident)
+    else:
+        who.quick_add_guest(session, trip.id, name[:128])
+    session.commit()
+    return _roster_out(session, trip, user)
+
+
+@router.delete("/trips/{trip_id}/travelers/{traveler_id}", status_code=204)
+def api_remove_trip_traveler(trip_id: str, traveler_id: int,
+                             user=Depends(authn.current_user),
+                             session: Session = Depends(get_session)):
+    """Take someone off the trip and off its activities' tags (YONDER-404).
+    Idempotent. Needs edit access, as on the web (YONDER-293)."""
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    from app.trips import who
+    if who.remove_from_roster(session, trip.id, traveler_id):
+        session.commit()
+    return Response(status_code=204)
 
 
 def _activity_type_or_400(atype: str):
