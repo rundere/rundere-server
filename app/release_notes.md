@@ -17,7 +17,7 @@ How to write a section (the release PR does this; RELEASING.md):
 Run·dere was called Yonder until 4.4.0, so older notes use that name.
 -->
 
-## 5.0.3
+## 5.0.3 — 2026-11-24
 
 ### For everyone
 - **Already on someone's trips? Ask to be linked.** If the name you type when you sign up is already a traveller here, Run·dere asks whether that's you. Say yes and an admin is asked to link your account; you can carry on in the meantime.
