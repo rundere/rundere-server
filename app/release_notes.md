@@ -17,6 +17,21 @@ How to write a section (the release PR does this; RELEASING.md):
 Run·dere was called Yonder until 4.4.0, so older notes use that name.
 -->
 
+## 5.0.3
+
+### For everyone
+- **Already on someone's trips? Ask to be linked.** If the name you type when you sign up is already a traveller here, Run·dere asks whether that's you. Say yes and an admin is asked to link your account; you can carry on in the meantime.
+- **A trip you create is only yours.** A new trip now has you on it, not the server's owner.
+- **Plan trips from the apps.** The iPhone and Android apps can now create a trip and add or remove who's travelling, once they're updated.
+
+### For admins
+- **Linking an account to a traveller by name works.** Typing the name of a traveller who's already on the roster now links them, instead of failing with an error.
+- **Give a trip guest an account.** Untick **Placeholder guest** for them under Manage travellers, then link the account on the Users page.
+- **Link requests.** When someone asks to be linked, you get an email and a notification with their username, and Users shows **Link** and **Dismiss**. Link also turns a placeholder guest into a full traveller. The person is emailed either way, and gets no access to that traveller's trips until you approve.
+- **Check trips made before 5.0.3.** New trips used to put the server owner's traveller on them, whoever created them, which let the owner edit them. Existing trips aren't changed: look at each trip's travellers and remove anyone who shouldn't be there.
+- **More for Claude and other MCP agents.** They can create trips and manage who's travelling, edit costs, budget lines and packing items, change the trip currency, refresh rates, and duplicate or delete journal entries and files.
+- **A database migration runs on start.** Back up first as usual.
+
 ## 5.0.2 — 2026-11-18
 
 ### For everyone
