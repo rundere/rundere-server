@@ -24,6 +24,7 @@ per person, which Phase 2 trip-sharing builds on.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -42,6 +43,7 @@ from app.db import get_session
 from app.email import deliver, email_configured, send_email, smtp_summary
 from app.models import AccountEvent, TravelerIdentity, User
 
+log = logging.getLogger("rundere.accounts")
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "review" / "templates"))
 from app.icons import install as _install_icons  # noqa: E402
@@ -56,7 +58,8 @@ def _travelers(session: Session) -> list[TravelerIdentity]:
     """The de-duplicated traveller roster surfaced to the admin for user↔traveller
     linking (D-124) — the ONLY user-entered item an admin sees in the UI. Names
     are already unique in the schema; generic placeholder guests (roster stand-ins,
-    not real people) are excluded from selection."""
+    not real people) are excluded from selection until promoted on Manage
+    travellers (D-249)."""
     return (session.query(TravelerIdentity)
             .filter(TravelerIdentity.generic.is_(False))
             .order_by(TravelerIdentity.display_name).all())
@@ -66,33 +69,71 @@ _ASK_ADMIN = ("To be linked to a traveller who's already on trips, ask an admin 
               "(Administer → Users).")
 
 
+def _named_traveler(session: Session, name: str) -> TravelerIdentity | None:
+    """The traveller with this name, any case (names are unique), or None."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    return session.query(TravelerIdentity).filter(
+        func.lower(TravelerIdentity.display_name) == name.lower()).first()
+
+
 def _claim_problem(session: Session, traveler_id: str, new_name: str) -> str:
     """Why this self-service claim isn't allowed, or "". D-204: self-service only
     ever ADDS a new traveller. Picking an existing one (YONDER-145 allowed any
     unclaimed one) handed over every trip that traveller is on, so linking to an
-    existing traveller is an admin action. `traveler_id` is refused outright."""
+    existing traveller is an admin action. `traveler_id` is refused outright.
+    A name that's already taken isn't an error any more (D-250): the person is
+    asked whether that's them, and can ask an admin to link them."""
     if traveler_id not in ("", "none", None):
         return _ASK_ADMIN
-    new_name = (new_name or "").strip()
-    if new_name and session.query(TravelerIdentity).filter(
-            func.lower(TravelerIdentity.display_name) == new_name.lower()).first():
-        return (f"There's already a traveller called {new_name}. If that's you, "
-                "ask an admin to link your account to them; otherwise use a different name.")
     return ""
 
 
 def _claim_traveler(session: Session, user: User, traveler_id: str,
-                    new_name: str) -> str:
+                    new_name: str) -> tuple[str, str | None]:
     """Link an unlinked user to a NEW traveller named `new_name` (D-204).
-    Leaving it empty skips it. Returns an error message or ""."""
+    Leaving it empty skips it. Returns (error message or "", the typed name
+    when it's already a traveller's). D-250: an existing name links nothing; the
+    caller asks the person whether it's them (`_ask_page`)."""
     new_name = (new_name or "").strip()
     if user.traveler_id is not None or (not new_name and traveler_id in ("", "none")):
-        return ""
+        return "", None
     if (problem := _claim_problem(session, traveler_id, new_name)):
-        return problem
+        return problem, None
+    if (taken := _named_traveler(session, new_name)) is not None:
+        return "", taken.display_name
     user.traveler_id = authn.resolve_traveler(session, traveler_id=None, new_name=new_name)
     session.commit()
-    return ""
+    return "", None
+
+
+def _ask_page(request: Request, name: str, nxt: str):
+    """D-250: "There's already a <name> on trips here. Is that you?" The person
+    can ask an admin to link them, pick another name, or skip; either way they
+    carry on. The name stays in the form, never in a URL."""
+    return templates.TemplateResponse(request, "traveller.html", {
+        "next": _safe_next(nxt), "travelers": [], "ask": name})
+
+
+def _notify_link_request(session: Session, user: User) -> None:
+    """Tell the admins someone asks to be linked (D-250). Only the username goes
+    out (D-197: no one's content in an alert); the Users page shows which
+    traveller. Best effort: email and the admin notification targets."""
+    from app import notify
+    from app.config import settings
+    base = (settings.public_base_url or "").rstrip("/")
+    where = f"{base}/users" if base else "Administer → Users"
+    text = (f"{user.username} asks to be linked to a traveller who is already on "
+            f"trips. Link them or dismiss it on {where}.")
+    try:
+        notify.dispatch("accounts", "Traveller link request", text)
+    except Exception:                                  # never fail the person's request
+        log.warning("link request: admin notification failed")
+    for admin in session.query(User).filter(User.is_admin.is_(True),
+                                             User.is_active.is_(True)).all():
+        if admin.email and admin.id != user.id:
+            send_email(admin.email, "Run·dere: a traveller link request", text)
 
 
 def _sso_only(request: Request):
@@ -192,8 +233,14 @@ def setup_submit(request: Request, username: str = Form(...), password: str = Fo
             request, "setup.html", {"travelers": _travelers(session), "error": problem,
                                     "username": username}, status_code=400)
     # The first traveller is the account holder → 'self' if a brand-new one.
-    tid = authn.resolve_traveler(session, traveler_id=traveler_id,
-                                 new_name=new_traveler, kind="self")
+    try:
+        tid = authn.resolve_traveler(session, traveler_id=traveler_id,
+                                     new_name=new_traveler, kind="self",
+                                     reuse_existing=True)
+    except authn.PlaceholderGuest as e:                      # D-249
+        return templates.TemplateResponse(
+            request, "setup.html", {"travelers": _travelers(session), "error": str(e),
+                                    "username": username}, status_code=400)
     user = authn.create_user(session, username, password, email=email or None,
                              is_admin=True, traveler_id=tid)
     resp = RedirectResponse("/", status_code=303)
@@ -243,8 +290,8 @@ def register_submit(request: Request, username: str = Form(...), password: str =
              "username": username}, status_code=409)
     user = authn.create_user(session, username, password, email=email or None,
                              is_admin=False, sharing_prompt=True)
-    _claim_traveler(session, user, traveler_id, new_traveler)
-    resp = RedirectResponse("/", status_code=303)
+    _, ask = _claim_traveler(session, user, traveler_id, new_traveler)
+    resp = _ask_page(request, ask, "/") if ask else RedirectResponse("/", status_code=303)
     return _login_user(resp, user)
 
 
@@ -499,13 +546,13 @@ def sharing_prompt_page(request: Request, next: str = "/",
 
 
 @router.post("/account/sharing")
-def sharing_choose(choice: str = Form(""), next: str = Form("/account"),
+def sharing_choose(request: Request, choice: str = Form(""), next: str = Form("/account"),
                    duration: str = Form("standing"),
                    traveler_id: str = Form("none"), new_traveler: str = Form(""),
                    user: User = Depends(authn.current_user),
                    session: Session = Depends(get_session)):
     user = session.get(User, user.id)
-    error = _claim_traveler(session, user, traveler_id, new_traveler)
+    error, ask = _claim_traveler(session, user, traveler_id, new_traveler)
     if error:
         dest = f"/account/sharing?next={quote_plus(_safe_next(next))}&err={quote_plus(error)}"
         return RedirectResponse(dest, status_code=303)
@@ -517,6 +564,8 @@ def sharing_choose(choice: str = Form(""), next: str = Form("/account"),
         if dest.startswith("/account/sharing"):
             return RedirectResponse(f"/account/sharing?err={quote_plus(error)}", status_code=303)
         return RedirectResponse(f"{dest}{sep}err={quote_plus(error)}", status_code=303)
+    if ask:                                       # D-250: is that you? then carry on
+        return _ask_page(request, ask, dest)
     return RedirectResponse(dest, status_code=303)
 
 
@@ -527,20 +576,62 @@ def traveller_page(request: Request, next: str = "/account",
     """Self-service traveller link for an unlinked account (YONDER-145)."""
     if user.traveler_id is not None:
         return RedirectResponse(_safe_next(next), status_code=303)
+    pending = (session.get(TravelerIdentity, user.requested_traveler_id)
+               if user.requested_traveler_id is not None else None)
     return templates.TemplateResponse(request, "traveller.html", {
-        "next": _safe_next(next), "travelers": []})            # name only (D-204)
+        "next": _safe_next(next), "travelers": [],              # name only (D-204)
+        "pending": pending.display_name if pending else None})
 
 
 @router.post("/account/traveller")
-def traveller_link(next: str = Form("/account"), traveler_id: str = Form("none"),
-                   new_traveler: str = Form(""),
+def traveller_link(request: Request, next: str = Form("/account"),
+                   traveler_id: str = Form("none"), new_traveler: str = Form(""),
                    user: User = Depends(authn.current_user),
                    session: Session = Depends(get_session)):
     user = session.get(User, user.id)
-    error = _claim_traveler(session, user, traveler_id, new_traveler)
+    error, ask = _claim_traveler(session, user, traveler_id, new_traveler)
     if error:
         return RedirectResponse(f"/account/traveller?next={quote_plus(_safe_next(next))}"
                                 f"&err={quote_plus(error)}", status_code=303)
+    if ask:
+        return _ask_page(request, ask, next)
+    return RedirectResponse(_safe_next(next), status_code=303)
+
+
+@router.post("/account/traveller/request")
+def traveller_request(next: str = Form("/"), name: str = Form(""),
+                      user: User = Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """D-250: "Yes, that's me": ask an admin to link this account to the
+    traveller with that name. Nothing is linked until an admin approves (D-204);
+    the person carries on unlinked. One request at a time: a new one replaces it."""
+    user = session.get(User, user.id)
+    dest = _safe_next(next)
+    if user.traveler_id is not None:
+        return RedirectResponse(dest, status_code=303)
+    traveller = _named_traveler(session, name)
+    if traveller is None:                          # renamed or gone meanwhile
+        return RedirectResponse(f"/account/traveller?next={quote_plus(dest)}", status_code=303)
+    first = user.requested_traveler_id != traveller.id
+    user.requested_traveler_id = traveller.id
+    user.link_requested_at = datetime.now(timezone.utc)
+    if first:
+        _audit(session, user, user, "link_requested", str(traveller.id))
+    session.commit()
+    if first:                                      # no repeat alerts for the same ask
+        _notify_link_request(session, user)
+    return RedirectResponse(dest, status_code=303)
+
+
+@router.post("/account/traveller/request/cancel")
+def traveller_request_cancel(next: str = Form("/account/traveller"),
+                             user: User = Depends(authn.current_user),
+                             session: Session = Depends(get_session)):
+    user = session.get(User, user.id)
+    if user.requested_traveler_id is not None:
+        user.requested_traveler_id = user.link_requested_at = None
+        _audit(session, user, user, "link_request_cancelled")
+        session.commit()
     return RedirectResponse(_safe_next(next), status_code=303)
 
 
@@ -557,9 +648,16 @@ def users_page(request: Request, msg: str = "", err: str = "", link: str = "",
                session: Session = Depends(get_session)):
     users = session.query(User).order_by(User.username).all()
     tmap = {t.id: t for t in _travelers(session)}
+    # D-250: who asks to be linked to which traveller (placeholder guests too).
+    asked = {u.requested_traveler_id for u in users if u.requested_traveler_id is not None}
+    amap = ({t.id: t for t in session.query(TravelerIdentity)
+             .filter(TravelerIdentity.id.in_(asked)).all()} if asked else {})
+    requests = {u.id: amap[u.requested_traveler_id] for u in users
+                if u.requested_traveler_id in amap and u.traveler_id is None}
     from app import scope
     return templates.TemplateResponse(request, "users.html", {
         "users": users, "travelers": _travelers(session), "tmap": tmap,
+        "requests": requests,
         "support": {u.id: scope.support_live(u) for u in users},
         "me": admin, "registration_open": settings.auth_registration_open,
         "smtp": email_configured(), "smtp_summary": smtp_summary(),
@@ -593,7 +691,11 @@ def users_create(request: Request, username: str = Form(...), password: str = Fo
         return RedirectResponse("/users?err=That+username+is+taken", status_code=303)
     if email.strip() and authn.email_in_use(session, email):
         return RedirectResponse("/users?err=That+email+is+already+in+use", status_code=303)
-    tid = authn.resolve_traveler(session, traveler_id=traveler_id, new_name=new_traveler)
+    try:
+        tid = authn.resolve_traveler(session, traveler_id=traveler_id, new_name=new_traveler,
+                                     reuse_existing=True)    # admin: typing a name = picking it
+    except authn.PlaceholderGuest as e:                      # D-249: promote them first
+        return RedirectResponse(f"/users?err={quote_plus(str(e))}", status_code=303)
     authn.create_user(session, username, password, email=email or None,
                       is_admin=bool(is_admin), traveler_id=tid)
     return RedirectResponse(f"/users?msg=Created+{username.strip()}", status_code=303)
@@ -764,9 +866,64 @@ def users_link_traveler(user_id: str, traveler_id: str = Form("none"),
     user = _u(session, user_id)
     if user is None:
         return RedirectResponse("/users?err=No+such+user", status_code=303)
-    user.traveler_id = authn.resolve_traveler(session, traveler_id=traveler_id,
-                                              new_name=new_traveler)
+    try:
+        user.traveler_id = authn.resolve_traveler(session, traveler_id=traveler_id,
+                                                  new_name=new_traveler,
+                                                  reuse_existing=True)  # admin: as picking it
+    except authn.PlaceholderGuest as e:                      # D-249: promote them first
+        return RedirectResponse(f"/users?err={quote_plus(str(e))}", status_code=303)
+    user.requested_traveler_id = user.link_requested_at = None     # D-250: answered
     _audit(session, user, admin, "traveller_linked", str(user.traveler_id or ""))
     session.commit()
     _notify_private(user, "changed which traveller your account is linked to")
     return RedirectResponse(f"/users?msg=Linked+traveller+for+{user.username}", status_code=303)
+
+
+@router.post("/users/{user_id}/traveler/approve")
+def users_approve_link(user_id: str, admin: User = Depends(authn.require_admin),
+                       session: Session = Depends(get_session)):
+    """D-250: link the account to the traveller it asked for, in one step. A
+    placeholder guest (D-100) is promoted on the way: the admin approving IS
+    the decision D-249 otherwise asks for on Manage travellers. Refused when
+    another account already is that traveller."""
+    user = _u(session, user_id)
+    if user is None:
+        return RedirectResponse("/users?err=No+such+user", status_code=303)
+    traveller = (session.get(TravelerIdentity, user.requested_traveler_id)
+                 if user.requested_traveler_id is not None else None)
+    if traveller is None or user.traveler_id is not None:
+        user.requested_traveler_id = user.link_requested_at = None
+        session.commit()
+        return RedirectResponse("/users?err=That+request+is+no+longer+open", status_code=303)
+    other = (session.query(User).filter(User.traveler_id == traveller.id,
+                                        User.id != user.id).first())
+    if other is not None:
+        return RedirectResponse(
+            f"/users?err={quote_plus(f'{traveller.display_name} is already linked to {other.username}. Unlink them first.')}",
+            status_code=303)
+    if traveller.generic:
+        traveller.generic = False
+        _audit(session, user, admin, "traveller_promoted", str(traveller.id))
+    user.traveler_id = traveller.id
+    user.requested_traveler_id = user.link_requested_at = None
+    _audit(session, user, admin, "traveller_linked", str(traveller.id))
+    session.commit()
+    _notify_private(user, "linked your account to the traveller you asked for")
+    return RedirectResponse(f"/users?msg=Linked+traveller+for+{quote_plus(user.username)}",
+                            status_code=303)
+
+
+@router.post("/users/{user_id}/traveler/dismiss")
+def users_dismiss_link(user_id: str, admin: User = Depends(authn.require_admin),
+                       session: Session = Depends(get_session)):
+    """D-250: not that person. The request goes; the account stays unlinked."""
+    user = _u(session, user_id)
+    if user is None:
+        return RedirectResponse("/users?err=No+such+user", status_code=303)
+    if user.requested_traveler_id is not None:
+        user.requested_traveler_id = user.link_requested_at = None
+        _audit(session, user, admin, "link_request_dismissed")
+        session.commit()
+        _notify_private(user, "declined your request to be linked to a traveller")
+    return RedirectResponse(f"/users?msg=Dismissed+the+request+from+{quote_plus(user.username)}",
+                            status_code=303)

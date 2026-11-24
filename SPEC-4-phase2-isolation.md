@@ -169,6 +169,35 @@ reserved).
   AirTrail connection, D-150/YONDER-322 — notes) move to a
   **user-facing self-editor** at `/trips/settings/travel-profile` ("Travel
   profile") — each user edits their own, never the admin. (owner, 2026-08-28)
+  *Amended by D-249: the roster view also shows and edits "Placeholder guest".*
+- **D-249 — A trip's guest becomes a user in two steps: promote on Travellers,
+  then link on Users.** A companion quick-added on a trip is a placeholder guest
+  (D-100). The admin Travellers roster (Manage travellers) is where an admin
+  promotes them: it shows and edits **Placeholder guest** (`generic`), a roster
+  flag, not a personal attribute, so D-124 still holds. The Users page picker
+  keeps excluding placeholder guests, and the Users page never links an account
+  to one, by name or by id. It says to promote them on Manage travellers first.
+  A typed name that matches a real traveller links that traveller. It never
+  mints a duplicate. (owner, 2026-11-21, YONDER-403)
+  *Amended by D-250: approving a link request promotes a placeholder guest in the
+  same step.*
+- **D-250 — A taken name asks, it doesn't refuse: request a link, an admin approves.**
+  Amends D-204 (SPEC-8) and D-249. When a new account types a traveller's name that's
+  already on the roster (sign-up, the first sign-in question, `/account/traveller`), it
+  sees "There's already a <name> on trips here. Is that you?", not an error.
+  - **Yes, ask an admin to link me** records the request on the account
+    (`users.requested_traveler_id`, migration 0056). The person carries on, unlinked: the
+    request gives no access to that traveller's trips (D-204 still holds). One request
+    at a time; asking again for the same traveller doesn't alert again.
+  - The admins are told by email and on the admin notification targets (category
+    `accounts`), with the **username only**, never the traveller's name (D-197). The
+    Users page shows "Wants to be linked to <name>" with **Link** and **Dismiss**.
+  - **Link** links them in one step. A placeholder guest (D-100) is promoted on the way,
+    since the admin approving is the decision D-249 asks for. It's refused while another
+    account already is that traveller. **Dismiss** drops the request. Either way the
+    person is emailed, and every step is audited. Any other admin link also clears it.
+  - **No, that's someone else** goes back to the name field; **Skip for now** carries on
+    unlinked. The name stays in the form, never in a URL. (owner, 2026-11-21, YONDER-403)
 
 ## Decisions (D-119–D-121)
 

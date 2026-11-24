@@ -245,6 +245,10 @@ class User(Base):
     # account is locked from the moment it is set; the request itself is the
     # `account_deletions` row.
     deletion_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # D-250: the existing traveller this account says it is, waiting for an admin
+    # to link it. Never linked by itself (D-204). Soft link, no foreign key.
+    requested_traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    link_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class UserIntegration(Base):

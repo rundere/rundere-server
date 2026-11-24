@@ -959,6 +959,8 @@ pass the guardrails: no migration and no app release.
     audited and notified to the user.
   - Amends D-117 ("pick an existing traveller") and YONDER-145 (any unclaimed one) for
     self-service. `/setup` (the first admin) and admin-created accounts still pick freely.
+  - *Amended by D-250 (SPEC-4 phase 2): a name that already exists asks "is that you?" and
+    can send an admin a link request, instead of being refused. Still nothing links by itself.*
   - Considered and set aside: matching on email (Run·dere never verifies an address, so a
     typed email would be a takeover) and invite links (they don't cover accounts that
     arrive through an external SSO).

@@ -39,6 +39,7 @@ CATEGORIES = {
     "ai": "The LLM (Ollama) used to read bookings and research trips",
     "research": "Trip research sources — SearXNG, Open-Meteo, Frankfurter",
     "servers": "Other Run·dere servers this one watches, such as the demo (TX_WATCH_URLS)",
+    "accounts": "Account requests, such as someone asking to be linked to their traveller (D-250)",
 }
 REMIND_AFTER = timedelta(hours=24)
 

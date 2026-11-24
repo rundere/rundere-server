@@ -29,6 +29,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Request
+from sqlalchemy import func
 
 from app.config import settings
 from app.models import PasswordResetToken, RefreshToken, TravelerIdentity, User
@@ -592,18 +593,52 @@ def set_user_email(session, user: User, email: str | None) -> str | None:
     return None
 
 
+class PlaceholderGuest(ValueError):
+    """The traveller is a trip's placeholder guest (D-100). D-249: promote them
+    on Manage travellers first; an account never links to one."""
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(
+            f"{name} is a placeholder guest added from a trip. Untick Placeholder "
+            "guest for them under Manage travellers, then link the account here.")
+
+
 def resolve_traveler(session, *, traveler_id: str | int | None,
-                     new_name: str | None, kind: str = "guest") -> int | None:
+                     new_name: str | None, kind: str = "guest",
+                     reuse_existing: bool = False) -> int | None:
     """Onboarding traveller link (D-117: pick existing OR create new). A non-empty
-    `new_name` mints a TravelerIdentity; else an existing id is used as given."""
+    `new_name` mints a TravelerIdentity; else an existing id is used as given.
+
+    Names are unique, so a typed name that's already on the roster (any case)
+    can't be minted again. The admin and first-run callers pass
+    `reuse_existing=True` and get that traveller back: typing the name is the
+    same as picking it. Self-service never does (D-204: linking to an existing
+    traveller is admin-only), so there it's a ValueError; those callers refuse
+    the name first with a message (`_claim_problem`).
+
+    A placeholder guest (D-100) is never linked, by name or by id: it raises
+    PlaceholderGuest. D-249: an admin promotes them on Manage travellers
+    (untick Placeholder guest), then links the account on the Users page."""
     if new_name and new_name.strip():
-        traveler = TravelerIdentity(display_name=new_name.strip(), kind=kind)
+        name = new_name.strip()
+        existing = session.query(TravelerIdentity).filter(
+            func.lower(TravelerIdentity.display_name) == name.lower()).first()
+        if existing is not None:
+            if not reuse_existing:
+                raise ValueError("a traveller with that name already exists")
+            if existing.generic:
+                raise PlaceholderGuest(existing.display_name)
+            return existing.id
+        traveler = TravelerIdentity(display_name=name, kind=kind)
         session.add(traveler)
         session.commit()
         session.refresh(traveler)
         return traveler.id
     if traveler_id in (None, "", "none"):
         return None
+    picked = session.get(TravelerIdentity, int(traveler_id))
+    if picked is not None and picked.generic:
+        raise PlaceholderGuest(picked.display_name)
     return int(traveler_id)
 
 
