@@ -489,8 +489,13 @@ def notifications_check(request: Request, session: Session = Depends(get_session
 def _ai_context(session: Session) -> dict:
     from app import ai
     from app.capture import _ago
+    from sqlalchemy import JSON, or_
+
     from app.models import TravelItem
-    waiting = [i for i in session.query(TravelItem).filter(TravelItem.extraction.is_(None))
+    # processing.py stores extraction=None, which JsonCol writes as JSON null,
+    # not SQL NULL (SQLite and Postgres JSONB alike), so match both.
+    waiting = [i for i in session.query(TravelItem).filter(
+                   or_(TravelItem.extraction.is_(None), TravelItem.extraction == JSON.NULL))
                if "ai_off" in ((i.review or {}).get("reasons") or [])
                and (i.review or {}).get("action_taken") != "ignored"]
     calls = ai.call_summary(session)

@@ -461,6 +461,40 @@ def _label(place: dict | None) -> str | None:
             or place.get("raw") or None)
 
 
+def _venue_name(place: dict | None) -> str | None:
+    """An event venue's own name ("Quincy Hall"), not its address or city."""
+    if not isinstance(place, dict):
+        return None
+    from resolve.geocode import _looks_like_address
+    whole = (place.get("name") or place.get("raw") or "").strip()
+    if not _looks_like_address(whole):
+        return whole or None
+    head = whole.split(",")[0].strip()           # "Quincy Hall, 4001 Fairfax Dr, …"
+    return head if head and not any(c.isdigit() for c in head) else None
+
+
+def _place_address(place: dict | None) -> str | None:
+    """A place's street address in one line: street, city, state and postcode
+    (D-248). _label() picks the city first, which suits an airport but turned
+    "Quincy Hall, 4001 Fairfax Dr, Arlington, VA" into a bare "Arlington", and
+    Discover then placed that in Texas (Tarrant County)."""
+    if not isinstance(place, dict):
+        return None
+    from resolve.geocode import _looks_like_address
+    whole = (place.get("name") or place.get("raw") or "").strip()
+    if _looks_like_address(whole):               # a calendar LOCATION / maps pick
+        head, _, rest = whole.partition(",")
+        return rest.strip() if rest.strip() and not any(c.isdigit() for c in head) \
+            else whole
+    tail = " ".join(x for x in (place.get("region"), place.get("postcode")) if x)
+    out: list[str] = []
+    for part in (place.get("address"), place.get("city"), tail):
+        part = (part or "").strip()
+        if part and part.lower() not in ", ".join(out).lower():
+            out.append(part)
+    return ", ".join(out) or None
+
+
 def _capture_source(session: Session, item: TravelItem) -> str | None:
     """What the timeline's Source field says for a capture: the email's subject
     or the captured page's address. Maps captures carry their link in the Map
@@ -552,7 +586,7 @@ def _yonder_activity(payload: dict) -> tuple[str, dict]:
         values = {
             "when": _local(lg.get("check_in")), "endWhen": _local(lg.get("check_out")),
             "name": lg.get("property_name") or _label(place),
-            "address": place.get("address") or place.get("raw"),
+            "address": _place_address(place) or place.get("raw"),
             "confirmation": ref,
         }
         return "lodging", {k: v for k, v in values.items() if v}
@@ -560,7 +594,8 @@ def _yonder_activity(payload: dict) -> tuple[str, dict]:
     if t == "event":
         ev = payload.get("event") or {}
         values = {"when": _local(ev.get("start")), "name": ev.get("title") or "Event",
-                  "venue": _label(ev.get("venue"))}
+                  "venue": _venue_name(ev.get("venue")),
+                  "address": _place_address(ev.get("venue"))}
         return "event", {k: v for k, v in values.items() if v}
 
     # Anything else (incl. note): a plain note carrying whatever text we have.

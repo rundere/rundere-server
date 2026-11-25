@@ -111,6 +111,17 @@ def _declined(it: dict, answered: set[str] | None) -> bool:
     return answered is not None and bool(seed) and not seed & answered
 
 
+def _template_reason(names: list[str]) -> list[str]:
+    """One "from your A, B and C templates" phrase for every template an item
+    came from, so the reason doesn't grow by a clause per template (the stored
+    reason is a 256-char column; the runner trims as the backstop)."""
+    if not names:
+        return []
+    if len(names) == 1:
+        return [f"from your {names[0]} template"]
+    return [f"from your {', '.join(names[:-1])} and {names[-1]} templates"]
+
+
 def assemble(ctx: PlanningContext, items: dict, *, inventory: list[dict],
              templates: list[dict], chosen: list[str] | None = None) -> Assembly:
     """Build one person's list. `inventory` rows are dicts with id, type_key,
@@ -145,12 +156,15 @@ def assemble(ctx: PlanningContext, items: dict, *, inventory: list[dict],
     res.templates = [{"id": t["id"], "label": t["name"], "suggested": suggested(t)}
                      for t in picked]
 
-    acc: dict[str, dict] = {}          # inventory id -> {qty, reasons, wanted}
+    acc: dict[str, dict] = {}          # inventory id -> {qty, reasons, templates}
 
-    def add(row: dict, qty: int, reason: str) -> None:
-        cur = acc.setdefault(row["id"], {"qty": 0, "reasons": []})
+    def add(row: dict, qty: int, reason: str, template: str | None = None) -> None:
+        cur = acc.setdefault(row["id"], {"qty": 0, "reasons": [], "templates": []})
         cur["qty"] = max(cur["qty"], qty)
-        if reason and reason not in cur["reasons"]:
+        if template is not None:
+            if template not in cur["templates"]:
+                cur["templates"].append(template)
+        elif reason and reason not in cur["reasons"]:
             cur["reasons"].append(reason)
 
     def default_qty(row: dict) -> int:
@@ -162,8 +176,8 @@ def assemble(ctx: PlanningContext, items: dict, *, inventory: list[dict],
         for line in t.get("lines") or []:
             row = owned.get(line["inventory_item_id"])
             if row is not None:
-                add(row, line.get("quantity") or default_qty(row),
-                    f"from your {t['name']} template")
+                add(row, line.get("quantity") or default_qty(row), "",
+                    template=t["name"])
 
     # Needs resolve to owned items, else they're suggestions (§6.7.4).
     needs: dict[str, dict] = {}
@@ -213,7 +227,8 @@ def assemble(ctx: PlanningContext, items: dict, *, inventory: list[dict],
         res.lines.append(PlanItem(
             item_id=iid, label=row["label"], category=row["category"], quantity=qty,
             bag="carry_on" if one_bag else it.get("bag", "checked"),
-            reason="; ".join(info["reasons"]), source="inventory",
+            reason="; ".join(_template_reason(info["templates"]) + info["reasons"]),
+            source="inventory",
             inventory_item_id=iid))
     res.lines.sort(key=lambda i: (i.category, i.label.lower()))
     res.suggestions.sort(key=lambda i: (i.category, i.label.lower()))

@@ -71,15 +71,22 @@ The trip detail page gains a roster section (`_travelers_section.html`, included
 after the trip header). It reads `TripTraveler` and renders the linked
 `TravelerIdentity` rows, self first.
 
-- **Auto-link self.** Creating a trip flushes the row, then links the `self`
-  identity as `role="self"` (`_auto_link_self`). No-op if there is no self
-  identity yet.
+- **Auto-link the creator.** Creating a trip flushes the row, then puts the
+  creator's own traveller on it (`_link_creator`, web and API). Never the
+  deployment's `self` traveller for someone else: the roster gives a linked
+  account edit access (D-199), so that handed the deployment owner every user's
+  trips (YONDER-404). Auth off, the single user is `self` (`_auto_link_self`).
+  No-op when the creator has no traveller yet.
 - **Add a saved person.** A dropdown of identities not already on the trip
   (`POST /trips/{id}/travelers`, idempotent, guards a bad id).
 - **Add a guest by name.** A text field mints a minimal identity and links it
   (`POST /trips/{id}/travelers/new`) — see below.
 - **Remove.** `POST /trips/{id}/travelers/{traveler_id}/remove`.
 - **Manage.** Links to the SQLAdmin travellers list (`/admin/traveler-identity/list`).
+- **API.** The apps do the same through `GET`/`POST /api/v1/trips/{id}/travelers`
+  and `DELETE /api/v1/trips/{id}/travelers/{traveler_id}` (YONDER-404). Both
+  surfaces share `add_to_roster`, `quick_add_guest` and `remove_from_roster` in
+  `app/trips/who.py`.
 
 All mutations swap just `#travelers-section` via HTMX — no page reload.
 `delete_trip` explicitly sweeps `trip_travelers` (SQLite does not enforce

@@ -27,7 +27,7 @@ if DEPS:
 
     # Names an app may already be built against: never removed or renamed (D-244).
     SHIPPED = {"trip_pdf_flags", "release_notes", "places_suggest", "places_lists",
-               "themes", "theme_scene_png"}
+               "themes", "theme_scene_png", "trip_create", "trip_roster"}
 
     def test_methods_lists_capabilities_without_signing_in():
         r = client.get("/api/v1/auth/methods")
@@ -56,3 +56,11 @@ if DEPS:
                      "/api/v1/places/lists", "/api/v1/trips/none/timeline.pdf",
                      "/account/export", "/account/delete"):
             assert client.get(path, follow_redirects=False).status_code != 404, path
+        # POST-only and roster routes (trip_create, trip_roster): signed out, the
+        # route answers 401, never 404 or 405.
+        for method, path in (("post", "/api/v1/trips"),
+                             ("get", "/api/v1/trips/none/travelers"),
+                             ("post", "/api/v1/trips/none/travelers"),
+                             ("delete", "/api/v1/trips/none/travelers/none")):
+            r = getattr(client, method)(path, follow_redirects=False)
+            assert r.status_code not in (404, 405), (method, path, r.status_code)

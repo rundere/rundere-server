@@ -235,3 +235,13 @@ def test_map_search_by_list_is_own_only(monkeypatch):
     part = client.get("/places?lens=map&q=list:ExampleRamen",
                       headers={"hx-request": "true", "hx-target": "pl-body"}).text
     assert "You have no list called" in part and 'id="pl-map"' in part
+
+
+def test_map_filters_keep_the_view_but_the_first_load_still_fits():
+    """YONDER-389: a list:/kind: chip or a search swaps the lens and must not re-fit the
+    map. The browser logic is in places_map.js; pin the guard so it can't be dropped."""
+    js = (Path(__file__).resolve().parent.parent / "app/review/static/places_map.js").read_text()
+    assert js.count("fitBounds(") == 1                 # one call, behind the keepView guard
+    assert "if (!keepView)" in js and "keepView = shown;" in js
+    assert "hx-push-url" in (Path(__file__).resolve().parent.parent
+                             / "app/review/templates/places/index.html").read_text()

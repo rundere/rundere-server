@@ -26,6 +26,8 @@ def current() -> list[str]:
         "places_lists",        # /places/lists (SPEC-11)
         "themes",              # GET /themes, ui_theme and scenery on /auth/me (D-237..D-240)
         "theme_scene_png",     # each theme's scene also published as PNG (D-245)
+        "trip_create",         # POST /trips: the caller owns it and is on its roster (5.0.3)
+        "trip_roster",         # GET/POST/DELETE /trips/{id}/travelers (5.0.3)
     ]
     if account_deletion.available():
         names.append("account_delete")     # the web Delete page exists (D-242)

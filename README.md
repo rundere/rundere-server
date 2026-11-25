@@ -1,4 +1,6 @@
 <div align="center">
+  <img src="docs/images/readme-header.png" alt="A jet climbing from a point of origin along a dashed route line into the night sky" width="100%">
+
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="design/logo/rundere-lockup-horizontal-silver.svg">
     <img src="design/logo/rundere-lockup-horizontal-night.svg" alt="Run·dere" width="360">
@@ -15,7 +17,7 @@ A self-hosted travel planner for you and the people you travel with.
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-6B7280.svg)](LICENSE)
 [![Demo](https://img.shields.io/badge/demo-try_it-111827)](https://demo.rundere.app)
 
-**Version 4.13.6** · [Documentation](docs/) · [Demo](https://demo.rundere.app) · [Releases](https://github.com/rundere/rundere-server/releases) · [Docker image](https://github.com/rundere/rundere-server/pkgs/container/rundere-server) · [rundere.app](https://rundere.app)
+**Version 5.0.4** · [Documentation](docs/) · [Demo](https://demo.rundere.app) · [Releases](https://github.com/rundere/rundere-server/releases) · [Docker image](https://github.com/rundere/rundere-server/pkgs/container/rundere-server) · [rundere.app](https://rundere.app)
 </div>
 
 Forward a booking email, drop in a PDF or click a bookmarklet, and Run·dere reads the
@@ -160,7 +162,8 @@ secret files. The essentials:
 | `TX_DATABASE_URL` | Postgres in production (SQLite for development) |
 | `TX_JWT_SECRET`, `TX_SECRETS_KEY` | Signing sign-ins, and encrypting each person's integration tokens |
 | `TX_PUBLIC_BASE_URL` | Your public address, for email links, the app and AI assistants |
-| `TX_OLLAMA_URL`, `TX_PHOTON_URL`, `TX_SEARXNG_URL` | Optional local LLM, geocoder and web search |
+| `TX_AI_ENABLED`, `TX_AI_URL`, `TX_AI_MODEL_CHAT` | Optional AI (off by default): set all three to turn it on. Ollama or any OpenAI-compatible server |
+| `TX_PHOTON_URL`, `TX_SEARXNG_URL` | Optional local geocoder and web search |
 | `TX_OIDC_*` | Optional single sign-on (Authentik, Keycloak, …) |
 
 **[docs/configuration.md](docs/configuration.md)** is the full reference.

@@ -180,7 +180,11 @@ _TYPES: tuple[ActivityType, ...] = (
         (
             _f("when", "Start", "datetime-local"),
             _f("name", "Event name"),
-            _f("venue", "Venue"),
+            # The venue's name and its street address, as lodging and dining
+            # have (D-248). One "Venue" box held either, so a capture kept
+            # just the city and nobody could tell which it wanted.
+            _f("venue", "Venue name"),
+            _f("address", "Address"),
             _f("seat", "Seat / section"),
             _f("mapLink", "Map / directions link", "url",
                hint="Google or Apple Maps link"),
@@ -188,7 +192,7 @@ _TYPES: tuple[ActivityType, ...] = (
             _f("notes", "Notes", "textarea"),
         ),
         title=lambda v: v.get("name") or "Event",
-        subtitle=lambda v: v.get("venue", ""),
+        subtitle=lambda v: _join(v.get("venue", ""), v.get("address", ""), sep=" · "),
     ),
     ActivityType(
         "dining", "Restaurant",
@@ -247,6 +251,10 @@ _LINK_KEYS = {"mapLink", "sourceLink"}
 DEFAULT_TYPE = "flight"
 
 
+def all_types() -> tuple[ActivityType, ...]:
+    return _TYPES
+
+
 def get_type(key: str) -> ActivityType:
     """The registered type, falling back to the default rather than raising —
     an unknown type on an old row must still render, not 500 the timeline."""
@@ -272,7 +280,8 @@ _MAP_QUERY: dict[str, Callable[[dict], str | None]] = {
     "carRental": lambda v: v.get("pickupLocation") or None,
     "lodging": lambda v: _join(v.get("name", ""), v.get("address", ""), sep=", ") or None,
     "tour": lambda v: v.get("location") or v.get("name") or None,
-    "event": lambda v: _join(v.get("venue", ""), v.get("name", "") if not v.get("venue") else "") or None,
+    "event": lambda v: (_join(v.get("venue", ""), v.get("address", ""), sep=", ")
+                        or v.get("name") or None),
     "dining": lambda v: _join(v.get("name", ""), v.get("address", ""), sep=", ") or None,
     "cruise": lambda v: (f"{v['departurePort']} cruise terminal"
                          if v.get("departurePort") else None),

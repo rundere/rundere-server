@@ -34,6 +34,8 @@ if DEPS:
     settings.auth_cookie_secure = False
 
     ALL_TOOLS = {"list_trips", "get_trip", "update_trip", "dashboard",
+                 "create_trip", "list_trip_travelers", "add_trip_traveler",   # YONDER-404
+                 "remove_trip_traveler",
                  "list_discovery_places", "set_discovery_place",   # YONDER-264
                  "list_activity_types", "add_activity", "update_activity",
                  "delete_activity", "generate_packing", "set_packing_status",
@@ -48,7 +50,11 @@ if DEPS:
                  "delete_place_list", "set_saved_place_lists",
                  "list_expenses", "add_expense",
                  "record_settlement", "delete_expense", "save_budget", "delete_budget_item",
-                 "comment_on_expense"}
+                 "comment_on_expense",
+                 "update_expense", "set_trip_currency", "refresh_rate",      # YONDER-410
+                 "update_budget_item", "delete_expense_comment", "update_packing_item",
+                 "delete_journal_entry", "duplicate_journal_entry", "list_documents",
+                 "delete_document"}
 
     @pytest.fixture(scope="module")
     def client():
@@ -256,6 +262,31 @@ if DEPS:
             assert t.notes == "bring boots" and t.start_date == "2027-06-01"
         d = ok(client, tok, "dashboard")
         assert "counts" in d and "trip_count" in d
+
+    def test_create_trip_and_roster_tools(client, w):
+        """YONDER-404: an agent can create a trip (the user's own, with them on
+        it) and manage who's on it, through the same rules as /api/v1."""
+        tok = _tok(w["alice"])
+        trip = ok(client, tok, "create_trip", name="MX Agent Trip", start_date="2027-09-01",
+                  end_date="2027-09-05")
+        assert trip["owner_id"] == w["alice"] and trip["can_edit"] is True
+        tid = trip["id"]
+        roster = ok(client, tok, "list_trip_travelers", trip_id=tid)
+        assert [t["id"] for t in roster["travelers"]] == [w["ta"]]
+        assert w["tb"] in [a["id"] for a in roster["available"]]
+        roster = ok(client, tok, "add_trip_traveler", trip_id=tid, traveler_id=w["tb"])
+        assert {t["id"] for t in roster["travelers"]} == {w["ta"], w["tb"]}
+        roster = ok(client, tok, "add_trip_traveler", trip_id=tid, name="MX Agent Guest")
+        guest = next(t for t in roster["travelers"] if t["display_name"] == "MX Agent Guest")
+        assert guest["has_account"] is False
+        roster = ok(client, tok, "remove_trip_traveler", trip_id=tid, traveler_id=w["tb"])
+        assert w["tb"] not in {t["id"] for t in roster["travelers"]}
+        good, err = call(client, tok, "add_trip_traveler", trip_id=tid)
+        assert not good and "422" in err
+        good, err = call(client, tok, "create_trip", name="  ")
+        assert not good and "422" in err
+        # bob was taken off, so the trip is alice's alone again
+        assert tid not in [t["id"] for t in ok(client, _tok(w["bob"]), "list_trips")["trips"]]
 
     def test_get_trip_credits_open_meteo_weather(client, w):
         """Open-Meteo's weather is CC BY 4.0: get_trip hands the agent the
@@ -553,6 +584,68 @@ if DEPS:
         assert ok(client, alice, "delete_budget_item", trip_id=t,
                   item_id=out["plan"]["items"][0]["id"])["ok"]
 
+    def test_gap_tools_costs_packing_journal_documents(client, w, monkeypatch):
+        """YONDER-410: the tools that close the MCP gaps where /api/v1 already
+        worked, with the API's rules (own comments, own packing, own journal)."""
+        from decimal import Decimal
+
+        from app import rates
+        monkeypatch.setattr(rates, "fetch", lambda frm, to, day: (Decimal("0.5"), day))
+        alice, bob = _tok(w["alice"]), _tok(w["bob"])
+        t = w["shared"]
+        # costs: correct an expense, switch currency, fetch a rate
+        e = ok(client, alice, "add_expense", trip_id=t, amount="90", currency="EUR",
+               payer_id=w["ta"], title="Ferry", category="transport")
+        e = ok(client, alice, "update_expense", trip_id=t, expense_id=e["id"], amount="60",
+               title="Ferry (one way)")
+        assert e["title"] == "Ferry (one way)" and [s["amount"] for s in e["shares"]] == ["30", "30"]
+        e = ok(client, alice, "update_expense", trip_id=t, expense_id=e["id"],
+               shares={str(w["ta"]): "40", str(w["tb"]): "20"})
+        assert sorted(s["amount"] for s in e["shares"]) == ["20", "40"]
+        out = ok(client, alice, "set_trip_currency", trip_id=t, currency="CAD")
+        assert out["currency"] == "CAD"
+        r = ok(client, alice, "refresh_rate", trip_id=t, code="EUR", date="2027-06-02")
+        assert r["rate"]["currency"] == "EUR" and r["rate"]["quote"] == "CAD"
+        # comments: only your own can be deleted
+        c = ok(client, bob, "comment_on_expense", trip_id=t, expense_id=e["id"], body="ok?")
+        good, _ = call(client, alice, "delete_expense_comment", trip_id=t, expense_id=e["id"],
+                       comment_id=c["id"])
+        assert not good
+        assert ok(client, bob, "delete_expense_comment", trip_id=t, expense_id=e["id"],
+                  comment_id=c["id"])["ok"]
+        seen = ok(client, alice, "list_expenses", trip_id=t)["expenses"]
+        assert next(x for x in seen if x["id"] == e["id"])["comments"] == []
+        # budget: edit a draft, then keep it
+        plan = ok(client, alice, "save_budget", trip_id=t, items=[
+            {"title": "Ferry tickets", "category": "transport", "amount": "40",
+             "currency": "EUR", "traveler_ids": [w["ta"]]}])["plan"]
+        bid = plan["items"][0]["id"]
+        assert ok(client, alice, "update_budget_item", trip_id=t, item_id=bid,
+                  keep=True)["status"] == "kept"           # kept as drafted
+        b = ok(client, alice, "update_budget_item", trip_id=t, item_id=bid, amount="45")
+        assert b["amount"] == "45" and b["status"] == "kept"
+        # packing: rename, quantity, bag; never someone else's line
+        item = ok(client, alice, "add_packing_item", trip_id=t, label="MX socks")
+        item = ok(client, alice, "update_packing_item", trip_id=t, item_id=item["id"],
+                  label="MX wool socks", quantity=3, bag="carry_on")
+        assert (item["label"], item["quantity"], item["bag"]) == ("MX wool socks", 3, "carry_on")
+        good, err = call(client, bob, "update_packing_item", trip_id=t, item_id=item["id"],
+                         label="hijacked")
+        assert not good and "not found" in err
+        # journal: duplicate onto a trip, then delete; never someone else's
+        j = ok(client, alice, "create_journal_entry", body="MX ferry day", entry_date="2027-06-02")
+        copy = ok(client, alice, "duplicate_journal_entry", entry_id=j["id"], trip_id=t)
+        assert copy["id"] != j["id"] and copy["trip_id"] == t and copy["body"] == "MX ferry day"
+        good, _ = call(client, bob, "delete_journal_entry", entry_id=j["id"])
+        assert not good
+        assert ok(client, alice, "delete_journal_entry", entry_id=copy["id"])["ok"]
+        assert [x["id"] for x in ok(client, alice, "list_journal_entries")["entries"]] == [j["id"]]
+        # documents: the list is the caller's own; an unknown or someone else's id is 404
+        docs = ok(client, alice, "list_documents")
+        assert "enabled" in docs and docs["documents"] == []
+        good, err = call(client, alice, "delete_document", doc_id="no-such-file")
+        assert not good and "404" in err
+
     def test_private_trip_unreachable_through_every_tool(client, w):
         tok = _tok(w["alice"])
         p = w["private"]
@@ -563,6 +656,15 @@ if DEPS:
             ("delete_activity", {"trip_id": p, "activity_id": w["act"]}),
             ("generate_packing", {"trip_id": p}),
             ("add_packing_item", {"trip_id": p, "label": "x"}),
+            # YONDER-410
+            ("update_expense", {"trip_id": p, "expense_id": "x", "title": "hacked"}),
+            ("set_trip_currency", {"trip_id": p, "currency": "USD"}),
+            ("refresh_rate", {"trip_id": p, "code": "USD"}),
+            ("update_budget_item", {"trip_id": p, "item_id": "x", "amount": "1"}),
+            ("delete_expense_comment", {"trip_id": p, "expense_id": "x", "comment_id": "x"}),
+            ("update_packing_item", {"trip_id": p, "item_id": "x", "label": "x"}),
+            ("duplicate_journal_entry", {"entry_id": w["bob_note"], "trip_id": None}),
+            ("delete_journal_entry", {"entry_id": w["bob_note"]}),
             ("save_research", {"trip_id": p, "title": "x", "body_md": "y"}),
             ("create_journal_entry", {"body": "x", "trip_id": p}),
             ("assign_review_item_to_trip", {"item_id": w["alice_cap"], "trip_id": p}),
@@ -574,6 +676,9 @@ if DEPS:
                              "payer_id": w["ta"]}),
             ("record_settlement", {"trip_id": p, "from_id": w["ta"], "to_id": w["tb"],
                                    "amount": "5"}),
+            ("list_trip_travelers", {"trip_id": p}),
+            ("add_trip_traveler", {"trip_id": p, "traveler_id": w["ta"]}),
+            ("remove_trip_traveler", {"trip_id": p, "traveler_id": w["tb"]}),
         ]
         for name, args in attempts:
             good, err = call(client, tok, name, **args)
@@ -612,6 +717,11 @@ if DEPS:
             assert not good and "403" in err
             good, err = call(client, tok, "add_activity", trip_id=w["carols"], type="note",
                              values={"title": "x"})
+            assert not good and "403" in err
+            # the roster too: a viewer sees nobody to add and can't add anyone
+            assert ok(client, tok, "list_trip_travelers", trip_id=w["carols"])["available"] == []
+            good, err = call(client, tok, "add_trip_traveler", trip_id=w["carols"],
+                             name="MX Sneaky Guest")
             assert not good and "403" in err
             assert ok(client, tok, "get_review_item", item_id=cap_id)
             good, err = call(client, tok, "assign_review_item_to_trip", item_id=cap_id,

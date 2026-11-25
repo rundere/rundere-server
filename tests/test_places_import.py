@@ -327,3 +327,32 @@ def test_a_broken_csv_line_is_refused_without_the_parsers_own_message(world):
                     headers=world["ada"])
     assert r.status_code == 400
     assert r.json()["detail"] == "line 2 can't be read as CSV; check its quotes"
+
+
+def test_a_renamed_import_list_is_found_by_source_in_preview_and_import(world):
+    """The preview resolves lists the way `create_list` does (by `csv:<name>` source),
+    so a list renamed after the first import isn't promised as new."""
+    data = _csv(_row(name="Example Harbour Cafe", lat=51.2, lon=-0.1, list="Espresso"))
+    first = _import(world["ada_id"], data)
+    made = first["lists"][0]
+    assert made["outcome"] == "created"
+    with SessionLocal() as s:
+        places_svc.update_list(s, s.get(User, world["ada_id"]), made["id"], name="Cafés")
+    more = _csv(_row(name="Sample Pier Kiosk", lat=51.3, lon=-0.2, list="Espresso"))
+    preview = _import(world["ada_id"], more, dry_run=True)
+    assert preview["lists"] == [{"name": "Cafés", "id": made["id"], "outcome": "existing"}]
+    real = _import(world["ada_id"], more)
+    assert real["lists"] == [{"name": "Cafés", "id": made["id"], "outcome": "existing"}]
+    assert _list_names(world["ada_id"]) == ["Cafés", "Coffee"]
+
+
+def test_a_preview_never_matches_another_persons_renamed_list_by_source(world):
+    _import(world["ben_id"], _csv(_row(name="Example Dune Cafe", lat=40.1, lon=3.1,
+                                       list="Espresso")))
+    with SessionLocal() as s:
+        ben = s.get(User, world["ben_id"])
+        lst = next(l for l, _ in places_svc.lists(s, ben) if l.source == "csv:Espresso")
+        places_svc.update_list(s, ben, lst.id, name="Bens Cafés")
+    out = _import(world["ada_id"], _csv(_row(name="Sample Reef Kiosk", lat=1.1, lon=2.2,
+                                             list="Espresso")), dry_run=True)
+    assert out["lists"] == [{"name": "Espresso", "id": None, "outcome": "would_create"}]

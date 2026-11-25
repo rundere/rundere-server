@@ -132,14 +132,19 @@ def mount_admin(app, engine) -> None:
         # AirTrail mapping) are NOT shown here; each user edits their own at
         # Travel profile (/trips/settings/travel-profile). D-35: exactly one row
         # is kind="self".
+        # `generic` (D-100) is a roster flag, not a personal attribute. D-249:
+        # this is where an admin promotes a trip's quick-added placeholder guest
+        # to a real traveller, who then shows up in the Users picker.
         column_list = [models.TravelerIdentity.display_name,
-                       models.TravelerIdentity.kind]
+                       models.TravelerIdentity.kind,
+                       models.TravelerIdentity.generic]
         # SQLAdmin's details page shows EVERY column unless told otherwise, which
         # put nationality, aliases and notes in front of an admin, opted-out
         # users' included (YONDER-293). Same two fields as the list.
         column_details_list = column_list
-        column_labels = {"display_name": "Name", "kind": "Kind"}
-        form_columns = ["display_name", "kind"]
+        column_labels = {"display_name": "Name", "kind": "Kind",
+                         "generic": "Placeholder guest"}
+        form_columns = ["display_name", "kind", "generic"]
         # `kind` is a closed vocabulary (self | guest, D-35) — force the choice.
         form_overrides = {"kind": wtforms.SelectField}
         form_args = {
@@ -151,6 +156,9 @@ def mount_admin(app, engine) -> None:
                      "description": "Exactly one traveller is 'self': the deployment "
                      "owner. Everyone else is a guest. AirTrail and AdventureLog "
                      "are connected per person under Settings → Connections."},
+            "generic": {"description": "A headcount stand-in added from a trip. "
+                        "Discovery and packing skip it, and it can't be linked to "
+                        "an account. Untick it to make this a real traveller."},
         }
 
     class PackingCatalogItemAdmin(ModelView, model=models.PackingCatalogItem):

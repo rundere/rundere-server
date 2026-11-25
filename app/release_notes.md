@@ -17,7 +17,57 @@ How to write a section (the release PR does this; RELEASING.md):
 Run·dere was called Yonder until 4.4.0, so older notes use that name.
 -->
 
-## 5.0.0
+## 5.0.4 — 2026-11-24
+
+### For everyone
+- Fixes and small improvements.
+
+### For admins
+- **The apps can tell this server lets them create trips and manage travellers.** `/api/v1/auth/methods` now lists `trip_create` and `trip_roster`, so the iOS and Android apps offer those features without checking the version number.
+
+## 5.0.3 — 2026-11-24
+
+### For everyone
+- **Already on someone's trips? Ask to be linked.** If the name you type when you sign up is already a traveller here, Run·dere asks whether that's you. Say yes and an admin is asked to link your account; you can carry on in the meantime.
+- **A trip you create is only yours.** A new trip now has you on it, not the server's owner.
+- **Plan trips from the apps.** The iPhone and Android apps can now create a trip and add or remove who's travelling, once they're updated.
+
+### For admins
+- **Linking an account to a traveller by name works.** Typing the name of a traveller who's already on the roster now links them, instead of failing with an error.
+- **Give a trip guest an account.** Untick **Placeholder guest** for them under Manage travellers, then link the account on the Users page.
+- **Link requests.** When someone asks to be linked, you get an email and a notification with their username, and Users shows **Link** and **Dismiss**. Link also turns a placeholder guest into a full traveller. The person is emailed either way, and gets no access to that traveller's trips until you approve.
+- **Check trips made before 5.0.3.** New trips used to put the server owner's traveller on them, whoever created them, which let the owner edit them. Existing trips aren't changed: look at each trip's travellers and remove anyone who shouldn't be there.
+- **More for Claude and other MCP agents.** They can create trips and manage who's travelling, edit costs, budget lines and packing items, change the trip currency, refresh rates, and duplicate or delete journal entries and files.
+- **A database migration runs on start.** Back up first as usual.
+
+## 5.0.2 — 2026-11-18
+
+### For everyone
+- **Captured events keep their whole venue.** An event from an email or calendar now shows the venue's name and its full address on your timeline, not just the city.
+- **Events have a Venue name and an Address.** When you add or edit an event there are now two fields, the same as hotels and restaurants have.
+- **Captures include the state and postcode.** Review shows State / region and Postcode for every place, so you can tell one Arlington from another.
+- **Discover finds the right town.** Discover now uses each booking's map pin, so a town that shares its name with one in another state is no longer researched in the wrong place.
+- **Changing an activity's type keeps what you entered.** Switching an Event to a Tour (or any other type) keeps its name, time, place and notes. Switch back and the rest comes back too.
+
+### For admins
+- **Existing events keep their short venue** until someone edits them. To clear a wrong city from Discover, run Discover again on the trips it affects.
+
+## 5.0.1 - 2026-11-17
+
+### For everyone
+- **The Places map stays where you are.** Picking a list, a kind or a search on the Map tab now filters the pins without zooming you back out.
+- **Long template names no longer stop a packing list.** A list made from several templates with long names is created as normal.
+- **The import preview matches the import.** If you renamed a list made by an earlier import, the preview now shows the list your places will really go into.
+
+### For admins
+- **Upgrading straight from 4.x?** Everyone now sees the 5.0.0 notes as well as this one, because they hold the upgrade steps.
+- **Turning AI on after 4.x:** set `TX_AI_URL` and `TX_AI_MODEL_CHAT` as well as `TX_AI_ENABLED=true`. An old `TX_OLLAMA_URL` only carries over if you had set it yourself.
+- **Settings → AI** now counts the captures waiting to be filled in by hand correctly.
+- **A failed AI call no longer saves the AI server's address with the capture.** It is in the server log instead.
+- **Without Photon,** the server no longer checks every map pin at each start.
+- **Demo servers** change theme every day, show more kinds of sample booking in Review and file the sample places into lists. Reseed with `python -m app.cli demo-seed --replace` after upgrading.
+
+## 5.0.0 — 2026-11-17
 
 ### For everyone
 - **Pick your travel theme.** Choose Desert, Coast, Forest, Metro or Winter under Account → Appearance on the web, or Settings → Appearance in the app. Each has a light and a dark look and an optional landscape along the bottom of the screen, and your theme follows you to every device.
@@ -37,7 +87,7 @@ Run·dere was called Yonder until 4.4.0, so older notes use that name.
 
 ### For admins
 - **Apps ask the server what it supports.** `/api/v1/auth/methods` lists the features this server offers, so the apps only show what works here.
-- **AI is now off unless you turn it on.** Set `TX_AI_ENABLED=true` to keep reading booking emails and running Discover's research with AI. Point `TX_AI_URL` at Ollama or any OpenAI-compatible server (LiteLLM, vLLM, a cloud provider). The old `TX_OLLAMA_URL` still works in 5.0, with a warning.
+- **AI is now off unless you turn it on.** Set `TX_AI_ENABLED=true` to keep reading booking emails and running Discover's research with AI. Point `TX_AI_URL` at Ollama or any OpenAI-compatible server (LiteLLM, vLLM, a cloud provider) and set `TX_AI_MODEL_CHAT`. A `TX_OLLAMA_URL` you set yourself is still read in 5.0, with a warning; the built-in default is not, so if you never set it, set `TX_AI_URL` and `TX_AI_MODEL_CHAT` or AI stays off.
 - **Settings → AI** shows what AI is used for, any configuration problems, a connection test and a log of calls (never their content).
 - **Tell everyone to retake the packing questionnaire** (Settings → Packing profile). Packing lists can't be generated until they do.
 - **Database migrations run on start.** Back up first as usual.

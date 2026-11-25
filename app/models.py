@@ -233,7 +233,7 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # D-234: the last version whose release notes this person closed. A new account
     # starts at the running version, so it isn't shown history; NULL (accounts from
-    # before 5.0) is shown only the running version's notes.
+    # before 5.0) is shown 5.0.0 up to the running version (D-247, amending D-234).
     seen_version: Mapped[str | None] = mapped_column(String(32), default=_running_version)
     # D-237: the travel theme follows the account to every device (the light/dark
     # mode stays per device, D-201). A string checked against the theme manifest,
@@ -245,6 +245,10 @@ class User(Base):
     # account is locked from the moment it is set; the request itself is the
     # `account_deletions` row.
     deletion_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # D-250: the existing traveller this account says it is, waiting for an admin
+    # to link it. Never linked by itself (D-204). Soft link, no foreign key.
+    requested_traveler_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    link_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class UserIntegration(Base):

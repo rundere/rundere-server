@@ -69,6 +69,41 @@ def test_traveller_kind_is_a_dropdown_not_free_text():
     assert ">self" in html and ">guest" in html
 
 
+
+def test_traveller_placeholder_flag_is_editable():
+    """A trip's quick-added guest is generic (D-100) and hidden from the Users
+    picker; the admin Travellers view must show and edit the flag so it can be
+    turned into a real traveller (5.0.3)."""
+    if not DEPS:
+        return
+    from fastapi import FastAPI
+    from app.admin import mount_admin
+    from app.db import SessionLocal
+    from app.db import engine as eng
+    from app.models import TravelerIdentity
+    a = FastAPI()
+    mount_admin(a, eng)
+    c = TestClient(a)
+    with SessionLocal() as s:
+        t = TravelerIdentity(display_name="Pat Headcount", kind="guest", generic=True)
+        s.add(t)
+        s.commit()
+        tid = t.id
+    try:
+        assert "Placeholder guest" in c.get("/admin/traveler-identity/list").text
+        html = c.get(f"/admin/traveler-identity/edit/{tid}").text
+        assert 'name="generic"' in html
+        r = c.post(f"/admin/traveler-identity/edit/{tid}",
+                   data={"display_name": "Pat Headcount", "kind": "guest"},
+                   follow_redirects=False)
+        assert r.status_code in (302, 303)
+        with SessionLocal() as s:
+            assert s.get(TravelerIdentity, tid).generic is False
+    finally:
+        with SessionLocal() as s:
+            s.query(TravelerIdentity).filter_by(id=tid).delete()
+            s.commit()
+
 def test_jobs_registry_runs_and_reports():
     """The in-memory job registry (D-49): start runs the work on a background
     thread, progress updates the live state, and a finished job carries its

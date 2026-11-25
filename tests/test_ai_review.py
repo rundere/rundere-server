@@ -249,10 +249,21 @@ if DEPS:
         monkeypatch.setattr(settings, "ai_enabled", False)
         uid, _ = _user()
         _captured(uid)
+        _captured(uid)
         _, admin = _user(admin=True)
         r = client.get("/settings/ai", cookies=admin)
         assert r.status_code == 200
         assert "<b>Off.</b>" in r.text and "Waiting for details by hand" in r.text
+        # Rows come from processing.py (extraction=None, stored as JSON null);
+        # the count must see them, not just SQL NULL.
+        from app.settings_routes import _ai_context
+        with SessionLocal() as s:
+            before = _ai_context(s)["waiting"]
+            assert before >= 2
+            item = s.get(TravelItem, _captured(uid))
+            item.review = {**item.review, "action_taken": "ignored"}
+            s.commit()
+            assert _ai_context(s)["waiting"] == before   # ignored ones don't count
         assert "sk-" not in r.text
 
     def test_test_connection_says_what_happened(monkeypatch):

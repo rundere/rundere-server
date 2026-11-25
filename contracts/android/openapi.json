@@ -7154,7 +7154,7 @@
     "info": {
         "description": "Every route needs a bearer token (or a web session); all data is scoped to the signed-in user.",
         "title": "Run\u00b7dere API",
-        "version": "4.13.6"
+        "version": "5.0.0"
     },
     "openapi": "3.1.0",
     "paths": {

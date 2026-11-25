@@ -229,12 +229,15 @@ if DEPS:
                 r = c.post("/account/sharing", follow_redirects=False,
                            data={"choice": "share", "traveler_id": str(tid)})
                 assert "err=" in r.headers["location"]
-            # the same name, typed in, is refused too (no back door by name)
+            # the same name, typed in, links nothing (no back door by name). D-250:
+            # it asks "is that you?" instead of an error, and the sign-in carries on.
             r = c.post("/account/sharing", follow_redirects=False,
-                       data={"choice": "share", "new_traveler": "T145 Free"})
-            assert "err=" in r.headers["location"]
+                       data={"choice": "share", "new_traveler": "t145 free"})
+            assert r.status_code == 200 and "Is that you?" in r.text
             with SessionLocal() as s:
-                assert s.query(User).filter_by(username="t145a").one().traveler_id is None
+                u = s.query(User).filter_by(username="t145a").one()
+                assert u.traveler_id is None and u.requested_traveler_id is None
+                assert u.sharing_prompt is False          # the sharing answer was kept
         finally:
             settings.auth_required = False
             _cleanup(["t145a", "t145owner"], ["T145 Free", "T145 Taken"])
@@ -249,11 +252,12 @@ if DEPS:
                 u = s.query(User).filter_by(username="t145b").one()
                 t = s.get(TravelerIdentity, u.traveler_id)
                 assert t.display_name == "T145 New" and t.kind == "guest"
-            # a duplicate name is refused rather than 500ing on the unique index
+            # a duplicate name asks "is that you?" rather than 500ing on the unique
+            # index, and links nothing (D-250)
             c2 = _sso_client("t145c")
             r = c2.post("/account/sharing", follow_redirects=False,
                         data={"choice": "share", "new_traveler": "t145 new"})
-            assert "err=" in r.headers["location"]
+            assert r.status_code == 200 and "Is that you?" in r.text
             # skipping (both empty) still answers the sharing prompt
             c2.post("/account/sharing", data={"choice": "share"})
             with SessionLocal() as s:

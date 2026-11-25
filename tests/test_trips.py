@@ -345,6 +345,61 @@ def test_activity_fields_partial_reflects_type():
     assert 'name="flightNumber"' not in html          # not a lodging field
 
 
+
+def test_changing_type_keeps_what_was_entered():
+    """D-248: switching Event → Tour reshapes the same entry. The name, time,
+    source and notes stay, and the venue becomes the tour's location."""
+    if not DEPS:
+        return
+    import html as _h
+    page = client.get("/trips/x/activity/fields", params={
+        "activity_kind": "tour", "when": "2026-11-26T08:00", "name": "Sample 5K Run",
+        "venue": "Example High School", "address": "100 Sample Ave, Springfield",
+        "seat": "Bib 12", "sourceLink": "Email: registration", "notes": "Bring a jacket",
+        "mapLink": "https://maps.example.test/x", "activity_kind_old": "event"}).text
+    page = _h.unescape(page)
+    for kept in ('value="2026-11-26T08:00"', 'value="Sample 5K Run"',
+                 'value="Email: registration"', ">Bring a jacket<"):
+        assert kept in page, kept
+    assert 'name="location" value="100 Sample Ave, Springfield"' in page
+    # what a tour has no field for travels hidden, ready to restore
+    assert '<input type="hidden" name="seat" value="Bib 12">' in page
+    assert '<input type="hidden" name="venue" value="Example High School">' in page
+    assert 'name="mapLink"' not in page              # the Map link lives outside this block
+
+
+def test_changing_type_back_restores_the_hidden_values():
+    if not DEPS:
+        return
+    import html as _h
+    page = _h.unescape(client.get("/trips/x/activity/fields", params={
+        "activity_kind": "event", "name": "Sample 5K Run", "location": "100 Sample Ave",
+        "venue": "Example High School", "seat": "Bib 12"}).text)
+    assert 'name="venue" value="Example High School"' in page
+    assert 'name="seat" value="Bib 12"' in page
+    assert 'name="address" value="100 Sample Ave"' in page
+    assert 'type="hidden"' not in page
+
+
+def test_changing_type_carries_the_carrier_and_ends():
+    if not DEPS:
+        return
+    import html as _h
+    page = _h.unescape(client.get("/trips/x/activity/fields", params={
+        "activity_kind": "carRental", "from": "Example Station", "to": "Sample Pier",
+        "operator": "Example Rail"}).text)
+    assert 'name="pickupLocation" value="Example Station"' in page
+    assert 'name="dropoffLocation" value="Sample Pier"' in page
+    assert 'name="company" value="Example Rail"' in page
+
+
+def test_type_picker_sends_the_whole_form():
+    if not DEPS:
+        return
+    tid = _mk("Picker trip")
+    page = client.get(f"/trips/{tid}/activity/new").text
+    assert 'hx-include="closest form"' in page.split('name="activity_kind"')[1].split(">")[0]
+
 # ------------------------------------------------------------------ travelers (3.2)
 
 def _clear_travelers():

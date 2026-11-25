@@ -92,7 +92,8 @@ if DEPS:
             assert s.query(m.TripBudgetItem).filter_by(trip_id=nyc.id).count() == 3
             assert s.query(m.JournalEntry).filter_by(owner_id=uid).count() == 4
             caps = s.query(m.TravelItem).filter_by(owner_id=uid).all()
-            assert sorted(c.item_type for c in caps) == ["flight", "lodging"]
+            assert sorted(c.item_type for c in caps) == [
+                "event", "event", "event", "flight", "ground_transport", "lodging"]
             # The drive from Paris to Nice carries its route line, no router needed.
             drive = next(a for a in s.query(m.TripActivity).filter_by(trip_id=france.id)
                          if a.type == "drive")
@@ -137,9 +138,85 @@ if DEPS:
             assert sorted(j.entry_date for j in s.query(m.JournalEntry).filter_by(
                 owner_id=uid)) == [shift(v) for v in before_journal]
             # The waiting captures are rebuilt, not doubled.
-            assert s.query(m.TravelItem).filter_by(owner_id=uid).count() == 2
+            assert s.query(m.TravelItem).filter_by(owner_id=uid).count() == 6
+            assert s.query(m.IngestBatch).filter_by(user_id=uid).count() == 6
             # Again the same day: nothing to do.
             assert demo_seed.roll(s, later) == {"rolled": 0}
+
+    def test_the_seed_captures_come_from_several_channels_and_stay_fictional(seeded):
+        # YONDER-391: web, forwarded email (JSON-LD and .ics) and Calendar captures,
+        # all read without AI, and no new flight.
+        _, uid = seeded
+        with SessionLocal() as s:
+            batches = s.query(m.IngestBatch).filter_by(user_id=uid).all()
+            assert sorted((b.payload or {}).get("capture_channel") for b in batches) == [
+                "email", "email", "gcal", "web", "web", "web"]
+            items = s.query(m.TravelItem).filter_by(owner_id=uid).all()
+            assert {i.extraction["extractor"] for i in items} == {"jsonld", "ical", "gcal"}
+            assert all(i.status["extract"] == "ok" for i in items)
+            assert [i.item_type for i in items].count("flight") == 1
+            refs = {i.extraction["payload"].get("booking_reference") for i in items}
+            assert {"DEMO-TK9", "DEMO-TH4", "DEMO-EV7", "DEMO-RL2"} <= refs
+            # Seeding again without --replace, or rolling the same day, adds nothing.
+            assert demo_seed.seed(s, today=TODAY)["seeded"] is False
+            assert demo_seed.roll(s, TODAY) == {"rolled": 0}
+            assert s.query(m.IngestBatch).filter_by(user_id=uid).count() == 6
+
+    def test_the_seed_files_places_into_lists(seeded):
+        _, uid = seeded
+        with SessionLocal() as s:
+            lists = {x.name: x for x in s.query(m.PlaceList).filter_by(owner_id=uid)}
+            assert set(lists) == {"Eat well", "Rainy-day ideas", "Japan next"}
+            names = {p.id: p.name for p in s.query(m.SavedPlace).filter_by(owner_id=uid)}
+
+            def members(n):
+                return {names[x.place_id] for x in s.query(m.PlaceListMember).filter_by(
+                    list_id=lists[n].id)}
+
+            assert "Cervejaria Ramiro" in members("Eat well")
+            assert members("Japan next") == {"Fushimi Inari Taisha", "Hoshinoya Kyoto"}
+            assert "Pastelaria Versailles" in members("Eat well") & members("Rainy-day ideas")
+            # The roll leaves the lists alone.
+            n = s.query(m.PlaceListMember).filter_by(owner_id=uid).count()
+            demo_seed.roll(s, TODAY + timedelta(days=2))
+            assert s.query(m.PlaceList).filter_by(owner_id=uid).count() == 3
+            assert s.query(m.PlaceListMember).filter_by(owner_id=uid).count() == n
+
+    def test_the_theme_rotates_daily_and_stays_a_valid_theme(seeded):
+        from unittest import mock
+
+        from app import themes
+        _, uid = seeded
+        travel = [t for t in themes.ids() if t != themes.BASE]
+        assert travel
+        with SessionLocal() as s:
+            seen = []
+            for n in range(len(travel) + 1):
+                day = TODAY + timedelta(days=n)
+                demo_seed.roll(s, day)
+                s.expire_all()
+                theme = s.get(m.User, uid).ui_theme
+                assert theme == travel[day.toordinal() % len(travel)]
+                assert themes.is_known(theme) and theme != themes.BASE
+                seen.append(theme)
+            assert set(seen[:len(travel)]) == set(travel)         # a full cycle
+            # An unreadable manifest leaves the theme alone.
+            with mock.patch.object(themes, "ids", side_effect=OSError("gone")):
+                assert demo_seed.rotate_theme(s, TODAY + timedelta(days=1)) is None
+            s.expire_all()
+            assert s.get(m.User, uid).ui_theme == seen[-1]
+
+    def test_replace_leaves_no_strays(seeded):
+        _, uid = seeded
+        mods = (m.PlaceList, m.PlaceListMember, m.SavedPlace, m.TravelItem)
+        with SessionLocal() as s:
+            before = [s.query(mod).filter_by(owner_id=uid).count() for mod in mods]
+            assert demo_seed.seed(s, replace=True, today=TODAY)["seeded"] is True
+            assert [s.query(mod).filter_by(owner_id=uid).count() for mod in mods] == before
+            assert s.query(m.IngestBatch).filter_by(user_id=uid).count() == 6
+            demo_seed._remove(s, s.get(m.User, uid))
+            assert not any(s.query(mod).filter_by(owner_id=uid).count() for mod in mods)
+            assert not s.query(m.IngestBatch).filter_by(user_id=uid).count()
 
     def test_the_seed_journal_times_are_local_to_the_place(seeded):
         # D-224 (YONDER-355): "10:15 PM, first night in Lisbon" is Lisbon time. The
