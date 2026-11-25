@@ -17,7 +17,10 @@ How to write a section (the release PR does this; RELEASING.md):
 Run·dere was called Yonder until 4.4.0, so older notes use that name.
 -->
 
-## 5.0.4
+## 5.0.4 — 2026-11-24
+
+### For everyone
+- Fixes and small improvements.
 
 ### For admins
 - **The apps can tell this server lets them create trips and manage travellers.** `/api/v1/auth/methods` now lists `trip_create` and `trip_roster`, so the iOS and Android apps offer those features without checking the version number.

@@ -2207,7 +2207,7 @@ wheels = [
 
 [[package]]
 name = "yonder"
-version = "5.0.3"
+version = "5.0.4"
 source = { virtual = "." }
 dependencies = [
     { name = "alembic" },
