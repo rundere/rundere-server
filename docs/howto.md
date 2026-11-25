@@ -1,6 +1,6 @@
 # Run·dere (formerly Yonder) — Setup & Usage Guide
 
-> Current for **v5.0.3**.
+> Current for **v5.0.4**.
 
 ## 1 What you need
 
