@@ -72,6 +72,10 @@ if DEPS:
             return g.id
 
     def _setup():
+        # Take "now" per test, not at import: on a slow CI run the module-level
+        # time had drifted past "10 minutes ago" by the time this ran.
+        global NOW
+        NOW = datetime.now(timezone.utc)
         me, other = _user(f"cc-me-{uuid.uuid4().hex[:5]}"), _user(f"cc-other-{uuid.uuid4().hex[:5]}")
         _client("cc-ios", "Run·dere for iOS", first_party=True)
         _client("cc-claude", "Claude")
