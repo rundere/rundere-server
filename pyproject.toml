@@ -5,9 +5,9 @@ description = "Run·dere (formerly Yonder): a self-hosted travel tracker that re
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.163.1",
+    "fastapi>=0.165.0",
     "uvicorn>=0.54.0",
-    "sqlalchemy>=2.1.8",
+    "sqlalchemy>=2.1.9",
     "alembic>=1.20.1",
     "psycopg[binary]>=3.3.9",
     "sqladmin>=0.32.0",
@@ -16,11 +16,11 @@ dependencies = [
     # silently fails to mount (test_admin_mounts_including_travellers_regression).
     "greenlet>=3.5.6",
     "jsonschema>=4.21",
-    "pydantic>=2.14.3",
+    "pydantic>=2.14.4",
     "pydantic-settings>=2.16.3",
     # >=6.21.1: CVE-2026-113786, after PYSEC-2026-4153..4160 (YONDER-297).
     # pypdf parses uploaded PDFs.
-    "pypdf>=7.1.0",
+    "pypdf>=7.1.1",
     # Declared directly: app/trips/maps.py draws trip maps with it (WeasyPrint
     # also needs it). >=13.0.0: the CVE-2026-1123xx/1128xx image-decoder fixes.
     "pillow>=13.0.0",
