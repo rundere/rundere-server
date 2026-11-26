@@ -2519,39 +2519,17 @@ async def save_discovery_profile(request: Request,
                            mobility: str = Form("no_limits"),
                            notes: str = Form(""),
                            session: Session = Depends(get_session)):
-    try:
-        budget = int(budget_ceiling)
-    except (TypeError, ValueError):
-        budget = 0
-    if budget not in (0, 1, 2, 3, 4):
-        budget = 0
-    # Interests are closed vocabularies (they map to query templates) — filter to
-    # known keys so the blob stays clean. Dietary allows custom strings (D-93), so
-    # it is not filtered. Cuisines are the vocabulary's keys, one radio group
-    # each (cuisine:<key> = like | neutral | dislike; YONDER-328).
-    from discover import cuisines
-    drinks_ok = {k for k, _ in DISCOVERY_DRINKS}
-    acts_ok = {k for k, _ in DISCOVERY_ACTIVITIES}
-    mob_ok = {k for k, _ in DISCOVERY_MOBILITY}
     form = await request.form()
+    # Cuisines are one radio group each (cuisine:<key> = like | neutral |
+    # dislike; YONDER-328).
     prefs = {k[8:]: str(v) for k, v in form.multi_items() if k.startswith("cuisine:")}
-    likes = cuisines.keys_only(k for k, v in prefs.items() if v == "like")
-    dislikes = cuisines.keys_only(k for k, v in prefs.items() if v == "dislike")
-    values = {
-        "food": {
-            "dietary_restrictions": [d.strip() for d in dietary_restrictions if d.strip()],
-            "cuisine_dislikes": dislikes,
-            "cuisine_likes": likes,
-            "allergies": allergies.strip(),
-            "budget_ceiling": budget,
-            # Try the destination's own food, past the dislikes (YONDER-328).
-            "prefer_local": bool(prefer_local_food),
-        },
-        "drink": {"interests": [x for x in drink_interests if x in drinks_ok]},
-        "activity": {"interests": [x for x in activity_interests if x in acts_ok]},
-        "practical": {"mobility": mobility if mobility in mob_ok else "no_limits"},
-        "notes": notes.strip()[:DISCOVERY_NOTES_MAX],   # for agents (4.5); free text
-    }
+    values = discovery_values(
+        dietary=dietary_restrictions, allergies=allergies,
+        prefer_local=bool(prefer_local_food), budget=budget_ceiling,
+        likes=[k for k, v in prefs.items() if v == "like"],
+        dislikes=[k for k, v in prefs.items() if v == "dislike"],
+        drinks=drink_interests, activities=activity_interests,
+        mobility=mobility, notes=notes)
     from app.acting import acting_for, audit_if_other
     acting = acting_for(session, request)
     trav, owner = acting.traveler, acting.owner_mode
@@ -2559,16 +2537,110 @@ async def save_discovery_profile(request: Request,
         return templates.TemplateResponse(request, "discovery_profile.html",
                                           _discovery_form_ctx(request, session))
     audit_if_other(session, request, acting, "discovery profile")
-    tid = trav.id if trav else None
-    row = _discovery_profile_row(session, trav, owner)
-    if row is None:
-        session.add(DiscoveryProfile(traveler_id=tid, values=values))
-    else:
-        row.traveler_id = tid        # claims a pre-4.1 unassigned row for self
-        row.values = values
+    save_discovery_values(session, trav, values, owner=owner)
     session.commit()
     return templates.TemplateResponse(request, "discovery_profile.html",
                                       _discovery_form_ctx(request, session, saved=True))
+
+
+def discovery_values(*, dietary=(), allergies="", prefer_local=False, budget=0,
+                     likes=(), dislikes=(), drinks=(), activities=(),
+                     mobility="no_limits", notes="") -> dict:
+    """The stored discovery profile from what someone chose — the web form and
+    the API (YONDER-408) both build it here, so they save exactly the same way.
+
+    Interests are closed vocabularies (they map to query templates), so they are
+    filtered to known keys and the blob stays clean. Dietary allows custom
+    strings (D-93), so it is not filtered. Cuisines are discover/cuisines.py
+    keys. A bad budget or mobility falls back to "no limit"."""
+    from discover import cuisines
+    try:
+        tier = int(budget)
+    except (TypeError, ValueError):
+        tier = 0
+    if tier not in (0, 1, 2, 3, 4):
+        tier = 0
+    drinks_ok = {k for k, _ in DISCOVERY_DRINKS}
+    mob_ok = {k for k, _ in DISCOVERY_MOBILITY}
+    return {
+        "food": {
+            "dietary_restrictions": [str(d).strip() for d in dietary or () if str(d).strip()],
+            "cuisine_dislikes": cuisines.keys_only(dislikes),
+            "cuisine_likes": cuisines.keys_only(likes),
+            "allergies": str(allergies or "").strip(),
+            "budget_ceiling": tier,
+            # Try the destination's own food, past the dislikes (YONDER-328).
+            "prefer_local": bool(prefer_local),
+        },
+        "drink": {"interests": [x for x in drinks or () if x in drinks_ok]},
+        "activity": {"interests": [x for x in activities or () if x in _ACTIVITY_KEYS]},
+        "practical": {"mobility": mobility if mobility in mob_ok else "no_limits"},
+        "notes": str(notes or "").strip()[:DISCOVERY_NOTES_MAX],   # for agents (4.5)
+    }
+
+
+def save_discovery_values(session: Session, traveler: TravelerIdentity | None,
+                          values: dict, *, owner: bool = False) -> DiscoveryProfile:
+    """Write ONE person's discovery profile (D-95). The caller has already
+    decided whose it is: the web from `acting_for`, the API from the signed-in
+    user's own traveller only (D-211). `owner` (auth off) is the web's alone.
+    Doesn't commit."""
+    tid = traveler.id if traveler else None
+    row = _discovery_profile_row(session, traveler, owner)
+    if row is None:
+        row = DiscoveryProfile(traveler_id=tid, values=values)
+        session.add(row)
+    else:
+        row.traveler_id = tid        # claims a pre-4.1 unassigned row for self
+        row.values = values
+    return row
+
+
+def discovery_editor(session: Session, traveler: TravelerIdentity | None) -> dict:
+    """ONE person's discovery profile as an editor sees it (YONDER-408): the
+    stored keys, unlabelled and lossless, so an app can show the form and send
+    the same values back, plus every choice it can offer. The labelled
+    `discovery_profile_public` is for agents and isn't safe to round-trip
+    (cuisines come back as labels; "every activity" reads as none)."""
+    from discover import cuisines
+    row = _discovery_profile_row(session, traveler)
+    d = _discovery_default()
+    v = {**d, **((row.values if row else None) or {})}
+    food = {**d["food"], **(v.get("food") or {})}
+    activity = {**d["activity"], **(v.get("activity") or {})}
+    return {
+        "exists": row is not None,
+        "values": {
+            "food": {
+                "dietary_restrictions": list(food.get("dietary_restrictions") or []),
+                "cuisine_likes": list(food.get("cuisine_likes") or []),
+                "cuisine_dislikes": list(food.get("cuisine_dislikes") or []),
+                "allergies": food.get("allergies") or "",
+                "budget_ceiling": food.get("budget_ceiling") or 0,
+                "prefer_local": bool(food.get("prefer_local")),
+            },
+            "drink": {"interests": list((v.get("drink") or {}).get("interests") or [])},
+            # As the web form: a new profile starts with every activity ticked,
+            # which searches the usual mix (YONDER-328).
+            "activity": {"interests": (list(activity.get("interests") or []) if row
+                                       else [k for k, _ in DISCOVERY_ACTIVITIES])},
+            "practical": {"mobility": ((v.get("practical") or {}).get("mobility")
+                                       or "no_limits")},
+            "notes": v.get("notes") or "",
+        },
+        "options": {
+            "dietary": [{"key": k, "label": t} for k, t in DISCOVERY_DIETARY],
+            "dietary_custom": True,            # D-93: other restrictions as free text
+            "cuisine_groups": [{"key": g["key"], "label": g["label"], "cuisines": [
+                {"key": c["key"], "label": c["label"]} for c in g["cuisines"]]}
+                for g in cuisines.groups()],
+            "drinks": [{"key": k, "label": t} for k, t in DISCOVERY_DRINKS],
+            "activities": [{"key": k, "label": t} for k, t in DISCOVERY_ACTIVITIES],
+            "budget": [{"tier": k, "label": t} for k, t in DISCOVERY_BUDGET],
+            "mobility": [{"key": k, "label": t} for k, t in DISCOVERY_MOBILITY],
+            "notes_max": DISCOVERY_NOTES_MAX,
+        },
+    }
 
 
 @router.get("/{trip_id}/edit", response_class=HTMLResponse)

@@ -179,26 +179,15 @@ async def save_packing_profile(request: Request, session: Session = Depends(get_
     them (SPEC-5 §6.3), add-only. Read from the raw form: Q5's bag counts are
     one field per bag."""
     form = await request.form()
-    q = catalog.QUESTIONNAIRE
-    answers = {
-        "style": form.get("style") if form.get("style") in q["style"] else None,
-        "footwear": form.get("footwear") if form.get("footwear") in q["footwear"] else None,
-    }
-    for key in ("clothing", "care", "tech"):
-        answers[key] = sorted(set(form.getlist(key)) & set(q[key]) - {catalog.ALWAYS[key]})
-    bags = {k: _qty(form.get(f"bags:{k}"), 0, 0) for k in sorted(catalog.BAG_ANSWERS)}
-    answers["bags"] = {k: n for k, n in bags.items() if n}
-    organisers = set(form.getlist("gear")) & (set(q["gear"]) - catalog.BAG_ANSWERS)
-    answers["gear"] = sorted(organisers | set(answers["bags"]))
-    if not (answers["style"] and answers["footwear"]):
+    answers = questionnaire_answers(
+        style=form.get("style"), footwear=form.get("footwear"),
+        clothing=form.getlist("clothing"), care=form.getlist("care"),
+        tech=form.getlist("tech"), gear=form.getlist("gear"),
+        bags={k: form.get(f"bags:{k}") for k in catalog.BAG_ANSWERS})
+    if answers is None:
         return templates.TemplateResponse(request, "packing_profile.html", _profile_ctx(
             request, session, error="Pick a clothing style and a footwear answer."))
-
-    values = {"questionnaire": answers,
-              "questionnaire_saved_at": datetime.now(timezone.utc).isoformat()}
-    for key, _label, default, opts in PREFERENCES:
-        v = form.get(key)
-        values[key] = v if v in {o for o, _ in opts} else default
+    prefs = preference_values({key: form.get(key) for key, *_ in PREFERENCES})
 
     from app.acting import acting_for, audit_if_other
     acting = acting_for(session, request)          # self, or an admin acting for someone
@@ -208,21 +197,11 @@ async def save_packing_profile(request: Request, session: Session = Depends(get_
         return templates.TemplateResponse(request, "packing_profile.html",
                                           _profile_ctx(request, session))
     audit_if_other(session, request, acting, "packing profile")
-    own = _profile_row(session, traveler_id, owner=acting.owner_mode)
-    if own is None:
-        session.add(PackingProfile(values=values, traveler_id=traveler_id))
-    else:
-        own.traveler_id = traveler_id   # claims a pre-4.1 unassigned row for self
-        # The 4.x keys are dropped, not migrated: everyone answers again (P4).
-        own.values = values
-    added = bags_added = 0
-    if not acting.is_other:            # the inventory is the account's (§6.6)
-        _, uid = _owner(request)
-        added = inventory.seed_inventory(session, uid, answers, catalog.items(session))
-        # First, so the admin's own bags from before 5.0 count as names they
-        # already have and the questionnaire doesn't add generic twins.
-        inventory.claim_ownerless_bags(session, uid)
-        bags_added = inventory.seed_bags(session, uid, answers["bags"])
+    _, uid = _owner(request)
+    # The inventory is the account's (§6.6): acting for someone never seeds it.
+    added, bags_added = save_questionnaire(
+        session, traveler_id, answers, prefs, owner=acting.owner_mode,
+        seed=not acting.is_other, user_id=uid)
     session.commit()
     if added or bags_added:
         # What the answers did is the inventory, so show it there, not a
@@ -230,6 +209,113 @@ async def save_packing_profile(request: Request, session: Session = Depends(get_
         return _back(f"/inventory?added={added}&bags={bags_added}")
     return templates.TemplateResponse(request, "packing_profile.html",
                                       _profile_ctx(request, session, saved=True))
+
+
+def questionnaire_answers(*, style=None, footwear=None, clothing=(), care=(), tech=(),
+                          gear=(), bags=None) -> dict | None:
+    """The questionnaire's stored answers from what someone chose — the web
+    form and the API (YONDER-408) both build them here. Unknown choices are
+    dropped; the always-on answer of a question isn't stored (it's implied).
+    `bags` is {bag answer: count}; a bag with a count is also ticked under
+    gear. None when the two required answers (style, footwear) are missing."""
+    q = catalog.QUESTIONNAIRE
+    answers = {
+        "style": style if style in q["style"] else None,
+        "footwear": footwear if footwear in q["footwear"] else None,
+    }
+    for key, chosen in (("clothing", clothing), ("care", care), ("tech", tech)):
+        answers[key] = sorted(set(chosen or ()) & set(q[key]) - {catalog.ALWAYS[key]})
+    counts = {k: _qty((bags or {}).get(k), 0, 0) for k in sorted(catalog.BAG_ANSWERS)}
+    answers["bags"] = {k: n for k, n in counts.items() if n}
+    organisers = set(gear or ()) & (set(q["gear"]) - catalog.BAG_ANSWERS)
+    answers["gear"] = sorted(organisers | set(answers["bags"]))
+    if not (answers["style"] and answers["footwear"]):
+        return None
+    return answers
+
+
+def preference_values(raw: dict) -> dict:
+    """The packing preferences (SPEC-5 §6.4), each a known choice or its default."""
+    out = {}
+    for key, _label, default, opts in PREFERENCES:
+        v = (raw or {}).get(key)
+        out[key] = v if v in {o for o, _ in opts} else default
+    return out
+
+
+def save_questionnaire(session: Session, traveler_id: int | None, answers: dict,
+                       prefs: dict, *, owner: bool = False, seed: bool = True,
+                       user_id: str | None = None) -> tuple[int, int]:
+    """Save the answers and preferences onto ONE person's packing profile, then
+    (with `seed`) add to `user_id`'s inventory and bags from them (SPEC-5 §6.3),
+    add-only, so re-saving is safe. The caller has already decided whose it
+    is (the web from `acting_for`, the API the signed-in user only, D-211).
+    Returns (inventory items added, bags added). Doesn't commit."""
+    values = {"questionnaire": answers,
+              "questionnaire_saved_at": datetime.now(timezone.utc).isoformat(), **prefs}
+    own = _profile_row(session, traveler_id, owner=owner)
+    if own is None:
+        session.add(PackingProfile(values=values, traveler_id=traveler_id))
+    else:
+        own.traveler_id = traveler_id   # claims a pre-4.1 unassigned row for self
+        # The 4.x keys are dropped, not migrated: everyone answers again (P4).
+        own.values = values
+    if not seed:
+        return 0, 0
+    added = inventory.seed_inventory(session, user_id, answers, catalog.items(session))
+    # First, so the admin's own bags from before 5.0 count as names they
+    # already have and the questionnaire doesn't add generic twins.
+    inventory.claim_ownerless_bags(session, user_id)
+    return added, inventory.seed_bags(session, user_id, answers["bags"])
+
+
+def save_preferences(session: Session, traveler_id: int, prefs: dict) -> None:
+    """Change only the packing preferences (the API's PATCH, YONDER-408): the
+    questionnaire, its date and the inventory are left as they are. Doesn't
+    commit."""
+    own = _profile_row(session, traveler_id)
+    if own is None:
+        session.add(PackingProfile(values=dict(prefs), traveler_id=traveler_id))
+    else:
+        own.traveler_id = traveler_id
+        own.values = {**(own.values or {}), **prefs}
+
+
+def packing_editor(session: Session, traveler_id: int, user) -> dict:
+    """ONE person's packing profile for the apps (YONDER-408): the stored
+    answers and preferences as keys, every choice the form offers, and the
+    counts the web page shows."""
+    row = _profile_row(session, traveler_id)
+    values = (row.values if row else None) or {}
+    saved = values.get("questionnaire") or {}
+    return {
+        "answered": bool(values.get("questionnaire_saved_at")),
+        "saved_at": values.get("questionnaire_saved_at"),
+        "questionnaire": {
+            "style": saved.get("style"), "footwear": saved.get("footwear"),
+            **{k: list(saved.get(k) or []) for k in ("clothing", "care", "tech", "gear")},
+            "bags": dict(saved.get("bags") or {}),
+        },
+        "preferences": {k: values.get(k, d) for k, _l, d, _o in PREFERENCES},
+        "counts": {
+            "inventory": _own(session, InventoryItem, user).count(),
+            "templates": _own(session, PackingTemplate, user).count(),
+            "bags": _own(session, Bag, user).filter(Bag.enabled.is_(True)).count(),
+        },
+        "options": {
+            "questions": [{
+                "key": key, "kind": kind, "text": text, "help": help_,
+                "required": key in ("style", "footwear"),
+                "options": [{"key": v, "label": label,
+                             "always": v == catalog.ALWAYS.get(key),
+                             "counted": key == "gear" and v in catalog.BAG_ANSWERS}
+                            for v, label in options]}
+                for key, kind, text, help_, options in QUESTIONS],
+            "preferences": [{"key": k, "label": label, "default": d,
+                             "options": [{"key": v, "label": t} for v, t in opts]}
+                            for k, label, d, opts in PREFERENCES],
+        },
+    }
 
 
 # --------------------------------------------------------------------------- the inventory
