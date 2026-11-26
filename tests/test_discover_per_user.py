@@ -153,7 +153,11 @@ if DEPS:
             assert launched["user_id"] == ids["sis"]
             assert launched["nationality"] == "US"
             assert launched["base_currencies"][0] == "USD"
-            assert launched["discovery_profile"] is None          # hers, not his
+            # D-251 (5.1): she has no profile of her own, so the run carries only
+            # the GROUP's constraints: his allergy, with nothing saying whose.
+            prof = launched["discovery_profile"]
+            assert prof["food"]["allergies"] == "du-my-allergy"
+            assert "notes" not in prof
         _run(body)
 
     def test_packing_profile_is_per_person_too():

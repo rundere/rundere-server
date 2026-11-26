@@ -1284,7 +1284,8 @@ def run_discovery_route(trip_id: str, request: Request,
     already in flight? Just show its panel (one run per person per trip).
 
     Per person (4.1): the run uses the VIEWER's discovery profile, nationality,
-    base currency, homes and excluded places, and its findings are theirs."""
+    base currency, homes and excluded places, and its findings are theirs; the
+    profile carries the whole roster's constraints, combined (D-251)."""
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is None:
         return HTMLResponse("", status_code=404)
@@ -1310,6 +1311,7 @@ def start_discovery(session: Session, trip: Trip, user, *, topic: str | None = N
     from app.trips import discovery_jobs as dj
     from datetime import date as _date
     from discover.runner import trip_has_ended
+    from app.trips import trip_preferences as _trip_prefs
     if trip_has_ended(trip):
         return False
     uid = user.id if user else None
@@ -1320,7 +1322,9 @@ def start_discovery(session: Session, trip: Trip, user, *, topic: str | None = N
                   det_resolvers=_resolvers(), llm_resolvers=_llm_resolvers(uid),
                   home_profiles=load_homes_for_user(session, uid),
                   excluded=_excluded_keys(session, trip.id, uid),
-                  discovery_profile=(profile.values if profile else None),
+                  # D-251: an editor's run plans for the whole roster's constraints
+                  discovery_profile=_trip_prefs.discover_profile(
+                      session, trip, user, profile.values if profile else None),
                   nationality=(ident.nationality if ident else None),
                   base_currencies=_base_currencies(ident),
                   today=_date.today().isoformat(), user_id=uid,
@@ -2356,7 +2360,9 @@ def _discovery_profile_row(session: Session, traveler: TravelerIdentity | None,
     """ONE person's discovery profile (4.1, D-95: exactly one per person). The
     row on their traveller; for the `self` traveller, a pre-4.1 unassigned row
     counts too (it was the owner's). Nobody else ever sees another person's
-    tastes — no traveller, or no row yet, means a blank profile. `owner` (auth
+    profile — no traveller, or no row yet, means a blank profile. (Trip editors
+    see the roster's constraints only combined and unattributed: D-251,
+    trip_preferences.py.) `owner` (auth
     off, single-user): with no traveller at all, the unassigned row."""
     if traveler is None:
         if not owner:

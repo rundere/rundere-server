@@ -57,6 +57,9 @@ that type's field keys. Research with the user's preferences: get_trip's
 `discovery_profile` (also get_discovery_profile) gives dietary restrictions,
 cuisines to avoid, allergies, budget, interests, their own notes and what they
 hid as "not my thing", and how to apply them; if it's blank, ask them first.
+On a trip with others, plan for the group: get_trip's `trip_preferences` is
+everyone's constraints combined with nobody named (null when the user can only
+view the trip); honour every one of them, and never guess whose each is.
 Use save_research to keep research on the user's Discover tab — in your own
 "research" section or updating a topic such as visa; it lands as a draft they
 review, and locked findings are theirs to keep. For Food & Drink or Events &
@@ -127,7 +130,9 @@ def get_trip(trip_id: TripId) -> dict[str, Any]:
     places with lat/lon, the user's OWN Discover findings (weather, currency,
     visa, food, saved research…), the places/events/activities inside the Food
     and Events findings (`discovery_items`, each tied to its finding by
-    `finding_id`), the packing list, and linked captures. `trip.my_role` says
+    `finding_id`), the packing list, linked captures, and `trip_preferences`
+    (everyone's constraints combined, nobody named; editors only, else null:
+    plan for the group with it). `trip.my_role` says
     what the user may do here (viewer = read-only); each traveller has
     `has_account` (true = has a Run·dere login, false = a guest on the roster).
     A finding with an `attribution` (Open-Meteo weather) must be credited with
