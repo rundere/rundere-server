@@ -810,6 +810,7 @@ The existing Administer → Travellers page gains:
 - **D-96** — **`traveling_with` is derived from the trip's traveler roster**, not
   entered on the profile or as a trip hint. Each companion's own profile carries
   their constraints; the resolver reads the union of all travelers' profiles.
+  *Built by D-251 (5.1): until then a run read only the viewer's profile.*
 - **D-99** — **People maintain their own profiles.** No age tracking, no
   birthdates, no per-trip detail overrides. If a child grows up, the person
   responsible updates that profile. Yonder does not model temporal personal
@@ -835,6 +836,22 @@ The existing Administer → Travellers page gains:
   matching the traveler's checked activity interests — the curated
   recommendations. Tier 3 (other): results that don't match any checked interest
   — shown in a collapsible section, available but not highlighted.
+- **D-251** — **Trip preferences: one combined, unattributed set, for editors
+  (owner, 2026-11-21, YONDER-405; 5.1).** D-96 as designed. The trip's counted
+  travellers (`discovery_travelers()`: anyone with a login, and anyone without
+  one whose profile an admin manages; never a placeholder guest, D-100) are
+  merged so the strictest constraint wins: every dietary restriction, cuisine
+  to avoid and allergy; the lowest budget ceiling that isn't "No limit"; the
+  strictest mobility. Interests are everyone's together. Nothing names whose a
+  constraint is, and free-text notes are never merged. Only trip editors
+  (owner, traveller, admin) see it: `trip_preferences` on `GET /api/v1/trips/{id}`
+  and MCP `get_trip`, null for anyone else. An editor's Discover run uses the
+  group's constraints over their own profile; interests, liked cuisines,
+  "prefer local", notes and their "not my thing" hides stay their own. A viewer
+  can't start a run, and the code would give them only their own profile.
+  With nobody's profile on the roster, a run is exactly as before. On a
+  two-person trip the other traveller's constraints can be worked out; that
+  is accepted (both are editors and can see the roster).
 
 ---
 

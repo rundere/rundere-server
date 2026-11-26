@@ -282,6 +282,8 @@ class TripSnapshot(BaseModel):
     discovery: list[FindingOut] = []
     discovery_items: list[DiscoveryItemOut] = []
     discovery_profile: Any = None          # the caller's own preferences (4.5)
+    # D-251: everyone's constraints combined, unattributed; editors only (else None)
+    trip_preferences: Any = None
     packing: PackingOut | None = None
     captures: list[CaptureLite] = []
     # The newest stored rate per currency into the trip's balance currency —
@@ -749,6 +751,8 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
 
     # the caller's own discovery profile, so an agent researches with it (4.5)
     discovery_profile = my_discovery_profile(session, user)
+    from app.trips import trip_preferences as _trip_prefs
+    trip_preferences = _trip_prefs.public(session, trip, user)
 
     # packing — PER-USER (D-123)
     packing = _packing_out(session, trip.id, user)
@@ -767,7 +771,8 @@ def _snapshot(session: Session, trip: Trip, user) -> TripSnapshot:
     return TripSnapshot(trip=_trip_summary(session, trip, user), activities=activities,
                         travelers=travelers, places=places, discovery=discovery,
                         discovery_items=discovery_items,
-                        discovery_profile=discovery_profile, packing=packing,
+                        discovery_profile=discovery_profile,
+                        trip_preferences=trip_preferences, packing=packing,
                         captures=captures, trip_rates=trip_rates)
 
 
