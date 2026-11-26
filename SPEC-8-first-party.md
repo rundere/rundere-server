@@ -491,6 +491,8 @@ Since D-146 that no longer holds.
 - **Not part of this decision:** how undated items are shown and managed on a
   trip beyond today's **Date not set** group (YONDER-207, and scheduling hints in
   YONDER-208). That comes in a later release.
+- *Amended by D-252 (5.1, §16): an item with no date is a proposed,
+  unscheduled item, and **Date not set** becomes **Unscheduled**.*
 
 ## 13. The trip PDF: sections and addresses (D-233)
 
@@ -747,6 +749,295 @@ pass the guardrails: no migration and no app release.
   app release. `scripts/build_tokens.py` renders them (`scripts/scene_png.py`,
   Pillow only) beside the SVGs as `scene-<mode>@<n>x.png`; `--check` fails when
   one is missing or its SVG changed. Android keeps using the SVG.
+
+## 16. Proposed and firm times on the timeline (D-252–D-254)
+
+> **Agreed with the owner on 2026-11-25 and 2026-11-26; built in 5.1.**
+> YONDER-406 (proposals) and YONDER-209 (drag and drop) are designed here
+> together. If another 5.1 branch claims D-252–D-254 first, renumber these
+> before merging.
+
+A plan changes before it's booked. Several people may each want something at
+2 PM. An agent may suggest a dinner without knowing whether it fits. Today
+anything added to a trip is final the moment it lands, and every traveller and
+viewer sees it. This section adds a second, tentative time to each timeline
+item. The **firm** time is what the trip runs on. The **proposed** time is what
+someone suggests, and it changes nothing until it's **locked in**. The owner
+agreed the rules on 2026-11-25 (YONDER-406). What follows turns them into a
+model, an API and a screen.
+
+### 16.1 The model (D-252)
+
+- **Two sets of times on `TripActivity`.**
+  - **Firm** stays where it is today, in `values["when"]` and
+    `values["endWhen"]`, with `starts_at` as its denormalised copy. Every
+    existing reader and every older app build keeps working on firm times
+    without change.
+  - **Proposed** is new: `proposed_start` and `proposed_end` (ISO local,
+    `YYYY-MM-DDTHH:MM`, nullable), plus `proposed_by` (user id) and
+    `proposed_at`. All of it lives in migration 0057 (renumbered if taken),
+    together with `User.day_start_time` (16.3).
+- **There's one proposal per item.** Several items can be proposed for the
+  same slot. When two editors move the same item, the last write wins, and the
+  card says who proposed it ("Ben proposed 2:00 PM").
+- **Status is derived, never stored.** Storing it as well could drift from the
+  times.
+
+  | Firm | Proposed | Status | Shows as |
+  |---|---|---|---|
+  | date + time | none | **firm** | as today |
+  | date + time | a time | **firm, change proposed** | at the proposed slot, dashed, "was 4:00 PM" |
+  | date only | times | **firm date, proposed times** | on its firm day, times dashed |
+  | none | date + time | **proposed** | at the proposed slot, dashed, "Proposed" badge |
+  | none | none | **proposed, unscheduled** | in **Unscheduled** |
+
+- **What counts is the firm date.** An item counts towards planning if it has a
+  firm date. It counts on that date, at its firm time if it has one. Planning
+  means the budget, packing, the PDF, the dashboard, Discover's trip context,
+  the map and external pushes. So a date-only hotel still counts on its nights,
+  but a pure proposal counts for nothing. A budget row linked to a pure proposal
+  (`TripBudgetItem.activity_id`) is left out of the totals and marked
+  "proposed".
+- **How an item starts out.**
+  - **Firm** when a person adds it with a time: typed into the web or app
+    editor, or a captured booking.
+  - **Proposed and unscheduled** when it's added with no date. That covers a
+    Discover item, a saved place filed undated and an undated capture.
+  - **A timeline Note is always firm** (owner, 2026-11-26), with or without a
+    date, and never a proposal. It can't be dragged into a proposal, locked or
+    unscheduled, and viewers see it as they do today. An undated Note sits in
+    a **Notes** group at the end of the timeline, separate from Unscheduled.
+    Discover research notes aren't timeline items and aren't affected.
+  - **Agents always propose** (D-254). An agent's times land in the proposed
+    columns, whatever it sends.
+- **Hotels get tentative times.** A lodging item with a firm date and no firm
+  time gets a proposed check-in of **3:00 PM** and check-out of **11:00 AM**.
+  - These go into the proposed columns only. They never reach `values["when"]`,
+    an export or an external write, so D-06 holds and no time is invented as
+    firm.
+  - They're seeded once, when the item is created or when the migration first
+    runs, never on a later save. If someone clears them, a re-save or
+    re-commit doesn't bring them back.
+- **This amends D-210.** An item with no date is now a proposed, unscheduled
+  item. The timeline group is renamed from **Date not set** to **Unscheduled**.
+  Production has none today, so nothing visible changes there. The migration
+  writes no rows for them, because their status follows from having no firm
+  time.
+- **Recaptures stay safe to re-run.** The commit upsert (`committing.py`, on
+  `source_item_key`) rewrites the firm times as it does today. It keeps a
+  pending proposal, unless the new firm time now equals the proposed one; then
+  it clears the proposal. Re-running a commit changes nothing.
+
+### 16.2 Who sees what (D-252)
+
+- **Editors** (owner, traveller, admin; `can_edit_trip`) see and change every
+  proposal.
+- **Viewers** (a view-only share, support access) never see a proposal.
+  - Pure proposals are left out of every viewer read path: the trip page,
+    `GET /api/v1/trips/{id}`, the activities list, MCP `get_trip`, the PDF, the
+    Trip Map data (YONDER-413) and the archive export a viewer can make.
+  - A firm item with a pending proposal shows at its firm time, with no hint of
+    the proposal.
+- **One helper decides all of this.** `scope.py` gains
+  `visible_activities(session, user, trip)`, and every reader goes through it.
+  No path filters on its own.
+
+Every reader of `TripActivity` and what it uses:
+
+| Reader | Uses | Proposals for viewers |
+|---|---|---|
+| Trip page timeline (`timeline_day_groups`) | editors: the proposed slot if there is one, else firm; viewers: firm | hidden |
+| `api_v1` snapshot, activities, `_activity_out` | both sets of times, labelled | hidden; proposed fields null |
+| MCP `get_trip` | both sets of times, labelled | hidden |
+| Trip PDF | firm, locked-in items only (owner, 2026-11-26); a date-only hotel prints on its dates, without times | n/a (left out for everyone) |
+| Costs, budget totals (`costs.py`, `expenses.py`) | firm; pure proposals left out | n/a |
+| Packing (`planning/context.py`, `runner.py`) | firm; pure proposals left out | n/a |
+| Discover context (`discovery_jobs.py`, `discover/runner.py`, `discover/places.py`) | firm; pure proposals left out | n/a |
+| Dashboard "next up" (`dashboard.py`) | firm only | n/a |
+| Map and geo (`geo.py`, 413's endpoint) | editors: optional "show proposals" layer; viewers: firm | hidden |
+| Archive export (`archive.py`) | both sets of times, labelled | hidden for a viewer's export |
+| AdventureLog / AirTrail push | firm only | n/a |
+| Places "filed on" (`places.py`) | any item, proposed included (it's on the trip) | n/a |
+| Purge, who, demo seed | unaffected | n/a |
+
+### 16.3 Moving and locking (D-253)
+
+- **Dragging writes a proposal.** Dragging any item, firm or proposed, writes
+  only its proposed times. The duration is kept: the end moves by the same
+  amount as the start. A firm item keeps counting at its firm time until it's
+  locked.
+- **The main timeline moves items by day and by order** (owner, 2026-11-26).
+  An item is dropped onto a day, before or after an item already there. The
+  drop sets the proposed start like this:
+  - **Onto an empty day:** the person's **day start** time. This is a new
+    account setting, `User.day_start_time` (default **8:00 AM**), shown on the
+    account page and returned by `/api/v1/auth/me`.
+  - **After an item:** one hour after that item starts.
+  - **Before the day's first item:** one hour before it starts.
+  - The time is kept within that day (never before 00:00 or after 23:59).
+    The person then taps the proposed time to set it exactly.
+  - The drop can't take a time from its position on the screen, because the
+    timeline is a list of days, not an hour grid. The hour-by-hour **day view**
+    is a separate feature (16.7).
+- **The apps can drag more precisely.** The move endpoint (16.5) takes either
+  a placement (a day, plus an item to go before or after), which the server
+  turns into a time by the rules above, or an exact start. The apps use the
+  exact start, snapped to **30 minutes**. The web sends a placement.
+- **Locking is one action.**
+  - **Lock** on one item copies the proposed times into the firm times and
+    clears the proposal.
+  - **Lock all** does that for every item on the trip that has a proposed
+    time. Unscheduled items have no time to lock, so they stay where they are.
+  - There's no confirmation step, but a toast offers **Undo** for ten seconds.
+- **Discarding a proposal depends on the item.**
+  - On a **firm item with a change proposed**, **Discard** removes only the
+    proposal. It never deletes the booking.
+  - On a **pure proposal**, **Dismiss** deletes the item (owner) after a
+    confirm. **Move to Unscheduled** keeps the item and clears its proposed
+    date and time.
+- **Firm to Unscheduled goes through proposed** (owner, 2026-11-26). Only a
+  proposal can be unscheduled, and the steps always happen in this order:
+  1. **Unlock** (one click on a firm item) moves its firm times into the
+     proposed columns and clears the firm ones. The item stops counting
+     towards planning but stays on its day, dashed.
+  2. **Move to Unscheduled** (one click on the proposal) clears its proposed
+     date and time.
+  - As a shortcut, dragging a firm item onto the Unscheduled tray, or
+    choosing **Move to Unscheduled** on it, asks "Unlock and unschedule?" Saying
+    yes runs both steps, in that order, in one transaction. That's two clicks
+    in all.
+- **Move to…** is the non-drag fallback (YONDER-209, accessibility). A menu on
+  every card opens a day picker, a time field and Unscheduled. It writes the
+  same proposal as a drag.
+- **Every one of these needs edit access.** All moves and locks require
+  `can_edit_trip`. A viewer or a demo server gets a 403, and the screen offers
+  no handle.
+
+### 16.4 The screen
+
+- **Proposal style.**
+  - A dashed outline and a muted fill.
+  - A small **Proposed** badge on a pure proposal.
+  - On a firm item with a change, the old time struck through ("~~4:00 PM~~
+    2:00 PM") and "proposed by Ben".
+  - A padlock button on each card locks it with one tap or click.
+- **The proposals bar.** When any item has a proposed time, a bar sticks to the
+  top of the timeline: "**3 proposed changes** · Lock all". Each count jumps to
+  the next proposal. The bar is hidden from viewers.
+- **The Unscheduled indicator** (owner, 2026-11-25).
+  - The Unscheduled tray sits at the end of the timeline, as **Date not set**
+    does today. A pill in the trip header ("4 unscheduled ↓") scrolls to it.
+  - On a wide screen the tray is a side panel beside the days, so an item can
+    be dragged straight onto a day.
+  - On a phone the pill opens the tray as a bottom sheet, and an item is
+    dragged up out of it.
+- **Dragging on the web** (YONDER-209).
+  - Pointer events, with a long press (about 300 ms) on touch so the page still
+    scrolls, and an immediate drag from the handle with a mouse.
+  - It needs no new dependency: about 150 lines of `static/js/timeline-drag.js`
+    with HTMX posting the move.
+  - While dragging, a live readout shows the time the drop would give
+    ("2:00 PM, after Lunch"), worked out by the 16.3 rules.
+- **The apps.**
+  - iOS and Android get the same states, the same bar and the same tray.
+    Dragging is the platform's own (SwiftUI `draggable`, Compose
+    drag-and-drop).
+  - They gate on the new capability `timeline_proposals` (D-244), and
+    `contracts/` gains the fields and the endpoints.
+  - An older build without the capability sees a pure proposal as "Date not
+    set" and firm items as today. That's an acceptable fallback, and it never
+    shows a proposal to a viewer, because the server already hides them.
+
+### 16.5 API and MCP (D-253, D-254)
+
+- **What `ActivityOut` gains.** `plan_status` (`firm` | `proposed`),
+  `proposed_starts_at`, `proposed_ends_at`, `proposed_by` (a display name) and
+  `counts` (bool). All are null or absent for a viewer.
+- **The endpoints** (edit access only):
+  - `PUT /api/v1/trips/{id}/activities/{aid}/proposal` moves the item. It
+    takes either `{start, end?}` (exact; the apps snap to 30 minutes) or
+    `{day, after_id?, before_id?}` (a placement; the server applies the 16.3
+    rules). Without `end`, the duration is kept. It returns the proposed times
+    it set.
+  - `DELETE …/proposal` discards it (firm item) or moves it to Unscheduled
+    (pure proposal).
+  - `POST …/unlock` turns a firm item into a proposal at the same times.
+    `DELETE …/proposal?unlock=true` unlocks and unschedules in one transaction
+    (the 16.3 shortcut).
+  - `POST …/lock` locks one item.
+  - `POST /api/v1/trips/{id}/lock` locks all and returns
+    `{locked: n, ids: [...]}`. It takes an optional `ids` to lock just those,
+    so the app's undo and a future "lock this day" can use it.
+  - The web routes are the HTMX equivalents.
+- **Existing writes are unchanged.** `POST`/`PATCH …/activities` with a `when`
+  or `starts_at` still write firm times, as older builds expect. A new optional
+  `propose: true` sends the times to the proposed columns instead.
+- **MCP: agents always propose (D-254).**
+  - `add_activity`, `update_activity` and `add_item_to_timeline` write any
+    time they're given as proposed. They never touch firm times.
+  - The server instructions say so: "the people on the trip lock it in."
+  - There's no MCP lock tool. Locking is a person's decision, as a kept Discover
+    finding is (D-180).
+  - An agent that wants to change a firm booking proposes a new time, and the
+    booking stays as it is until a person locks it.
+
+### 16.6 Owner answers (2026-11-26)
+
+Written into 16.1 to 16.3:
+
+- **How a drop sets the time:** the day start (default 8 AM) on an empty day,
+  otherwise an hour before or after an item. The apps can be exact to 30
+  minutes, and the day view is a separate feature.
+- **Firm to Unscheduled:** unlock to a proposal first, then unschedule. There's
+  a two-click shortcut that does both, in that order.
+- **The PDF:** firm, locked-in items only.
+
+- **Notes:** a timeline Note is always firm, and undated Notes sit in their
+  own **Notes** group that everyone can see.
+
+### 16.7 Later: the day view (separate feature)
+
+The owner wants this, but as its own feature (2026-11-26), not part of
+406/209. Each day header on the timeline opens an hour-by-hour grid of that
+day.
+
+- An item is dragged to a time within that day; its position on the grid is
+  its time.
+- An item can't be moved to another day from the day view. That stays on the
+  main timeline.
+- Moves there write proposals and lock the same way, through the same
+  endpoints.
+- It needs its own Plane item and decision number when it's scheduled.
+
+### 16.8 Tests
+
+- **Per-status reads.** Every status in the 16.1 table shows correctly on the
+  web, the API and MCP.
+- **Drop rules.** A drop on an empty day uses the person's day start (8 AM by
+  default, and their own setting when set). A drop after an item lands an hour
+  after it starts, and one before the first item an hour before it. Both stay
+  within the day. An exact `start` is used as sent.
+- **Unlock and unschedule.** Unlock moves the firm times to proposed, and the
+  item stops counting. The shortcut does both steps in order in one
+  transaction. Only a proposal can be unscheduled.
+- **What counts.** Budget, packing, PDF and dashboard totals include
+  firm-dated items and leave pure proposals out. A date-only hotel still counts.
+- **Scoping.**
+  - A viewer sees no pure proposal and no proposed field on each read path in
+    16.2.
+  - A viewer, a stranger and a demo server get a 403 or 404 on move, discard,
+    unlock, lock and lock all.
+- **Notes.** A Note, dated or undated, is firm and visible to viewers. It
+  rejects being moved, unlocked or unscheduled.
+- **MCP.** `add_activity` with a time leaves the firm times empty.
+  `update_activity` on a firm booking leaves its firm time unchanged.
+- **Hotels.** The 3 PM / 11 AM defaults are seeded once. After they're
+  cleared, a re-save or re-commit doesn't bring them back, and they never reach
+  `values["when"]`.
+- **Recapture.** It keeps a pending proposal and clears one that now matches.
+  Running it twice changes nothing.
+- **Migration.** 0057 adds the proposed columns and `User.day_start_time`,
+  seeds hotel times for date-only lodging, and leaves undated items untouched.
 
 ## Build order
 
@@ -1152,6 +1443,8 @@ pass the guardrails: no migration and no app release.
   date, and they are skipped at commit until one is set. An undated item's
   identity uses its stops or place and its capture, not a date. Display and
   management beyond **Date not set** is later (YONDER-207). See §12.
+  *Amended by D-252 (5.1): an undated item is an unscheduled proposal, and
+  the group is renamed **Unscheduled** (§16.1).*
 - **D-233 — The trip PDF's sections are the downloader's choice (YONDER-311;
   owner, 2026-11-10).** Times, addresses, maps and booking details are on by
   default and each can be left out; the person's own packing list and Discover
@@ -1218,3 +1511,31 @@ pass the guardrails: no migration and no app release.
   was typing or where they were. The scenery floor shows in compact-height
   landscape as a shorter band (amends D-239). The API is unaffected. See
   SPEC-4.2 §5 and SPEC-4.3 §4.1.
+- **D-252 — Timeline items have firm and proposed times (YONDER-406; owner,
+  2026-11-25 and 2026-11-26).** Firm times stay in `values["when"]`/`endWhen`.
+  Proposed times are separate columns, one proposal per item and last write
+  wins. The status is derived from which times are set. Only an item with a
+  firm date counts towards planning (budget, packing, the PDF, the dashboard,
+  Discover, the map and external pushes). Viewers never see a proposal.
+  - An item added with a time is firm. One with no date is an unscheduled
+    proposal, which amends D-210 ("Date not set" becomes "Unscheduled").
+  - Date-only hotels get proposed times of 3 PM / 11 AM, seeded once and
+    never made firm.
+  - A timeline Note is always firm.
+  - A recapture keeps a pending proposal.
+  See §16.1–16.2.
+- **D-253 — Moving and locking (YONDER-209, YONDER-406; owner, 2026-11-25 and
+  2026-11-26).** Dragging or "Move to…" writes a proposal. On the main
+  timeline an item is placed by day and order: the person's day start (default
+  8 AM) on an empty day, otherwise an hour before or after an item. The apps
+  may send an exact start, snapped to 30 minutes.
+  - Lock one item or lock all, in one action, with Undo.
+  - A firm item reaches Unscheduled only by unlocking to a proposal first.
+    There's a two-step shortcut that runs both in that order.
+  - Dismissing deletes only a pure proposal. Discarding a firm item's proposal
+    never deletes the booking.
+  - The hour-grid day view is a separate, later feature.
+  See §16.3–16.5 and §16.7.
+- **D-254 — Agents always propose (YONDER-406; owner, 2026-11-25).** The MCP
+  tools write times only as proposals, and there's no MCP lock tool; locking is
+  a person's decision. See §16.5.
