@@ -112,8 +112,9 @@ python3 rules.py --docs > RULES.md    # regenerate after ANY change to rules.py
   agreement first.
 - **Branches:** `feat/…`, `fix/…`, `docs/…`, `chore/…` off `main`. Keep PRs small
   and on one topic; note anything else you find in the PR or a new issue rather
-  than widening it. Major-release (5.0) work branches from and targets `next`
-  instead; nothing is published from it (RELEASING.md).
+  than widening it. Feature work for the release being built on `next` (5.1
+  now) branches from and targets `next` instead; patch fixes go to `main`.
+  Nothing is published from `next` (RELEASING.md).
 - **Commits:** Conventional Commits with an optional scope, e.g.
   `fix(trips): …`, `feat(mcp): …`, `docs: …`.
 - **Before opening a PR:**
