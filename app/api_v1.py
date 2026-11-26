@@ -17,7 +17,7 @@ from typing import Annotated, Any
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query, Request, Response,
                      UploadFile)
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app import (authn, expenses as expenses_svc, journal as journal_svc,
@@ -2078,6 +2078,216 @@ def api_my_discovery_profile(user=Depends(authn.current_user),
                              session: Session = Depends(get_session)):
     """Your discovery profile — what Discover (and your agents) research with."""
     return my_discovery_profile(session, user)
+
+
+# --------------------------------------------------------------------------- your preferences (5.1)
+# YONDER-408: some people never sign in to the web, so the apps view and change
+# their own discovery and packing profiles. Always the caller's own: there is no
+# acting for someone over the API (D-211), so `?for=` is never read here. The
+# web and these routes build what's stored with the same functions
+# (`discovery_values`, `questionnaire_answers`), so they save the same way; the
+# API is stricter only in refusing (422) a choice it doesn't know, which an app
+# built from the `options` never sends.
+NO_TRAVELLER_MESSAGE = ("Your account isn't linked to a traveller yet, so there's "
+                        "nowhere to keep your preferences. An admin can link it.")
+_Str = Annotated[str, Field(max_length=200)]
+
+
+class DiscoveryFoodIn(BaseModel):
+    dietary_restrictions: list[_Str] | None = Field(None, max_length=50,
+        description="Keys from options.dietary, or your own words (D-93).")
+    cuisine_likes: list[str] | None = Field(None, max_length=200,
+        description="Cuisine keys from options.cuisine_groups.")
+    cuisine_dislikes: list[str] | None = Field(None, max_length=200,
+        description="Cuisine keys from options.cuisine_groups; never also a like.")
+    allergies: str | None = Field(None, max_length=1000)
+    budget_ceiling: int | None = Field(None, ge=0, le=4, description="0 = no limit, 1–4 = $–$$$$.")
+    prefer_local: bool | None = None
+
+
+class DiscoveryInterestsIn(BaseModel):
+    interests: list[str] | None = Field(None, max_length=50)
+
+
+class DiscoveryPracticalIn(BaseModel):
+    mobility: str | None = Field(None, description="A key from options.mobility.")
+
+
+class DiscoveryProfileIn(BaseModel):
+    """Your discovery profile, as the keys GET …/discovery-profile/editor returns."""
+    food: DiscoveryFoodIn | None = None
+    drink: DiscoveryInterestsIn | None = None
+    activity: DiscoveryInterestsIn | None = None
+    practical: DiscoveryPracticalIn | None = None
+    notes: str | None = Field(None, max_length=2000)
+
+
+def _own_traveller(session: Session, user) -> TravelerIdentity:
+    """The signed-in person's own traveller, or 409: a profile lives on it."""
+    trav = session.get(TravelerIdentity, user.traveler_id) if user.traveler_id else None
+    if trav is None:
+        raise HTTPException(status_code=409, detail=NO_TRAVELLER_MESSAGE)
+    return trav
+
+
+def _unknown(field: str, given, known) -> None:
+    bad = [x for x in given or () if x not in known]
+    if bad:
+        raise HTTPException(status_code=422,
+                            detail=f"{field}: not a known choice: {', '.join(map(str, bad))}")
+
+
+def _discovery_save(session: Session, user, body: DiscoveryProfileIn, *, merge: bool) -> dict:
+    from discover import cuisines
+    from app.trips.routes import (DISCOVERY_DRINKS, DISCOVERY_MOBILITY, _ACTIVITY_KEYS,
+                                  discovery_editor, discovery_values, save_discovery_values)
+    trav = _own_traveller(session, user)
+    # PATCH starts from what's stored, so an app that doesn't know a newer field
+    # never clears it; PUT starts from a blank profile.
+    base = discovery_editor(session, trav)["values"] if merge else {
+        "food": {}, "drink": {}, "activity": {}, "practical": {}, "notes": ""}
+    sent = body.model_dump(exclude_unset=True)
+    for section in ("food", "drink", "activity", "practical"):
+        base[section] = {**base[section], **(sent.get(section) or {})}
+    if "notes" in sent:
+        base["notes"] = sent["notes"]
+    food, practical = base["food"], base["practical"]
+    _unknown("food.cuisine_likes", food.get("cuisine_likes"), cuisines.labels())
+    _unknown("food.cuisine_dislikes", food.get("cuisine_dislikes"), cuisines.labels())
+    both = set(food.get("cuisine_likes") or ()) & set(food.get("cuisine_dislikes") or ())
+    if both:
+        raise HTTPException(status_code=422, detail="A cuisine can't be both liked and "
+                            f"disliked: {', '.join(sorted(both))}")
+    _unknown("drink.interests", base["drink"].get("interests"), {k for k, _ in DISCOVERY_DRINKS})
+    _unknown("activity.interests", base["activity"].get("interests"), _ACTIVITY_KEYS)
+    if practical.get("mobility") is not None:
+        _unknown("practical.mobility", [practical["mobility"]], {k for k, _ in DISCOVERY_MOBILITY})
+    values = discovery_values(
+        dietary=food.get("dietary_restrictions") or (), allergies=food.get("allergies") or "",
+        prefer_local=bool(food.get("prefer_local")), budget=food.get("budget_ceiling") or 0,
+        likes=food.get("cuisine_likes") or (), dislikes=food.get("cuisine_dislikes") or (),
+        drinks=base["drink"].get("interests") or (),
+        activities=base["activity"].get("interests") or (),
+        mobility=practical.get("mobility") or "no_limits", notes=base.get("notes") or "")
+    save_discovery_values(session, trav, values)
+    session.commit()
+    return discovery_editor(session, trav)
+
+
+@router.get("/me/discovery-profile/editor")
+def api_my_discovery_editor(user=Depends(authn.current_user),
+                            session: Session = Depends(get_session)):
+    """Your discovery profile to edit (YONDER-408): the stored keys, which you
+    can send back unchanged, and every choice the form offers (`options`).
+    `exists` is false until it's first saved; a new profile starts with every
+    activity ticked, as on the web. Read GET /me/discovery-profile for the
+    labelled form agents use."""
+    from app.trips.routes import discovery_editor
+    return discovery_editor(session, _own_traveller(session, user))
+
+
+@router.patch("/me/discovery-profile")
+def api_patch_my_discovery_profile(body: DiscoveryProfileIn, user=Depends(authn.current_user),
+                                   session: Session = Depends(get_session)):
+    """Change part of your discovery profile (YONDER-408). Only the fields you
+    send change; everything else keeps its saved value. This is the write the
+    apps should use. Returns the profile as …/editor does."""
+    return _discovery_save(session, user, body, merge=True)
+
+
+@router.put("/me/discovery-profile")
+def api_put_my_discovery_profile(body: DiscoveryProfileIn, user=Depends(authn.current_user),
+                                 session: Session = Depends(get_session)):
+    """Replace your whole discovery profile (YONDER-408). A field you leave out
+    is cleared to its blank value, so send every field (prefer PATCH)."""
+    return _discovery_save(session, user, body, merge=False)
+
+
+class PackingQuestionnaireIn(BaseModel):
+    """The questionnaire's answers, as keys from options.questions."""
+    style: str
+    footwear: str
+    clothing: list[str] = Field(default_factory=list, max_length=50)
+    care: list[str] = Field(default_factory=list, max_length=50)
+    tech: list[str] = Field(default_factory=list, max_length=50)
+    gear: list[str] = Field(default_factory=list, max_length=50,
+                            description="Organisers you own; bags go in `bags`.")
+    bags: dict[str, Annotated[int, Field(ge=0, le=99)]] = Field(
+        default_factory=dict, description="How many of each bag you own.")
+
+
+class PackingPreferencesIn(BaseModel):
+    # A questionnaire sent here is refused, not ignored: it goes with PUT.
+    model_config = ConfigDict(extra="forbid")
+    laundry_comfort: str | None = None
+    packing_style: str | None = None
+    climate_preference: str | None = None
+
+
+class PackingProfileIn(PackingPreferencesIn):
+    questionnaire: PackingQuestionnaireIn
+
+
+def _check_preferences(sent: dict) -> None:
+    from app.trips.packing_settings import PREFERENCES
+    for key, _label, _default, opts in PREFERENCES:
+        if sent.get(key) is not None:
+            _unknown(key, [sent[key]], {o for o, _ in opts})
+
+
+@router.get("/me/packing-profile")
+def api_my_packing_profile(user=Depends(authn.current_user),
+                           session: Session = Depends(get_session)):
+    """Your packing profile (YONDER-408): the questionnaire's answers and the
+    packing preferences as keys, every choice the form offers (`options`), and
+    how many inventory items, templates and bags you have. `answered` is false
+    until the questionnaire is first saved."""
+    from app.trips.packing_settings import packing_editor
+    return packing_editor(session, _own_traveller(session, user).id, user)
+
+
+@router.put("/me/packing-profile")
+def api_put_my_packing_profile(body: PackingProfileIn, user=Depends(authn.current_user),
+                               session: Session = Depends(get_session)):
+    """Save the questionnaire, as the web's Save does (YONDER-408, SPEC-5 §6.3):
+    it replaces your answers, and adds to your inventory and bags from them
+    (add-only, so saving again is safe). A preference you leave out keeps its
+    saved value. Returns the profile plus `inventory_added` and `bags_added`."""
+    from app.trips import packing_settings as ps
+    from planning import catalog
+    trav = _own_traveller(session, user)
+    q, choices = body.questionnaire, catalog.QUESTIONNAIRE
+    for key in ("clothing", "care", "tech", "gear"):
+        _unknown(f"questionnaire.{key}", getattr(q, key), choices[key])
+    _unknown("questionnaire.bags", q.bags, catalog.BAG_ANSWERS)
+    sent = body.model_dump(exclude={"questionnaire"}, exclude_unset=True)
+    _check_preferences(sent)
+    answers = ps.questionnaire_answers(style=q.style, footwear=q.footwear, clothing=q.clothing,
+                                       care=q.care, tech=q.tech, gear=q.gear, bags=q.bags)
+    if answers is None:
+        raise HTTPException(status_code=422,
+                            detail="Pick a clothing style and a footwear answer.")
+    stored = ps.packing_editor(session, trav.id, user)["preferences"]
+    prefs = ps.preference_values({**stored, **{k: v for k, v in sent.items() if v is not None}})
+    added, bags_added = ps.save_questionnaire(session, trav.id, answers, prefs,
+                                              seed=True, user_id=user.id)
+    session.commit()
+    return {**ps.packing_editor(session, trav.id, user),
+            "inventory_added": added, "bags_added": bags_added}
+
+
+@router.patch("/me/packing-profile")
+def api_patch_my_packing_profile(body: PackingPreferencesIn, user=Depends(authn.current_user),
+                                 session: Session = Depends(get_session)):
+    """Change your packing preferences only (YONDER-408). The questionnaire and
+    your inventory are left as they are; send the questionnaire with PUT."""
+    from app.trips import packing_settings as ps
+    trav = _own_traveller(session, user)
+    sent = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    _check_preferences(sent)
+    ps.save_preferences(session, trav.id, sent)
+    session.commit()
+    return ps.packing_editor(session, trav.id, user)
 
 
 # --------------------------------------------------------------------------- research kits (4.5)
