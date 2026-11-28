@@ -61,6 +61,9 @@ if DEPS:
         for method, path in (("post", "/api/v1/trips"),
                              ("get", "/api/v1/trips/none/travelers"),
                              ("post", "/api/v1/trips/none/travelers"),
-                             ("delete", "/api/v1/trips/none/travelers/none")):
+                             ("delete", "/api/v1/trips/none/travelers/none"),
+                             # trip_packing_controls (YONDER-411)
+                             ("put", "/api/v1/trips/none/packing/bags"),
+                             ("put", "/api/v1/trips/none/packing/templates")):
             r = getattr(client, method)(path, follow_redirects=False)
             assert r.status_code not in (404, 405), (method, path, r.status_code)
