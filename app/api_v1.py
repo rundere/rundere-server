@@ -1597,6 +1597,150 @@ def api_remove_trip_traveler(trip_id: str, traveler_id: int,
     return Response(status_code=204)
 
 
+# --------------------------------------------------------------------- trip delete, shares, owner (5.1)
+# YONDER-409: some people never sign in to the web, so the apps delete a trip,
+# share it and give an ownerless trip its owner. The rules are the web's
+# (share_trip, unshare_trip, assign_owner, delete_trip); there are no MCP tools
+# for these (owner, 2026-11-25: too risky for an agent). A stranger always gets
+# 404, so a trip's existence never leaks.
+def _is_trip_manager(user, trip) -> bool:
+    """The trip's owner, or an admin for an ownerless trip (D-211): the only
+    people who share, unshare or delete it."""
+    return bool((trip.owner_id and trip.owner_id == user.id)
+                or (user.is_admin and trip.owner_id is None))
+
+
+class ShareOut(BaseModel):
+    user_id: str
+    username: str
+
+
+class TripSharesOut(BaseModel):
+    can_share: bool = Field(description="Whether you may add or remove shares.")
+    owner: str | None = Field(None, description="The owner's username; null when ownerless.")
+    shares: list[ShareOut] = Field(description="View-only shares (D-122).")
+    travellers: list[ShareOut] = Field(description="Accounts on the roster: full access "
+                                                   "already, so never shared.")
+    choices: list[ShareOut] = Field(description="Who you can share with; empty unless "
+                                                "`can_share`.")
+
+
+class ShareIn(BaseModel):
+    user_id: str
+
+
+class OwnerIn(BaseModel):
+    user_id: str
+
+
+def _shares_out(session: Session, trip, user) -> TripSharesOut:
+    """The web's Sharing panel (`_sharing_context`) for the apps."""
+    from app import demo
+    from app.models import TripMember, TripTraveler
+    member_ids = {m.user_id for m in session.query(TripMember).filter_by(trip_id=trip.id)}
+    roster = {r.traveler_id for r in session.query(TripTraveler).filter_by(trip_id=trip.id)}
+    travellers = (session.query(User).filter(User.traveler_id.in_(roster)).all()
+                  if roster else [])
+    traveller_ids = {u.id for u in travellers}
+    owner = session.get(User, trip.owner_id) if trip.owner_id else None
+    can_share = _is_trip_manager(user, trip) and not demo.read_only()
+    choices = ([u for u in session.query(User).order_by(User.username).all()
+                if u.id != trip.owner_id and u.id not in traveller_ids
+                and u.id not in member_ids and u.is_active] if can_share else [])
+
+    def out(users):
+        return [ShareOut(user_id=u.id, username=u.username) for u in users]
+
+    members = sorted((u for u in (session.get(User, i) for i in member_ids) if u),
+                     key=lambda u: u.username)
+    return TripSharesOut(can_share=can_share, owner=owner.username if owner else None,
+                         shares=out(members), travellers=out(travellers),
+                         choices=out(choices))
+
+
+def _require_manager(session: Session, user, trip_id: str, what: str):
+    trip = scope.require_trip(session, user, trip_id)
+    if not _is_trip_manager(user, trip):
+        raise HTTPException(status_code=403, detail=f"Only the trip's owner can {what}.")
+    return trip
+
+
+@router.get("/trips/{trip_id}/shares", response_model=TripSharesOut)
+def api_trip_shares(trip_id: str, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """Who can see this trip (YONDER-409): its view-only shares, the accounts
+    travelling on it, and (for the owner) who it can be shared with. Anyone who
+    can see the trip can read this, as on the web."""
+    trip = scope.require_trip(session, user, trip_id)
+    return _shares_out(session, trip, user)
+
+
+@router.post("/trips/{trip_id}/shares", response_model=TripSharesOut, status_code=201)
+def api_share_trip(trip_id: str, body: ShareIn, user=Depends(authn.current_user),
+                   session: Session = Depends(get_session)):
+    """Share the trip, view-only (D-122), with one account. Owner only, or an
+    admin for an ownerless trip (D-211). Sharing with the owner, a traveller or
+    someone already shared is a no-op."""
+    from app.models import TripMember
+    trip = _require_manager(session, user, trip_id, "share it")
+    target = session.get(User, body.user_id)
+    if target is None or not target.is_active:
+        raise HTTPException(status_code=422, detail="user_id: pick an active user")
+    if (target.id != trip.owner_id and session.query(TripMember)
+            .filter_by(trip_id=trip.id, user_id=target.id).count() == 0):
+        session.add(TripMember(trip_id=trip.id, user_id=target.id))
+        session.commit()
+    return _shares_out(session, trip, user)
+
+
+@router.delete("/trips/{trip_id}/shares/{user_id}", status_code=204)
+def api_unshare_trip(trip_id: str, user_id: str, user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """Remove one view-only share. Owner only, or an admin for an ownerless
+    trip (D-211). Idempotent."""
+    from app.models import TripMember
+    trip = _require_manager(session, user, trip_id, "change sharing")
+    session.query(TripMember).filter_by(trip_id=trip.id, user_id=user_id).delete()
+    session.commit()
+    return Response(status_code=204)
+
+
+@router.put("/trips/{trip_id}/owner", response_model=TripSummary)
+def api_assign_trip_owner(trip_id: str, body: OwnerIn, user=Depends(authn.current_user),
+                          session: Session = Depends(get_session)):
+    """Give an ownerless trip its owner, as the web does (admin only,
+    YONDER-165). Changing an existing owner isn't offered: 409."""
+    trip = scope.require_trip(session, user, trip_id)
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Only an admin can assign a trip's owner.")
+    if trip.owner_id is not None:
+        raise HTTPException(status_code=409, detail="This trip already has an owner.")
+    target = session.get(User, body.user_id)
+    if target is None or not target.is_active:
+        raise HTTPException(status_code=422, detail="user_id: pick an active user")
+    trip.owner_id = target.id
+    session.commit()
+    log.info("trip %s assigned to owner %s by admin %s", trip.id, target.username,
+             user.username)
+    return _trip_summary(session, trip, user)
+
+
+@router.delete("/trips/{trip_id}", status_code=204)
+def api_delete_trip(trip_id: str, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    """Delete a trip and everything that exists only for it, as the web does
+    (app/trips/purge.py): captures and journal entries are kept and unlinked
+    (house rule 3; D-15/D-196 keep a capture for its trip's life plus 12
+    months). Owner only, or an admin for an ownerless trip (D-211); someone
+    travelling on it can't delete it from the apps."""
+    from app.trips.purge import purge_trip
+    trip = _require_manager(session, user, trip_id, "delete it")
+    purge_trip(session, trip)
+    session.commit()
+    log.info("trip %s deleted over the API by %s", trip_id, user.username)
+    return Response(status_code=204)
+
+
 def _activity_type_or_400(atype: str):
     from app.trips import types as at
     t = at.get_type(atype)
