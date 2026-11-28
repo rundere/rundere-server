@@ -2290,6 +2290,359 @@ def api_patch_my_packing_profile(body: PackingPreferencesIn, user=Depends(authn.
     return ps.packing_editor(session, trav.id, user)
 
 
+# ----------------------------------------------------------- your inventory, bags, templates (5.1)
+# YONDER-408 part 2: what you own, your bags and your packing templates, as the
+# web's packing-profile pages edit them. These belong to the account, not the
+# traveller (SPEC-5 §6.6), so they need no linked traveller. Every lookup by id
+# goes through scope.require_own: someone else's row 404s exactly like a
+# missing one.
+_Label = Annotated[str, Field(min_length=1, max_length=128)]
+
+
+class InventoryItemOut(BaseModel):
+    id: str
+    label: str
+    category: str
+    type_key: str | None = Field(None, description="The catalogue item it matched, if any.")
+    quantity: int
+    must_have: bool
+    volume_l: float | None = Field(None, description="Your own packed size in litres (D-232).")
+    volume_estimate_l: float = Field(description="What the bag fit uses: yours, or the "
+                                                 "catalogue's estimate.")
+
+
+class InventoryItemIn(BaseModel):
+    category: str = Field(description="A key from options.categories.")
+    label: _Label
+    quantity: int = Field(1, ge=1, le=99)
+
+
+class InventoryItemPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: _Label | None = None
+    quantity: int | None = Field(None, ge=1, le=99)
+    must_have: bool | None = None
+    volume_l: float | None = Field(None, gt=0, le=50,
+                                   description="null clears it, so the estimate applies.")
+
+
+class BagOut(BaseModel):
+    id: str
+    label: str
+    kind: str
+    capacity: str | None = None
+    capacity_l: float | None = Field(None, description="Litres read from `capacity`, if it "
+                                                       "says litres; null when it can't be.")
+
+
+class BagIn(BaseModel):
+    label: Annotated[str, Field(min_length=1, max_length=64)]
+    kind: str = Field("backpack", description="A key from options.bag_kinds.")
+    capacity: str | None = Field(None, max_length=32, description='Free text, e.g. "40L".')
+
+
+class BagPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    kind: str | None = None
+    capacity: str | None = Field(None, max_length=32, description="null or \"\" clears it.")
+
+
+class TemplateLineIn(BaseModel):
+    inventory_item_id: str
+    quantity: int | None = Field(None, ge=1, le=99, description="null: what you own.")
+
+
+class TemplateIn(BaseModel):
+    type_key: str = Field(description="A key from GET …/packing-templates `free_types`.")
+    name: Annotated[str, Field(max_length=128)] | None = None
+    keyword: Annotated[str, Field(max_length=64)] | None = Field(
+        None, description="Required for `custom`; ignored for the other types.")
+    items: list[TemplateLineIn] = Field(default_factory=list, max_length=500)
+
+
+class TemplatePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: Annotated[str, Field(min_length=1, max_length=128)] | None = None
+    keyword: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    items: list[TemplateLineIn] | None = Field(None, max_length=500,
+                                               description="Replaces every line when sent.")
+
+
+def _item_out(session: Session, row, items=None, defaults=None) -> InventoryItemOut:
+    from planning import bags as bagfit, catalog
+    items = items if items is not None else catalog.items(session)
+    defaults = defaults if defaults is not None else catalog.volume_defaults()
+    return InventoryItemOut(
+        id=row.id, label=row.label, category=row.category, type_key=row.type_key,
+        quantity=row.quantity, must_have=bool(row.must_have), volume_l=row.volume_l,
+        volume_estimate_l=bagfit.volume_for(row.type_key, row.category, items, defaults))
+
+
+def _bag_out(bag) -> BagOut:
+    from planning import bags as bagfit
+    return BagOut(id=bag.id, label=bag.label, kind=bag.kind, capacity=bag.capacity,
+                  capacity_l=bagfit.capacity_l(bag.capacity))
+
+
+def _template_out(session: Session, tpl) -> dict:
+    from app.models import PackingTemplateItem
+    from app.trips.packing_settings import _types
+    lines = (session.query(PackingTemplateItem)
+             .filter(PackingTemplateItem.template_id == tpl.id).all())
+    return {"id": tpl.id, "type_key": tpl.type_key,
+            "type": _types().get(tpl.type_key, {}).get("label", tpl.type_key),
+            "name": tpl.name, "keyword": tpl.keyword,
+            "items": [{"inventory_item_id": l.inventory_item_id, "quantity": l.quantity}
+                      for l in lines]}
+
+
+def _check_lines(session: Session, user, lines) -> list[tuple[str, int | None]]:
+    from app.trips.packing_settings import own_inventory_ids
+    own = own_inventory_ids(session, user)
+    bad = [l.inventory_item_id for l in lines if l.inventory_item_id not in own]
+    if bad:
+        raise HTTPException(status_code=422,
+                            detail=f"items: not in your inventory: {', '.join(bad)}")
+    return [(l.inventory_item_id, l.quantity) for l in lines]
+
+
+@router.get("/me/inventory")
+def api_my_inventory(user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    """What you own, by category — every category, even an empty one (SPEC-5
+    §6.1) — plus your bags and the choices the inventory page offers."""
+    from planning import catalog
+    from app.models import Bag, InventoryItem
+    from app.trips.packing_settings import BAG_KINDS, _own
+    from app.trips.routes import PACK_CAT_LABELS, PACK_CAT_ORDER
+    rows = _own(session, InventoryItem, user).order_by(InventoryItem.label).all()
+    items, defaults = catalog.items(session), catalog.volume_defaults()
+    by_cat: dict[str, list] = {}
+    for r in rows:
+        by_cat.setdefault(r.category, []).append(_item_out(session, r, items, defaults))
+    cats = [{"key": c, "label": PACK_CAT_LABELS[c], "items": by_cat.pop(c, [])}
+            for c in PACK_CAT_ORDER]
+    cats += [{"key": c, "label": c.title(), "items": extra} for c, extra in by_cat.items()]
+    bags = _own(session, Bag, user).filter(Bag.enabled.is_(True)).order_by(Bag.label).all()
+    return {"categories": cats, "total": len(rows), "bags": [_bag_out(b) for b in bags],
+            "options": {
+                "categories": [{"key": c, "label": PACK_CAT_LABELS[c]} for c in PACK_CAT_ORDER],
+                "bag_kinds": [{"key": k, "label": t} for k, t in BAG_KINDS],
+                # Names that match a catalogue item, for the add field's suggestions.
+                "catalog_names": sorted({it.get("label", i) for i, it in items.items()}),
+            }}
+
+
+@router.post("/me/inventory", response_model=InventoryItemOut, status_code=201)
+def api_add_inventory_item(body: InventoryItemIn, user=Depends(authn.current_user),
+                           session: Session = Depends(get_session)):
+    """Add something you own. A name that matches a catalogue item becomes that
+    type, so packing can match it to a need (SPEC-5 §6.7)."""
+    from app.trips.packing_settings import _add_item
+    from app.trips.routes import PACK_CAT_LABELS
+    label = body.label.strip()[:128]
+    if body.category not in PACK_CAT_LABELS:
+        raise HTTPException(status_code=422, detail="category: not a known choice")
+    if not label:
+        raise HTTPException(status_code=422, detail="label: can't be blank")
+    row = _add_item(session, user.id, body.category, label, body.quantity)
+    session.commit()
+    return _item_out(session, row)
+
+
+@router.patch("/me/inventory/{item_id}", response_model=InventoryItemOut)
+def api_patch_inventory_item(item_id: str, body: InventoryItemPatch,
+                             user=Depends(authn.current_user),
+                             session: Session = Depends(get_session)):
+    """Rename, re-count, mark must-have or set the packed size of one item. Only
+    the fields you send change; `volume_l: null` clears your size."""
+    from app import scope
+    from app.models import InventoryItem
+    row = scope.require_own(session, user, InventoryItem, item_id)
+    sent = body.model_dump(exclude_unset=True)
+    if (sent.get("label") or "").strip():
+        row.label = sent["label"].strip()[:128]
+    if sent.get("quantity") is not None:
+        row.quantity = sent["quantity"]
+    if sent.get("must_have") is not None:
+        row.must_have = sent["must_have"]
+    if "volume_l" in sent:
+        row.volume_l = round(sent["volume_l"], 2) if sent["volume_l"] is not None else None
+    session.commit()
+    return _item_out(session, row)
+
+
+@router.delete("/me/inventory/{item_id}", status_code=204)
+def api_delete_inventory_item(item_id: str, user=Depends(authn.current_user),
+                              session: Session = Depends(get_session)):
+    """Delete an item. It leaves your templates; a trip's packed line keeps its
+    name (it was packed, whatever happens to the item since)."""
+    from app import scope
+    from app.models import InventoryItem
+    from planning import inventory
+    inventory.delete_inventory_item(session, scope.require_own(session, user, InventoryItem,
+                                                               item_id))
+    session.commit()
+    return Response(status_code=204)
+
+
+def _bag_kind(kind: str) -> str:
+    from app.trips.packing_settings import BAG_KINDS
+    if kind not in dict(BAG_KINDS):
+        raise HTTPException(status_code=422, detail="kind: not a known choice")
+    return kind
+
+
+@router.get("/me/bags", response_model=list[BagOut])
+def api_my_bags(user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    """Your bags (retired ones are left out)."""
+    from app.models import Bag
+    from app.trips.packing_settings import _own
+    return [_bag_out(b) for b in _own(session, Bag, user).filter(Bag.enabled.is_(True))
+            .order_by(Bag.label).all()]
+
+
+@router.post("/me/bags", response_model=BagOut, status_code=201)
+def api_add_bag(body: BagIn, user=Depends(authn.current_user),
+                session: Session = Depends(get_session)):
+    from app.models import Bag
+    label = body.label.strip()[:64]
+    if not label:
+        raise HTTPException(status_code=422, detail="label: can't be blank")
+    bag = Bag(user_id=user.id, label=label, kind=_bag_kind(body.kind),
+              capacity=(body.capacity or "").strip()[:32] or None)
+    session.add(bag)
+    session.commit()
+    return _bag_out(bag)
+
+
+@router.patch("/me/bags/{bag_id}", response_model=BagOut)
+def api_patch_bag(bag_id: str, body: BagPatch, user=Depends(authn.current_user),
+                  session: Session = Depends(get_session)):
+    """Change a bag; only the fields you send change. `capacity_l` in the reply
+    says what the bag fit reads from `capacity` (D-232)."""
+    from app import scope
+    from app.models import Bag
+    bag = scope.require_own(session, user, Bag, bag_id)
+    sent = body.model_dump(exclude_unset=True)
+    if (sent.get("label") or "").strip():
+        bag.label = sent["label"].strip()[:64]
+    if sent.get("kind") is not None:
+        bag.kind = _bag_kind(sent["kind"])
+    if "capacity" in sent:
+        bag.capacity = (sent["capacity"] or "").strip()[:32] or None
+    session.commit()
+    return _bag_out(bag)
+
+
+@router.delete("/me/bags/{bag_id}", status_code=204)
+def api_retire_bag(bag_id: str, user=Depends(authn.current_user),
+                   session: Session = Depends(get_session)):
+    """Retire a bag, as the web's Remove does: packing lines that went in it keep
+    its name, so it's hidden rather than deleted."""
+    from app import scope
+    from app.models import Bag
+    scope.require_own(session, user, Bag, bag_id).enabled = False
+    session.commit()
+    return Response(status_code=204)
+
+
+@router.get("/me/packing-templates")
+def api_my_templates(user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    """Your packing templates, and the types you can still create (`free_types`:
+    one of each, except `custom`, SPEC-5 §6.5, D-230)."""
+    from app.models import PackingTemplate
+    from app.trips.packing_settings import _free_types, _own
+    rows = _own(session, PackingTemplate, user).order_by(PackingTemplate.name).all()
+    return {"templates": [_template_out(session, t) for t in rows],
+            "free_types": [{"key": t["key"], "label": t["label"]}
+                           for t in _free_types(session, user)]}
+
+
+@router.get("/me/packing-templates/suggest")
+def api_suggest_template(type: str, user=Depends(authn.current_user),
+                         session: Session = Depends(get_session)):
+    """What a new template of this type would start with: your matching
+    inventory, pre-ticked as on the web. It only proposes; nothing is saved."""
+    from planning import catalog, inventory
+    from app.models import InventoryItem
+    from app.trips.packing_settings import _own, _types
+    t = _types().get(type)
+    if t is None:
+        raise HTTPException(status_code=422, detail="type: not a known choice")
+    owned = _own(session, InventoryItem, user).all()
+    ids = inventory.pretick(t, owned, catalog.items(session))
+    return {"type_key": type, "name": t.get("label", type),
+            "items": [{"inventory_item_id": r.id, "quantity": None}
+                      for r in sorted(owned, key=lambda r: r.label) if r.id in ids]}
+
+
+@router.post("/me/packing-templates", status_code=201)
+def api_add_template(body: TemplateIn, user=Depends(authn.current_user),
+                     session: Session = Depends(get_session)):
+    """Save a new template with its items (each must be in your inventory)."""
+    from app.models import PackingTemplate
+    from app.trips.packing_settings import _free_types, _types, set_template_lines
+    if body.type_key not in _types():
+        raise HTTPException(status_code=422, detail="type_key: not a known choice")
+    if body.type_key not in {t["key"] for t in _free_types(session, user)}:
+        raise HTTPException(status_code=409,
+                            detail="You already have a template of that type: edit it instead.")
+    keyword = (body.keyword or "").strip()[:64]
+    if body.type_key == "custom" and not keyword:
+        raise HTTPException(status_code=422, detail="A custom template needs a keyword.")
+    lines = _check_lines(session, user, body.items)
+    tpl = PackingTemplate(user_id=user.id, type_key=body.type_key,
+                          name=(body.name or "").strip()[:128] or _types()[body.type_key]["label"],
+                          keyword=keyword if body.type_key == "custom" else None)
+    session.add(tpl)
+    session.flush()
+    set_template_lines(session, user, tpl, lines)
+    session.commit()
+    return _template_out(session, tpl)
+
+
+@router.get("/me/packing-templates/{template_id}")
+def api_my_template(template_id: str, user=Depends(authn.current_user),
+                    session: Session = Depends(get_session)):
+    from app import scope
+    from app.models import PackingTemplate
+    return _template_out(session, scope.require_own(session, user, PackingTemplate, template_id))
+
+
+@router.patch("/me/packing-templates/{template_id}")
+def api_patch_template(template_id: str, body: TemplatePatch, user=Depends(authn.current_user),
+                       session: Session = Depends(get_session)):
+    """Rename a template, change a custom one's keyword, or (with `items`)
+    replace its lines. Fields you leave out keep their value."""
+    from app import scope
+    from app.models import PackingTemplate
+    from app.trips.packing_settings import set_template_lines
+    tpl = scope.require_own(session, user, PackingTemplate, template_id)
+    sent = body.model_dump(exclude_unset=True)
+    if (sent.get("name") or "").strip():
+        tpl.name = sent["name"].strip()[:128]
+    if tpl.type_key == "custom" and (sent.get("keyword") or "").strip():
+        tpl.keyword = sent["keyword"].strip()[:64]
+    if body.items is not None:
+        set_template_lines(session, user, tpl, _check_lines(session, user, body.items))
+    session.commit()
+    return _template_out(session, tpl)
+
+
+@router.delete("/me/packing-templates/{template_id}", status_code=204)
+def api_delete_template(template_id: str, user=Depends(authn.current_user),
+                        session: Session = Depends(get_session)):
+    """Delete a template; the inventory items in it stay."""
+    from app import scope
+    from app.models import PackingTemplate
+    from planning import inventory
+    inventory.delete_template(session, scope.require_own(session, user, PackingTemplate,
+                                                         template_id))
+    session.commit()
+    return Response(status_code=204)
+
+
 # --------------------------------------------------------------------------- research kits (4.5)
 def _kit_out(kit, full: bool = False) -> dict:
     out = {"slug": kit.slug, "name": kit.name, "title": kit.title,
