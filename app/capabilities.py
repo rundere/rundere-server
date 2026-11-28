@@ -29,6 +29,7 @@ def current() -> list[str]:
         "trip_create",         # POST /trips: the caller owns it and is on its roster (5.0.3)
         "trip_roster",         # GET/POST/DELETE /trips/{id}/travelers (5.0.3)
         "trip_preferences",    # trip_preferences on GET /trips/{id}: the roster's combined constraints (D-251)
+        "trip_manage",         # DELETE /trips/{id}, /trips/{id}/shares, PUT /trips/{id}/owner (YONDER-409)
     ]
     if account_deletion.available():
         names.append("account_delete")     # the web Delete page exists (D-242)
