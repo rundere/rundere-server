@@ -1950,16 +1950,25 @@ def _current_archetype_ids(session: Session, trip_id: str, user_id=None) -> list
             if a.get("id")]
 
 
-def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
-                                ids: list[str]) -> HTMLResponse:
+def regenerate_with_templates(session: Session, trip: Trip, uid, tid,
+                              ids: list[str]) -> None:
+    """Re-generate ONE person's list (D-123) with their explicit set of
+    templates (SPEC-5 §6.7.3); an empty set goes back to what the trip
+    suggests. The web and the API (YONDER-411) both go through here. Raises
+    PackingProfileRequired before the questionnaire is answered."""
     from app.resolving import load_homes_for_user
     from planning.runner import generate_plan
+    generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                  geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
+                  manual_archetypes=ids, user_id=uid, traveler_id=tid)
+
+
+def _regenerate_with_archetypes(request: Request, session: Session, trip: Trip,
+                                ids: list[str]) -> HTMLResponse:
     from planning.runner import PackingProfileRequired
     uid, tid = _pack_identity(request)
     try:
-        generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                      geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
-                      manual_archetypes=ids, user_id=uid, traveler_id=tid)
+        regenerate_with_templates(session, trip, uid, tid, ids)
     except PackingProfileRequired:
         pass
     return templates.TemplateResponse(request, "_packing_section.html",
@@ -2002,27 +2011,37 @@ def _set_trip_bags(request: Request, session: Session, trip: Trip,
                    ids: list[str]) -> HTMLResponse:
     """Store the trip's picked bags and put the lines in them, without
     re-generating (SPEC-5 §6.10.1). No list yet: generate one with them."""
-    from planning.runner import (PackingProfileRequired, bag_infos, generate_plan,
-                                 reassign_bags)
+    from planning.runner import PackingProfileRequired
     uid, tid = _pack_identity(request)
+    try:
+        set_trip_bags(session, trip, uid, tid, ids)
+    except PackingProfileRequired:
+        pass
+    return templates.TemplateResponse(request, "_packing_section.html",
+        {"request": request, "trip": {"id": trip.id},
+         **_packing_context(session, trip.id, scope.user_of(request))})
+
+
+def set_trip_bags(session: Session, trip: Trip, uid, tid, ids: list[str]) -> list[str]:
+    """Store ONE person's picked bags for a trip and put their lines in them,
+    without re-generating (SPEC-5 §6.10.1); with no list yet, generate one with
+    them. Only their own bags count (§6.6). The web and the API (YONDER-411)
+    both go through here. Returns the ids kept. Raises PackingProfileRequired
+    when there's no list and the questionnaire isn't answered."""
+    from planning.runner import bag_infos, generate_plan, reassign_bags
     mine = {b.id for b in bag_infos(session, uid)}
     ids = list(dict.fromkeys(i for i in ids if i in mine))
     plan = _latest_plan(session, trip.id, uid)
     if plan is None:
         from app.resolving import load_homes_for_user
-        try:
-            generate_plan(session, trip, resolve_airport=_airport_resolver(),
-                          geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
-                          bag_ids=ids, user_id=uid, traveler_id=tid)
-        except PackingProfileRequired:
-            pass
+        generate_plan(session, trip, resolve_airport=_airport_resolver(),
+                      geocoder=_photon(), home_profiles=load_homes_for_user(session, uid),
+                      bag_ids=ids, user_id=uid, traveler_id=tid)
     else:
         plan.bag_ids = ids or None
         reassign_bags(session, plan, uid, tid)
         session.commit()
-    return templates.TemplateResponse(request, "_packing_section.html",
-        {"request": request, "trip": {"id": trip.id},
-         **_packing_context(session, trip.id, scope.user_of(request))})
+    return ids
 
 
 def _current_bag_ids(session: Session, trip_id: str, user_id=None) -> list[str]:

@@ -195,6 +195,8 @@ class PackingOut(BaseModel):
     archetypes: Any = None
     warnings: Any = None
     tasks: Any = None
+    # YONDER-411: the bags this list is packed into, in order (PUT …/packing/bags).
+    bag_ids: list[str] = []
     items: list[PackingItemOut] = []
 
 
@@ -702,6 +704,7 @@ def _packing_out(session: Session, trip_id: str, user) -> "PackingOut | None":
                       archetypes=plan.archetypes if plan else None,
                       warnings=plan.warnings if plan else None,
                       tasks=plan.tasks if plan else None,
+                      bag_ids=list((plan.bag_ids if plan else None) or []),
                       items=[_packing_item_out(i) for i in items])
 
 
@@ -1840,6 +1843,59 @@ def api_generate_packing(trip_id: str, user=Depends(authn.current_user),
     generate_plan(session, trip, resolve_airport=_airport_resolver(), geocoder=_photon(),
                   home_profiles=load_home_profiles(session, user.traveler_id),
                   user_id=user.id, traveler_id=user.traveler_id)
+    return _packing_out(session, trip.id, user) or PackingOut(items=[])
+
+
+# YONDER-411 part 2: which of your bags and templates a trip's list uses, as
+# the web's packing section sets them. Your own list only (D-123) and your own
+# bags and templates (SPEC-5 §6.6); edit access to the trip, as on the web.
+class TripBagsIn(BaseModel):
+    bag_ids: list[str] = Field(max_length=20, description="Your bags (GET /me/bags), in "
+                                                          "order; [] packs with none.")
+
+
+class TripTemplatesIn(BaseModel):
+    template_ids: list[str] = Field(max_length=50, description="Your templates; [] goes back "
+                                                               "to what the trip suggests.")
+
+
+@router.put("/trips/{trip_id}/packing/bags", response_model=PackingOut,
+            responses=_PROFILE_REQUIRED_409)
+def api_set_trip_bags(trip_id: str, body: TripBagsIn, user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Pick the bags for your list on this trip (D-232) and put its lines in
+    them, without re-generating (SPEC-5 §6.10.1). With no list yet, one is
+    generated with them. A bag that isn't yours: 422."""
+    from app.trips.routes import set_trip_bags
+    from planning.runner import bag_infos
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    mine = {b.id for b in bag_infos(session, user.id)}
+    bad = [b for b in body.bag_ids if b not in mine]
+    if bad:
+        raise HTTPException(status_code=422, detail=f"bag_ids: not your bags: {', '.join(bad)}")
+    set_trip_bags(session, trip, user.id, user.traveler_id, body.bag_ids)
+    return _packing_out(session, trip.id, user) or PackingOut(items=[])
+
+
+@router.put("/trips/{trip_id}/packing/templates", response_model=PackingOut,
+            responses=_PROFILE_REQUIRED_409)
+def api_set_trip_templates(trip_id: str, body: TripTemplatesIn,
+                           user=Depends(authn.current_user),
+                           session: Session = Depends(get_session)):
+    """Set which of your templates your list on this trip uses, and re-generate
+    it with them (SPEC-5 §6.7.3). An empty list goes back to what the trip
+    suggests. A template that isn't yours: 422."""
+    from app.models import PackingTemplate
+    from app.trips.routes import regenerate_with_templates
+    trip = scope.require_trip(session, user, trip_id, edit=True)
+    mine = {t for (t,) in session.query(PackingTemplate.id)
+            .filter(PackingTemplate.user_id == user.id)}
+    bad = [t for t in body.template_ids if t not in mine]
+    if bad:
+        raise HTTPException(status_code=422,
+                            detail=f"template_ids: not your templates: {', '.join(bad)}")
+    regenerate_with_templates(session, trip, user.id, user.traveler_id,
+                              list(dict.fromkeys(body.template_ids)))
     return _packing_out(session, trip.id, user) or PackingOut(items=[])
 
 
