@@ -277,6 +277,16 @@ def trip_role(session, user, trip) -> str | None:
     return None
 
 
+def can_manage_trip(session, user, trip) -> bool:
+    """Delete the trip: its owner, or an admin for an ownerless trip (D-211).
+    Narrower than `can_edit_trip`: a traveller edits but doesn't delete, the
+    same rule as the API (YONDER-409). A demo server deletes nothing (D-198)."""
+    from app import demo
+    if demo.read_only():
+        return False
+    return trip_role(session, user, trip) in ("owner", "admin")
+
+
 # Back-compat alias — "access" means view.
 can_access_trip = can_view_trip
 

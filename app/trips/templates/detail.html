@@ -50,9 +50,11 @@
       {% if not read_only %}
       <button class="btn btn-secondary"
               hx-get="/trips/{{ trip.id }}/edit?next=/trips/{{ trip.id }}" hx-target="#modal-root">Edit trip</button>
+      {% if my_role in ("owner", "admin") %}
       <button class="btn btn-danger"
               hx-post="/trips/{{ trip.id }}/delete"
               hx-confirm="Delete this trip and its activities?">Delete</button>
+      {% endif %}
       {% endif %}
     </div>
     <span id="push-msg"></span>
