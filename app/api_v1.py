@@ -17,7 +17,7 @@ from typing import Annotated, Any
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query, Request, Response,
                      UploadFile)
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app import (authn, expenses as expenses_svc, journal as journal_svc,
@@ -138,6 +138,10 @@ class FindingOut(BaseModel):
     locked: bool = False        # approved/edited on a lockable topic: nobody overwrites it
     external: bool = False      # written by an external AI agent over MCP/API
     agent: str | None = None    # which one (its OAuth app / API token name)
+    # YONDER-411: what an edit sends (body | summary | languages | rates) and
+    # whether it can be locked, so an app offers the right editor.
+    edit_kind: str | None = None
+    lockable: bool = False
     # Open-Meteo weather is CC BY 4.0: clients show this wherever they show the
     # finding. None when the data needs no credit.
     attribution: AttributionOut | None = None
@@ -1906,10 +1910,12 @@ MAX_ITEMS = 200
 
 def _finding_out(f: DiscoveryFinding) -> FindingOut:
     from discover import attribution, policy
+    from app.trips.routes import finding_edit_kind
     return FindingOut(id=f.id, topic=f.topic, place_key=f.place_key, body_md=f.body_md,
                       data=f.data, confidence=f.confidence, status=f.status,
                       sources=f.sources, locked=policy.is_locked(f),
                       external=policy.is_external(f), agent=policy.agent_label(f),
+                      edit_kind=finding_edit_kind(f), lockable=policy.is_lockable(f.topic),
                       attribution=attribution.for_finding(f.resolver))
 
 
@@ -2131,6 +2137,139 @@ def api_save_finding(trip_id: str, body: FindingIn, request: Request,
     token = authz[7:].strip() if authz[:7].lower() == "bearer " else ""
     return save_research_finding(session, user, trip_id, body,
                                  agent=oauth.credential_label(session, token))
+
+
+# ------------------------------------------------------------- Discover controls from the apps (5.1)
+# YONDER-411: what the web's Discover tab does to a person's OWN findings and
+# rows (4.1: Discover is per person), for the apps. Edit access to the trip, as
+# on the web (a view-only share can't run Discover, so it has none); someone
+# else's finding or row reads as missing (404), whoever asks. No MCP tools:
+# an agent already saves research as drafts (save_research), and editing,
+# locking and hiding stay the person's.
+class RateIn(BaseModel):
+    base: str = Field(description="An ISO 4217 code, e.g. EUR.")
+    per: float = Field(gt=0, description="Units of the finding's currency per 1 `base`.")
+
+
+class FindingEditIn(BaseModel):
+    """Send the one field `edit` names in the finding's `edit_kind`: `body`
+    (markdown), `summary` (food/events: the city summary), `languages` (codes
+    from the vetted list) or `rates` (currency)."""
+    model_config = ConfigDict(extra="forbid")
+    body: str | None = Field(None, max_length=50_000)
+    summary: str | None = Field(None, max_length=20_000)
+    languages: list[str] | None = Field(None, max_length=20)
+    rates: list[RateIn] | None = Field(None, max_length=20)
+
+
+class LockIn(BaseModel):
+    locked: bool = True
+
+
+class HideIn(BaseModel):
+    hidden: bool = True
+    reason: str | None = Field(None, description="not_my_thing (default), closed or "
+                                                 "been_there. Only not_my_thing tells "
+                                                 "agents it's a dislike.")
+
+
+def _own_finding(session: Session, user, trip_id: str, fid: str) -> DiscoveryFinding:
+    scope.require_trip(session, user, trip_id, edit=True)
+    f = session.get(DiscoveryFinding, fid)
+    if f is None or f.trip_id != trip_id or f.user_id != user.id:
+        raise HTTPException(status_code=404, detail="finding not found")
+    return f
+
+
+@router.patch("/trips/{trip_id}/findings/{fid}", response_model=FindingOut)
+def api_edit_finding(trip_id: str, fid: str, body: FindingEditIn,
+                     user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    """Edit one of your findings, as the web's editor does. Which field it takes
+    depends on the topic (see `FindingEditIn`). Editing marks it yours: on a
+    lockable topic (plugs, visa, languages) it's then locked, so neither a
+    Discover run nor an agent overwrites it."""
+    from app.trips.routes import apply_finding_edit, finding_edit_kind
+    f = _own_finding(session, user, trip_id, fid)
+    kind = finding_edit_kind(f)
+    sent = {k for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if sent != {kind}:
+        raise HTTPException(status_code=422,
+                            detail=f"This finding is edited with `{kind}` only.")
+    if kind == "languages":
+        from discover import langdata
+        from discover.resolvers.language import supported_languages
+        known = {c for c, _ in supported_languages(langdata.phrasebook(session))}
+        bad = [c for c in body.languages if c not in known]
+        if bad:
+            raise HTTPException(status_code=422,
+                                detail=f"languages: not supported: {', '.join(bad)}")
+    rates = body.rates or []
+    apply_finding_edit(session, f, body=(body.summary if kind == "summary" else body.body) or "",
+                       langs=body.languages or [],
+                       cur_base=[r.base for r in rates], cur_rate=[str(r.per) for r in rates])
+    session.commit()
+    return _finding_out(f)
+
+
+@router.post("/trips/{trip_id}/findings/{fid}/lock", response_model=FindingOut)
+def api_lock_finding(trip_id: str, fid: str, body: LockIn,
+                     user=Depends(authn.current_user), session: Session = Depends(get_session)):
+    """Lock (approve) or unlock one of your findings on a lockable topic (plugs,
+    visa, languages). Locked, neither a Discover run nor an agent overwrites it;
+    unlocked, it's a draft again and the next run may refresh it. Other topics
+    are refreshed on every run: 422."""
+    from discover import policy
+    f = _own_finding(session, user, trip_id, fid)
+    if not policy.is_lockable(f.topic):
+        raise HTTPException(status_code=422,
+                            detail="This topic can't be locked: it's refreshed on every run.")
+    f.status = "approved" if body.locked else "draft"
+    session.commit()
+    return _finding_out(f)
+
+
+@router.post("/trips/{trip_id}/findings/{fid}/rerun", response_model=FindingOut)
+def api_rerun_finding(trip_id: str, fid: str, user=Depends(authn.current_user),
+                      session: Session = Depends(get_session)):
+    """Regenerate one of your findings now, as the web's per-topic re-run does:
+    live topics (weather, currency) are fetched again and a manual edit is
+    replaced. It runs before this returns, as on the web. Not for an ended trip
+    (D-157), languages or AI research (a person's pick or an agent's): 409."""
+    from discover.runner import TRIP_ENDED_MESSAGE, rerun_finding, trip_has_ended
+    from app.trips import routes as tr
+    f = _own_finding(session, user, trip_id, fid)
+    if trip_has_ended(session.get(Trip, trip_id)):
+        raise HTTPException(status_code=409, detail=TRIP_ENDED_MESSAGE)
+    if f.topic.startswith("language") or f.topic == "research":
+        raise HTTPException(status_code=409, detail="This finding can't be re-run.")
+    rerun_finding(session, f, resolve_airport=tr._airport_resolver(), geocoder=tr._photon(),
+                  resolvers=tr._resolvers(),
+                  base_currencies=tr._base_currencies(tr._traveler_of(session, user)))
+    session.refresh(f)
+    return _finding_out(f)
+
+
+@router.post("/trips/{trip_id}/discovery-items/{item_id}/hide", response_model=DiscoveryItemOut)
+def api_hide_discovery_item(trip_id: str, item_id: str, body: HideIn,
+                            user=Depends(authn.current_user),
+                            session: Session = Depends(get_session)):
+    """Hide one of your Discover rows (or bring it back with `hidden: false`).
+    Hidden rows stay hidden when Discover or an agent refreshes the city; "not
+    my thing" is what agents read as a dislike (`not_my_thing` on your profile)."""
+    from app.models import DiscoveryItem
+    from discover import items as disc_items
+    scope.require_trip(session, user, trip_id, edit=True)
+    i = session.get(DiscoveryItem, item_id)
+    if i is None or i.trip_id != trip_id or i.user_id != user.id:
+        raise HTTPException(status_code=404, detail="item not found")
+    if body.reason is not None and body.reason not in dict(disc_items.HIDE_REASONS):
+        raise HTTPException(status_code=422, detail="reason: not a known choice")
+    if body.hidden:
+        disc_items.hide(i, body.reason)
+    else:
+        disc_items.unhide(i)
+    session.commit()
+    return DiscoveryItemOut(**disc_items.item_dict(i))
 
 
 # --------------------------------------------------------------------------- journal (SPEC-6)

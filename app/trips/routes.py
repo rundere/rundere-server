@@ -1477,6 +1477,28 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
     f = _finding_or_404(session, request, trip_id, fid)
     if f is None:
         return HTMLResponse("", status_code=404)
+    apply_finding_edit(session, f, body=body, langs=langs, cur_base=cur_base,
+                       cur_rate=cur_rate)
+    session.commit()
+    return _refresh()
+
+
+def finding_edit_kind(f: DiscoveryFinding) -> str:
+    """What editing this finding changes (YONDER-411): `languages` (pick from
+    the vetted list), `rates` (the currency's conversion numbers), `summary`
+    (food/events: the city summary above the rows) or `body` (the markdown)."""
+    if f.topic == "language":
+        return "languages"
+    if f.topic == "currency" and (f.data or {}).get("currency"):
+        return "rates"
+    return "summary" if f.topic in ("food", "events") else "body"
+
+
+def apply_finding_edit(session: Session, f: DiscoveryFinding, *, body: str = "",
+                       langs=(), cur_base=(), cur_rate=()) -> None:
+    """A person's edit to their own finding — the web's editor and the API
+    (YONDER-411) both save through here. Marks it edited, which on a lockable
+    topic also locks it (discover/policy.py). Doesn't commit."""
     kept_history = (f.data or {}).get("history") if isinstance(f.data, dict) else None
     if f.topic == "language":
         # Rebuild the phrasebook from the picked languages (a manual override,
@@ -1525,8 +1547,6 @@ def save_finding(trip_id: str, fid: str, request: Request, body: str = Form(""),
     if kept_history and not (f.data or {}).get("history"):
         f.data = {**(f.data or {}), "history": kept_history}   # an edit keeps earlier versions
     f.status = "edited"          # on a lockable topic this also LOCKS it (discover/policy.py)
-    session.commit()
-    return _refresh()
 
 
 @router.post("/{trip_id}/finding/{fid}/lock", response_class=HTMLResponse)
