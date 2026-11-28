@@ -18,7 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
@@ -2669,6 +2669,11 @@ def _recheck_waiting(session: Session, trip: Trip, user) -> None:
 def delete_trip(trip_id: str, request: Request, session: Session = Depends(get_session)):
     trip = scope.trip_or_none(session, request, trip_id)
     if trip is not None:
+        # Only the owner deletes (an admin for an ownerless trip, D-211); a
+        # traveller can edit the trip but not remove it for everyone.
+        if not scope.can_manage_trip(session, scope.user_of(request), trip):
+            raise HTTPException(status_code=403,
+                                detail="only the trip's owner can delete it")
         # Everything that only exists for this trip goes with it; captures and
         # journal entries are kept and unlinked (app/trips/purge.py).
         from app.trips.purge import purge_trip
