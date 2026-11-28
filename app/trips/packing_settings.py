@@ -535,20 +535,37 @@ def _save_lines(request: Request, session: Session, tpl, form) -> None:
     """Replace the template's lines with what's ticked, each only if it's the
     person's own; a hand-added item joins the inventory too (YONDER-62 item 15)."""
     user, uid = _owner(request)
-    own_ids = {i for (i,) in _own(session, InventoryItem, user).with_entities(InventoryItem.id)}
-    picked = [i for i in dict.fromkeys(form.getlist("item")) if i in own_ids]
+    picked = list(dict.fromkeys(form.getlist("item")))
     label = (form.get("add_label") or "").strip()[:128]
     category = form.get("add_category") or ""
     if label and category in PACK_CAT_LABELS:
         row = _add_item(session, uid, category, label)
         session.flush()
         picked.append(row.id)
-    session.query(PackingTemplateItem).filter(
-        PackingTemplateItem.template_id == tpl.id).delete(synchronize_session=False)
+    lines = []
     for iid in picked:
         raw = (form.get(f"qty:{iid}") or "").strip()
-        session.add(PackingTemplateItem(template_id=tpl.id, inventory_item_id=iid,
-                                        quantity=_qty(raw) if raw else None))
+        lines.append((iid, _qty(raw) if raw else None))
+    set_template_lines(session, user, tpl, lines)
+
+
+def own_inventory_ids(session: Session, user) -> set[str]:
+    return {i for (i,) in _own(session, InventoryItem, user).with_entities(InventoryItem.id)}
+
+
+def set_template_lines(session: Session, user, tpl, lines) -> None:
+    """Replace a template's lines with `lines` — (inventory item id, quantity
+    or None) — keeping only items that are `user`'s own (SPEC-5 §6.6). The
+    web form and the API (YONDER-408) both save through here. Doesn't commit."""
+    own_ids = own_inventory_ids(session, user)
+    session.query(PackingTemplateItem).filter(
+        PackingTemplateItem.template_id == tpl.id).delete(synchronize_session=False)
+    seen = set()
+    for iid, qty in lines:
+        if iid in own_ids and iid not in seen:
+            seen.add(iid)
+            session.add(PackingTemplateItem(template_id=tpl.id, inventory_item_id=iid,
+                                            quantity=qty))
 
 
 def _after_template_save(form, tpl) -> RedirectResponse:

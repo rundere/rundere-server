@@ -30,6 +30,7 @@ def current() -> list[str]:
         "trip_roster",         # GET/POST/DELETE /trips/{id}/travelers (5.0.3)
         "trip_preferences",    # trip_preferences on GET /trips/{id}: the roster's combined constraints (D-251)
         "my_profiles",         # edit your own discovery and packing profiles: /me/discovery-profile, /me/packing-profile (YONDER-408)
+        "my_inventory",        # your inventory, bags and packing templates: /me/inventory, /me/bags, /me/packing-templates (YONDER-408)
     ]
     if account_deletion.available():
         names.append("account_delete")     # the web Delete page exists (D-242)

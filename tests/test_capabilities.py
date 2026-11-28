@@ -57,7 +57,7 @@ if DEPS:
                      "/account/export", "/account/delete"):
             assert client.get(path, follow_redirects=False).status_code != 404, path
         # POST-only, roster and profile routes (trip_create, trip_roster,
-        # my_profiles): signed out, the route answers 401, never 404 or 405.
+        # my_profiles, my_inventory): signed out, the route answers 401, never 404 or 405.
         for method, path in (("post", "/api/v1/trips"),
                              ("get", "/api/v1/trips/none/travelers"),
                              ("post", "/api/v1/trips/none/travelers"),
@@ -67,6 +67,15 @@ if DEPS:
                              ("put", "/api/v1/me/discovery-profile"),
                              ("get", "/api/v1/me/packing-profile"),
                              ("put", "/api/v1/me/packing-profile"),
-                             ("patch", "/api/v1/me/packing-profile")):
+                             ("patch", "/api/v1/me/packing-profile"),
+                             ("get", "/api/v1/me/inventory"),
+                             ("post", "/api/v1/me/inventory"),
+                             ("patch", "/api/v1/me/inventory/none"),
+                             ("delete", "/api/v1/me/inventory/none"),
+                             ("get", "/api/v1/me/bags"),
+                             ("post", "/api/v1/me/bags"),
+                             ("get", "/api/v1/me/packing-templates"),
+                             ("post", "/api/v1/me/packing-templates"),
+                             ("delete", "/api/v1/me/packing-templates/none")):
             r = getattr(client, method)(path, follow_redirects=False)
             assert r.status_code not in (404, 405), (method, path, r.status_code)
